@@ -1,0 +1,33 @@
+appId: com.pilotwriter.app
+productName: PilotWriter
+copyright: Copyright © 2026 PilotWriter
+
+asar: false
+
+directories:
+  output: dist-electron
+
+files:
+  - electron/**/*
+  - .next/standalone/**/*
+  - .next/static/**/*
+  - public/**/*
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+  darkModeSupport: true
+  electronLanguages:
+    - en
+
+dmg:
+  title: PilotWriter
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
