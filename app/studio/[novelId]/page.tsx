@@ -5207,8 +5207,15 @@ function NovelWorkspacePage() {
 
   function contentForExport(content: string): string {
     const { blocks, hasBlocks } = parseChapterBlocks(content);
-    if (!hasBlocks || blocks.length === 0) return content;
-    return blocks.map((b) => b.prose).filter(Boolean).join("\n\n\n") || content;
+    if (!hasBlocks || blocks.length === 0) {
+      // No bloc delimiters — strip any stray delimiters just in case
+      return content
+        .replace(/<<<BLOCK>>>/g, "").replace(/<<<PROSE>>>/g, "")
+        .replace(/<<<ENDBLOCK>>>/g, "").replace(/<<<META>>>/g, "")
+        .replace(/<<<SYNOPSIS>>>/g, "").trim();
+    }
+    // Only return prose — never return raw bloc content
+    return blocks.map((b) => b.prose).filter(Boolean).join("\n\n\n");
   }
 
   function getChaptersForExport(currentNovel: Novel) {
@@ -5257,12 +5264,10 @@ function NovelWorkspacePage() {
           format: exportFormat,
           novelTitle: novel.title,
           authorName: novel.authorName?.trim() || "",
-          novelSynopsis: novel.synopsis,
           coverImage: exportFormat === "epub" ? novel.coverImage : null,
           chapters: chaptersToExport.map((chapter) => ({
             id: chapter.id,
             title: chapter.title,
-            subtitle: chapter.subtitle,
             content: contentForExport(chapter.content),
           })),
         }),

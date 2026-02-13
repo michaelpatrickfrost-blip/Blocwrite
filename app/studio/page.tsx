@@ -10,7 +10,7 @@ import { ProfilePopup } from "./components/ProfilePopup";
 type ExportFormat = "docx" | "epub";
 
 function contentForExport(content: string): string {
-  // Handle <<<BLOCK>>> delimiter format
+  // Handle <<<BLOCK>>> delimiter format — extract only prose
   if (content.includes("<<<BLOCK>>>")) {
     const parts = content.split("<<<BLOCK>>>").filter(Boolean);
     const proses: string[] = [];
@@ -21,18 +21,23 @@ function contentForExport(content: string): string {
       const prose = part.slice(proseIdx + "<<<PROSE>>>".length, endIdx).trim();
       if (prose) proses.push(prose);
     }
-    if (proses.length > 0) return proses.join("\n\n\n");
+    // Only return prose — never fall back to raw bloc content
+    return proses.join("\n\n\n");
   }
   // Handle JSON format
   try {
     const parsed = JSON.parse(content);
     if (Array.isArray(parsed)) {
-      return parsed.map((b: { prose?: string }) => b.prose ?? "").filter(Boolean).join("\n\n\n") || content;
+      return parsed.map((b: { prose?: string }) => b.prose ?? "").filter(Boolean).join("\n\n\n");
     }
   } catch {
     // Not JSON — plain content
   }
-  return content;
+  // Strip any stray delimiters
+  return content
+    .replace(/<<<BLOCK>>>/g, "").replace(/<<<PROSE>>>/g, "")
+    .replace(/<<<ENDBLOCK>>>/g, "").replace(/<<<META>>>/g, "")
+    .replace(/<<<SYNOPSIS>>>/g, "").trim();
 }
 
 function StudioHomePage() {
@@ -149,12 +154,10 @@ function StudioHomePage() {
         body: JSON.stringify({
           format: exportFormat,
           novelTitle: exportNovel.title,
-          novelSynopsis: exportNovel.synopsis,
           coverImage: exportFormat === "epub" ? exportNovel.coverImage : null,
           chapters: chaptersToExport.map((chapter) => ({
             id: chapter.id,
             title: chapter.title,
-            subtitle: chapter.subtitle,
             content: contentForExport(chapter.content),
           })),
         }),
