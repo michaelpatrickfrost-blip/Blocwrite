@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { countNovelWords, countWords, createNovel, loadNovels, saveNovels, type Novel } from "./studio-store";
+import { countChapterWords, countNovelWords, createNovel, loadNovels, saveNovels, type Novel } from "./studio-store";
 import { ProfileButton } from "./components/ProfileButton";
 import { ProfilePopup } from "./components/ProfilePopup";
 
@@ -498,7 +498,7 @@ function StudioHomePage() {
                         />
                         <span className="pw-export-chapter-meta">
                           <strong>{chapter.title || `Chapter ${index + 1}`}</strong>
-                          <small>{countWords(chapter.content).toLocaleString()} words</small>
+                          <small>{countChapterWords(chapter).toLocaleString()} words</small>
                         </span>
                       </label>
                     );

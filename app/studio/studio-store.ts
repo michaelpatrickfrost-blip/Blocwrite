@@ -1,6 +1,5 @@
 export type SceneBlock = {
   synopsis: string;       // scene beat description (location, POV, goal, conflict, turning point, outcome)
-  prose: string;          // generated/written prose for this block (the actual novel text for this scene)
   wordTarget: number;     // prose pacing target (400/600/800/1000)
   focus: string;          // "default" | "dialogue" | "action" | "introspection" | "atmosphere"
   notes: string;          // optional user notes
@@ -190,6 +189,7 @@ export type StoryBible = {
 export type Novel = {
   id: string;
   title: string;
+  authorName: string;
   synopsis: string;
   goalWords: number;
   coverImage: string | null;
@@ -226,7 +226,6 @@ function normalizeChapter(raw: unknown, fallbackIndex: number): Chapter | null {
   if (Array.isArray(record.sceneBlocks) && record.sceneBlocks.length > 0) {
     sceneBlocks = (record.sceneBlocks as Array<Record<string, unknown>>).map((b) => ({
       synopsis: typeof b.synopsis === "string" ? b.synopsis : "",
-      prose: typeof b.prose === "string" ? b.prose : "",
       wordTarget: typeof b.wordTarget === "number" ? b.wordTarget : 600,
       focus: typeof b.focus === "string" ? b.focus : "default",
       notes: typeof b.notes === "string" ? b.notes : "",
@@ -651,9 +650,12 @@ function normalizeNovel(raw: unknown): Novel | null {
     }
   }
 
+  const authorName = typeof record.authorName === "string" ? record.authorName : "";
+
   return {
     id,
     title: titleSource,
+    authorName,
     synopsis: synopsisSource,
     goalWords,
     coverImage,
@@ -664,48 +666,34 @@ function normalizeNovel(raw: unknown): Novel | null {
   };
 }
 
-/** Migrate old serialized block format (<<<BLOCK>>>...) to the new SceneBlock model */
-function migrateChapterBlocks(novel: Novel): Novel {
-  const OLD_BLOCK_DELIM = "<<<BLOCK>>>";
-  const OLD_PROSE_DELIM = "<<<PROSE>>>";
-  const OLD_END_BLOCK = "<<<ENDBLOCK>>>";
-  const OLD_META_DELIM = "<<<META>>>";
+/** Reverse migration: if sceneBlocks were split out, merge them back into content as <<<BLOCK>>> format */
+function restoreChapterBlocks(novel: Novel): Novel {
+  const BLOCK_DELIM = "<<<BLOCK>>>";
+  const PROSE_DELIM = "<<<PROSE>>>";
+  const END_BLOCK = "<<<ENDBLOCK>>>";
+  const META_DELIM = "<<<META>>>";
 
   let changed = false;
   const chapters = novel.chapters.map((chapter) => {
-    if (!chapter.content.includes(OLD_BLOCK_DELIM)) return chapter;
-    // Parse old format
-    const parts = chapter.content.split(OLD_BLOCK_DELIM).filter(Boolean);
-    const sceneBlocks: SceneBlock[] = [];
-    const proseChunks: string[] = [];
-    for (const part of parts) {
-      const proseIdx = part.indexOf(OLD_PROSE_DELIM);
-      const endIdx = part.indexOf(OLD_END_BLOCK);
-      if (proseIdx === -1 || endIdx === -1) continue;
-      let header = part.slice(0, proseIdx).replace(/\n+$/, "").trim();
-      const prose = part.slice(proseIdx + OLD_PROSE_DELIM.length, endIdx).replace(/^\n+/, "").replace(/\n+$/, "").trim();
-      let synopsis = header;
-      let wordTarget = 600;
-      let focus = "default";
-      let notes = "";
-      if (header.startsWith(OLD_META_DELIM)) {
-        const firstNewline = header.indexOf("\n");
-        const metaLine = firstNewline >= 0 ? header.slice(OLD_META_DELIM.length, firstNewline) : header.slice(OLD_META_DELIM.length);
-        synopsis = firstNewline >= 0 ? header.slice(firstNewline + 1).trim() : "";
-        const metaParts = metaLine.split("|");
-        if (metaParts.length >= 1) wordTarget = Math.max(200, Math.min(2000, parseInt(metaParts[0], 10) || 600));
-        if (metaParts.length >= 2) focus = metaParts[1] || "default";
-        if (metaParts.length >= 3) notes = metaParts[2] ?? "";
-      }
-      sceneBlocks.push({ synopsis, prose, wordTarget, focus, notes });
-      if (prose) proseChunks.push(prose);
-    }
-    if (sceneBlocks.length === 0) return chapter;
+    // If content already has block delimiters, leave it alone
+    if (chapter.content.includes(BLOCK_DELIM)) return chapter;
+    // If no sceneBlocks to restore, leave it alone
+    if (!chapter.sceneBlocks || chapter.sceneBlocks.length === 0) return chapter;
+
+    // Rebuild the serialized block format from sceneBlocks + content
+    const prose = chapter.content.trim();
+    const blocks = chapter.sceneBlocks.map((sb, i) => {
+      const meta = `${META_DELIM}${sb.wordTarget}|${sb.focus || "default"}|${sb.notes || ""}|\n`;
+      // Put all existing prose in the first block if it exists
+      const blockProse = i === 0 && prose ? prose : "";
+      return `${BLOCK_DELIM}\n${meta}${sb.synopsis}\n${PROSE_DELIM}\n${blockProse}\n${END_BLOCK}`;
+    });
+
     changed = true;
     return {
       ...chapter,
-      content: proseChunks.join("\n\n"),
-      sceneBlocks,
+      content: blocks.join("\n\n"),
+      sceneBlocks: undefined,
     };
   });
   if (!changed) return novel;
@@ -746,60 +734,16 @@ export function loadNovels(): Novel[] {
   for (const source of sources) {
     const parsed = parsePayload(safeGetItem(source.storage, source.key));
     if (parsed) {
-      const migrated = parsed.map(migrateChapterBlocks);
+      // Reverse migration: if any chapters had sceneBlocks split out, merge them back
+      const restored = parsed.map(restoreChapterBlocks);
 
-      // Try to recover sceneBlocks from backup/raw storage if current data lost them
-      // Check all sources for raw data that still has <<<BLOCK>>> markers
-      for (const novel of migrated) {
-        for (const chapter of novel.chapters) {
-          if (chapter.sceneBlocks && chapter.sceneBlocks.length > 0) continue; // already has blocks
-          // Look in ALL storage sources for raw data with old block format for this chapter
-          for (const backupSource of sources) {
-            try {
-              const rawBackup = safeGetItem(backupSource.storage, backupSource.key);
-              if (!rawBackup) continue;
-              const rawParsed = JSON.parse(rawBackup) as unknown[];
-              if (!Array.isArray(rawParsed)) continue;
-              for (const rawNovel of rawParsed) {
-                const rn = rawNovel as Record<string, unknown>;
-                if (rn.id !== novel.id) continue;
-                const rawChapters = Array.isArray(rn.chapters) ? rn.chapters : [];
-                for (const rawChapter of rawChapters) {
-                  const rc = rawChapter as Record<string, unknown>;
-                  if (rc.id !== chapter.id) continue;
-                  // Check if raw chapter has sceneBlocks we lost during normalization
-                  if (Array.isArray(rc.sceneBlocks) && rc.sceneBlocks.length > 0) {
-                    chapter.sceneBlocks = (rc.sceneBlocks as Array<Record<string, unknown>>).map((b) => ({
-                      synopsis: typeof b.synopsis === "string" ? b.synopsis : "",
-                      prose: typeof b.prose === "string" ? b.prose : "",
-                      wordTarget: typeof b.wordTarget === "number" ? b.wordTarget : 600,
-                      focus: typeof b.focus === "string" ? b.focus : "default",
-                      notes: typeof b.notes === "string" ? b.notes : "",
-                    }));
-                  }
-                  // Check if raw content has old <<<BLOCK>>> format we can re-migrate
-                  if (!chapter.sceneBlocks?.length && typeof rc.content === "string" && rc.content.includes("<<<BLOCK>>>")) {
-                    const reMigrated = migrateChapterBlocks({ ...novel, chapters: [{ ...chapter, content: rc.content }] });
-                    const reChapter = reMigrated.chapters[0];
-                    if (reChapter?.sceneBlocks?.length) {
-                      chapter.sceneBlocks = reChapter.sceneBlocks;
-                      if (reChapter.content) chapter.content = reChapter.content;
-                    }
-                  }
-                }
-              }
-            } catch { /* ignore backup parse failures */ }
-          }
-        }
-      }
-
-      // Force-save migrated data to prevent future data loss
+      // Save restored data
       try {
-        const payload = JSON.stringify(migrated);
+        const payload = JSON.stringify(restored);
         window.localStorage.setItem(STORAGE_KEY, payload);
       } catch { /* ignore */ }
 
-      return migrated;
+      return restored;
     }
   }
 
@@ -844,6 +788,7 @@ export function createNovel(title: string, coverImage: string | null = null): No
   return {
     id: createId(),
     title: title.trim() || "Untitled Novel",
+    authorName: "",
     synopsis: "",
     goalWords: 50000,
     coverImage,
@@ -907,7 +852,6 @@ export function createChapter(index: number): Chapter {
     title: `Chapter ${index + 1}`,
     subtitle: "",
     content: "",
-    sceneBlocks: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -919,6 +863,25 @@ export function countWords(text: string) {
   return trimmed.split(/\s+/).length;
 }
 
+/** Extract only prose text from chapter content (strips block synopses, metadata, delimiters). */
+export function extractProseFromContent(content: string): string {
+  if (!content.includes("<<<BLOCK>>>")) return content;
+  const parts = content.split("<<<BLOCK>>>").filter(Boolean);
+  const proseChunks: string[] = [];
+  for (const part of parts) {
+    const proseIdx = part.indexOf("<<<PROSE>>>");
+    const endIdx = part.indexOf("<<<ENDBLOCK>>>");
+    if (proseIdx === -1 || endIdx === -1) continue;
+    const prose = part.slice(proseIdx + "<<<PROSE>>>".length, endIdx).trim();
+    if (prose) proseChunks.push(prose);
+  }
+  return proseChunks.join("\n\n");
+}
+
+export function countChapterWords(chapter: Chapter) {
+  return countWords(extractProseFromContent(chapter.content));
+}
+
 export function countNovelWords(novel: Novel) {
-  return novel.chapters.reduce((total, chapter) => total + countWords(chapter.content), 0);
+  return novel.chapters.reduce((total, chapter) => total + countChapterWords(chapter), 0);
 }

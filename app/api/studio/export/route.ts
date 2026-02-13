@@ -19,6 +19,7 @@ type ChapterInput = {
 type ExportPayload = {
   format?: ExportFormat;
   novelTitle?: string;
+  authorName?: string;
   novelSynopsis?: string;
   coverImage?: string | null;
   chapters?: ChapterInput[];
@@ -47,7 +48,6 @@ type ArchiverFactory = (
   },
 ) => ArchiverLike;
 
-const DEFAULT_AUTHOR = "PilotWriter";
 const EPUB_STYLE_CSS = `
 body {
   font-family: Georgia, "Times New Roman", serif;
@@ -276,10 +276,13 @@ function pageBreakXml() {
   return "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
 }
 
-function buildDocxDocumentXml(title: string, synopsis: string, chapters: NormalizedChapter[]) {
+function buildDocxDocumentXml(title: string, authorName: string, synopsis: string, chapters: NormalizedChapter[]) {
   const body: string[] = [];
 
   body.push(paragraphXml(title, { bold: true }));
+  if (authorName) {
+    body.push(paragraphXml(authorName));
+  }
   if (synopsis.trim()) {
     body.push(paragraphXml(""));
     body.push(paragraphXml("Synopsis", { bold: true }));
@@ -315,10 +318,11 @@ function buildDocxDocumentXml(title: string, synopsis: string, chapters: Normali
   ].join("");
 }
 
-async function buildDocxBuffer(title: string, synopsis: string, chapters: NormalizedChapter[]) {
+async function buildDocxBuffer(title: string, authorName: string, synopsis: string, chapters: NormalizedChapter[]) {
   const createdAt = new Date().toISOString();
   const safeTitle = title || "Untitled Novel";
-  const documentXml = buildDocxDocumentXml(safeTitle, synopsis, chapters);
+  const metaAuthor = authorName || "";
+  const documentXml = buildDocxDocumentXml(safeTitle, authorName, synopsis, chapters);
 
   const files = [
     {
@@ -360,8 +364,8 @@ async function buildDocxBuffer(title: string, synopsis: string, chapters: Normal
       content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <dc:title>${escapeXml(safeTitle)}</dc:title>
-  <dc:creator>${DEFAULT_AUTHOR}</dc:creator>
-  <cp:lastModifiedBy>${DEFAULT_AUTHOR}</cp:lastModifiedBy>
+  <dc:creator>${metaAuthor ? escapeXml(metaAuthor) : ""}</dc:creator>
+  <cp:lastModifiedBy>${metaAuthor ? escapeXml(metaAuthor) : ""}</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:modified>
 </cp:coreProperties>`,
@@ -468,6 +472,7 @@ async function ensureEpubTemplateFiles(epubTempDir: string) {
 
 async function buildEpubBuffer(options: {
   title: string;
+  authorName: string;
   synopsis: string;
   chapters: NormalizedChapter[];
   coverImage?: string | null;
@@ -512,7 +517,7 @@ async function buildEpubBuffer(options: {
   try {
     const baseOptions: EpubGeneratorOptions = {
       title: safeTitle,
-      author: DEFAULT_AUTHOR,
+      author: options.authorName || "",
       tocTitle: "Contents",
       appendChapterTitles: false,
       tempDir: epubTempDir,
@@ -565,12 +570,14 @@ export async function POST(request: Request) {
     }
 
     const title = typeof payload.novelTitle === "string" && payload.novelTitle.trim() ? payload.novelTitle.trim() : "Untitled Novel";
+    const authorName = typeof payload.authorName === "string" ? payload.authorName.trim() : "";
     const synopsis = typeof payload.novelSynopsis === "string" ? payload.novelSynopsis : "";
     const slug = slugify(title);
 
     if (format === "epub") {
       const buffer = await buildEpubBuffer({
         title,
+        authorName,
         synopsis,
         chapters,
         coverImage: payload.coverImage ?? null,
@@ -583,7 +590,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const buffer = await buildDocxBuffer(title, synopsis, chapters);
+    const buffer = await buildDocxBuffer(title, authorName, synopsis, chapters);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

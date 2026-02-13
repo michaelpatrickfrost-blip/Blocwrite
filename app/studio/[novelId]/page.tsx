@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  countChapterWords,
   countNovelWords,
   countWords,
   createChapter,
@@ -13,11 +14,10 @@ import {
   type Novel,
   type Relationship,
   type Bolton,
-  type SceneBlock,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
-import { ChapterReview, type ConsistencyIssue } from "../components/ChapterReview";
+import { TheEditor, type EditorMode, type TargetedFocus, type EditorResult, type EditorChange, type EditorialIssue } from "../components/TheEditor";
 import { getProfileAiOff, type ProfileLanguageCode } from "@/lib/profile-store";
 
 type ExportFormat = "docx" | "epub";
@@ -384,10 +384,11 @@ function NovelWorkspacePage() {
   const [selectedExportChapterIds, setSelectedExportChapterIds] = useState<string[]>([]);
   const [exportingFile, setExportingFile] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [showChapterReviewModal, setShowChapterReviewModal] = useState(false);
-  const [consistencyIssues, setConsistencyIssues] = useState<ConsistencyIssue[]>([]);
-  const [consistencyLoading, setConsistencyLoading] = useState(false);
-  const [consistencyError, setConsistencyError] = useState<string | null>(null);
+  const [showEditorModal, setShowEditorModal] = useState(false);
+  const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
+  const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorOriginalParagraphs, setEditorOriginalParagraphs] = useState<string[]>([]);
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -440,7 +441,10 @@ function NovelWorkspacePage() {
     conflict: "improve",
   });
   const [eventsAiCount, setEventsAiCount] = useState<6 | 8 | 10 | 12>(8);
+  const [focusBlockIndex, setFocusBlockIndex] = useState<number | null>(null);
+  const [collapsedBeats, setCollapsedBeats] = useState<Set<number>>(new Set());
   const [editorFontFamily, setEditorFontFamily] = useState<string>("serif");
+  const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
   const EDITOR_FONT_OPTIONS = [
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
@@ -547,9 +551,9 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     setActiveChapterId(null);
-    setShowChapterReviewModal(false);
-    setConsistencyIssues([]);
-    setConsistencyError(null);
+    setShowEditorModal(false);
+    setEditorResult(null);
+    setEditorError(null);
     setShowExportModal(false);
     setProfileOpen(false);
     setSelectedExportChapterIds([]);
@@ -583,16 +587,16 @@ function NovelWorkspacePage() {
     const exists = novel.chapters.some((chapter) => chapter.id === activeChapterId);
     if (!exists) {
       setActiveChapterId(null);
-      setShowChapterReviewModal(false);
-      setConsistencyIssues([]);
-      setConsistencyError(null);
+      setShowEditorModal(false);
+      setEditorResult(null);
+      setEditorError(null);
     }
   }, [activeChapterId, novel]);
 
   useEffect(() => {
-    setShowChapterReviewModal(false);
-    setConsistencyIssues([]);
-    setConsistencyError(null);
+    setShowEditorModal(false);
+    setEditorResult(null);
+    setEditorError(null);
   }, [activeChapterId, novel]);
 
   useEffect(() => {
@@ -1620,6 +1624,7 @@ function NovelWorkspacePage() {
       "- Each chapter must advance the plot. No filler.",
       "- Titles must be unique.",
       "- Summaries should mention character names, locations, and key events by name so they can be cross-referenced.",
+      "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot. Keeping chapters grounded in a single place prevents the story feeling scattered.",
       "- Weave in worldbuilding/lore naturally — if the Canon has magic systems, cultures, technology, etc., integrate them into the chapter flow.",
       "- Maintain cause-and-effect between chapters.",
       "- Respect all Canon — do not contradict characters, locations, lore, worldbuilding constraints, or timeline.",
@@ -1850,14 +1855,17 @@ function NovelWorkspacePage() {
     const summary = sb.summary;
     const styleVoice = sb.styleVoice;
     const parts: string[] = [];
+    parts.push("=== STYLE & VOICE (from Canon — you MUST follow these) ===");
     if (summary.genre?.length) parts.push(`Genre: ${summary.genre.slice(0, 8).join(", ")}`);
     if (summary.tone?.length) parts.push(`Tone: ${summary.tone.slice(0, 8).join(", ")}`);
     if (styleVoice.pov) parts.push(`POV: ${styleVoice.pov}`);
     if (styleVoice.tense) parts.push(`Tense: ${styleVoice.tense}`);
     if (styleVoice.comps?.length) parts.push(`Write in the style of: ${styleVoice.comps.slice(0, 5).join(", ")}`);
     if (styleVoice.voiceRules) parts.push(`Voice rules (MUST follow): ${clampPromptText(styleVoice.voiceRules, 500)}`);
-    if (styleVoice.bannedWords?.length) parts.push(`Avoid: ${styleVoice.bannedWords.slice(0, 15).join(", ")}`);
-    return parts.length ? parts.join("\n") : "";
+    if (styleVoice.bannedWords?.length) parts.push(`NEVER use these words: ${styleVoice.bannedWords.slice(0, 15).join(", ")}`);
+    // Always include at least a reminder even if fields are empty
+    if (parts.length <= 1) parts.push("No specific style rules set yet — use professional, consistent prose.");
+    return parts.join("\n");
   }
 
   function buildPhase2Prompt(chapterContext: string): string {
@@ -1870,6 +1878,7 @@ function NovelWorkspacePage() {
       "- The synopsis must be specific — reference character names, locations, and concrete plot points.",
       "- Weave in worldbuilding/lore naturally: if a lore entry (magic system, culture, tech, etc.) is relevant to this chapter, reference it in the synopsis and list its title in the lore array.",
       "- Only list characters and locations that actually appear in this chapter.",
+      "- LOCATION RULE: Limit each chapter to ONE primary location unless a scene transition is essential to the plot. This keeps chapters focused and grounded. The locations array should usually contain just 1 entry.",
       "- Create 1-2 event names that capture key moments (e.g. \"Mara discovers the map\").",
       "- Maintain continuity with previous and next chapters.",
       "- Respect all worldbuilding constraints — if a lore entry has rules (e.g. \"magic costs life force\"), the synopsis must not violate them.",
@@ -1935,53 +1944,97 @@ function NovelWorkspacePage() {
     return true;
   }
 
-  /* ─── Scene Block helpers (new architecture) ─── */
-  const DEFAULT_SCENE_BLOCK: SceneBlock = {
+  /* ─── Block delimiters and types ─── */
+  const BLOCK_DELIM = "<<<BLOCK>>>";
+  const PROSE_DELIM = "<<<PROSE>>>";
+  const END_BLOCK = "<<<ENDBLOCK>>>";
+  const META_DELIM = "<<<META>>>";
+
+  type ChapterBlock = {
+    synopsis: string;
+    prose: string;
+    wordTarget: number;
+    preset: string;
+    notes: string;
+    regenConstraint: string;
+  };
+
+  const DEFAULT_BLOCK: ChapterBlock = {
     synopsis: "",
     prose: "",
     wordTarget: 600,
-    focus: "default",
+    preset: "default",
     notes: "",
+    regenConstraint: "",
   };
 
-  const FOCUS_PRESETS: Array<{ id: string; label: string; hint: string }> = [
-    { id: "default", label: "Default", hint: "Canon voice, balanced narration/dialogue/action, matches novel's style" },
-    { id: "dialogue", label: "Dialogue", hint: "Higher dialogue ratio, faster exchanges, reduced exposition" },
-    { id: "action", label: "Action", hint: "Shorter sentences, clear movement, high momentum" },
-    { id: "introspection", label: "Introspection", hint: "Interior monologue, emotional processing, thematic depth" },
-    { id: "atmosphere", label: "Atmosphere", hint: "Sensory detail, mood-forward writing" },
-  ];
-
-  function getSceneBlocks(chapter: typeof activeChapter): SceneBlock[] {
-    return chapter?.sceneBlocks ?? [];
+  function parseChapterBlocks(content: string): { blocks: ChapterBlock[]; hasBlocks: boolean } {
+    if (!content.includes(BLOCK_DELIM)) return { blocks: [], hasBlocks: false };
+    const parts = content.split(BLOCK_DELIM).filter(Boolean);
+    const blocks: ChapterBlock[] = [];
+    for (const part of parts) {
+      const proseIdx = part.indexOf(PROSE_DELIM);
+      const endIdx = part.indexOf(END_BLOCK);
+      if (proseIdx === -1 || endIdx === -1) continue;
+      let header = part.slice(0, proseIdx).replace(/\n+$/, "").trim();
+      const prose = part.slice(proseIdx + PROSE_DELIM.length, endIdx).replace(/^\n+/, "").replace(/\n+$/, "").trim();
+      let synopsis = header;
+      let wordTarget = DEFAULT_BLOCK.wordTarget;
+      let preset = DEFAULT_BLOCK.preset;
+      let notes = DEFAULT_BLOCK.notes;
+      let regenConstraint = DEFAULT_BLOCK.regenConstraint;
+      if (header.startsWith(META_DELIM)) {
+        const firstNewline = header.indexOf("\n");
+        const metaLine = firstNewline >= 0 ? header.slice(META_DELIM.length, firstNewline) : header.slice(META_DELIM.length);
+        synopsis = firstNewline >= 0 ? header.slice(firstNewline + 1).trim() : "";
+        const metaParts = metaLine.split("|");
+        if (metaParts.length >= 1) wordTarget = Math.max(200, Math.min(2000, parseInt(metaParts[0], 10) || DEFAULT_BLOCK.wordTarget));
+        if (metaParts.length >= 2) preset = metaParts[1] || DEFAULT_BLOCK.preset;
+        if (metaParts.length >= 3) notes = metaParts[2] ?? DEFAULT_BLOCK.notes;
+        if (metaParts.length >= 4) regenConstraint = metaParts[3] ?? DEFAULT_BLOCK.regenConstraint;
+      }
+      blocks.push({ synopsis, prose, wordTarget, preset, notes, regenConstraint });
+    }
+    return { blocks, hasBlocks: blocks.length > 0 };
   }
 
-  /** Build chapter body from all block prose */
-  function buildContentFromBlocks(blocks: SceneBlock[]): string {
-    return blocks.map((b) => b.prose).filter(Boolean).join("\n\n\n");
+  function serializeChapterBlocks(blocks: ChapterBlock[]): string {
+    return blocks
+      .map((b) => {
+        const meta = `${META_DELIM}${b.wordTarget}|${b.preset}|${b.notes}|${b.regenConstraint}\n`;
+        return `${BLOCK_DELIM}\n${meta}${b.synopsis}\n${PROSE_DELIM}\n${b.prose}\n${END_BLOCK}`;
+      })
+      .join("\n\n");
   }
 
-  /** Update blocks AND sync chapter.content from their prose */
-  function updateSceneBlocks(chapterId: string, blocks: SceneBlock[]) {
-    updateChapter(chapterId, { sceneBlocks: blocks, content: buildContentFromBlocks(blocks) });
-  }
-
-  function insertSceneBlockAt(blocks: SceneBlock[], atIndex: number) {
+  function insertBlockAt(blocks: ChapterBlock[], atIndex: number, position: "before" | "after") {
     if (!activeChapter) return;
-    const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] : DEFAULT_SCENE_BLOCK;
-    const newBlock: SceneBlock = {
-      ...DEFAULT_SCENE_BLOCK,
-      wordTarget: lastBlock.wordTarget,
-      focus: lastBlock.focus,
-    };
-    const next = [...blocks.slice(0, atIndex + 1), newBlock, ...blocks.slice(atIndex + 1)];
-    updateSceneBlocks(activeChapter.id, next);
+    const insertIdx = position === "after" ? atIndex + 1 : atIndex;
+    const newBlock = { ...DEFAULT_BLOCK };
+    const next = [...blocks.slice(0, insertIdx), newBlock, ...blocks.slice(insertIdx)];
+    updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
   }
 
-  function deleteSceneBlockAt(blocks: SceneBlock[], atIndex: number) {
+  function deleteBlockAt(blocks: ChapterBlock[], atIndex: number) {
     if (!activeChapter) return;
     const next = blocks.filter((_, i) => i !== atIndex);
-    updateSceneBlocks(activeChapter.id, next);
+    updateChapter(activeChapter.id, { content: next.length > 0 ? serializeChapterBlocks(next) : "" });
+    if (focusBlockIndex === atIndex) setFocusBlockIndex(null);
+    else if (focusBlockIndex !== null && focusBlockIndex > atIndex) setFocusBlockIndex(focusBlockIndex - 1);
+  }
+
+  function addBlockFromPlainContent(content: string) {
+    if (!activeChapter) return;
+    const trimmed = content.trim();
+    const blocks: ChapterBlock[] = trimmed
+      ? [
+          { ...DEFAULT_BLOCK, prose: trimmed },
+          { ...DEFAULT_BLOCK },
+        ]
+      : [{ ...DEFAULT_BLOCK }];
+    updateChapter(activeChapter.id, {
+      content: serializeChapterBlocks(blocks),
+    });
   }
 
   function applyRawFormatting(
@@ -2015,6 +2068,37 @@ function NovelWorkspacePage() {
     });
   }
 
+  function applyBlockFormatting(
+    blockIndex: number,
+    blocks: ChapterBlock[],
+    wrapper: { open: string; close: string },
+  ) {
+    const textarea = blockProseRefs.current[blockIndex];
+    if (!textarea || !activeChapter) return;
+    const { selectionStart, selectionEnd, value } = textarea;
+    const before = value.slice(0, selectionStart);
+    const selected = value.slice(selectionStart, selectionEnd);
+    const after = value.slice(selectionEnd);
+    let newValue: string;
+    let newStart: number;
+    let newEnd: number;
+    if (selected.length > 0) {
+      newValue = before + wrapper.open + selected + wrapper.close + after;
+      newStart = selectionStart;
+      newEnd = selectionEnd + wrapper.open.length + wrapper.close.length;
+    } else {
+      newValue = before + wrapper.open + wrapper.close + after;
+      newStart = selectionEnd + wrapper.open.length;
+      newEnd = newStart;
+    }
+    const next = [...blocks];
+    next[blockIndex] = { ...blocks[blockIndex], prose: newValue };
+    updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newStart, newEnd);
+    });
+  }
 
   async function runGenerateChapterBlocks() {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
@@ -2038,25 +2122,22 @@ function NovelWorkspacePage() {
         ? ` When POV is set in context, structure beats from that perspective.`
         : "";
       const systemMsg = [
-        "You are a novel outliner. Produce scene blocks (structured scene beats) that strictly follow the Canon.",
-        "Each block describes a single scene beat: location, POV, character goal, conflict, turning point, outcome/transition.",
+        "You are a novel outliner. Produce blocs (synopses) that strictly follow the Canon.",
         "Use ONLY characters and locations from the context. Do NOT invent new ones.",
         povNote,
         "Return ONLY valid JSON. No markdown, no explanation.",
       ].filter(Boolean).join(" ");
 
       const prompt = [
-        "Split this chapter into 3-4 scene blocks. Each block is a structured scene beat.",
+        "Split this chapter into 3-4 blocs. Each bloc is a short synopsis (1-3 sentences) of what happens in that scene.",
         "Return JSON only:",
-        `{ "blocks": [{"synopsis": "Structured beat: Location, POV character, their goal, the conflict, turning point, and outcome/transition to next beat. 2-4 sentences."}] }`,
+        `{ "blocks": [{"synopsis": "1-3 sentence scene summary"}] }`,
         "",
         "Rules:",
-        "- 3 or 4 blocks. Each synopsis MUST include: location, POV character, character goal, conflict/obstacle, turning point, and outcome/transition.",
-        "- Be specific: use character names, location names, concrete actions and key moments.",
+        "- 3 or 4 blocs. Each synopsis should be specific: character names, actions, key moments.",
         "- Use ONLY character and location names from Canon. Invent nothing.",
-        "- Blocks must escalate naturally and hand off logically from one to the next.",
-        "- Consider where the next chapter heads for continuity.",
-        "- These are structural planning beats, NOT narrative prose.",
+        "- Keep the chapter grounded in ONE primary location unless a scene transition is essential to the plot.",
+        "- Blocs should flow: each leads naturally to the next. Consider where the next chapter heads for continuity.",
         "",
         `Chapter: ${activeChapter.title}`,
         `Synopsis: ${chapterSynopsis}`,
@@ -2068,7 +2149,7 @@ function NovelWorkspacePage() {
 
       const data = await requestOpenRouterJson<{ blocks?: Array<{ synopsis?: string }> }>(
         prompt,
-        800,
+        600,
         { timeoutMs: 45000, systemMessage: systemMsg },
       );
 
@@ -2077,11 +2158,11 @@ function NovelWorkspacePage() {
         throw new Error("No blocks returned. Try again or use a different model.");
       }
 
-      const sceneBlocks: SceneBlock[] = rawBlocks.map((b) => ({
-        ...DEFAULT_SCENE_BLOCK,
+      const blocks: ChapterBlock[] = rawBlocks.map((b) => ({
+        ...DEFAULT_BLOCK,
         synopsis: (b.synopsis || "").trim() || "Scene placeholder",
       }));
-      updateChapter(activeChapter.id, { sceneBlocks });
+      updateChapter(activeChapter.id, { content: serializeChapterBlocks(blocks) });
     } catch (error) {
       setStoryAiError(error instanceof Error ? error.message : "Block generation failed.");
     } finally {
@@ -2089,91 +2170,202 @@ function NovelWorkspacePage() {
     }
   }
 
-  async function runGenerateBlockProse(blockIndex: number) {
+  const BLOCK_REGENERATE_PRESETS: Array<{ id: string; label: string; instruction: string }> = [
+    { id: "more-dialogue", label: "More dialogue", instruction: "Add more dialogue, keep narration lean." },
+    { id: "increase-tension", label: "Increase tension", instruction: "Raise the tension and suspense." },
+    { id: "internal-thoughts", label: "More internal thoughts", instruction: "Add more of the POV character's inner thoughts and reactions." },
+    { id: "tighten", label: "Tighten/shorten", instruction: "Tighten the prose; cut flab, keep it punchy." },
+    { id: "expand", label: "Expand/sensory", instruction: "Expand with more sensory detail and atmosphere." },
+  ];
+
+  const BLOCK_PROSE_PRESETS: Array<{ id: string; label: string; hint: string }> = [
+    { id: "default", label: "Default", hint: "Use Canon style" },
+    { id: "literary", label: "Literary", hint: "Richer prose, metaphor, lyrical" },
+    { id: "sparse", label: "Sparse", hint: "Lean, punchy, minimal" },
+    { id: "dialogue", label: "Dialogue-heavy", hint: "More speech, less narration" },
+    { id: "action", label: "Action-driven", hint: "Physical movement, pace" },
+    { id: "internal", label: "Internal focus", hint: "Deep POV, thoughts, reactions" },
+    { id: "sensory", label: "Sensory-rich", hint: "Vivid sensory detail" },
+    { id: "noir", label: "Noir / thriller", hint: "Tense, atmospheric" },
+  ];
+
+  function buildBlockProseContext(
+    blockSynopsis: string,
+    planChapterSynopsis: string,
+    planCharIds: string[],
+    planLocIds: string[],
+  ): string {
+    if (!novel) return "";
+    const sb = novel.storyBible;
+    const chars = sb.characters ?? [];
+    const locs = sb.locations ?? [];
+    const lore = sb.lore ?? [];
+    const searchText = `${blockSynopsis} ${planChapterSynopsis}`.toLowerCase();
+
+    const relevantChars = planCharIds.length > 0
+      ? chars.filter((c) => planCharIds.includes(c.id))
+      : chars.filter((c) => {
+          if (c.role === "Protagonist" || c.role === "Antagonist") return true;
+          const name = (c.name || "").toLowerCase();
+          return name.length > 1 && searchText.includes(name);
+        });
+    const charNames = relevantChars.slice(0, 6).map((c) => c.name).filter(Boolean).join(", ");
+
+    const relevantLocs = planLocIds.length > 0
+      ? locs.filter((l) => planLocIds.includes(l.id))
+      : locs.filter((l) => {
+          const name = (l.name || "").toLowerCase();
+          return name.length > 1 && searchText.includes(name);
+        });
+    const locNames = relevantLocs.slice(0, 4).map((l) => l.name).filter(Boolean).join(", ");
+
+    const relevantLore = lore.filter((e) => {
+      const title = (e.title || "").toLowerCase();
+      return title.length > 1 && searchText.includes(title) && (e.constraints ?? []).length > 0;
+    });
+    const loreConstraints = relevantLore
+      .slice(0, 3)
+      .map((e) => `${e.title}: ${e.constraints!.slice(0, 2).join("; ")}`)
+      .join("\n");
+
+    const parts: string[] = [];
+    if (charNames) parts.push(`Characters: ${charNames}`);
+    if (locNames) parts.push(`Locations: ${locNames}`);
+    if (loreConstraints) parts.push(`Lore constraints (must follow):\n${loreConstraints}`);
+    return parts.join("\n");
+  }
+
+  async function runGenerateBlockProse(blockIndex: number, regenerateInstruction?: string) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
-    const blocks = getSceneBlocks(activeChapter);
-    if (blockIndex < 0 || blockIndex >= blocks.length) return;
+    const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+    if (!hasBlocks || blockIndex < 0 || blockIndex >= blocks.length) return;
 
     const block = blocks[blockIndex];
     if (!block.synopsis?.trim()) {
-      setStoryAiError("Add a synopsis to this block first.");
+      setStoryAiError("Add a synopsis to this bloc first.");
       return;
     }
 
+    const nextBlockSynopses = blocks.slice(blockIndex + 1).map((b) => b.synopsis).filter(Boolean);
+    const prevProse = blockIndex > 0 ? blocks[blockIndex - 1].prose : "";
+    const isRegenerate = Boolean(block.prose?.trim());
+
     const planChapter = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id);
+    const planChapterSynopsis = planChapter?.synopsis?.trim() || "";
     const planCharIds = planChapter?.characterIds ?? [];
     const planLocIds = planChapter?.locationIds ?? [];
 
     const chIndex = novel.chapters.findIndex((c) => c.id === activeChapter.id);
-    const prevChapter = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
     const nextChapter = chIndex >= 0 && chIndex + 1 < novel.chapters.length ? novel.chapters[chIndex + 1] : null;
     const nextPlanChapter = nextChapter ? planChapters.find((p) => p.manuscriptChapterId === nextChapter.id) : null;
     const nextChapterSynopsis = nextPlanChapter?.synopsis?.trim() || nextChapter?.subtitle?.trim() || "";
 
-    // Previous prose context: from the block before, or from the previous chapter
-    const prevBlockProse = blockIndex > 0 ? (blocks[blockIndex - 1].prose || "") : (prevChapter?.content?.trim().slice(-500) || "");
-
     setStoryAiBusyAction(`block-${blockIndex}`);
     setStoryAiError(null);
     try {
-      const fullContext = buildChapterBlocksContext(activeChapter.title, planChapter?.synopsis || activeChapter.subtitle || "", planCharIds, planLocIds);
+      const leanContext = buildBlockProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
+      const fullContext = buildChapterBlocksContext(activeChapter.title, block.synopsis, planCharIds, planLocIds);
       const styleSection = buildBlockProseStyleSection();
-
-      const activeBolton = chapterBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId) : null;
-      const boltonDirective = activeBolton?.prompt?.trim() || activeBolton?.description?.trim() || "";
+      const activePreset = block.preset && block.preset !== "default"
+        ? BLOCK_PROSE_PRESETS.find((p) => p.id === block.preset)
+        : null;
+      const presetDirective = activePreset
+        ? `WRITING MODE — "${activePreset.label}": ${activePreset.hint}. This MUST shape every paragraph you write.`
+        : "";
+      const activeBoltonId = chapterBoltonId || block.notes.trim();
+      const activeBolton = activeBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === activeBoltonId) : null;
+      const boltonDirective = activeBolton
+        ? `BOLT-ON DIRECTIVE (mandatory creative rule): "${activeBolton.title || "Bolt-On"}": ${activeBolton.prompt?.trim() || activeBolton.description?.trim() || "Apply this creative direction."}`
+        : "";
 
       const povNote = novel.storyBible.styleVoice?.pov
         ? ` You MUST use ${novel.storyBible.styleVoice.pov} POV.`
         : "";
       const systemMsg = [
-        "You are a novelist. Your PRIMARY job: match the author's style, voice, and genre. This is critical.",
-        "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
+        "You are a novelist.",
+        `MANDATORY WORD COUNT: You MUST write exactly ~${block.wordTarget} words. Not 200, not 300 — ${block.wordTarget} words. Count as you write. If you finish the scene too early, expand with sensory detail, dialogue, interiority, or action until you reach ${block.wordTarget} words. DO NOT stop short.`,
+        "Match the author's Canon Style & Voice section exactly — genre, tone, POV, tense, voice rules, and banned words.",
         povNote,
         "Use ONLY characters and locations from the Canon. Do NOT invent new ones.",
-        "Return ONLY the prose. No headers, labels, JSON, block markers. No thinking blocks, no reasoning — only novel text.",
-      ].join(" ");
+        "Return ONLY the prose. No headers, labels, JSON, word counts, or meta-commentary. No thinking blocks. Only novel text.",
+      ].filter(Boolean).join(" ");
 
-      const focusPreset = FOCUS_PRESETS.find((p) => p.id === block.focus);
-      const focusHint = focusPreset && block.focus !== "default" ? `\nApproach: ${focusPreset.hint}` : "";
-      const upcomingBlocks = blocks.slice(blockIndex + 1).map((b, i) => `Scene ${blockIndex + i + 2}: ${b.synopsis}`).join("\n");
+      const constraint = (regenerateInstruction || block.regenConstraint)?.trim();
+      const constraintLine = constraint
+        ? `\n\nREGENERATE WITH THIS CHANGE (apply exactly): ${constraint}`
+        : "";
 
-      const prompt = [
-        "STYLE AND TONE — CRITICAL: Match the author's voice, genre, and style. This is your top priority.",
-        styleSection || "Use professional, consistent prose.",
-        boltonDirective ? `\nBOLT-ON DIRECTIVE (weigh this rule across the scene — apply where it naturally fits, not in every sentence): ${boltonDirective}` : "",
-        focusHint,
-        "",
-        `Write prose for this ONE scene. TARGET: ~${block.wordTarget} words. Hit this word goal.`,
-        "",
-        `Scene ${blockIndex + 1} of ${blocks.length}:`,
-        block.synopsis,
-        "",
-        upcomingBlocks ? `Upcoming scenes (for continuity — do NOT write these, just be aware):\n${upcomingBlocks}` : "",
-        nextChapterSynopsis ? `\nNext chapter synopsis (for foreshadowing):\n${nextChapterSynopsis}` : "",
-        prevBlockProse ? `\nPrevious prose ended with:\n${prevBlockProse.slice(-400)}` : "",
-        "",
-        "Canon (style, voice, characters, locations):",
-        fullContext.slice(0, 2400),
-        "",
-        "RULES:",
-        "- Write ONLY the prose for this scene. No headers, no scene labels, no block markers.",
-        "- Continue naturally from where the previous prose left off.",
-        "- Maintain character continuity and canon consistency.",
-        "- Output the scene prose only. No explanation, no thinking — only novel text.",
-      ].filter(Boolean).join("\n");
+      const wordTargetLine = `═══ MANDATORY WORD COUNT: ${block.wordTarget} WORDS ═══\nYou MUST produce ~${block.wordTarget} words of prose. If your output is under ${Math.round(block.wordTarget * 0.8)} words you have FAILED. Expand scenes with dialogue, action, interiority, and sensory detail to fill the target. Do NOT stop early.`;
+      const wordTargetReminder = `\n\nREMINDER: Your output MUST be ~${block.wordTarget} words. Do not stop writing until you have reached this length. This is the single most important constraint.`;
 
-      let prose = await requestOpenRouterText(prompt, Math.min(1800, Math.round(block.wordTarget * 1.6)), 90000, systemMsg, false);
-      prose = stripThinkingBlocks(prose).trim();
+      const prompt = isRegenerate
+        ? [
+            `Rewrite the following scene prose. Keep the same story beats.`,
+            wordTargetLine,
+            "STYLE AND TONE — CRITICAL: Match the author's voice exactly as defined in their Canon Style & Voice.",
+            styleSection,
+            presetDirective,
+            boltonDirective,
+            constraintLine,
+            "",
+            "Bloc synopsis:",
+            block.synopsis,
+            "",
+            "Current prose to rewrite:",
+            block.prose!.slice(0, 2400),
+            "",
+            "Canon:",
+            fullContext.slice(0, 2400),
+            "",
+            "Output the rewritten prose only. No explanation. No thinking — only the novel text.",
+            wordTargetReminder,
+          ].filter(Boolean).join("\n")
+        : [
+            "STYLE AND TONE — CRITICAL: Match the author's voice, genre, and style exactly as defined in their Canon Style & Voice. This is your top priority.",
+            styleSection,
+            presetDirective,
+            boltonDirective,
+            "",
+            wordTargetLine,
+            "",
+            "Chapter overview (from plan):",
+            planChapterSynopsis || activeChapter.subtitle || activeChapter.title,
+            "",
+            "This bloc:",
+            block.synopsis,
+            nextBlockSynopses.length > 0
+              ? "\nBlocs ahead (for continuity):\n" + nextBlockSynopses.map((s, i) => `${i + 1}. ${s}`).join("\n")
+              : "",
+            nextChapterSynopsis
+              ? `\nNext chapter synopsis (for consistency):\n${nextChapterSynopsis}`
+              : "",
+            prevProse ? "\nPrevious bloc ended with:\n" + prevProse.slice(-300) : "",
+            "",
+            leanContext ? `Characters/locations (from plan):\n${leanContext}` : "",
+            "",
+            "Canon (style, voice, characters, locations):",
+            fullContext.slice(0, 2400),
+            "",
+            "Output the prose only. No synopsis, labels, or thinking — only the novel text.",
+            wordTargetReminder,
+          ].filter(Boolean).join("\n");
 
-      if (!prose) {
+      // Scale token budget generously — ~2 tokens per word to ensure the model never gets cut off
+      const scaledMaxTokens = Math.min(8000, Math.max(1600, Math.round(block.wordTarget * 2)));
+      // Scale timeout with word target — slower models need much more time for longer prose
+      const scaledTimeoutMs = Math.max(120000, Math.round(block.wordTarget * 200));
+      let prose = await requestOpenRouterText(prompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
+      prose = stripThinkingBlocks(prose);
+      const trimmed = prose.trim();
+      if (!trimmed) {
         throw new Error("No prose returned. Try again.");
       }
 
-      const updatedBlocks = [...blocks];
-      updatedBlocks[blockIndex] = { ...block, prose };
-      updateSceneBlocks(activeChapter.id, updatedBlocks);
+      const nextBlocks = [...blocks];
+      nextBlocks[blockIndex] = { ...block, prose: trimmed };
+      updateChapter(activeChapter.id, { content: serializeChapterBlocks(nextBlocks) });
     } catch (error) {
-      setStoryAiError(error instanceof Error ? error.message : "Block prose generation failed.");
+      setStoryAiError(error instanceof Error ? error.message : "Bloc prose generation failed.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -2203,7 +2395,7 @@ function NovelWorkspacePage() {
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error("Assistant request timed out. Try a faster model or shorter prompt.");
+        throw new Error("Request timed out — your model may be too slow for this word target. Try a faster model or lower the word count.");
       }
       throw error;
     } finally {
@@ -3931,7 +4123,7 @@ function NovelWorkspacePage() {
 
   function updateChapter(
     chapterId: string,
-    patch: { title?: string; subtitle?: string; content?: string; goalWords?: number; sceneBlocks?: SceneBlock[] },
+    patch: { title?: string; subtitle?: string; content?: string; goalWords?: number },
   ) {
     mutateNovel((current) => {
       const now = new Date().toISOString();
@@ -4052,71 +4244,261 @@ function NovelWorkspacePage() {
     event.target.value = "";
   }
 
-  async function runConsistencyCheck() {
+  /* ─── The Editor: chunked-burst approach (5 paragraphs per call) ─── */
+
+  const EDITOR_CHUNK = 5; // paragraphs per AI call — small = fast, no timeouts
+
+  function getEditorContext() {
+    if (!activeChapter || !novel) return null;
+    const baseContent = contentForExport(activeChapter.content);
+    const paragraphs = baseContent.split(/\n\n+/).filter((p) => p.trim());
+    const summary = novel.storyBible.summary;
+    const genreStr = (summary.genre ?? []).join(", ") || "Fiction";
+    const planChapters = novel.storyBible.bookPlan?.chapters ?? [];
+    const ci = novel.chapters.findIndex((c) => c.id === activeChapter.id);
+    const planCh = planChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id) ?? planChapters[ci];
+    const synopsis = planCh?.synopsis?.trim() || activeChapter.subtitle?.trim() || "";
+    const lower = baseContent.toLowerCase();
+    const chars = (novel.storyBible.characters ?? [])
+      .filter((c) => c.name && lower.includes(c.name.toLowerCase()))
+      .map((c) => `${c.name} (${c.role || ""})`.trim()).join(", ");
+    /* 3-line context — kept tiny so every chunk call stays fast */
+    const brief = [
+      `${genreStr} novel. Chapter: ${activeChapter.title || "Untitled"}.`,
+      synopsis ? `Synopsis: ${synopsis.slice(0, 200)}` : "",
+      chars ? `Characters: ${chars}` : "",
+    ].filter(Boolean).join(" ");
+    return { paragraphs, brief, genreStr };
+  }
+
+  /** Process a small chunk of paragraphs (one fast AI call) */
+  async function editorChunkCall(
+    paragraphs: string[],
+    startIdx: number,
+    sysMsg: string,
+    taskLine: string,
+  ): Promise<EditorChange[]> {
+    const numbered = paragraphs.map((p, i) => `[${startIdx + i}] ${p}`).join("\n\n");
+    const prompt = [
+      `${taskLine}`,
+      "Return ONLY changed paragraphs as JSON:",
+      `{"edits":[{"p":0,"text":"revised paragraph","reason":"why"}]}`,
+      "Omit unchanged paragraphs. If none need changes return {\"edits\":[]}",
+      "",
+      numbered,
+    ].join("\n");
+
+    const maxTokens = Math.min(1200, Math.max(300, paragraphs.length * 120));
+    const data = await requestOpenRouterJson<{
+      edits?: Array<{ p?: number; text?: string; reason?: string }>;
+    }>(prompt, maxTokens, { timeoutMs: 30000, systemMessage: sysMsg });
+
+    const edits = Array.isArray(data?.edits) ? data.edits : [];
+    const changes: EditorChange[] = [];
+    for (const e of edits) {
+      const idx = typeof e.p === "number" ? e.p : -1;
+      const text = typeof e.text === "string" ? e.text.trim() : "";
+      const localIdx = idx - startIdx;
+      if (localIdx < 0 || localIdx >= paragraphs.length || !text) continue;
+      if (text === paragraphs[localIdx].trim()) continue;
+      changes.push({
+        paragraphIndex: idx,
+        original: paragraphs[localIdx],
+        revised: text,
+        reason: typeof e.reason === "string" ? e.reason : "Improvement",
+        accepted: null,
+      });
+    }
+    return changes;
+  }
+
+  async function runEditorPass(mode: EditorMode, targetedFocus?: TargetedFocus) {
     if (!activeChapter || !novel || !ensureStoryAiReady()) return;
     const baseContent = contentForExport(activeChapter.content);
     if (!baseContent.trim()) {
-      setConsistencyIssues([]);
-      setConsistencyError("Write some text first, then run review.");
+      setEditorResult(null);
+      setEditorError("Write some text first before using The Editor.");
       return;
     }
+    const ctx = getEditorContext();
+    if (!ctx) return;
 
-    setConsistencyLoading(true);
-    setConsistencyError(null);
+    setEditorError(null);
+    setEditorResult(null);
+    setEditorOriginalParagraphs(ctx.paragraphs);
+
+    const totalParas = ctx.paragraphs.length;
+    const totalChunks = Math.ceil(totalParas / EDITOR_CHUNK);
 
     try {
-      const planChapters = novel.storyBible.bookPlan?.chapters ?? [];
-      const chapterIndex = novel.chapters.findIndex((c) => c.id === activeChapter.id);
-      const planChapter = planChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id) ?? planChapters[chapterIndex];
-      const nextPlanChapter = planChapters[chapterIndex + 1];
-      const chapterSynopsis = planChapter?.synopsis?.trim() || activeChapter.subtitle?.trim() || activeChapter.title || "No synopsis";
-      const nextSynopsis = nextPlanChapter?.synopsis?.trim() || "";
+      if (mode === "report") {
+        /* ═══ REPORT — also chunked for large chapters ═══ */
+        const sysMsg = `Professional ${ctx.genreStr} editor. ${ctx.brief} Flag real issues only. JSON.`;
+        const allIssues: EditorialIssue[] = [];
 
-      const canonContext = buildStoryBibleContext("planCompact");
-      const charNames = (novel.storyBible.characters ?? []).map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ") || "none";
-      const locNames = storyLocations.map((l) => l.name).filter(Boolean).join(", ") || "none";
-      const textSample = baseContent.length > 4500
-        ? `${baseContent.slice(0, 2500)}\n\n[...]\n\n${baseContent.slice(-1500)}`
-        : baseContent;
+        for (let c = 0; c < totalChunks; c++) {
+          const start = c * EDITOR_CHUNK;
+          const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+          const numbered = slice.map((p, i) => `[${start + i}] ${p}`).join("\n\n");
+          setEditorLoadingPhase(`Scanning ${c + 1}/${totalChunks}...`);
 
-      const prompt = [
-        "Review this chapter for consistency against the Canon. Return JSON only:",
-        `{"issues":[{"type":"synopsis_mismatch|continuity_gap|continuity_break|canon_violation|quality","quote":"short excerpt if relevant","suggestion":"concise fix","severity":"high|medium|low"}]}`,
-        "Rules:",
-        "- Only report real issues backed by evidence from the Canon or synopsis.",
-        "- Check character names are spelled correctly and roles match Canon.",
-        "- Check locations mentioned exist in Canon and descriptions are consistent.",
-        "- Check the chapter follows its synopsis and doesn't contradict next chapter setup.",
-        "- Check worldbuilding/lore constraints are respected.",
-        "- Max 8 issues. Keep suggestions under 80 chars.",
-        "",
-        "Chapter synopsis:",
-        chapterSynopsis,
-        nextSynopsis ? `\nNext chapter synopsis: ${nextSynopsis}` : "",
-        "",
-        `Canon characters: ${charNames}`,
-        `Canon locations: ${locNames}`,
-        "",
-        "Full Canon context:",
-        canonContext,
-        "",
-        "Chapter text:",
-        textSample,
-      ].filter(Boolean).join("\n");
+          const prompt = [
+            "Return ONLY valid JSON:",
+            `{"issues":[{"severity":"high|medium|low","category":"Consistency|Character|Continuity|Repetition|Prose|Genre","quote":"excerpt","issue":"desc","suggestion":"fix"}]}`,
+            "Max 4 issues for this section. Evidence-based only.",
+            "",
+            numbered,
+          ].join("\n");
 
-      const systemMsg = "You are a strict continuity editor for novel manuscripts. Your job is to catch canon violations, character inconsistencies, and plot holes by comparing chapter prose against the established Canon. Return only valid JSON. No prose.";
-      const data = await requestOpenRouterJson<{ issues?: ConsistencyIssue[] }>(
-        prompt,
-        800,
-        { timeoutMs: 35000, systemMessage: systemMsg },
-      );
-      const issues = Array.isArray(data?.issues) ? data.issues : [];
-      setConsistencyIssues(issues);
-    } catch (error) {
-      setConsistencyIssues([]);
-      setConsistencyError(error instanceof Error ? error.message : "Review failed. Try again.");
+          try {
+            const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
+              prompt, 500, { timeoutMs: 25000, systemMessage: sysMsg },
+            );
+            if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
+          } catch {
+            /* If one chunk fails, continue with the rest */
+          }
+        }
+
+        setEditorResult({
+          mode: "report",
+          issues: allIssues,
+          summary: allIssues.length > 0 ? `Found ${allIssues.length} issue(s) across ${totalChunks} section(s).` : "No issues found.",
+        });
+
+      } else {
+        /* ═══ QUICK FIX / TARGETED — chunked bursts ═══ */
+        const focusMap: Record<TargetedFocus, string> = {
+          pacing: "tighten pacing/transitions",
+          dialogue: "sharpen dialogue/voices",
+          tension: "increase tension/suspense",
+          exposition: "reduce exposition, show don't tell",
+          action: "clarify action/choreography",
+        };
+        const isTargeted = mode === "targeted";
+        const focus = isTargeted ? focusMap[targetedFocus ?? "pacing"] : "";
+
+        const sysMsg = isTargeted
+          ? `Professional ${ctx.genreStr} editor. ${ctx.brief} TARGETED: ${focus}. Preserve voice. Never invent plot.`
+          : `Professional ${ctx.genreStr} editor. ${ctx.brief} Quick polish: fix continuity, repetition, tighten prose. Preserve voice. Never invent plot.`;
+
+        const taskLine = isTargeted
+          ? `Focus: ${focus}. Change ONLY paragraphs where this applies.`
+          : "Fix continuity, repetition, weak prose, dialogue. Do NOT add plot/characters.";
+
+        const allChanges: EditorChange[] = [];
+
+        for (let c = 0; c < totalChunks; c++) {
+          const start = c * EDITOR_CHUNK;
+          const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+          setEditorLoadingPhase(`Editing ${c + 1}/${totalChunks}...`);
+
+          try {
+            const chunkChanges = await editorChunkCall(slice, start, sysMsg, taskLine);
+            allChanges.push(...chunkChanges);
+            /* Progressive update — show results as they come in */
+            setEditorResult({
+              mode,
+              changes: [...allChanges],
+              summary: `Processed ${Math.min((c + 1) * EDITOR_CHUNK, totalParas)}/${totalParas} paragraphs — ${allChanges.length} edit(s) so far...`,
+            });
+          } catch {
+            /* If one chunk fails, continue with the rest */
+          }
+        }
+
+        setEditorResult({
+          mode,
+          changes: allChanges,
+          summary: allChanges.length > 0
+            ? `${allChanges.length} edit(s) across ${totalParas} paragraphs.`
+            : "No changes needed. Chapter looks clean.",
+        });
+      }
+    } catch (err) {
+      setEditorResult(null);
+      setEditorError(err instanceof Error ? err.message : "The Editor failed. Try again.");
     } finally {
-      setConsistencyLoading(false);
+      setEditorLoadingPhase(null);
+    }
+  }
+
+  /** Report → Fix bridge — also chunked */
+  async function runEditorFixIssues(issues: EditorialIssue[]) {
+    if (!activeChapter || !novel || !ensureStoryAiReady()) return;
+    const ctx = getEditorContext();
+    if (!ctx) return;
+
+    setEditorError(null);
+    setEditorResult(null);
+    setEditorOriginalParagraphs(ctx.paragraphs);
+
+    const totalParas = ctx.paragraphs.length;
+    const totalChunks = Math.ceil(totalParas / EDITOR_CHUNK);
+
+    const issueList = issues.map((iss, i) =>
+      `${i + 1}. [${iss.severity}] ${iss.issue}${iss.quote ? ` ("${iss.quote}")` : ""}`
+    ).join("\n");
+
+    const sysMsg = `Professional ${ctx.genreStr} editor. Fix ONLY listed issues. Preserve voice.`;
+    const allChanges: EditorChange[] = [];
+
+    try {
+      for (let c = 0; c < totalChunks; c++) {
+        const start = c * EDITOR_CHUNK;
+        const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+        const numbered = slice.map((p, i) => `[${start + i}] ${p}`).join("\n\n");
+        setEditorLoadingPhase(`Fixing ${c + 1}/${totalChunks}...`);
+
+        const prompt = [
+          "Fix ONLY these issues in the paragraphs below. Return JSON:",
+          `{"edits":[{"p":0,"text":"revised","reason":"which issue"}]}`,
+          "Omit unchanged. If none affected return {\"edits\":[]}",
+          "",
+          `Issues: ${issueList}`,
+          "",
+          numbered,
+        ].join("\n");
+
+        try {
+          const data = await requestOpenRouterJson<{
+            edits?: Array<{ p?: number; text?: string; reason?: string }>;
+          }>(prompt, 600, { timeoutMs: 25000, systemMessage: sysMsg });
+
+          const edits = Array.isArray(data?.edits) ? data.edits : [];
+          for (const e of edits) {
+            const idx = typeof e.p === "number" ? e.p : -1;
+            const text = typeof e.text === "string" ? e.text.trim() : "";
+            const localIdx = idx - start;
+            if (localIdx < 0 || localIdx >= slice.length || !text) continue;
+            if (text === slice[localIdx].trim()) continue;
+            allChanges.push({
+              paragraphIndex: idx, original: slice[localIdx], revised: text,
+              reason: typeof e.reason === "string" ? e.reason : "Issue fix",
+              accepted: null,
+            });
+          }
+
+          setEditorResult({
+            mode: "quick-fix",
+            changes: [...allChanges],
+            summary: `Fixing... ${c + 1}/${totalChunks} sections checked.`,
+          });
+        } catch { /* continue */ }
+      }
+
+      setEditorResult({
+        mode: "quick-fix",
+        changes: allChanges,
+        summary: allChanges.length > 0
+          ? `Fixed ${allChanges.length} paragraph(s).`
+          : "No paragraphs needed changes for these issues.",
+      });
+    } catch (err) {
+      setEditorResult(null);
+      setEditorError(err instanceof Error ? err.message : "Failed to fix issues. Try again.");
+    } finally {
+      setEditorLoadingPhase(null);
     }
   }
 
@@ -4817,7 +5199,9 @@ function NovelWorkspacePage() {
   }
 
   function contentForExport(content: string): string {
-    return content;
+    const { blocks, hasBlocks } = parseChapterBlocks(content);
+    if (!hasBlocks || blocks.length === 0) return content;
+    return blocks.map((b) => b.prose).filter(Boolean).join("\n\n\n") || content;
   }
 
   function getChaptersForExport(currentNovel: Novel) {
@@ -4865,6 +5249,7 @@ function NovelWorkspacePage() {
         body: JSON.stringify({
           format: exportFormat,
           novelTitle: novel.title,
+          authorName: novel.authorName?.trim() || "",
           novelSynopsis: novel.synopsis,
           coverImage: exportFormat === "epub" ? novel.coverImage : null,
           chapters: chaptersToExport.map((chapter) => ({
@@ -4935,7 +5320,7 @@ function NovelWorkspacePage() {
   }
 
   const totalWords = countNovelWords(novel);
-  const chapterWords = activeChapter ? countWords(activeChapter.content) : 0;
+  const chapterWords = activeChapter ? countChapterWords(activeChapter) : 0;
   const selectedChapterCount =
     exportScope === "all" ? novel.chapters.length : selectedExportChapterIds.length;
   const progress = Math.min(100, Math.round((totalWords / Math.max(novel.goalWords || 1, 1)) * 100));
@@ -5052,9 +5437,9 @@ function NovelWorkspacePage() {
               type="button"
               className="btn pw-proofread-btn"
               disabled={!activeChapter}
-              onClick={() => activeChapter && setShowChapterReviewModal(true)}
+              onClick={() => activeChapter && setShowEditorModal(true)}
             >
-              Review chapter
+              The Editor
             </button>
             )}
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
@@ -5075,13 +5460,23 @@ function NovelWorkspacePage() {
                   placeholder="Chapter title"
                   dir="ltr"
                 />
-                <input
-                  className="pw-subtitle w-full bg-transparent border-none focus:outline-none"
-                  placeholder="Chapter subtitle..."
-                  value={activeChapter.subtitle || (() => { const ci = novel.chapters.findIndex((c) => c.id === activeChapter.id); const pc = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id) ?? planChapters[ci]; return pc?.synopsis?.slice(0, 140) ?? ""; })()}
-                  onChange={(event) => updateChapter(activeChapter.id, { subtitle: event.target.value })}
-                  dir="ltr"
-                />
+                {(() => {
+                  const ci = novel.chapters.findIndex((c) => c.id === activeChapter.id);
+                  const pc = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id) ?? planChapters[ci];
+                  const overview = activeChapter.subtitle || pc?.synopsis || "";
+                  if (!overview) return null;
+                  const short = overview.length > 80 ? overview.slice(0, 80) + "…" : overview;
+                  return (
+                    <span
+                      className="pw-subtitle"
+                      title={overview}
+                      style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.4, cursor: "default" }}
+                      dir="ltr"
+                    >
+                      {short}
+                    </span>
+                  );
+                })()}
                 <div className="pw-toolbar-row">
                   {!aiOff && (
                   <button
@@ -5090,7 +5485,7 @@ function NovelWorkspacePage() {
                     disabled={storyAiBusyAction === "chapter-blocks"}
                     onClick={() => void runGenerateChapterBlocks()}
                   >
-                    {storyAiBusyAction === "chapter-blocks" ? "Generating…" : "✦ Generate blocks"}
+                    {storyAiBusyAction === "chapter-blocks" ? "Generating…" : "✦ Generate blocs"}
                   </button>
                   )}
                   {(() => {
@@ -5164,168 +5559,593 @@ function NovelWorkspacePage() {
                         </div>
                       </div>
                     )}
-                    <label className="pw-profile-toggle">
-                      <input
-                        type="checkbox"
-                        checked={!hideBlocks}
-                        onChange={() => setHideBlocks((v) => !v)}
-                      />
-                      <span className="pw-profile-toggle-slider" />
-                      <span className="pw-profile-toggle-label">{hideBlocks ? "Blocks hidden" : "Blocks"}</span>
-                    </label>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                      <label className="pw-profile-toggle">
+                        <input
+                          type="checkbox"
+                          checked={!hideBlocks}
+                          onChange={() => setHideBlocks((v) => !v)}
+                        />
+                        <span className="pw-profile-toggle-slider" />
+                        <span className="pw-profile-toggle-label">{hideBlocks ? "Blocs hidden" : "Blocs"}</span>
+                      </label>
+                      {hideBlocks && (
+                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)", maxWidth: 180, textAlign: "right", lineHeight: 1.3 }}>
+                          Editing prose or running the editor will replace bloc structure
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {/* ─── Font toolbar ─── */}
-                <div className="pw-editor-toolbar">
-                  <button type="button" className="pw-toolbar-btn" title="Bold" onClick={() => applyRawFormatting({ open: "**", close: "**" }, activeChapter.content)}><b>B</b></button>
-                  <button type="button" className="pw-toolbar-btn" title="Italic" onClick={() => applyRawFormatting({ open: "*", close: "*" }, activeChapter.content)}><i>I</i></button>
-                  <button type="button" className="pw-toolbar-btn" title="Strikethrough" onClick={() => applyRawFormatting({ open: "~~", close: "~~" }, activeChapter.content)}><s>S</s></button>
-                  <span className="pw-toolbar-sep" />
-                  <select className="pw-toolbar-font-select" value={editorFontFamily} onChange={(e) => setEditorFontFamily(e.target.value)} title="Font">
-                    {EDITOR_FONT_OPTIONS.map((f) => (<option key={f.id} value={f.id}>{f.label}</option>))}
-                  </select>
-                  <span className="pw-toolbar-sep" />
-                  <span className="pw-pill" style={{ fontSize: 11, opacity: 0.7 }}>{chapterWords.toLocaleString()} words</span>
-                </div>
-
-                {/* ─── Scene Blocks + Prose (interleaved) ─── */}
                 {(() => {
-                  const blocks = getSceneBlocks(activeChapter);
-                  if (blocks.length === 0) {
-                    // No blocks — show plain editor
+                  const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+                  if (hasBlocks && blocks.length > 0) {
                     return (
-                      <textarea
-                        ref={editorInputRef}
-                        data-pw-plain-editor
-                        className="pw-editor-input"
-                        style={{ fontFamily: EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ?? "Georgia, serif" }}
-                        dir="ltr"
-                        spellCheck
-                        value={activeChapter.content}
-                        onInput={(event) => autoSizeEditorInput(event.currentTarget)}
-                        onChange={(event) => updateChapter(activeChapter.id, { content: event.target.value })}
-                        onKeyDown={(e) => {
-                          if ((e.key === "/" || e.code === "Slash") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            // Move any existing plain text into the first block's prose, then create a block
-                            const existingText = activeChapter.content.trim();
-                            const firstBlock: SceneBlock = { ...DEFAULT_SCENE_BLOCK, prose: existingText };
-                            updateChapter(activeChapter.id, { sceneBlocks: [firstBlock], content: existingText });
-                          }
-                        }}
-                        placeholder="Start writing your chapter here... Type / to add a scene block"
-                      />
-                    );
-                  }
-                  // Blocks exist — interleave block card + prose
-                  return (
-                    <div className="pw-chapter-blocks" dir="ltr">
-                      {blocks.map((block, idx) => (
-                        <div key={idx} className="pw-block-wrap">
-                          {/* Block card (hidden when hideBlocks is true) */}
-                          {!hideBlocks && (
-                            <div className="pw-block-card">
-                              <div className="pw-block-header">
-                                <div className="pw-block-label-row">
-                                  <span className="pw-block-icon" aria-hidden>〰</span>
-                                  <span className="pw-block-title">SCENE BLOCK {idx + 1}</span>
-                                </div>
-                                <div className="pw-block-header-actions">
-                                  <button type="button" className="pw-block-header-btn" title="New block below" onClick={() => insertSceneBlockAt(blocks, idx)}>/</button>
-                                  <button type="button" className="pw-block-header-btn pw-block-delete" title="Delete block" onClick={() => deleteSceneBlockAt(blocks, idx)} aria-label="Delete block">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                                  </button>
-                                </div>
+                      <>
+                      <div className="pw-editor-toolbar">
+                        <select
+                          className="pw-toolbar-font-select"
+                          value={editorFontFamily}
+                          onChange={(e) => setEditorFontFamily(e.target.value)}
+                          title="Font"
+                        >
+                          {EDITOR_FONT_OPTIONS.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className={`pw-chapter-blocks ${hideBlocks ? "pw-blocks-hidden" : ""}`} dir="ltr">
+                        {blocks.map((block, idx) => (
+                          <div key={idx} className="pw-block-wrap">
+                          <div className="pw-block-card">
+                            <div className="pw-block-header">
+                              <div className="pw-block-label-row">
+                                <span className="pw-block-icon" aria-hidden>〰</span>
+                                <span className="pw-block-title">
+                                  BLOC {idx + 1}
+                                  {collapsedBeats.has(idx) && block.synopsis && (
+                                    <span className="pw-block-preview"> — {block.synopsis.slice(0, 50)}{block.synopsis.length > 50 ? "…" : ""}</span>
+                                  )}
+                                </span>
                               </div>
-                              <textarea
-                                className="pw-block-synopsis"
-                                placeholder="Describe this scene beat: location, POV, goal, conflict, turning point, outcome..."
-                                value={block.synopsis}
-                                rows={2}
-                                onChange={(e) => {
-                                  const next = [...blocks];
-                                  next[idx] = { ...block, synopsis: e.target.value };
-                                  updateSceneBlocks(activeChapter.id, next);
-                                }}
-                                onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }}
-                              />
-                              <div className="pw-block-toolbar">
-                                <div className="pw-block-toolbar-left">
-                                  <div className="pw-block-word-pills">
-                                    {[400, 600, 800, 1000].map((n) => (
-                                      <button key={n} type="button" className={`pw-word-pill ${block.wordTarget === n ? "active" : ""}`} onClick={() => { const next = [...blocks]; next[idx] = { ...block, wordTarget: n }; updateSceneBlocks(activeChapter.id, next); }} title={`Target ~${n} words`}>{n}</button>
-                                    ))}
-                                  </div>
-                                  <select className="pw-block-preset-btn" value={block.focus} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, focus: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} title="Focus mode">
-                                    {FOCUS_PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
-                                  </select>
-                                  {chapterBoltonId && (() => {
-                                    const b = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId);
-                                    return b ? (
-                                      <span className="pw-block-bolton-trigger pw-bolton-active pw-bolton-locked" title={`Bolt-On: ${b.title}\n${b.prompt || b.description || "No description"}`} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, opacity: 0.8 }}>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                        {b.title}
-                                      </span>
-                                    ) : null;
-                                  })()}
-                                </div>
-                                {!aiOff && (
-                                  <button
-                                    type="button"
-                                    className="pw-block-btn pw-block-btn-generate"
-                                    title={!block.synopsis?.trim() ? "Add a synopsis first" : block.prose ? "Regenerate prose" : "Generate prose"}
-                                    disabled={storyAiBusyAction === `block-${idx}` || !block.synopsis?.trim()}
-                                    onClick={() => void runGenerateBlockProse(idx)}
-                                  >
-                                    {storyAiBusyAction === `block-${idx}` ? "…" : block.prose ? "↻" : "✦ Generate"}
-                                  </button>
-                                )}
+                              <div className="pw-block-header-actions">
+                                <button
+                                  type="button"
+                                  className="pw-block-header-btn"
+                                  title="Hide"
+                                  onClick={() =>
+                                    setCollapsedBeats((s) => {
+                                      const next = new Set(s);
+                                      if (next.has(idx)) next.delete(idx);
+                                      else next.add(idx);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  {collapsedBeats.has(idx) ? "Show" : "Hide"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="pw-block-header-btn pw-block-delete"
+                                  title="Delete bloc"
+                                  onClick={() => deleteBlockAt(blocks, idx)}
+                                  aria-label="Delete bloc"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                                </button>
                               </div>
                             </div>
-                          )}
-                          {/* Prose area for this block — always visible */}
+                            {!collapsedBeats.has(idx) && (
+                              <>
+                                <input
+                                  className="pw-block-synopsis"
+                                  placeholder="Bloc synopsis..."
+                                  value={block.synopsis}
+                                  onChange={(e) => {
+                                    const next = [...blocks];
+                                    next[idx] = { ...block, synopsis: e.target.value };
+                                    updateChapter(activeChapter.id, {
+                                      content: serializeChapterBlocks(next),
+                                    });
+                                  }}
+                                />
+                                <div className="pw-block-toolbar">
+                                  <div className="pw-block-toolbar-left">
+                                    <div className="pw-block-word-pills">
+                                      {[400, 600, 800, 1000].map((n) => (
+                                        <button
+                                          key={n}
+                                          type="button"
+                                          className={`pw-word-pill ${block.wordTarget === n ? "active" : ""}`}
+                                          onClick={() => {
+                                            const next = [...blocks];
+                                            next[idx] = { ...block, wordTarget: n };
+                                            updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                          }}
+                                          title={`Target ${n} words`}
+                                        >
+                                          {n}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <select
+                                      className="pw-block-preset-btn"
+                                      value={block.preset}
+                                      onChange={(e) => {
+                                        const next = [...blocks];
+                                        next[idx] = { ...block, preset: e.target.value };
+                                        updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                      }}
+                                      title="Tone"
+                                    >
+                                      {BLOCK_PROSE_PRESETS.map((p) => (
+                                        <option key={p.id} value={p.id}>
+                                          {p.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {(novel.storyBible.boltons ?? []).length > 0 && (
+                                      chapterBoltonId ? (
+                                        <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}`}>
+                                          <span className="pw-block-bolton-trigger pw-bolton-active pw-bolton-locked">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div className="pw-block-bolton-wrap pw-block-bolton-hover">
+                                          <button
+                                            type="button"
+                                            className={`pw-block-bolton-trigger ${block.notes ? "pw-bolton-active" : ""}`}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const wrap = e.currentTarget.parentElement;
+                                              wrap?.classList.toggle("pw-bolton-open");
+                                            }}
+                                            title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
+                                          >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill={block.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                          </button>
+                                          <div className="pw-block-bolton-dropdown">
+                                            <div className="pw-bolton-dropdown-head">Bloc Bolt-On</div>
+                                            <button
+                                              type="button"
+                                              className={`pw-block-bolton-option ${!block.notes ? "active" : ""}`}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                const next = [...blocks];
+                                                next[idx] = { ...block, notes: "" };
+                                                updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                              }}
+                                            >
+                                              <span className="pw-block-bolton-option-title">None</span>
+                                            </button>
+                                            {(novel.storyBible.boltons ?? []).map((b, i) => (
+                                              <button
+                                                key={b.id}
+                                                type="button"
+                                                className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                  const next = [...blocks];
+                                                  next[idx] = { ...block, notes: b.id };
+                                                  updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                                }}
+                                              >
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                  <div className="pw-block-toolbar-right">
+                                    {block.prose && (
+                                      <select
+                                        className="pw-block-regen-btn"
+                                        value={
+                                          BLOCK_REGENERATE_PRESETS.find((p) => p.instruction === block.regenConstraint)?.id ?? ""
+                                        }
+                                        onChange={(e) => {
+                                          const preset = BLOCK_REGENERATE_PRESETS.find((p) => p.id === e.target.value);
+                                          const next = [...blocks];
+                                          next[idx] = { ...block, regenConstraint: preset?.instruction ?? "" };
+                                          updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                        }}
+                                        title="Regenerate with"
+                                      >
+                                        <option value="">Regenerate</option>
+                                        {BLOCK_REGENERATE_PRESETS.map((p) => (
+                                          <option key={p.id} value={p.id}>
+                                            {p.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className={`pw-block-btn ${block.prose ? "pw-block-btn-regenerate" : "pw-block-btn-generate"}`}
+                                      title={!block.synopsis?.trim() ? "Add a synopsis first" : block.prose ? "Regenerate prose" : "Generate prose"}
+                                      disabled={storyAiBusyAction === `block-${idx}` || !block.synopsis?.trim()}
+                                      onClick={() =>
+                                        void runGenerateBlockProse(
+                                          idx,
+                                          block.prose ? (block.regenConstraint.trim() || undefined) : undefined,
+                                        )
+                                      }
+                                    >
+                                      {storyAiBusyAction === `block-${idx}` ? "…" : block.prose ? "↻" : "✦ Generate"}
+                                    </button>
+                                    {block.prose && (
+                                      <button
+                                        type="button"
+                                        className="pw-block-btn pw-block-btn-focus"
+                                        title="Focus mode"
+                                        onClick={() => setFocusBlockIndex(idx)}
+                                      >
+                                        ⊞
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="pw-block-btn pw-block-btn-clear"
+                                      title="Clear prose"
+                                      disabled={!block.prose}
+                                      onClick={() => {
+                                        const next = [...blocks];
+                                        next[idx] = { ...block, prose: "" };
+                                        updateChapter(activeChapter.id, {
+                                          content: serializeChapterBlocks(next),
+                                        });
+                                      }}
+                                    >
+                                      Clear
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="pw-block-btn"
+                                      title="New bloc below"
+                                      onClick={() => insertBlockAt(blocks, idx, "after")}
+                                    >
+                                      /
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
                           <textarea
                             className="pw-block-freewrite"
-                            style={{ fontFamily: EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ?? "Georgia, serif" }}
-                            ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                            placeholder={block.prose ? "" : "Prose for this scene will appear here..."}
+                            ref={(el) => {
+                              blockProseRefs.current[idx] = el;
+                              if (el) {
+                                el.style.height = "auto";
+                                el.style.height = el.scrollHeight + "px";
+                              }
+                            }}
+                            style={{
+                              fontFamily:
+                                EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
+                                  ?.font ?? "Georgia, serif",
+                            }}
+                            placeholder="Continue writing..."
                             defaultValue={block.prose}
-                            key={`prose-${idx}-${blocks.length}-${hideBlocks}`}
+                            key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}`}
                             onBlur={(e) => {
                               const val = e.target.value;
                               if (val !== block.prose) {
                                 const next = [...blocks];
                                 next[idx] = { ...block, prose: val };
-                                updateSceneBlocks(activeChapter.id, next);
+                                updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
                               }
                             }}
-                            onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }}
-                            onKeyDown={(e) => {
-                              if ((e.key === "/" || e.code === "Slash") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // Save current prose then insert new block below
-                                const val = e.currentTarget.value;
-                                if (val !== block.prose) {
-                                  const save = [...blocks];
-                                  save[idx] = { ...block, prose: val };
-                                  const lastBlk = save[save.length - 1];
-                                  const newBlock: SceneBlock = { ...DEFAULT_SCENE_BLOCK, wordTarget: lastBlk.wordTarget, focus: lastBlk.focus };
-                                  const next = [...save.slice(0, idx + 1), newBlock, ...save.slice(idx + 1)];
-                                  updateSceneBlocks(activeChapter.id, next);
-                                } else {
-                                  insertSceneBlockAt(blocks, idx);
-                                }
-                              }
+                            onInput={(e) => {
+                              const el = e.currentTarget;
+                              el.style.height = "auto";
+                              el.style.height = el.scrollHeight + "px";
                             }}
                           />
-                        </div>
-                      ))}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="pw-editor-toolbar">
+                        <button
+                          type="button"
+                          className="pw-toolbar-btn"
+                          title="Bold"
+                          onClick={() =>
+                            applyRawFormatting(
+                              { open: "**", close: "**" },
+                              activeChapter.content,
+                            )
+                          }
+                        >
+                          <b>B</b>
+                        </button>
+                        <button
+                          type="button"
+                          className="pw-toolbar-btn"
+                          title="Italic"
+                          onClick={() =>
+                            applyRawFormatting(
+                              { open: "*", close: "*" },
+                              activeChapter.content,
+                            )
+                          }
+                        >
+                          <i>I</i>
+                        </button>
+                        <button
+                          type="button"
+                          className="pw-toolbar-btn"
+                          title="Strikethrough"
+                          onClick={() =>
+                            applyRawFormatting(
+                              { open: "~~", close: "~~" },
+                              activeChapter.content,
+                            )
+                          }
+                        >
+                          <s>S</s>
+                        </button>
+                        <span className="pw-toolbar-sep" />
+                        <select
+                          className="pw-toolbar-font-select"
+                          value={editorFontFamily}
+                          onChange={(e) => setEditorFontFamily(e.target.value)}
+                          title="Font"
+                        >
+                          {EDITOR_FONT_OPTIONS.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="pw-toolbar-sep" />
+                        <button
+                          type="button"
+                          className="pw-toolbar-btn"
+                          title="Add bloc (or type /)"
+                          onClick={() => addBlockFromPlainContent(activeChapter.content)}
+                        >
+                          /
+                        </button>
+                      </div>
+                      <textarea
+                        ref={editorInputRef}
+                        data-pw-plain-editor
+                        className="pw-editor-input"
+                        style={{
+                          fontFamily:
+                            EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ??
+                            "Georgia, serif",
+                        }}
+                        dir="ltr"
+                        spellCheck
+                        value={activeChapter.content}
+                        onInput={(event) => autoSizeEditorInput(event.currentTarget)}
+                        onChange={(event) => {
+                          const newVal = event.target.value;
+                          const prevVal = activeChapter.content;
+                          if (
+                            newVal.length === prevVal.length + 1 &&
+                            newVal.endsWith("/") &&
+                            newVal.slice(0, -1) === prevVal
+                          ) {
+                            addBlockFromPlainContent(prevVal);
+                            return;
+                          }
+                          updateChapter(activeChapter.id, { content: newVal });
+                        }}
+                        onKeyDown={(e) => {
+                          const isSlash =
+                            e.key === "/" || e.key === "Slash" || e.code === "Slash";
+                          if (
+                            isSlash &&
+                            !e.ctrlKey &&
+                            !e.metaKey &&
+                            !e.altKey
+                          ) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addBlockFromPlainContent(activeChapter.content);
+                          }
+                        }}
+                        placeholder="Start writing... Type / to add a bloc"
+                      />
+                    </>
                   );
                 })()}
               </div>
+
+
+              {focusBlockIndex !== null &&
+                activeChapter &&
+                (() => {
+                  const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+                  const block = hasBlocks && focusBlockIndex >= 0 && focusBlockIndex < blocks.length ? blocks[focusBlockIndex] : null;
+                  if (!block) return null;
+                  return (
+                    <div
+                      className="pw-focus-overlay"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Bloc focus mode"
+                    >
+                      <div className="pw-focus-backdrop" onClick={() => setFocusBlockIndex(null)} />
+                      <div className="pw-focus-content">
+                        <div className="pw-focus-header">
+                          <input
+                            className="pw-focus-synopsis-input"
+                            placeholder="Bloc synopsis..."
+                            value={block.synopsis}
+                            onChange={(e) => {
+                              const next = [...blocks];
+                              next[focusBlockIndex] = { ...block, synopsis: e.target.value };
+                              updateChapter(activeChapter.id, {
+                                content: serializeChapterBlocks(next),
+                              });
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => setFocusBlockIndex(null)}
+                            aria-label="Exit focus mode"
+                          >
+                            ✕ Close
+                          </button>
+                        </div>
+                        <div className="pw-focus-toolbar-wrap">
+                          <div className="pw-editor-toolbar">
+                            <button
+                              type="button"
+                              className="pw-toolbar-btn"
+                              title="Bold"
+                              onClick={() =>
+                                applyBlockFormatting(focusBlockIndex, blocks, {
+                                  open: "**",
+                                  close: "**",
+                                })
+                              }
+                            >
+                              <b>B</b>
+                            </button>
+                            <button
+                              type="button"
+                              className="pw-toolbar-btn"
+                              title="Italic"
+                              onClick={() =>
+                                applyBlockFormatting(focusBlockIndex, blocks, {
+                                  open: "*",
+                                  close: "*",
+                                })
+                              }
+                            >
+                              <i>I</i>
+                            </button>
+                            <button
+                              type="button"
+                              className="pw-toolbar-btn"
+                              title="Strikethrough"
+                              onClick={() =>
+                                applyBlockFormatting(focusBlockIndex, blocks, {
+                                  open: "~~",
+                                  close: "~~",
+                                })
+                              }
+                            >
+                              <s>S</s>
+                            </button>
+                            <span className="pw-toolbar-sep" />
+                            <select
+                              className="pw-toolbar-font-select"
+                              value={editorFontFamily}
+                              onChange={(e) => setEditorFontFamily(e.target.value)}
+                              title="Font"
+                            >
+                              {EDITOR_FONT_OPTIONS.map((f) => (
+                                <option key={f.id} value={f.id}>
+                                  {f.label}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="pw-toolbar-sep" />
+                            <button
+                              type="button"
+                              className="pw-toolbar-btn"
+                              title="New bloc below"
+                              onClick={() => {
+                                insertBlockAt(blocks, focusBlockIndex, "after");
+                                setFocusBlockIndex(null);
+                              }}
+                            >
+                              /
+                            </button>
+                          </div>
+                        </div>
+                        <div className="pw-focus-prose-wrap">
+                          <textarea
+                            ref={(el) => {
+                              blockProseRefs.current[focusBlockIndex] = el;
+                            }}
+                            className="pw-editor-input pw-focus-textarea"
+                            style={{
+                              fontFamily:
+                                EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ??
+                                "Georgia, serif",
+                            }}
+                            value={block.prose}
+                            onChange={(e) => {
+                              const newVal = e.target.value;
+                              const prevVal = block.prose;
+                              if (
+                                newVal.length === prevVal.length + 1 &&
+                                newVal.endsWith("/") &&
+                                newVal.slice(0, -1) === prevVal
+                              ) {
+                                insertBlockAt(blocks, focusBlockIndex, "after");
+                                setFocusBlockIndex(null);
+                                return;
+                              }
+                              const next = [...blocks];
+                              next[focusBlockIndex] = { ...block, prose: newVal };
+                              updateChapter(activeChapter.id, {
+                                content: serializeChapterBlocks(next),
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              const isSlash =
+                                e.key === "/" || e.key === "Slash" || e.code === "Slash";
+                              if (
+                                isSlash &&
+                                !e.ctrlKey &&
+                                !e.metaKey &&
+                                !e.altKey
+                              ) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                insertBlockAt(blocks, focusBlockIndex, "after");
+                                setFocusBlockIndex(null);
+                              }
+                            }}
+                            placeholder="Prose... Type / for new bloc"
+                            rows={24}
+                            spellCheck
+                          />
+                        </div>
+                        <div className="pw-focus-footer">
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            disabled={storyAiBusyAction === `block-${focusBlockIndex}`}
+                            onClick={() =>
+                              void runGenerateBlockProse(
+                                focusBlockIndex,
+                                block.regenConstraint.trim() || undefined,
+                              )
+                            }
+                          >
+                            {storyAiBusyAction === `block-${focusBlockIndex}`
+                              ? "Regenerating..."
+                              : "✦ Regenerate"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
             </div>
           ) : (
             <div className="pw-overview">
@@ -5357,6 +6177,12 @@ function NovelWorkspacePage() {
                     value={novel.title}
                     onChange={(event) => updateNovel({ title: event.target.value })}
                     placeholder="Novel title"
+                  />
+                  <input
+                    className="pw-overview-author"
+                    value={novel.authorName}
+                    onChange={(event) => updateNovel({ authorName: event.target.value })}
+                    placeholder="Author name"
                   />
                   <textarea
                     className="pw-overview-synopsis"
@@ -5866,7 +6692,7 @@ function NovelWorkspacePage() {
                         />
                         <span className="pw-export-chapter-meta">
                           <strong>{chapter.title || `Chapter ${index + 1}`}</strong>
-                          <small>{countWords(chapter.content).toLocaleString()} words</small>
+                          <small>{countChapterWords(chapter).toLocaleString()} words</small>
                         </span>
                       </label>
                     );
@@ -5914,15 +6740,24 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {showChapterReviewModal && activeChapter && (
-        <ChapterReview
-          open={showChapterReviewModal}
-          onClose={() => setShowChapterReviewModal(false)}
+      {showEditorModal && activeChapter && (
+        <TheEditor
+          open={showEditorModal}
+          onClose={() => { setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
           chapterTitle={activeChapter.title || "Untitled chapter"}
-          issues={consistencyIssues}
-          loading={consistencyLoading}
-          error={consistencyError}
-          onRunReview={() => runConsistencyCheck()}
+          loadingPhase={editorLoadingPhase}
+          error={editorError}
+          result={editorResult}
+          originalParagraphs={editorOriginalParagraphs}
+          onRun={runEditorPass}
+          onResultUpdate={setEditorResult}
+          onFixIssues={runEditorFixIssues}
+          onApply={(revisedText) => {
+            if (!activeChapter) return;
+            updateChapter(activeChapter.id, { content: revisedText });
+            /* Update original paragraphs so further edits work on the new text */
+            setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
+          }}
         />
       )}
 
@@ -5992,7 +6827,7 @@ function NovelWorkspacePage() {
                       </button>
                     </div>
                     <p className="pw-bible-section-note">
-                      Shape your book direction here: synopsis, genre palette, themes, and core conflict.
+                      Shape your book direction here: synopsis, themes, and core conflict.
                     </p>
                     {!aiOff && (
                     <div className="pw-bible-autofill-row">
@@ -6056,114 +6891,7 @@ function NovelWorkspacePage() {
                     <p className="pw-field-help">
                       {novel.storyBible.summary.synopsisShort.length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}
                     </p>
-                    <div className="pw-bible-field-head">
-                      <label>Genre, Tone, Themes</label>
-                      {!aiOff && <div className="pw-bible-field-ai">
-                        <select
-                          className="pw-bible-input pw-bible-field-select"
-                          value={summaryAiMode.palette}
-                          onChange={(event) =>
-                            setSummaryAiMode((current) => ({
-                              ...current,
-                              palette: event.target.value as typeof current.palette,
-                            }))
-                          }
-                        >
-                          <option value="classify">Classify from synopsis</option>
-                          <option value="refresh">Refresh alternatives</option>
-                          <option value="blend">Suggest genre blend</option>
-                          <option value="audience">Align for target audience</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="pw-ai-mini-btn pw-bible-field-btn"
-                          disabled={storyAiBusyAction !== null}
-                          onClick={() => void runSummaryFieldAi("palette", summaryAiMode.palette)}
-                        >
-                          {storyAiBusyAction === "summary-field-palette" ? "Running..." : "Run Assistant"}
-                        </button>
-                      </div>}
-                    </div>
-                    <div className="pw-bible-genre-picker">
-                      <select
-                        className="pw-bible-input pw-bible-field-select"
-                        value={summaryGenreDraft}
-                        onChange={(event) => setSummaryGenreDraft(event.target.value)}
-                      >
-                        {GENRE_OPTIONS.map((genreOption) => (
-                          <option key={genreOption} value={genreOption}>
-                            {genreOption}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="pw-ai-mini-btn pw-bible-field-btn"
-                        onClick={() => addSummaryGenre(summaryGenreDraft)}
-                      >
-                        Add genre
-                      </button>
-                      <input
-                        className="pw-bible-input pw-bible-field-select"
-                        value={summaryCustomGenreDraft}
-                        maxLength={STORY_BIBLE_LIMITS.summary.listItem}
-                        placeholder="Custom genre"
-                        onChange={(event) => setSummaryCustomGenreDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter") return;
-                          event.preventDefault();
-                          addSummaryGenre(summaryCustomGenreDraft);
-                          setSummaryCustomGenreDraft("");
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="pw-ai-mini-btn pw-bible-field-btn"
-                        onClick={() => {
-                          addSummaryGenre(summaryCustomGenreDraft);
-                          setSummaryCustomGenreDraft("");
-                        }}
-                      >
-                        Add custom
-                      </button>
-                    </div>
-                    <div className="pw-bible-tag-list">
-                      {(novel.storyBible.summary.genre ?? []).length === 0 ? (
-                        <p className="pw-overview-empty">No genres selected yet.</p>
-                      ) : (
-                        novel.storyBible.summary.genre.map((genreTag) => (
-                          <button
-                            key={genreTag}
-                            type="button"
-                            className="pw-bible-tag-chip"
-                            onClick={() => removeSummaryGenre(genreTag)}
-                            title="Remove genre"
-                          >
-                            {genreTag} x
-                          </button>
-                        ))
-                      )}
-                    </div>
                     <div className="pw-bible-grid-3">
-                      <div>
-                        <label>Tone (comma separated)</label>
-                        <input
-                          className="pw-bible-input"
-                          maxLength={SUMMARY_LIST_INPUT_MAX}
-                          value={novel.storyBible.summary.tone.join(", ")}
-                          onChange={(event) =>
-                            updateStoryBible({
-                              summary: {
-                                ...novel.storyBible.summary,
-                                tone: event.target.value
-                                  .split(",")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean),
-                              },
-                            })
-                          }
-                        />
-                      </div>
                       <div>
                         <label>Themes (comma separated)</label>
                         <input
@@ -6950,7 +7678,7 @@ function NovelWorkspacePage() {
 
                     {(novel.storyBible.boltons ?? []).length === 0 ? (
                       <div className="pw-bolton-empty">
-                        <p>No Bolt-Ons yet. Create one to give your AI a creative direction — like "more tension", "vivid sensory detail", or "slow-burn romance".</p>
+                        <p>No Bolt-Ons yet. Create one to give your AI a creative direction — like &quot;more tension&quot;, &quot;vivid sensory detail&quot;, or &quot;slow-burn romance&quot;.</p>
                       </div>
                     ) : (
                       <div className="pw-bolton-grid">
@@ -7073,14 +7801,119 @@ function NovelWorkspacePage() {
                         </select>
                       </div>
                     </div>
+                    <div className="pw-bible-field-head">
+                      <label>Genre &amp; Tone</label>
+                      {!aiOff && <div className="pw-bible-field-ai">
+                        <select
+                          className="pw-bible-input pw-bible-field-select"
+                          value={summaryAiMode.palette}
+                          onChange={(event) =>
+                            setSummaryAiMode((current) => ({
+                              ...current,
+                              palette: event.target.value as typeof current.palette,
+                            }))
+                          }
+                        >
+                          <option value="classify">Classify from synopsis</option>
+                          <option value="refresh">Refresh alternatives</option>
+                          <option value="blend">Suggest genre blend</option>
+                          <option value="audience">Align for target audience</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="pw-ai-mini-btn pw-bible-field-btn"
+                          disabled={storyAiBusyAction !== null}
+                          onClick={() => void runSummaryFieldAi("palette", summaryAiMode.palette)}
+                        >
+                          {storyAiBusyAction === "summary-field-palette" ? "Running..." : "Run Assistant"}
+                        </button>
+                      </div>}
+                    </div>
+                    <div className="pw-bible-genre-picker">
+                      <select
+                        className="pw-bible-input pw-bible-field-select"
+                        value={summaryGenreDraft}
+                        onChange={(event) => setSummaryGenreDraft(event.target.value)}
+                      >
+                        {GENRE_OPTIONS.map((genreOption) => (
+                          <option key={genreOption} value={genreOption}>
+                            {genreOption}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="pw-ai-mini-btn pw-bible-field-btn"
+                        onClick={() => addSummaryGenre(summaryGenreDraft)}
+                      >
+                        Add genre
+                      </button>
+                      <input
+                        className="pw-bible-input pw-bible-field-select"
+                        value={summaryCustomGenreDraft}
+                        maxLength={STORY_BIBLE_LIMITS.summary.listItem}
+                        placeholder="Custom genre"
+                        onChange={(event) => setSummaryCustomGenreDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          addSummaryGenre(summaryCustomGenreDraft);
+                          setSummaryCustomGenreDraft("");
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="pw-ai-mini-btn pw-bible-field-btn"
+                        onClick={() => {
+                          addSummaryGenre(summaryCustomGenreDraft);
+                          setSummaryCustomGenreDraft("");
+                        }}
+                      >
+                        Add custom
+                      </button>
+                    </div>
+                    <div className="pw-bible-tag-list">
+                      {(novel.storyBible.summary.genre ?? []).length === 0 ? (
+                        <p className="pw-overview-empty">No genres selected yet.</p>
+                      ) : (
+                        novel.storyBible.summary.genre.map((genreTag) => (
+                          <button
+                            key={genreTag}
+                            type="button"
+                            className="pw-bible-tag-chip"
+                            onClick={() => removeSummaryGenre(genreTag)}
+                            title="Remove genre"
+                          >
+                            {genreTag} x
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <label>Tone (comma separated)</label>
+                    <input
+                      className="pw-bible-input"
+                      maxLength={SUMMARY_LIST_INPUT_MAX}
+                      value={novel.storyBible.summary.tone.join(", ")}
+                      onChange={(event) =>
+                        updateStoryBible({
+                          summary: {
+                            ...novel.storyBible.summary,
+                            tone: event.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          },
+                        })
+                      }
+                    />
                     {!aiOff && (
                     <>
-                    <label>Reference writer (optional)</label>
+                    <label>What&apos;s your style?</label>
                     <div className="pw-ai-assist-row">
                       <input
                         className="pw-bible-input pw-ai-assist-select"
                         maxLength={STORY_BIBLE_LIMITS.styleVoice.compItem}
-                        placeholder="Type a writer name, e.g. Ursula K. Le Guin"
+                        placeholder="Describe or enter a style..."
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
                       />

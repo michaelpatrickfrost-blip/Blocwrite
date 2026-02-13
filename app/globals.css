@@ -2312,6 +2312,22 @@ select.pw-profile-input {
   letter-spacing: -0.03em;
 }
 
+.pw-overview-author {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--pw-text-muted);
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+  padding: 0;
+  width: 100%;
+}
+.pw-overview-author::placeholder {
+  color: var(--pw-text-dim);
+}
+
 .pw-overview-synopsis {
   border: none;
   border-bottom: 1px solid transparent;
