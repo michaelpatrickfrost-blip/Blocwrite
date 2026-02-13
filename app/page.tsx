@@ -1,196 +1,220 @@
-import Link from "next/link";
-import Image from "next/image";
+"use client";
 
-const features = [
-  { title: "Live Word Counts", desc: "Real-time stats and reading time as you write" },
-  { title: "Focus Editor", desc: "Rich text editing with autosave built in" },
-  { title: "Canon", desc: "Characters, locations, lore — your story's source of truth" },
-  { title: "Grammar Check", desc: "Proofreading powered by LanguageTool" },
-  { title: "AI Assistant", desc: "Generate ideas and expand scenes with AI" },
-  { title: "EPUB Export", desc: "One-click export to EPUB and DOCX" },
-];
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 
-export default function Home() {
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+
+      if (res.ok) {
+        router.push("/studio");
+      } else {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error || "Invalid email or password.");
+      }
+    } catch {
+      setError("Connection failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-20">
-      {/* Hero */}
-      <div className="max-w-3xl w-full text-center space-y-6 mb-16">
-        <div className="flex justify-center mb-4">
-          <Image
-            src="/pilotwriter-logo.png"
-            alt="PilotWriter"
-            width={64}
-            height={64}
-            className="rounded-2xl"
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        background: "var(--pw-surface, #252323)",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 380,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 32,
+        }}
+      >
+        {/* Branding */}
+        <div style={{ textAlign: "center" }}>
+          <h1
             style={{
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.2)",
-            }}
-          />
-        </div>
-        <p
-          className="text-sm uppercase font-medium"
-          style={{
-            letterSpacing: "0.3em",
-            color: "rgba(255, 255, 255, 0.4)",
-          }}
-        >
-          Pilotwriter
-        </p>
-        <h1
-          className="text-5xl lg:text-6xl font-bold leading-tight"
-          style={{
-            letterSpacing: "-0.03em",
-            color: "rgba(255, 255, 255, 0.92)",
-          }}
-        >
-          A modern cockpit for
-          <br />
-          <span style={{ color: "rgba(255, 255, 255, 0.5)" }}>
-            writing novels.
-          </span>
-        </h1>
-        <p
-          className="text-lg max-w-lg mx-auto"
-          style={{ color: "rgba(255, 255, 255, 0.4)", lineHeight: 1.65 }}
-        >
-          Plan projects, draft chapters with live stats, get grammar suggestions,
-          and export polished EPUBs — all in one place.
-        </p>
-        <div className="flex justify-center gap-3 pt-2">
-          <Link
-            href="/dashboard"
-            className="btn btn-primary"
-            style={{
-              padding: "11px 24px",
-              fontSize: "14px",
-              borderRadius: "10px",
+              fontSize: 28,
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
+              color: "var(--pw-text, #f0f0f0)",
+              margin: 0,
             }}
           >
-            Open PilotWriter
-          </Link>
-          <Link
-            href="/login"
-            className="btn"
+            Blocwrite
+          </h1>
+          <p
             style={{
-              padding: "11px 24px",
-              fontSize: "14px",
-              borderRadius: "10px",
-              background: "rgba(255, 255, 255, 0.06)",
-              color: "rgba(255, 255, 255, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
+              fontSize: 13,
+              color: "var(--pw-text-dim, #555)",
+              marginTop: 6,
+              letterSpacing: "0.02em",
             }}
           >
-            Sign in
-          </Link>
+            Sign in to your workspace
+          </p>
         </div>
-      </div>
 
-      {/* Preview window */}
-      <div className="w-full max-w-3xl mb-20">
-        <div
-          className="rounded-2xl overflow-hidden"
+        {/* Login form */}
+        <form
+          onSubmit={handleSubmit}
           style={{
-            background: "rgba(255, 255, 255, 0.04)",
-            border: "1px solid rgba(255, 255, 255, 0.06)",
-            boxShadow: "0 16px 48px rgba(0, 0, 0, 0.15)",
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
           }}
         >
-          <div
-            className="px-5 py-3 flex items-center justify-between text-sm"
-            style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}
-          >
-            <span style={{ color: "rgba(255, 255, 255, 0.35)", fontWeight: 500 }}>
-              Chapter: Takeoff
-            </span>
-            <span style={{ color: "rgba(255, 255, 255, 0.5)", fontWeight: 600 }}>
-              1,247 words
-            </span>
-          </div>
-          <div className="p-8 space-y-4">
-            <p
-              className="text-base leading-relaxed"
-              style={{ color: "rgba(255, 255, 255, 0.6)" }}
-            >
-              The runway lights blurred as Mara pushed the throttle. PilotWriter counted
-              each word, but she stopped thinking about numbers the moment the nose lifted.
-            </p>
-            <p
-              className="text-base leading-relaxed"
-              style={{ color: "rgba(255, 255, 255, 0.3)" }}
-            >
-              Above the clouds, she typed freely — grammar nudges glowed in the margin,
-              and an export badge waited for when the story was ready for readers.
-            </p>
-            <div className="flex gap-2 pt-2">
-              <span
-                className="px-3 py-1 rounded-full text-xs font-medium"
-                style={{
-                  background: "rgba(255, 255, 255, 0.05)",
-                  color: "rgba(255, 255, 255, 0.4)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                }}
-              >
-                Grammar clean
-              </span>
-              <span
-                className="px-3 py-1 rounded-full text-xs font-medium"
-                style={{
-                  background: "rgba(255, 255, 255, 0.05)",
-                  color: "rgba(255, 255, 255, 0.4)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                }}
-              >
-                Export ready
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Features */}
-      <div className="w-full max-w-3xl">
-        <p
-          className="text-center text-sm uppercase mb-8 font-semibold"
-          style={{
-            letterSpacing: "0.2em",
-            color: "rgba(255, 255, 255, 0.25)",
-          }}
-        >
-          Everything you need
-        </p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {features.map((f) => (
-            <div
-              key={f.title}
+          <div>
+            <label
+              htmlFor="email"
               style={{
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(255, 255, 255, 0.06)",
-                borderRadius: "14px",
-                padding: "20px",
+                display: "block",
+                fontSize: 12,
+                fontWeight: 500,
+                color: "var(--pw-text-muted, #888)",
+                marginBottom: 6,
               }}
             >
-              <div
-                className="text-sm font-semibold mb-1"
-                style={{ color: "rgba(255, 255, 255, 0.7)" }}
-              >
-                {f.title}
-              </div>
-              <p
-                className="text-sm leading-relaxed"
-                style={{ color: "rgba(255, 255, 255, 0.3)" }}
-              >
-                {f.desc}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@email.com"
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                fontSize: 14,
+                borderRadius: "var(--pw-radius-md, 10px)",
+                border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                background: "var(--pw-sidebar, #1a1919)",
+                color: "var(--pw-text, #f0f0f0)",
+                outline: "none",
+                transition: "border-color 0.15s",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--pw-accent, #e6ff4b)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--pw-border, rgba(255,255,255,0.08))")}
+            />
+          </div>
 
-      <footer className="mt-20 text-center">
-        <p className="text-xs" style={{ color: "rgba(255, 255, 255, 0.2)" }}>
-          Built for writers who want to ship novels faster.
+          <div>
+            <label
+              htmlFor="password"
+              style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 500,
+                color: "var(--pw-text-muted, #888)",
+                marginBottom: 6,
+              }}
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                fontSize: 14,
+                borderRadius: "var(--pw-radius-md, 10px)",
+                border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                background: "var(--pw-sidebar, #1a1919)",
+                color: "var(--pw-text, #f0f0f0)",
+                outline: "none",
+                transition: "border-color 0.15s",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--pw-accent, #e6ff4b)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--pw-border, rgba(255,255,255,0.08))")}
+            />
+          </div>
+
+          {error && (
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--pw-coral, #ff6b6b)",
+                margin: 0,
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: 4,
+              width: "100%",
+              padding: "11px 0",
+              fontSize: 14,
+              fontWeight: 600,
+              borderRadius: "var(--pw-radius-md, 10px)",
+              border: "none",
+              background: "var(--pw-accent, #e6ff4b)",
+              color: "var(--pw-btn-primary-text, #1e1c1c)",
+              cursor: loading ? "wait" : "pointer",
+              opacity: loading ? 0.6 : 1,
+              transition: "opacity 0.15s, background 0.15s",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {loading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+
+        <p
+          style={{
+            fontSize: 11,
+            color: "var(--pw-text-dim, #555)",
+            textAlign: "center",
+            margin: 0,
+          }}
+        >
+          Blocwrite Studio
         </p>
-      </footer>
+      </div>
     </main>
   );
 }

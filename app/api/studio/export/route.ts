@@ -208,11 +208,35 @@ function textToHtml(text: string) {
     .join("\n");
 }
 
+/** Extract only prose from bloc-delimited content. Strips all bloc metadata/synopses. */
+function extractProseOnly(raw: string): string {
+  if (!raw.includes("<<<BLOCK>>>")) return raw;
+  const parts = raw.split("<<<BLOCK>>>").filter(Boolean);
+  const proseChunks: string[] = [];
+  for (const part of parts) {
+    const proseIdx = part.indexOf("<<<PROSE>>>");
+    const endIdx = part.indexOf("<<<ENDBLOCK>>>");
+    if (proseIdx === -1 || endIdx === -1) continue;
+    const prose = part.slice(proseIdx + "<<<PROSE>>>".length, endIdx).trim();
+    if (prose) proseChunks.push(prose);
+  }
+  if (proseChunks.length > 0) return proseChunks.join("\n\n\n");
+  // Fallback: strip all delimiters even if parsing fails
+  return raw
+    .replace(/<<<BLOCK>>>/g, "")
+    .replace(/<<<PROSE>>>/g, "")
+    .replace(/<<<ENDBLOCK>>>/g, "")
+    .replace(/<<<META>>>/g, "")
+    .replace(/<<<SYNOPSIS>>>/g, "")
+    .trim();
+}
+
 function normalizePayloadChapters(chapters: ChapterInput[]) {
   return chapters.map((chapter, index): NormalizedChapter => {
     const title = typeof chapter.title === "string" && chapter.title.trim() ? chapter.title.trim() : `Chapter ${index + 1}`;
     const subtitle = typeof chapter.subtitle === "string" ? chapter.subtitle : "";
-    const content = typeof chapter.content === "string" ? chapter.content : "";
+    const rawContent = typeof chapter.content === "string" ? chapter.content : "";
+    const content = extractProseOnly(rawContent);
     return {
       id: typeof chapter.id === "string" && chapter.id ? chapter.id : `${index + 1}`,
       title,

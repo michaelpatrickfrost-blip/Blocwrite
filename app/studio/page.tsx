@@ -547,6 +547,12 @@ function StudioHomePage() {
       <ProfilePopup
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
+        onLogout={async () => {
+          try {
+            await fetch("/api/auth/logout", { method: "POST" });
+          } catch { /* ignore */ }
+          window.location.href = "/";
+        }}
       />
     </div>
   );

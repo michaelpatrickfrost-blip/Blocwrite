@@ -8153,6 +8153,12 @@ function NovelWorkspacePage() {
           setAssistantBaseUrl(settings.baseUrl);
         }}
         onAiToggle={(off) => setAiOff(off)}
+        onLogout={async () => {
+          try {
+            await fetch("/api/auth/logout", { method: "POST" });
+          } catch { /* ignore */ }
+          window.location.href = "/";
+        }}
       />
     </div>
   );

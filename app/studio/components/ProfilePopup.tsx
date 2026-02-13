@@ -90,6 +90,8 @@ type ProfilePopupProps = {
   }) => void;
   /** Called when AI toggle changes */
   onAiToggle?: (off: boolean) => void;
+  /** Called when user clicks Sign out */
+  onLogout?: () => void;
 };
 
 export function ProfilePopup({
@@ -100,6 +102,7 @@ export function ProfilePopup({
   onUpdateStoryBible,
   onProviderSettingsChange,
   onAiToggle,
+  onLogout,
 }: ProfilePopupProps) {
   const [appLanguage, setAppLanguage] = useState<ProfileLanguageCode>(() => getProfileLanguage());
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
@@ -494,6 +497,38 @@ export function ProfilePopup({
                   <option value="131072">128K</option>
                 </select>
               </div>
+            </>
+          )}
+
+          {onLogout && (
+            <>
+              <div className="pw-profile-divider" />
+              <button
+                type="button"
+                onClick={onLogout}
+                style={{
+                  width: "100%",
+                  padding: "8px 0",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--pw-text-muted, #888)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  borderRadius: "var(--pw-radius-sm, 8px)",
+                  transition: "color 0.15s, background 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--pw-coral, #ff6b6b)";
+                  e.currentTarget.style.background = "var(--pw-coral-light, rgba(255,107,107,0.08))";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--pw-text-muted, #888)";
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                Sign out
+              </button>
             </>
           )}
         </div>
