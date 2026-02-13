@@ -62,8 +62,8 @@ export default function LoginPage() {
           <Image
             src="/blocwrite-main-dark.png"
             alt="Blocwrite"
-            width={200}
-            height={60}
+            width={320}
+            height={96}
             priority
             style={{ marginBottom: 8 }}
           />
