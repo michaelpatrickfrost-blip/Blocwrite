@@ -88,6 +88,8 @@ type ProfilePopupProps = {
     model: string;
     baseUrl: string;
   }) => void;
+  /** Called when AI toggle changes */
+  onAiToggle?: (off: boolean) => void;
 };
 
 export function ProfilePopup({
@@ -97,6 +99,7 @@ export function ProfilePopup({
   onGrammarLocaleChange,
   onUpdateStoryBible,
   onProviderSettingsChange,
+  onAiToggle,
 }: ProfilePopupProps) {
   const [appLanguage, setAppLanguage] = useState<ProfileLanguageCode>(() => getProfileLanguage());
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
@@ -295,6 +298,7 @@ export function ProfilePopup({
                   const on = e.target.checked;
                   setProfileAiOff(!on);
                   setAiOff(!on);
+                  onAiToggle?.(!on);
                 }}
               />
               <span className="pw-profile-toggle-slider" />

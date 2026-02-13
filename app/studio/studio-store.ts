@@ -1,8 +1,17 @@
+export type SceneBlock = {
+  synopsis: string;       // scene beat description (location, POV, goal, conflict, turning point, outcome)
+  prose: string;          // generated/written prose for this block (the actual novel text for this scene)
+  wordTarget: number;     // prose pacing target (400/600/800/1000)
+  focus: string;          // "default" | "dialogue" | "action" | "introspection" | "atmosphere"
+  notes: string;          // optional user notes
+};
+
 export type Chapter = {
   id: string;
   title: string;
   subtitle: string;
-  content: string;
+  content: string;            // chapter body (prose only — the actual novel text)
+  sceneBlocks?: SceneBlock[]; // planning blocks (not exported, not counted in word count)
   goalWords?: number;
   createdAt: string;
   updatedAt: string;
@@ -211,11 +220,25 @@ function normalizeChapter(raw: unknown, fallbackIndex: number): Chapter | null {
 
   const goalWords =
     typeof record.goalWords === "number" && record.goalWords > 0 ? record.goalWords : undefined;
+
+  // Preserve sceneBlocks if present
+  let sceneBlocks: SceneBlock[] | undefined;
+  if (Array.isArray(record.sceneBlocks) && record.sceneBlocks.length > 0) {
+    sceneBlocks = (record.sceneBlocks as Array<Record<string, unknown>>).map((b) => ({
+      synopsis: typeof b.synopsis === "string" ? b.synopsis : "",
+      prose: typeof b.prose === "string" ? b.prose : "",
+      wordTarget: typeof b.wordTarget === "number" ? b.wordTarget : 600,
+      focus: typeof b.focus === "string" ? b.focus : "default",
+      notes: typeof b.notes === "string" ? b.notes : "",
+    }));
+  }
+
   return {
     id: typeof record.id === "string" && record.id ? record.id : createId(),
     title,
     subtitle,
     content,
+    ...(sceneBlocks ? { sceneBlocks } : {}),
     goalWords,
     createdAt,
     updatedAt,
@@ -641,6 +664,54 @@ function normalizeNovel(raw: unknown): Novel | null {
   };
 }
 
+/** Migrate old serialized block format (<<<BLOCK>>>...) to the new SceneBlock model */
+function migrateChapterBlocks(novel: Novel): Novel {
+  const OLD_BLOCK_DELIM = "<<<BLOCK>>>";
+  const OLD_PROSE_DELIM = "<<<PROSE>>>";
+  const OLD_END_BLOCK = "<<<ENDBLOCK>>>";
+  const OLD_META_DELIM = "<<<META>>>";
+
+  let changed = false;
+  const chapters = novel.chapters.map((chapter) => {
+    if (!chapter.content.includes(OLD_BLOCK_DELIM)) return chapter;
+    // Parse old format
+    const parts = chapter.content.split(OLD_BLOCK_DELIM).filter(Boolean);
+    const sceneBlocks: SceneBlock[] = [];
+    const proseChunks: string[] = [];
+    for (const part of parts) {
+      const proseIdx = part.indexOf(OLD_PROSE_DELIM);
+      const endIdx = part.indexOf(OLD_END_BLOCK);
+      if (proseIdx === -1 || endIdx === -1) continue;
+      let header = part.slice(0, proseIdx).replace(/\n+$/, "").trim();
+      const prose = part.slice(proseIdx + OLD_PROSE_DELIM.length, endIdx).replace(/^\n+/, "").replace(/\n+$/, "").trim();
+      let synopsis = header;
+      let wordTarget = 600;
+      let focus = "default";
+      let notes = "";
+      if (header.startsWith(OLD_META_DELIM)) {
+        const firstNewline = header.indexOf("\n");
+        const metaLine = firstNewline >= 0 ? header.slice(OLD_META_DELIM.length, firstNewline) : header.slice(OLD_META_DELIM.length);
+        synopsis = firstNewline >= 0 ? header.slice(firstNewline + 1).trim() : "";
+        const metaParts = metaLine.split("|");
+        if (metaParts.length >= 1) wordTarget = Math.max(200, Math.min(2000, parseInt(metaParts[0], 10) || 600));
+        if (metaParts.length >= 2) focus = metaParts[1] || "default";
+        if (metaParts.length >= 3) notes = metaParts[2] ?? "";
+      }
+      sceneBlocks.push({ synopsis, prose, wordTarget, focus, notes });
+      if (prose) proseChunks.push(prose);
+    }
+    if (sceneBlocks.length === 0) return chapter;
+    changed = true;
+    return {
+      ...chapter,
+      content: proseChunks.join("\n\n"),
+      sceneBlocks,
+    };
+  });
+  if (!changed) return novel;
+  return { ...novel, chapters };
+}
+
 export function loadNovels(): Novel[] {
   if (typeof window === "undefined") return [];
   const safeGetItem = (storage: Storage, key: string) => {
@@ -675,7 +746,60 @@ export function loadNovels(): Novel[] {
   for (const source of sources) {
     const parsed = parsePayload(safeGetItem(source.storage, source.key));
     if (parsed) {
-      return parsed;
+      const migrated = parsed.map(migrateChapterBlocks);
+
+      // Try to recover sceneBlocks from backup/raw storage if current data lost them
+      // Check all sources for raw data that still has <<<BLOCK>>> markers
+      for (const novel of migrated) {
+        for (const chapter of novel.chapters) {
+          if (chapter.sceneBlocks && chapter.sceneBlocks.length > 0) continue; // already has blocks
+          // Look in ALL storage sources for raw data with old block format for this chapter
+          for (const backupSource of sources) {
+            try {
+              const rawBackup = safeGetItem(backupSource.storage, backupSource.key);
+              if (!rawBackup) continue;
+              const rawParsed = JSON.parse(rawBackup) as unknown[];
+              if (!Array.isArray(rawParsed)) continue;
+              for (const rawNovel of rawParsed) {
+                const rn = rawNovel as Record<string, unknown>;
+                if (rn.id !== novel.id) continue;
+                const rawChapters = Array.isArray(rn.chapters) ? rn.chapters : [];
+                for (const rawChapter of rawChapters) {
+                  const rc = rawChapter as Record<string, unknown>;
+                  if (rc.id !== chapter.id) continue;
+                  // Check if raw chapter has sceneBlocks we lost during normalization
+                  if (Array.isArray(rc.sceneBlocks) && rc.sceneBlocks.length > 0) {
+                    chapter.sceneBlocks = (rc.sceneBlocks as Array<Record<string, unknown>>).map((b) => ({
+                      synopsis: typeof b.synopsis === "string" ? b.synopsis : "",
+                      prose: typeof b.prose === "string" ? b.prose : "",
+                      wordTarget: typeof b.wordTarget === "number" ? b.wordTarget : 600,
+                      focus: typeof b.focus === "string" ? b.focus : "default",
+                      notes: typeof b.notes === "string" ? b.notes : "",
+                    }));
+                  }
+                  // Check if raw content has old <<<BLOCK>>> format we can re-migrate
+                  if (!chapter.sceneBlocks?.length && typeof rc.content === "string" && rc.content.includes("<<<BLOCK>>>")) {
+                    const reMigrated = migrateChapterBlocks({ ...novel, chapters: [{ ...chapter, content: rc.content }] });
+                    const reChapter = reMigrated.chapters[0];
+                    if (reChapter?.sceneBlocks?.length) {
+                      chapter.sceneBlocks = reChapter.sceneBlocks;
+                      if (reChapter.content) chapter.content = reChapter.content;
+                    }
+                  }
+                }
+              }
+            } catch { /* ignore backup parse failures */ }
+          }
+        }
+      }
+
+      // Force-save migrated data to prevent future data loss
+      try {
+        const payload = JSON.stringify(migrated);
+        window.localStorage.setItem(STORAGE_KEY, payload);
+      } catch { /* ignore */ }
+
+      return migrated;
     }
   }
 
@@ -783,6 +907,7 @@ export function createChapter(index: number): Chapter {
     title: `Chapter ${index + 1}`,
     subtitle: "",
     content: "",
+    sceneBlocks: [],
     createdAt: now,
     updatedAt: now,
   };
