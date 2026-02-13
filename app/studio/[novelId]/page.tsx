@@ -1228,6 +1228,30 @@ function NovelWorkspacePage() {
     return out.trim();
   }
 
+  /** Cleans prose output — strips thinking blocks, meta-text, word counts, scene labels, separators, etc. */
+  function cleanProseOutput(raw: string): string {
+    let out = stripThinkingBlocks(raw);
+    // Remove word count annotations like "*Word count: 1000*", "Word count: 1000", "(Word count: 1000)", "[Word count: 1000]"
+    out = out.replace(/[\*\[\(]*\s*word\s*count\s*[:=]\s*\d+\s*[\*\]\)]*/gi, "");
+    // Remove scene/chapter labels like "Scene 1", "Scene 2:", "## Scene 2", "**Scene 2**", "Chapter 3"
+    out = out.replace(/^[\s]*(?:#{1,4}\s*)?(?:\*{1,2})?(?:Scene|Chapter|Part|Section|Bloc)\s*\d+[:\.\-—]?\s*(?:\*{1,2})?.*$/gim, "");
+    // Remove horizontal rules: ---, ***, ___, ===, or more
+    out = out.replace(/^\s*[-*_=]{3,}\s*$/gm, "");
+    // Remove lines that are just "---" surrounded by blank lines
+    out = out.replace(/\n\s*---\s*\n/g, "\n");
+    // Remove "[Continued]", "[Continue]", "[End]", "[END OF SCENE]" etc.
+    out = out.replace(/\[\s*(?:continued|continue|end|end of scene|end of chapter|to be continued)\s*\]/gi, "");
+    // Remove "Note:", "Author's note:", "A/N:" lines
+    out = out.replace(/^\s*(?:Note|Author'?s?\s*note|A\/N)\s*[:]\s*.*$/gim, "");
+    // Remove trailing metadata like "(1000 words)", "[1023 words]"
+    out = out.replace(/[\(\[]\s*\d+\s*words?\s*[\)\]]/gi, "");
+    // Remove "WORD COUNT:" or "Total:" lines
+    out = out.replace(/^\s*(?:WORD COUNT|Total|Count)\s*[:=]\s*\d+.*$/gim, "");
+    // Collapse 3+ newlines into 2
+    out = out.replace(/\n{3,}/g, "\n\n");
+    return out.trim();
+  }
+
   function buildBoundedSection<T>(
     title: string,
     items: T[],
@@ -2209,7 +2233,7 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const wt = block.wordTarget;
-      const minAcceptable = Math.round(wt * 0.65);
+      const minAcceptable = Math.round(wt * 0.90); // 90% minimum — hard enforcement
 
       // Build lean canon context — keep it short for speed
       const canon = buildProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
@@ -2247,24 +2271,25 @@ function NovelWorkspacePage() {
         ? ` MANDATORY STYLE RULES — follow exactly: ${styleRules.join(". ")}.`
         : "";
 
-      const systemMsg = `You are a novelist. Write ${wt} words in ${profileLangLabel}.${styleDirective} WORD COUNT ${wt} IS MANDATORY. Return prose only — no labels, headers, commentary, or thinking.`;
+      const systemMsg = `Write ${wt} words of prose in ${profileLangLabel}. YOU MUST WRITE ${wt} WORDS — NOT 200, NOT 300, EXACTLY ${wt}. If you finish the scene early, expand with dialogue, action, interiority, and sensory detail until you reach ${wt} words.${styleDirective} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Your entire response must read like pages from a published novel.`;
 
-      // Build concise prompt — word count at the top and bottom, Canon context for characters/locations
+      // Build concise prompt — word count hammered at top, middle, and bottom
+      const wcReminder = `[MANDATORY: Your response MUST be ${wt} words long. Do NOT stop at 200 words. Keep writing until you reach ${wt} words.]`;
       const prompt = isRegenerate
         ? [
-            `WORD COUNT: ${wt} words.`,
-            `Rewrite this scene. Same story beats, fresh prose.`,
+            wcReminder,
+            `Rewrite this scene. Same story beats, fresh prose. TARGET: ${wt} words.`,
             presetLine,
             boltonLine,
             constraint ? `Change: ${constraint}` : "",
             `Scene: ${block.synopsis}`,
             `Current:\n${block.prose!.slice(0, 1500)}`,
             canon ? `Canon:\n${canon}` : "",
-            `You MUST write ${wt} words. Prose only.`,
+            wcReminder,
           ].filter(Boolean).join("\n")
         : [
-            `WORD COUNT: ${wt} words.`,
-            `Write prose for this scene.`,
+            wcReminder,
+            `Write ${wt} words of prose for this scene. If you finish the scene, add more detail — describe the setting, deepen character thoughts, extend dialogue — until you have ${wt} words.`,
             presetLine,
             boltonLine,
             `Scene: ${block.synopsis}`,
@@ -2272,13 +2297,13 @@ function NovelWorkspacePage() {
             prevProse ? `Previous scene ended: "${prevProse.slice(-150)}"` : "",
             nextBlockSynopses.length > 0 ? `Next scenes: ${nextBlockSynopses.slice(0, 2).join("; ")}` : "",
             canon ? `Canon:\n${canon}` : "",
-            `You MUST write ${wt} words. Prose only.`,
+            wcReminder,
           ].filter(Boolean).join("\n");
 
-      // Token budget: ~2 tokens per word + buffer for overhead
-      const scaledMaxTokens = Math.min(8000, Math.max(1600, Math.round(wt * 2.2)));
-      // Timeout: minimum 2 minutes, scales with word target
-      const scaledTimeoutMs = Math.max(120000, Math.round(wt * 180));
+      // Token budget: ~2.5 tokens per word — generous to ensure model doesn't cut off
+      const scaledMaxTokens = Math.min(10000, Math.max(2000, Math.round(wt * 2.5)));
+      // Timeout: minimum 3 minutes, scales with word target for slow models
+      const scaledTimeoutMs = Math.max(180000, Math.round(wt * 220));
 
       let prose = "";
 
@@ -2292,7 +2317,7 @@ function NovelWorkspacePage() {
       // ── Attempt 1: full prompt ──
       try {
         const raw = await requestOpenRouterText(prompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
-        prose = stripThinkingBlocks(raw).trim();
+        prose = cleanProseOutput(raw);
       } catch {
         // Will try simplified prompt
       }
@@ -2300,14 +2325,15 @@ function NovelWorkspacePage() {
       // ── Attempt 2: simplified prompt if first failed or empty ──
       if (!prose) {
         const simplePrompt = [
-          `Write ${wt} words of prose for this scene.`,
+          `[MANDATORY: Write exactly ${wt} words. Do NOT stop early.]`,
+          `Write ${wt} words of prose for this scene. Keep writing until you reach ${wt} words.`,
           `Scene: ${block.synopsis}`,
           prevProse ? `Continue from: "${prevProse.slice(-100)}"` : "",
-          `Write ${wt} words. Prose only.`,
+          `You MUST write ${wt} words of prose. If you finish the scene, add detail, description, and dialogue to reach ${wt} words.`,
         ].filter(Boolean).join("\n\n");
         try {
           const raw2 = await requestOpenRouterText(simplePrompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
-          prose = stripThinkingBlocks(raw2).trim();
+          prose = cleanProseOutput(raw2);
         } catch {
           // fall through
         }
@@ -2320,30 +2346,33 @@ function NovelWorkspacePage() {
       // Show prose to the user immediately after initial generation
       saveProseProgress(prose);
 
-      // ── Word count enforcement: auto-continue if too short ──
+      // ── Word count enforcement: auto-continue until we hit 90% of target ──
       let wc = countWords(prose);
-      const MAX_CONTINUES = 2;
+      const MAX_CONTINUES = 5; // Up to 5 continuations to reach target
       let continues = 0;
       while (wc < minAcceptable && continues < MAX_CONTINUES) {
         continues++;
         const deficit = wt - wc;
+        // Ask for manageable chunks — max 500 words per continuation to help weaker models
+        const chunkTarget = Math.min(500, deficit);
+        const continueSystemMsg = `You are a novelist continuing a scene. Write exactly ${chunkTarget} words in ${profileLangLabel}. Return ONLY prose paragraphs — no word counts, no scene labels, no "---", no metadata, no notes. Continue seamlessly from where the text left off.`;
         const continuePrompt = [
-          `Continue writing this scene. Add ${deficit} more words.`,
+          `WORD COUNT: ${chunkTarget} words.`,
+          `Continue this scene. Write ${chunkTarget} more words.`,
           `Scene: ${block.synopsis}`,
-          `Story so far (last 500 words):\n${prose.slice(-2000)}`,
-          `Write ${deficit} more words of prose. Continue seamlessly — no labels or repetition.`,
+          `Text so far ends with:\n"${prose.slice(-800)}"`,
+          `Write ${chunkTarget} words. Continue the story seamlessly. Prose only — no labels, no repetition of what came before.`,
         ].join("\n");
-        const continueTokens = Math.min(4000, Math.max(800, Math.round(deficit * 2.2)));
+        const continueTokens = Math.min(2000, Math.max(600, Math.round(chunkTarget * 2.5)));
         try {
-          const raw = await requestOpenRouterText(continuePrompt, continueTokens, scaledTimeoutMs, systemMsg, false);
-          const extra = stripThinkingBlocks(raw).trim();
-          if (extra && countWords(extra) > 20) {
+          const raw = await requestOpenRouterText(continuePrompt, continueTokens, scaledTimeoutMs, continueSystemMsg, false);
+          const extra = cleanProseOutput(raw);
+          if (extra && countWords(extra) > 15) {
             prose = prose + "\n\n" + extra;
             wc = countWords(prose);
-            // Show updated prose with continuation appended
             saveProseProgress(prose);
           } else {
-            break;
+            break; // Model returned nothing useful — stop
           }
         } catch {
           break;
@@ -5797,39 +5826,77 @@ function NovelWorkspacePage() {
                               </>
                             )}
                           </div>
-                          <textarea
-                            className="pw-block-freewrite"
-                            ref={(el) => {
-                              blockProseRefs.current[idx] = el;
-                              if (el) {
-                                const scrollY = window.scrollY;
-                                el.style.height = "auto";
-                                el.style.height = el.scrollHeight + "px";
-                                window.scrollTo(0, scrollY);
-                              }
-                            }}
-                            style={{
-                              fontFamily:
-                                EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
-                                  ?.font ?? "Georgia, serif",
-                            }}
-                            placeholder="Continue writing..."
-                            defaultValue={block.prose}
-                            key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}-${block.prose ? block.prose.length : 0}`}
-                            onBlur={(e) => {
-                              const val = e.target.value;
-                              if (val !== block.prose) {
-                                const next = [...blocks];
-                                next[idx] = { ...block, prose: val };
-                                updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
-                              }
-                            }}
-                            onInput={(e) => {
-                              const el = e.currentTarget;
-                              el.style.height = "auto";
-                              el.style.height = el.scrollHeight + "px";
-                            }}
-                          />
+                          {(() => {
+                            const isGenerating = storyAiBusyAction === `block-${activeChapter.id}-${idx}`;
+                            const currentWc = block.prose ? countWords(block.prose) : 0;
+                            return (
+                              <div style={{ position: "relative" }}>
+                                <textarea
+                                  className="pw-block-freewrite"
+                                  ref={(el) => {
+                                    blockProseRefs.current[idx] = el;
+                                    if (el) {
+                                      // Measure correct height without collapsing — avoids scroll jump
+                                      el.style.overflow = "hidden";
+                                      el.style.height = "0px";
+                                      const h = el.scrollHeight;
+                                      el.style.height = h + "px";
+                                    }
+                                  }}
+                                  style={{
+                                    fontFamily:
+                                      EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
+                                        ?.font ?? "Georgia, serif",
+                                    overflow: "hidden",
+                                    ...(isGenerating ? { opacity: 0.35, pointerEvents: "none" as const } : {}),
+                                  }}
+                                  placeholder="Continue writing..."
+                                  defaultValue={block.prose}
+                                  key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}-${block.prose ? block.prose.length : 0}`}
+                                  onBlur={(e) => {
+                                    const val = e.target.value;
+                                    if (val !== block.prose) {
+                                      const next = [...blocks];
+                                      next[idx] = { ...block, prose: val };
+                                      updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                    }
+                                  }}
+                                  onInput={(e) => {
+                                    const el = e.currentTarget;
+                                    // Shrink to 0 then expand — overflow:hidden prevents layout shift
+                                    el.style.height = "0px";
+                                    el.style.height = el.scrollHeight + "px";
+                                  }}
+                                />
+                                {isGenerating && (
+                                  <div style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    pointerEvents: "none",
+                                  }}>
+                                    <span style={{
+                                      background: "var(--pw-surface, #1a1a2e)",
+                                      color: "var(--pw-text-muted, #aaa)",
+                                      fontSize: 13,
+                                      padding: "6px 14px",
+                                      borderRadius: 6,
+                                      border: "1px solid var(--pw-border, #333)",
+                                      fontWeight: 500,
+                                      letterSpacing: 0.3,
+                                    }}>
+                                      Writing{currentWc > 0 ? ` — ${currentWc}/${block.wordTarget} words` : "…"}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           </div>
                         ))}
                       </div>
