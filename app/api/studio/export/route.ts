@@ -307,22 +307,11 @@ function buildDocxDocumentXml(title: string, authorName: string, synopsis: strin
   if (authorName) {
     body.push(paragraphXml(authorName));
   }
-  if (synopsis.trim()) {
-    body.push(paragraphXml(""));
-    body.push(paragraphXml("Synopsis", { bold: true }));
-    synopsis.replace(/\r\n/g, "\n").split("\n").forEach((line) => {
-      body.push(paragraphXml(line));
-    });
-  }
-
   chapters.forEach((chapter, index) => {
-    if (index > 0 || synopsis.trim()) {
+    if (index > 0) {
       body.push(pageBreakXml());
     }
     body.push(paragraphXml(chapter.title, { bold: true }));
-    if (chapter.subtitle.trim()) {
-      body.push(paragraphXml(chapter.subtitle));
-    }
     chapter.content.replace(/\r\n/g, "\n").split("\n").forEach((line) => {
       body.push(paragraphXml(line));
     });
@@ -520,21 +509,11 @@ async function buildEpubBuffer(options: {
 
   const content: EpubContentItem[] = [];
 
-  if (options.synopsis.trim()) {
-    content.push({
-      title: "Synopsis",
-      data: textToHtml(options.synopsis),
-    });
-  }
-
   options.chapters.forEach((chapter, index) => {
     const chapterTitle = chapter.title.trim() || `Chapter ${index + 1}`;
-    const subtitle = chapter.subtitle.trim()
-      ? `<p><em>${escapeHtml(chapter.subtitle.trim())}</em></p>`
-      : "";
     content.push({
       title: chapterTitle,
-      data: `${subtitle}${textToHtml(chapter.content)}`,
+      data: `<h1>${escapeHtml(chapterTitle)}</h1>${textToHtml(chapter.content)}`,
     });
   });
 
