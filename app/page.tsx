@@ -44,7 +44,7 @@ export default function LoginPage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "var(--pw-surface, #252323)",
+        background: "#000000",
       }}
     >
       <div
