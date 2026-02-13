@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -57,18 +58,15 @@ export default function LoginPage() {
         }}
       >
         {/* Branding */}
-        <div style={{ textAlign: "center" }}>
-          <h1
-            style={{
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: "-0.03em",
-              color: "var(--pw-text, #f0f0f0)",
-              margin: 0,
-            }}
-          >
-            Blocwrite
-          </h1>
+        <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <Image
+            src="/blocwrite-logo.png"
+            alt="Blocwrite"
+            width={200}
+            height={60}
+            priority
+            style={{ marginBottom: 8 }}
+          />
           <p
             style={{
               fontSize: 13,
