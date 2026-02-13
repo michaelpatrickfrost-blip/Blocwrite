@@ -60,7 +60,7 @@ export default function LoginPage() {
         {/* Branding */}
         <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <Image
-            src="/blocwrite-logo.png"
+            src="/blocwrite-main-dark.png"
             alt="Blocwrite"
             width={200}
             height={60}
