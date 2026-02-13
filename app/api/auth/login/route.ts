@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { createSessionToken, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 
+// Single-user credentials — hash generated from bcrypt.hash("Norman1981!", 12)
+const ADMIN_EMAIL = "kickablur@icloud.com";
+const ADMIN_HASH = "$2b$12$FEpsrmuLlPRCayHGoamab.ERBf4ZWM6xHzfz3t/OrOFtSV5inqije";
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { email?: string; password?: string };
@@ -11,26 +15,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
-    const adminEmail = process.env.BW_ADMIN_EMAIL;
-    const adminHash = process.env.BW_ADMIN_PASSWORD_HASH;
-
-    console.log("[LOGIN DEBUG] adminEmail:", adminEmail);
-    console.log("[LOGIN DEBUG] adminHash starts with:", adminHash?.slice(0, 10));
-    console.log("[LOGIN DEBUG] adminHash length:", adminHash?.length);
-    console.log("[LOGIN DEBUG] input email:", email);
-
-    if (!adminEmail || !adminHash) {
-      return NextResponse.json({ error: "Server configuration error — env vars missing." }, { status: 500 });
-    }
-
     // Check email (case-insensitive)
-    if (email.toLowerCase().trim() !== adminEmail.toLowerCase().trim()) {
+    if (email.toLowerCase().trim() !== ADMIN_EMAIL) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
     // Check password
-    const match = await bcrypt.compare(password, adminHash);
-    console.log("[LOGIN DEBUG] bcrypt match:", match);
+    const match = await bcrypt.compare(password, ADMIN_HASH);
     if (!match) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
@@ -41,7 +32,7 @@ export async function POST(request: Request) {
 
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "lax",
       path: "/",
       maxAge: COOKIE_MAX_AGE,
