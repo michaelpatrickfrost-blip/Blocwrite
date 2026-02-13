@@ -18,7 +18,7 @@ import {
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
 import { TheEditor, type EditorMode, type TargetedFocus, type EditorResult, type EditorChange, type EditorialIssue } from "../components/TheEditor";
-import { getProfileAiOff, type ProfileLanguageCode } from "@/lib/profile-store";
+import { getProfileAiOff, getProfileLanguage, PROFILE_LANGUAGE_OPTIONS, type ProfileLanguageCode } from "@/lib/profile-store";
 
 type ExportFormat = "docx" | "epub";
 type PendingChapterDelete = { id: string; title: string } | null;
@@ -426,6 +426,8 @@ function NovelWorkspacePage() {
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
+  const profileLangCode = getProfileLanguage();
+  const profileLangLabel = PROFILE_LANGUAGE_OPTIONS.find((o) => o.code === profileLangCode)?.label || "English";
   const [styleAuthorDraft, setStyleAuthorDraft] = useState("");
   const [summaryAutofillPrompt, setSummaryAutofillPrompt] = useState("");
   const [openSummaryAiMenu, setOpenSummaryAiMenu] = useState<SummaryAiMenuTarget | null>(null);
@@ -1558,38 +1560,35 @@ function NovelWorkspacePage() {
     const povName = styleVoice.povCharacterId
       ? characters.find((c) => c.id === styleVoice.povCharacterId)?.name
       : undefined;
-    const charList = characters
-      .map((c) => `${c.name || "Unnamed"} (${c.role || "Supporting"})${c.logline ? `: ${c.logline}` : ""}`)
-      .join("\n  ");
-    const locList = locations
-      .map((l) => `${l.name || "Unnamed"}${l.type ? ` [${l.type}]` : ""}${l.description ? `: ${clampPromptText(l.description, 80)}` : ""}`)
-      .join("\n  ");
-    const loreList = lore
-      .map((e) => `${e.title || "Untitled"} [${e.category}]: ${clampPromptText(e.content || "", 100)}`)
-      .join("\n  ");
-    const eventList = timeline
-      .map((e) => `${e.name || "Untitled"}${e.when ? ` (${e.when})` : ""}: ${clampPromptText(e.summary || "", 80)}`)
-      .join("\n  ");
+    // Compact character list: Name (Role) — logline
+    const charList = characters.slice(0, 10)
+      .map((c) => `${c.name || "?"} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}`)
+      .join("; ");
+    const locList = locations.slice(0, 8)
+      .map((l) => `${l.name || "?"}${l.type ? ` [${l.type}]` : ""}`)
+      .join(", ");
+    // Lore: title + constraints only (content is verbose)
+    const loreList = lore.slice(0, 8)
+      .map((e) => `${e.title}${e.constraints?.length ? `: ${e.constraints.slice(0, 2).join("; ")}` : ""}`)
+      .join("; ");
+    const eventList = timeline.slice(0, 8)
+      .map((e) => `${e.name}${e.when ? ` (${e.when})` : ""}`)
+      .join("; ");
     const contextParts = [
-      `Title: ${novel.title || "Untitled Novel"}`,
-      summary.synopsisShort ? `Synopsis:\n${summary.synopsisShort}` : "",
+      `Title: ${novel.title || "Untitled"}`,
+      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, 500)}` : "",
       summary.genre.length ? `Genre: ${summary.genre.join(", ")}` : "",
-      summary.tone.length ? `Tone: ${summary.tone.join(", ")}` : "",
-      summary.themes.length ? `Themes: ${summary.themes.join(", ")}` : "",
-      summary.stakes ? `Conflict/Stakes: ${summary.stakes}` : "",
-      styleVoice.pov ? `POV: ${styleVoice.pov}` : "",
-      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
-      povName ? `POV Character: ${povName}` : "",
-      styleVoice.voiceRules ? `Style Rules: ${clampPromptText(styleVoice.voiceRules, 400)}` : "",
-      charList ? `Characters:\n  ${charList}` : "Characters: none yet",
-      locList ? `Locations:\n  ${locList}` : "Locations: none yet",
-      loreList ? `Worldbuilding:\n  ${loreList}` : "",
-      eventList ? `Timeline Events:\n  ${eventList}` : "",
-    ].filter(Boolean).join("\n\n");
+      summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 150)}` : "",
+      styleVoice.pov ? `POV: ${styleVoice.pov}${povName ? ` (${povName})` : ""}` : "",
+      charList ? `Characters: ${charList}` : "",
+      locList ? `Locations: ${locList}` : "",
+      loreList ? `Lore: ${loreList}` : "",
+      eventList ? `Events: ${eventList}` : "",
+    ].filter(Boolean).join("\n");
 
-    // Safety budget: cap at 10000 chars to prevent model overflow on large Canons
-    if (contextParts.length > 10000) {
-      return `${contextParts.slice(0, 9900).trimEnd()}\n...\n[Context condensed for model limits.]`;
+    // Cap at 5000 chars — titles don't need huge context
+    if (contextParts.length > 5000) {
+      return `${contextParts.slice(0, 4900).trimEnd()}\n[condensed]`;
     }
     return contextParts;
   }
@@ -1597,18 +1596,9 @@ function NovelWorkspacePage() {
   function buildPhase1TitlesPrompt(count: number): string {
     const context = buildPhase1OutlineContext();
     return [
-      "Using the Canon below, create ONLY chapter titles for this novel. No summaries.",
-      "Return JSON only in this exact shape:",
-      `{ "titles": ["Chapter 1 Title", "Chapter 2 Title", ...] }`,
-      "",
-      "Rules:",
-      `- Return exactly ${count} chapter titles.`,
-      "- Each title must be unique.",
-      "- Titles should reflect the story arc, character journeys, and worldbuilding.",
-      "- If the Canon includes worldbuilding/lore (magic systems, cultures, technology, etc.), weave those elements into the chapter progression.",
-      "- If the Canon includes timeline events, align chapter titles with event flow.",
-      "",
-      `Canon:\n${context}`,
+      `Create ${count} chapter titles for this novel. Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
+      `Exactly ${count} unique titles reflecting the story arc. Use Canon names.`,
+      `\nCanon:\n${context}`,
     ].join("\n");
   }
 
@@ -1644,125 +1634,96 @@ function NovelWorkspacePage() {
     if (!novel) return "";
     const sb = novel.storyBible;
     const summary = sb.summary;
-    const styleVoice = sb.styleVoice;
     const characters = sb.characters ?? [];
     const locations = sb.locations ?? [];
     const lore = sb.lore ?? [];
-    const timeline = sb.timeline ?? [];
     const searchText = `${chapterTitle} ${chapterSummary}`.toLowerCase();
 
-    // Story context — the AI must know genre/tone/stakes to plan chapters correctly
-    const storySection = [
-      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, 400)}` : "",
-      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 6).join(", ")}` : "",
-      summary.tone?.length ? `Tone: ${summary.tone.slice(0, 6).join(", ")}` : "",
-      summary.themes?.length ? `Themes: ${summary.themes.slice(0, 6).join(", ")}` : "",
-      summary.stakes ? `Conflict/Stakes: ${clampPromptText(summary.stakes, 200)}` : "",
-      styleVoice.pov ? `POV: ${styleVoice.pov}` : "",
-      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
-      styleVoice.voiceRules ? `Style rules: ${clampPromptText(styleVoice.voiceRules, 200)}` : "",
+    // Compact story header — genre/tone/stakes on one line each
+    const storyLines = [
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 250)}` : "",
+      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
+      summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 120)}` : "",
     ].filter(Boolean).join("\n");
 
-    // Find characters relevant to this chapter (mentioned by name, or protagonist/antagonist)
+    // Relevant characters — compact format, one line each
     const relevantChars = characters.filter((c) => {
       if (c.role === "Protagonist" || c.role === "Antagonist") return true;
       const name = (c.name || "").toLowerCase();
       return name.length > 1 && searchText.includes(name);
     });
+    const charSection = relevantChars.length > 0 ? relevantChars : characters.slice(0, 3);
+    const charLines = charSection.map((c) => {
+      const parts = [`${c.name} (${c.role || "Supporting"})`];
+      if (c.logline) parts.push(clampPromptText(c.logline, 50));
+      if (c.goals) parts.push(`goals: ${clampPromptText(c.goals, 40)}`);
+      if (c.secrets) parts.push(`secret: ${clampPromptText(c.secrets, 40)}`);
+      return `  ${parts.join(" — ")}`;
+    }).join("\n");
 
-    // Find locations relevant to this chapter
+    // Locations — one line each
     const relevantLocs = locations.filter((l) => {
       const name = (l.name || "").toLowerCase();
       return name.length > 1 && searchText.includes(name);
     });
+    const locLines = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 2))
+      .map((l) => `  ${l.name}${l.type ? ` [${l.type}]` : ""}`)
+      .join(", ");
 
-    // Find timeline events relevant to this chapter
-    const relevantEvents = timeline.filter((e) => {
-      const name = (e.name || "").toLowerCase();
-      return name.length > 1 && searchText.includes(name);
-    });
-
-    // If no characters found by name, include the top 3 by role importance
-    const charSection = relevantChars.length > 0 ? relevantChars : characters.slice(0, 3);
-
-    const charDetails = charSection.map((c) => {
-      const relSummary = (c.relationships ?? []).slice(0, 3).map((r) => {
-        const targetName = characters.find((t) => t.id === r.targetCharacterId)?.name ?? "";
-        return targetName ? `${r.type || "linked"} → ${targetName}` : "";
-      }).filter(Boolean).join("; ");
-      return [
-        `  ${c.name} (${c.role || "Supporting"})`,
-        c.logline ? `    Hook: ${c.logline}` : "",
-        c.personality ? `    Personality: ${clampPromptText(c.personality, 120)}` : "",
-        c.goals ? `    Goals: ${clampPromptText(c.goals, 100)}` : "",
-        c.fears ? `    Fears: ${clampPromptText(c.fears, 80)}` : "",
-        c.backstory ? `    Backstory: ${clampPromptText(c.backstory, 120)}` : "",
-        c.secrets ? `    Author-only secret: ${clampPromptText(c.secrets, 100)}` : "",
-        c.speakingStyle ? `    Speech: ${clampPromptText(c.speakingStyle, 80)}` : "",
-        relSummary ? `    Relationships: ${relSummary}` : "",
-      ].filter(Boolean).join("\n");
-    }).join("\n");
-
-    const locDetails = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 2)).map((l) =>
-      `  ${l.name}${l.type ? ` [${l.type}]` : ""}: ${clampPromptText(l.description || "No description", 150)}`
+    // Lore — title + constraints only (content is too verbose for per-chapter context)
+    const loreLines = lore.slice(0, 6).map((e) =>
+      `  ${e.title}${e.constraints?.length ? `: ${e.constraints.slice(0, 2).join("; ")}` : ""}`
     ).join("\n");
 
-    // Worldbuilding: ALWAYS include all lore — the plan must respect every lore entry and constraint
-    const loreDetails = lore.length > 0
-      ? lore.slice(0, 10).map((e) =>
-          `  ${e.title} [${e.category}]: ${clampPromptText(e.content || "", 120)}${e.constraints?.length ? ` | Constraints: ${e.constraints.slice(0, 3).join(", ")}` : ""}`
-        ).join("\n")
-      : "";
+    // Compact chapter outline — just numbers and titles, no details
+    const outlineSlice = allChapterTitles.length <= 12
+      ? allChapterTitles.map((t, i) => `${i + 1}. ${t}`).join(", ")
+      : [
+          ...allChapterTitles.slice(0, chapterIndex).map((t, i) => `${i + 1}. ${t}`),
+          `→ ${chapterIndex + 1}. ${chapterTitle}`,
+          ...allChapterTitles.slice(chapterIndex + 1, chapterIndex + 3).map((t, i) => `${chapterIndex + 2 + i}. ${t}`),
+          allChapterTitles.length > chapterIndex + 3 ? `...(${allChapterTitles.length} total)` : "",
+        ].filter(Boolean).join(", ");
 
-    const eventDetails = relevantEvents.map((e) =>
-      `  ${e.name}${e.when ? ` (${e.when})` : ""}: ${clampPromptText(e.summary || "", 120)}`
-    ).join("\n");
-
-    // All names for reference — characters, locations, AND lore titles
-    const allCharNames = characters.map((c) => c.name).filter(Boolean).join(", ");
-    const allLocNames = locations.map((l) => l.name).filter(Boolean).join(", ");
-    const allLoreTitles = lore.map((e) => e.title).filter(Boolean).join(", ");
+    // All available names (one line for cross-referencing)
+    const allNames = [
+      ...characters.map((c) => c.name),
+      ...locations.map((l) => l.name),
+    ].filter(Boolean);
 
     const contextParts = [
-      storySection,
-      "",
-      `Full outline:\n${allChapterTitles.map((t, i) => `  ${i + 1}. ${t}`).join("\n")}`,
-      "",
-      `Current chapter: ${chapterIndex + 1}. ${chapterTitle}`,
-      `Brief: ${chapterSummary}`,
-      prevSummary ? `Previous chapter ended with: ${prevSummary}` : "",
-      nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
-      "",
-      charDetails ? `Characters in focus:\n${charDetails}` : "",
-      locDetails ? `Locations:\n${locDetails}` : "",
-      loreDetails ? `Worldbuilding (weave into chapter where relevant):\n${loreDetails}` : "",
-      eventDetails ? `Timeline events:\n${eventDetails}` : "",
-      "",
-      allCharNames ? `All available characters: ${allCharNames}` : "",
-      allLocNames ? `All available locations: ${allLocNames}` : "",
-      allLoreTitles ? `All worldbuilding entries: ${allLoreTitles}` : "",
+      storyLines,
+      `Outline: ${outlineSlice}`,
+      `Chapter ${chapterIndex + 1}: ${chapterTitle}`,
+      chapterSummary ? `Brief: ${chapterSummary}` : "",
+      prevSummary ? `Previous chapter: ${clampPromptText(prevSummary, 150)}` : "",
+      nextTitle ? `Next: ${nextTitle}` : "This is the final chapter.",
+      charLines ? `Characters:\n${charLines}` : "",
+      locLines ? `Locations: ${locLines}` : "",
+      loreLines ? `Lore:\n${loreLines}` : "",
+      allNames.length > 0 ? `Names: ${allNames.join(", ")}` : "",
     ].filter(Boolean).join("\n");
 
-    // Safety budget: truncate if context exceeds ~8000 chars to avoid model overflow
-    if (contextParts.length > 8000) {
-      return `${contextParts.slice(0, 7900).trimEnd()}\n...\n[Context condensed for model limits.]`;
+    // Safety budget: cap at 4000 chars for speed with slow models
+    if (contextParts.length > 4000) {
+      return `${contextParts.slice(0, 3900).trimEnd()}\n[condensed]`;
     }
     return contextParts;
   }
 
+  /**
+   * Build Canon context for bloc synopsis generation.
+   * Focused: characters, locations, lore constraints. Skips full plan list for speed.
+   */
   function buildChapterBlocksContext(chapterTitle: string, chapterSynopsis: string, planCharIds?: string[], planLocIds?: string[]): string {
     if (!novel) return "";
     const sb = novel.storyBible;
     const summary = sb.summary;
-    const styleVoice = sb.styleVoice;
     const characters = sb.characters ?? [];
     const locations = sb.locations ?? [];
     const lore = sb.lore ?? [];
-    const timeline = sb.timeline ?? [];
-    const planChapters = sb.bookPlan?.chapters ?? [];
     const searchText = `${chapterTitle} ${chapterSynopsis}`.toLowerCase();
 
-    // Use plan entity links first, then fall back to text search
     const planLinkedChars = (planCharIds ?? []).length > 0
       ? characters.filter((c) => planCharIds!.includes(c.id))
       : [];
@@ -1774,12 +1735,10 @@ function NovelWorkspacePage() {
     const relevantChars = planLinkedChars.length > 0
       ? [...new Map([...planLinkedChars, ...textMatchedChars].map((c) => [c.id, c])).values()]
       : textMatchedChars;
-    const charSection = relevantChars.length > 0 ? relevantChars : characters.slice(0, 4);
-    const charList = charSection
-      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 50)}` : ""}`)
+    const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 4))
+      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}`)
       .join("\n  ");
 
-    // Use plan entity links first, then fall back to text search
     const planLinkedLocs = (planLocIds ?? []).length > 0
       ? locations.filter((l) => planLocIds!.includes(l.id))
       : [];
@@ -1790,96 +1749,110 @@ function NovelWorkspacePage() {
     const relevantLocs = planLinkedLocs.length > 0
       ? [...new Map([...planLinkedLocs, ...textMatchedLocs].map((l) => [l.id, l])).values()]
       : textMatchedLocs;
-    const locSection = relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 3);
-    const locList = locSection
-      .map((l) => `${l.name}${l.type ? ` [${l.type}]` : ""}: ${clampPromptText(l.description || "", 80)}`)
-      .join("\n  ");
+    const locList = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 3))
+      .map((l) => `${l.name}${l.type ? ` [${l.type}]` : ""}`)
+      .join(", ");
 
-    // Lore: find entries with constraints relevant to this chapter
     const relevantLore = lore.filter((e) => {
       const title = (e.title || "").toLowerCase();
-      return title.length > 1 && searchText.includes(title);
+      return title.length > 1 && searchText.includes(title) && (e.constraints ?? []).length > 0;
     });
-    const loreSection = relevantLore.length > 0
-      ? relevantLore.slice(0, 4).map((e) =>
-          `${e.title} [${e.category}]: ${clampPromptText(e.content || "", 80)}${e.constraints?.length ? ` | Rules: ${e.constraints.slice(0, 2).join("; ")}` : ""}`
-        ).join("\n  ")
-      : lore.filter((e) => (e.constraints ?? []).length > 0).slice(0, 3).map((e) =>
-          `${e.title}: ${e.constraints!.slice(0, 2).join("; ")}`
-        ).join("\n  ");
-
-    // Timeline: find events linked to this chapter or mentioned by name
-    const chapterEvents = timeline.filter((e) => {
-      const name = (e.name || "").toLowerCase();
-      return (name.length > 1 && searchText.includes(name)) || (e.when || "").toLowerCase().includes(chapterTitle.toLowerCase());
-    });
-    const eventsList = chapterEvents.slice(0, 4)
-      .map((e) => `${e.name}: ${clampPromptText(e.summary || "", 60)}`)
+    const loreSection = relevantLore.slice(0, 3)
+      .map((e) => `${e.title}: ${e.constraints!.slice(0, 2).join("; ")}`)
       .join("\n  ");
 
-    const planList = planChapters
-      .map((p, i) => `${i + 1}. ${p.title}: ${clampPromptText(p.synopsis || "", 60)}`)
-      .join("\n");
-
-    const contextParts = [
+    const parts = [
       `Novel: ${novel.title || "Untitled"}`,
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 280)}` : "",
-      summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 120)}` : "",
-      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 8).join(", ")}` : "",
-      summary.tone?.length ? `Tone: ${summary.tone.slice(0, 8).join(", ")}` : "",
-      summary.themes?.length ? `Themes: ${summary.themes.slice(0, 6).join(", ")}` : "",
-      styleVoice.pov ? `POV: ${styleVoice.pov}` : "",
-      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
-      styleVoice.comps?.length ? `Comps (write like): ${styleVoice.comps.slice(0, 5).join(", ")}` : "",
-      styleVoice.voiceRules ? `Voice rules: ${clampPromptText(styleVoice.voiceRules, 400)}` : "",
-      styleVoice.bannedWords?.length ? `Banned words: ${styleVoice.bannedWords.slice(0, 12).join(", ")}` : "",
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 200)}` : "",
+      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 5).join(", ")}` : "",
+      summary.tone?.length ? `Tone: ${summary.tone.slice(0, 5).join(", ")}` : "",
       charList ? `Characters:\n  ${charList}` : "",
-      locList ? `Locations:\n  ${locList}` : "",
-      loreSection ? `Worldbuilding:\n  ${loreSection}` : "",
-      eventsList ? `Key events this chapter:\n  ${eventsList}` : "",
-      planList ? `Chapter plan:\n${planList}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+      locList ? `Locations: ${locList}` : "",
+      loreSection ? `Lore rules:\n  ${loreSection}` : "",
+    ].filter(Boolean).join("\n");
 
-    // Safety budget: cap at 4500 chars to keep block generation efficient
-    if (contextParts.length > 4500) {
-      return `${contextParts.slice(0, 4400).trimEnd()}\n...\n[Context condensed.]`;
-    }
-    return contextParts;
+    return parts.length > 2500 ? `${parts.slice(0, 2400).trimEnd()}\n[condensed]` : parts;
   }
 
-  function buildBlockProseStyleSection(): string {
+  /**
+   * Build Canon context for prose generation.
+   * Includes style/voice + relevant characters/locations/lore. No plan list, no redundancy.
+   */
+  function buildProseContext(blockSynopsis: string, planChapterSynopsis: string, planCharIds: string[], planLocIds: string[]): string {
     if (!novel) return "";
     const sb = novel.storyBible;
     const summary = sb.summary;
     const styleVoice = sb.styleVoice;
-    const parts: string[] = [];
-    parts.push("=== STYLE & VOICE (from Canon — you MUST follow these) ===");
-    if (summary.genre?.length) parts.push(`Genre: ${summary.genre.slice(0, 8).join(", ")}`);
-    if (summary.tone?.length) parts.push(`Tone: ${summary.tone.slice(0, 8).join(", ")}`);
-    if (styleVoice.pov) parts.push(`POV: ${styleVoice.pov}`);
-    if (styleVoice.tense) parts.push(`Tense: ${styleVoice.tense}`);
-    if (styleVoice.comps?.length) parts.push(`Write in the style of: ${styleVoice.comps.slice(0, 5).join(", ")}`);
-    if (styleVoice.voiceRules) parts.push(`Voice rules (MUST follow): ${clampPromptText(styleVoice.voiceRules, 500)}`);
-    if (styleVoice.bannedWords?.length) parts.push(`NEVER use these words: ${styleVoice.bannedWords.slice(0, 15).join(", ")}`);
-    // Always include at least a reminder even if fields are empty
-    if (parts.length <= 1) parts.push("No specific style rules set yet — use professional, consistent prose.");
-    return parts.join("\n");
+    const characters = sb.characters ?? [];
+    const locations = sb.locations ?? [];
+    const lore = sb.lore ?? [];
+    const searchText = `${blockSynopsis} ${planChapterSynopsis}`.toLowerCase();
+
+    const relevantChars = planCharIds.length > 0
+      ? characters.filter((c) => planCharIds.includes(c.id))
+      : characters.filter((c) => {
+          if (c.role === "Protagonist" || c.role === "Antagonist") return true;
+          const name = (c.name || "").toLowerCase();
+          return name.length > 1 && searchText.includes(name);
+        });
+    const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 3))
+      .slice(0, 5)
+      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}`)
+      .join("\n  ");
+
+    const relevantLocs = planLocIds.length > 0
+      ? locations.filter((l) => planLocIds.includes(l.id))
+      : locations.filter((l) => {
+          const name = (l.name || "").toLowerCase();
+          return name.length > 1 && searchText.includes(name);
+        });
+    const locList = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 2))
+      .slice(0, 3)
+      .map((l) => `${l.name}: ${clampPromptText(l.description || "", 50)}`)
+      .join("\n  ");
+
+    const relevantLore = lore.filter((e) => {
+      const title = (e.title || "").toLowerCase();
+      return title.length > 1 && searchText.includes(title) && (e.constraints ?? []).length > 0;
+    });
+    const loreRules = relevantLore.slice(0, 2)
+      .map((e) => `${e.title}: ${e.constraints!.slice(0, 2).join("; ")}`)
+      .join("\n  ");
+
+    const povCharName = styleVoice.povCharacterId
+      ? characters.find((c) => c.id === styleVoice.povCharacterId)?.name
+      : undefined;
+    const povLine = styleVoice.pov && povCharName
+      ? `POV: ${styleVoice.pov} — narrate from ${povCharName}'s perspective`
+      : styleVoice.pov
+        ? `POV: ${styleVoice.pov}`
+        : povCharName
+          ? `Narrating character: ${povCharName}`
+          : "";
+
+    const parts = [
+      `Language: ${profileLangLabel} (spelling, grammar, punctuation)`,
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 150)}` : "",
+      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
+      povLine,
+      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
+      styleVoice.comps?.length ? `Style: ${styleVoice.comps.slice(0, 3).join(", ")}` : "",
+      styleVoice.voiceRules ? `Voice: ${clampPromptText(styleVoice.voiceRules, 300)}` : "",
+      styleVoice.bannedWords?.length ? `Never use: ${styleVoice.bannedWords.slice(0, 10).join(", ")}` : "",
+      charList ? `Characters:\n  ${charList}` : "",
+      locList ? `Locations:\n  ${locList}` : "",
+      loreRules ? `Rules:\n  ${loreRules}` : "",
+    ].filter(Boolean).join("\n");
+
+    return parts.length > 1800 ? `${parts.slice(0, 1700).trimEnd()}\n[condensed]` : parts;
   }
+
 
   function buildPhase2Prompt(chapterContext: string): string {
     return [
-      "Expand this chapter outline into a detailed plan. Use character, location, and worldbuilding names exactly as given.",
-      "Return JSON only:",
-      `{ "synopsis": "3-5 detailed sentences", "characters": ["character names"], "locations": ["location names"], "events": ["key event names for this chapter"], "lore": ["worldbuilding entry titles relevant to this chapter"] }`,
-      "",
-      "Rules:",
-      "- The synopsis must be specific — reference character names, locations, and concrete plot points.",
-      "- Weave in worldbuilding/lore naturally: if a lore entry (magic system, culture, tech, etc.) is relevant to this chapter, reference it in the synopsis and list its title in the lore array.",
-      "- Only list characters and locations that actually appear in this chapter.",
-      "- LOCATION RULE: Limit each chapter to ONE primary location unless a scene transition is essential to the plot. This keeps chapters focused and grounded. The locations array should usually contain just 1 entry.",
-      "- Create 1-2 event names that capture key moments (e.g. \"Mara discovers the map\").",
+      "Expand this chapter into a detailed plan. Use Canon names exactly.",
+      `Return JSON: { "synopsis": "3-5 sentences", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      "Synopsis must reference character names, locations, and plot points. One primary location. 1-2 events.",
       "- Maintain continuity with previous and next chapters.",
       "- Respect all worldbuilding constraints — if a lore entry has rules (e.g. \"magic costs life force\"), the synopsis must not violate them.",
       "- Do NOT contradict the Canon. Author-only secrets must not appear in reader-facing content.",
@@ -2102,67 +2075,84 @@ function NovelWorkspacePage() {
 
   async function runGenerateChapterBlocks() {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
-    const planChapter = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id);
+    const targetChapterId = activeChapter.id;
+    const planChapter = planChapters.find((p) => p.manuscriptChapterId === targetChapterId);
     const chapterSynopsis = (planChapter?.synopsis || activeChapter.subtitle || "").trim();
     if (!chapterSynopsis) {
       setStoryAiError("Add a chapter synopsis in the Book Plan first, or a subtitle above.");
       return;
     }
 
-    const chIndex = novel.chapters.findIndex((c) => c.id === activeChapter.id);
-    const nextChapter = chIndex >= 0 && chIndex + 1 < novel.chapters.length ? novel.chapters[chIndex + 1] : null;
-    const nextPlanChapter = nextChapter ? planChapters.find((p) => p.manuscriptChapterId === nextChapter.id) : null;
-    const nextChapterSynopsis = nextPlanChapter?.synopsis?.trim() || nextChapter?.subtitle?.trim() || "";
+    const BLOC_COUNT = 4;
+    const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
+    const systemMsg = `Novel outliner. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
 
-    setStoryAiBusyAction("chapter-blocks");
+    setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
+
     try {
-      const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
-      const povNote = novel.storyBible.styleVoice?.pov
-        ? ` When POV is set in context, structure beats from that perspective.`
-        : "";
-      const systemMsg = [
-        "You are a novel outliner. Produce blocs (synopses) that strictly follow the Canon.",
-        "Use ONLY characters and locations from the context. Do NOT invent new ones.",
-        povNote,
-        "Return ONLY valid JSON. No markdown, no explanation.",
-      ].filter(Boolean).join(" ");
+      const blocks: ChapterBlock[] = [];
 
-      const prompt = [
-        "Split this chapter into 3-4 blocs. Each bloc is a short synopsis (1-3 sentences) of what happens in that scene.",
-        "Return JSON only:",
-        `{ "blocks": [{"synopsis": "1-3 sentence scene summary"}] }`,
-        "",
-        "Rules:",
-        "- 3 or 4 blocs. Each synopsis should be specific: character names, actions, key moments.",
-        "- Use ONLY character and location names from Canon. Invent nothing.",
-        "- Keep the chapter grounded in ONE primary location unless a scene transition is essential to the plot.",
-        "- Blocs should flow: each leads naturally to the next. Consider where the next chapter heads for continuity.",
-        "",
-        `Chapter: ${activeChapter.title}`,
-        `Synopsis: ${chapterSynopsis}`,
-        nextChapterSynopsis ? `\nNext chapter (${nextChapter?.title || "Untitled"}): ${nextChapterSynopsis}` : "",
-        "",
-        "Canon:",
-        context,
-      ].filter(Boolean).join("\n");
+      for (let i = 0; i < BLOC_COUNT; i++) {
+        const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
+        const isLast = i === BLOC_COUNT - 1;
+        const MAX_RETRIES = 3;
 
-      const data = await requestOpenRouterJson<{ blocks?: Array<{ synopsis?: string }> }>(
-        prompt,
-        600,
-        { timeoutMs: 45000, systemMessage: systemMsg },
-      );
+        let synopsis = "";
 
-      const rawBlocks = Array.isArray(data.blocks) ? data.blocks : [];
-      if (rawBlocks.length === 0) {
-        throw new Error("No blocks returned. Try again or use a different model.");
+        for (let attempt = 0; attempt < MAX_RETRIES && !synopsis; attempt++) {
+          const isSimple = attempt >= 1; // Use simpler prompt on retry
+
+          const prompt = isSimple
+            ? [
+                `Chapter: ${chapterSynopsis}`,
+                previousSynopses ? `\n${previousSynopses}` : "",
+                `\nWrite a 1-3 sentence synopsis for scene ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the final scene — resolve the chapter." : ""}`,
+                `Return JSON: { "synopsis": "your synopsis here" }`,
+              ].filter(Boolean).join("\n")
+            : [
+                `You are splitting a chapter into ${BLOC_COUNT} scene blocs. Write the synopsis for bloc ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the FINAL bloc — resolve or close the chapter." : ""}`,
+                `Return JSON: { "synopsis": "1-3 sentences describing what happens in this scene" }`,
+                "",
+                `Chapter: ${activeChapter.title}`,
+                `Chapter synopsis: ${chapterSynopsis}`,
+                previousSynopses ? `\nPrevious blocs:\n${previousSynopses}` : "",
+                i === 0 ? `\n${context}` : "",
+              ].filter(Boolean).join("\n");
+
+          try {
+            const data = await requestOpenRouterJson<{ synopsis?: string }>(
+              prompt,
+              400,
+              { timeoutMs: 120000, systemMessage: isSimple ? "Return ONLY valid JSON." : systemMsg },
+            );
+            const candidate = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
+            // Reject suspiciously short synopses (likely truncated)
+            if (candidate.length >= 20) {
+              synopsis = candidate;
+            }
+          } catch {
+            // Will retry
+          }
+        }
+
+        if (!synopsis && blocks.length === 0) {
+          throw new Error("Could not generate blocs. Try again or use a different model.");
+        }
+        if (!synopsis) {
+          // Got some blocs already — stop early rather than fail entirely
+          break;
+        }
+
+        blocks.push({ ...DEFAULT_BLOCK, synopsis });
+
+        // Update the chapter progressively so the user sees blocs appearing one by one
+        updateChapter(targetChapterId, { content: serializeChapterBlocks(blocks) });
       }
 
-      const blocks: ChapterBlock[] = rawBlocks.map((b) => ({
-        ...DEFAULT_BLOCK,
-        synopsis: (b.synopsis || "").trim() || "Scene placeholder",
-      }));
-      updateChapter(activeChapter.id, { content: serializeChapterBlocks(blocks) });
+      if (blocks.length < 3) {
+        throw new Error(`Only generated ${blocks.length} blocs. Try again or use a different model.`);
+      }
     } catch (error) {
       setStoryAiError(error instanceof Error ? error.message : "Block generation failed.");
     } finally {
@@ -2189,54 +2179,9 @@ function NovelWorkspacePage() {
     { id: "noir", label: "Noir / thriller", hint: "Tense, atmospheric" },
   ];
 
-  function buildBlockProseContext(
-    blockSynopsis: string,
-    planChapterSynopsis: string,
-    planCharIds: string[],
-    planLocIds: string[],
-  ): string {
-    if (!novel) return "";
-    const sb = novel.storyBible;
-    const chars = sb.characters ?? [];
-    const locs = sb.locations ?? [];
-    const lore = sb.lore ?? [];
-    const searchText = `${blockSynopsis} ${planChapterSynopsis}`.toLowerCase();
-
-    const relevantChars = planCharIds.length > 0
-      ? chars.filter((c) => planCharIds.includes(c.id))
-      : chars.filter((c) => {
-          if (c.role === "Protagonist" || c.role === "Antagonist") return true;
-          const name = (c.name || "").toLowerCase();
-          return name.length > 1 && searchText.includes(name);
-        });
-    const charNames = relevantChars.slice(0, 6).map((c) => c.name).filter(Boolean).join(", ");
-
-    const relevantLocs = planLocIds.length > 0
-      ? locs.filter((l) => planLocIds.includes(l.id))
-      : locs.filter((l) => {
-          const name = (l.name || "").toLowerCase();
-          return name.length > 1 && searchText.includes(name);
-        });
-    const locNames = relevantLocs.slice(0, 4).map((l) => l.name).filter(Boolean).join(", ");
-
-    const relevantLore = lore.filter((e) => {
-      const title = (e.title || "").toLowerCase();
-      return title.length > 1 && searchText.includes(title) && (e.constraints ?? []).length > 0;
-    });
-    const loreConstraints = relevantLore
-      .slice(0, 3)
-      .map((e) => `${e.title}: ${e.constraints!.slice(0, 2).join("; ")}`)
-      .join("\n");
-
-    const parts: string[] = [];
-    if (charNames) parts.push(`Characters: ${charNames}`);
-    if (locNames) parts.push(`Locations: ${locNames}`);
-    if (loreConstraints) parts.push(`Lore constraints (must follow):\n${loreConstraints}`);
-    return parts.join("\n");
-  }
-
   async function runGenerateBlockProse(blockIndex: number, regenerateInstruction?: string) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
+    const targetChapterId = activeChapter.id;
     const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
     if (!hasBlocks || blockIndex < 0 || blockIndex >= blocks.length) return;
 
@@ -2250,120 +2195,166 @@ function NovelWorkspacePage() {
     const prevProse = blockIndex > 0 ? blocks[blockIndex - 1].prose : "";
     const isRegenerate = Boolean(block.prose?.trim());
 
-    const planChapter = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id);
+    const planChapter = planChapters.find((p) => p.manuscriptChapterId === targetChapterId);
     const planChapterSynopsis = planChapter?.synopsis?.trim() || "";
     const planCharIds = planChapter?.characterIds ?? [];
     const planLocIds = planChapter?.locationIds ?? [];
 
-    const chIndex = novel.chapters.findIndex((c) => c.id === activeChapter.id);
+    const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
     const nextChapter = chIndex >= 0 && chIndex + 1 < novel.chapters.length ? novel.chapters[chIndex + 1] : null;
     const nextPlanChapter = nextChapter ? planChapters.find((p) => p.manuscriptChapterId === nextChapter.id) : null;
     const nextChapterSynopsis = nextPlanChapter?.synopsis?.trim() || nextChapter?.subtitle?.trim() || "";
 
-    setStoryAiBusyAction(`block-${blockIndex}`);
+    setStoryAiBusyAction(`block-${targetChapterId}-${blockIndex}`);
     setStoryAiError(null);
     try {
-      const leanContext = buildBlockProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
-      const fullContext = buildChapterBlocksContext(activeChapter.title, block.synopsis, planCharIds, planLocIds);
-      const styleSection = buildBlockProseStyleSection();
+      const wt = block.wordTarget;
+      const minAcceptable = Math.round(wt * 0.65);
+
+      // Build lean canon context — keep it short for speed
+      const canon = buildProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
+
       const activePreset = block.preset && block.preset !== "default"
         ? BLOCK_PROSE_PRESETS.find((p) => p.id === block.preset)
         : null;
-      const presetDirective = activePreset
-        ? `WRITING MODE — "${activePreset.label}": ${activePreset.hint}. This MUST shape every paragraph you write.`
-        : "";
+      const presetLine = activePreset ? `Style: ${activePreset.hint}.` : "";
       const activeBoltonId = chapterBoltonId || block.notes.trim();
       const activeBolton = activeBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === activeBoltonId) : null;
-      const boltonDirective = activeBolton
-        ? `BOLT-ON DIRECTIVE (mandatory creative rule): "${activeBolton.title || "Bolt-On"}": ${activeBolton.prompt?.trim() || activeBolton.description?.trim() || "Apply this creative direction."}`
+      const boltonLine = activeBolton
+        ? `Bolt-On rule: ${activeBolton.prompt?.trim() || activeBolton.description?.trim() || ""}`
         : "";
-
-      const povNote = novel.storyBible.styleVoice?.pov
-        ? ` You MUST use ${novel.storyBible.styleVoice.pov} POV.`
-        : "";
-      const systemMsg = [
-        "You are a novelist.",
-        `MANDATORY WORD COUNT: You MUST write exactly ~${block.wordTarget} words. Not 200, not 300 — ${block.wordTarget} words. Count as you write. If you finish the scene too early, expand with sensory detail, dialogue, interiority, or action until you reach ${block.wordTarget} words. DO NOT stop short.`,
-        "Match the author's Canon Style & Voice section exactly — genre, tone, POV, tense, voice rules, and banned words.",
-        povNote,
-        "Use ONLY characters and locations from the Canon. Do NOT invent new ones.",
-        "Return ONLY the prose. No headers, labels, JSON, word counts, or meta-commentary. No thinking blocks. Only novel text.",
-      ].filter(Boolean).join(" ");
-
       const constraint = (regenerateInstruction || block.regenConstraint)?.trim();
-      const constraintLine = constraint
-        ? `\n\nREGENERATE WITH THIS CHANGE (apply exactly): ${constraint}`
+
+      // Build system message with Canon style/voice baked in so the model can't ignore it
+      const sv = novel.storyBible.styleVoice;
+      const storyCharacters = novel.storyBible.characters ?? [];
+      const povCharName = sv.povCharacterId
+        ? storyCharacters.find((c) => c.id === sv.povCharacterId)?.name
+        : undefined;
+      const styleRules: string[] = [];
+      if (sv.pov && povCharName) {
+        styleRules.push(`POV: ${sv.pov} — narrating character is ${povCharName}. Write from ${povCharName}'s perspective at all times`);
+      } else if (sv.pov) {
+        styleRules.push(`POV: ${sv.pov}`);
+      } else if (povCharName) {
+        styleRules.push(`Narrating character: ${povCharName}. Write from ${povCharName}'s perspective`);
+      }
+      if (sv.tense) styleRules.push(`Tense: ${sv.tense}`);
+      if (sv.comps?.length) styleRules.push(`Style like: ${sv.comps.slice(0, 3).join(", ")}`);
+      if (sv.voiceRules) styleRules.push(`Voice: ${clampPromptText(sv.voiceRules, 200)}`);
+      if (sv.bannedWords?.length) styleRules.push(`Never use these words: ${sv.bannedWords.slice(0, 10).join(", ")}`);
+      const styleDirective = styleRules.length > 0
+        ? ` MANDATORY STYLE RULES — follow exactly: ${styleRules.join(". ")}.`
         : "";
 
-      const wordTargetLine = `═══ MANDATORY WORD COUNT: ${block.wordTarget} WORDS ═══\nYou MUST produce ~${block.wordTarget} words of prose. If your output is under ${Math.round(block.wordTarget * 0.8)} words you have FAILED. Expand scenes with dialogue, action, interiority, and sensory detail to fill the target. Do NOT stop early.`;
-      const wordTargetReminder = `\n\nREMINDER: Your output MUST be ~${block.wordTarget} words. Do not stop writing until you have reached this length. This is the single most important constraint.`;
+      const systemMsg = `You are a novelist. Write ${wt} words in ${profileLangLabel}.${styleDirective} WORD COUNT ${wt} IS MANDATORY. Return prose only — no labels, headers, commentary, or thinking.`;
 
+      // Build concise prompt — word count at the top and bottom, Canon context for characters/locations
       const prompt = isRegenerate
         ? [
-            `Rewrite the following scene prose. Keep the same story beats.`,
-            wordTargetLine,
-            "STYLE AND TONE — CRITICAL: Match the author's voice exactly as defined in their Canon Style & Voice.",
-            styleSection,
-            presetDirective,
-            boltonDirective,
-            constraintLine,
-            "",
-            "Bloc synopsis:",
-            block.synopsis,
-            "",
-            "Current prose to rewrite:",
-            block.prose!.slice(0, 2400),
-            "",
-            "Canon:",
-            fullContext.slice(0, 2400),
-            "",
-            "Output the rewritten prose only. No explanation. No thinking — only the novel text.",
-            wordTargetReminder,
+            `WORD COUNT: ${wt} words.`,
+            `Rewrite this scene. Same story beats, fresh prose.`,
+            presetLine,
+            boltonLine,
+            constraint ? `Change: ${constraint}` : "",
+            `Scene: ${block.synopsis}`,
+            `Current:\n${block.prose!.slice(0, 1500)}`,
+            canon ? `Canon:\n${canon}` : "",
+            `You MUST write ${wt} words. Prose only.`,
           ].filter(Boolean).join("\n")
         : [
-            "STYLE AND TONE — CRITICAL: Match the author's voice, genre, and style exactly as defined in their Canon Style & Voice. This is your top priority.",
-            styleSection,
-            presetDirective,
-            boltonDirective,
-            "",
-            wordTargetLine,
-            "",
-            "Chapter overview (from plan):",
-            planChapterSynopsis || activeChapter.subtitle || activeChapter.title,
-            "",
-            "This bloc:",
-            block.synopsis,
-            nextBlockSynopses.length > 0
-              ? "\nBlocs ahead (for continuity):\n" + nextBlockSynopses.map((s, i) => `${i + 1}. ${s}`).join("\n")
-              : "",
-            nextChapterSynopsis
-              ? `\nNext chapter synopsis (for consistency):\n${nextChapterSynopsis}`
-              : "",
-            prevProse ? "\nPrevious bloc ended with:\n" + prevProse.slice(-300) : "",
-            "",
-            leanContext ? `Characters/locations (from plan):\n${leanContext}` : "",
-            "",
-            "Canon (style, voice, characters, locations):",
-            fullContext.slice(0, 2400),
-            "",
-            "Output the prose only. No synopsis, labels, or thinking — only the novel text.",
-            wordTargetReminder,
+            `WORD COUNT: ${wt} words.`,
+            `Write prose for this scene.`,
+            presetLine,
+            boltonLine,
+            `Scene: ${block.synopsis}`,
+            planChapterSynopsis ? `Chapter: ${clampPromptText(planChapterSynopsis, 150)}` : "",
+            prevProse ? `Previous scene ended: "${prevProse.slice(-150)}"` : "",
+            nextBlockSynopses.length > 0 ? `Next scenes: ${nextBlockSynopses.slice(0, 2).join("; ")}` : "",
+            canon ? `Canon:\n${canon}` : "",
+            `You MUST write ${wt} words. Prose only.`,
           ].filter(Boolean).join("\n");
 
-      // Scale token budget generously — ~2 tokens per word to ensure the model never gets cut off
-      const scaledMaxTokens = Math.min(8000, Math.max(1600, Math.round(block.wordTarget * 2)));
-      // Scale timeout with word target — slower models need much more time for longer prose
-      const scaledTimeoutMs = Math.max(120000, Math.round(block.wordTarget * 200));
-      let prose = await requestOpenRouterText(prompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
-      prose = stripThinkingBlocks(prose);
-      const trimmed = prose.trim();
-      if (!trimmed) {
-        throw new Error("No prose returned. Try again.");
+      // Token budget: ~2 tokens per word + buffer for overhead
+      const scaledMaxTokens = Math.min(8000, Math.max(1600, Math.round(wt * 2.2)));
+      // Timeout: minimum 2 minutes, scales with word target
+      const scaledTimeoutMs = Math.max(120000, Math.round(wt * 180));
+
+      let prose = "";
+
+      // Helper: save current prose to the chapter so the user can see it live
+      function saveProseProgress(text: string) {
+        const progressBlocks = [...blocks];
+        progressBlocks[blockIndex] = { ...block, prose: text };
+        updateChapter(targetChapterId, { content: serializeChapterBlocks(progressBlocks) });
       }
+
+      // ── Attempt 1: full prompt ──
+      try {
+        const raw = await requestOpenRouterText(prompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
+        prose = stripThinkingBlocks(raw).trim();
+      } catch {
+        // Will try simplified prompt
+      }
+
+      // ── Attempt 2: simplified prompt if first failed or empty ──
+      if (!prose) {
+        const simplePrompt = [
+          `Write ${wt} words of prose for this scene.`,
+          `Scene: ${block.synopsis}`,
+          prevProse ? `Continue from: "${prevProse.slice(-100)}"` : "",
+          `Write ${wt} words. Prose only.`,
+        ].filter(Boolean).join("\n\n");
+        try {
+          const raw2 = await requestOpenRouterText(simplePrompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
+          prose = stripThinkingBlocks(raw2).trim();
+        } catch {
+          // fall through
+        }
+      }
+
+      if (!prose) {
+        throw new Error("No prose returned. Try again or use a different model.");
+      }
+
+      // Show prose to the user immediately after initial generation
+      saveProseProgress(prose);
+
+      // ── Word count enforcement: auto-continue if too short ──
+      let wc = countWords(prose);
+      const MAX_CONTINUES = 2;
+      let continues = 0;
+      while (wc < minAcceptable && continues < MAX_CONTINUES) {
+        continues++;
+        const deficit = wt - wc;
+        const continuePrompt = [
+          `Continue writing this scene. Add ${deficit} more words.`,
+          `Scene: ${block.synopsis}`,
+          `Story so far (last 500 words):\n${prose.slice(-2000)}`,
+          `Write ${deficit} more words of prose. Continue seamlessly — no labels or repetition.`,
+        ].join("\n");
+        const continueTokens = Math.min(4000, Math.max(800, Math.round(deficit * 2.2)));
+        try {
+          const raw = await requestOpenRouterText(continuePrompt, continueTokens, scaledTimeoutMs, systemMsg, false);
+          const extra = stripThinkingBlocks(raw).trim();
+          if (extra && countWords(extra) > 20) {
+            prose = prose + "\n\n" + extra;
+            wc = countWords(prose);
+            // Show updated prose with continuation appended
+            saveProseProgress(prose);
+          } else {
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+
+      const trimmed = prose;
 
       const nextBlocks = [...blocks];
       nextBlocks[blockIndex] = { ...block, prose: trimmed };
-      updateChapter(activeChapter.id, { content: serializeChapterBlocks(nextBlocks) });
+      updateChapter(targetChapterId, { content: serializeChapterBlocks(nextBlocks) });
     } catch (error) {
       setStoryAiError(error instanceof Error ? error.message : "Bloc prose generation failed.");
     } finally {
@@ -2371,54 +2362,84 @@ function NovelWorkspacePage() {
     }
   }
 
-  async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 45000, systemMessage?: string, jsonMode = false, temperature?: number) {
+  async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 90000, systemMessage?: string, jsonMode = false, temperature?: number) {
     const normalizedApiKey = normalizeClientApiKey(openRouterKey);
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-    let response: Response;
-    try {
-      response = await fetch("/api/openrouter/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: assistantProvider,
-          apiKey: normalizedApiKey,
-          baseUrl: assistantBaseUrl.trim(),
-          model: openRouterModel,
-          prompt,
-          system: systemMessage || "",
-          maxTokens,
-          jsonMode,
-          ...(temperature != null ? { temperature } : {}),
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error("Request timed out — your model may be too slow for this word target. Try a faster model or lower the word count.");
+    const startMs = Date.now();
+
+    // Pre-build request body once (avoid re-serializing on retry)
+    const requestBody = JSON.stringify({
+      provider: assistantProvider,
+      apiKey: normalizedApiKey,
+      baseUrl: assistantBaseUrl.trim(),
+      model: openRouterModel,
+      prompt,
+      system: systemMessage || "",
+      maxTokens,
+      jsonMode,
+      ...(temperature != null ? { temperature } : {}),
+    });
+
+    async function singleAttempt(attemptTimeoutMs: number): Promise<{ ok: boolean; status: number; text: string; apiError?: string }> {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), attemptTimeoutMs);
+      let response: Response;
+      try {
+        response = await fetch("/api/openrouter/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: requestBody,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return { ok: false, status: 0, text: "", apiError: "timeout" };
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
       }
-      throw error;
-    } finally {
-      window.clearTimeout(timeoutId);
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const text =
+        payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).text === "string"
+          ? ((payload as Record<string, unknown>).text as string)
+          : "";
+      const apiError = extractApiErrorMessage(payload);
+      return { ok: response.ok, status: response.status, text: text.trim(), apiError: apiError || undefined };
     }
-    const payload = (await response.json().catch(() => null)) as unknown;
-    const text =
-      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).text === "string"
-        ? ((payload as Record<string, unknown>).text as string)
-        : "";
-    if (!response.ok || !text.trim()) {
-      const apiMessage = extractApiErrorMessage(payload);
-      if (apiMessage) {
-        throw new Error(apiMessage);
-      }
-      if (!response.ok && response.status === 400) {
-        throw new Error(
-          `${selectedProviderOption.label} rejected this request. Check your model and connection settings, then try again.`,
-        );
-      }
-      throw new Error("Assistant request failed.");
+
+    // First attempt
+    const first = await singleAttempt(timeoutMs);
+
+    // If we got a non-empty successful response, return it
+    if (first.ok && first.text) return first.text;
+
+    // Determine if retry is worthwhile
+    const elapsed = Date.now() - startMs;
+    const remaining = timeoutMs - elapsed;
+    const isAuthError = first.apiError?.includes("API key") || first.status === 401 || first.status === 402;
+    const isTransient = first.text === "" || first.status === 500 || first.status === 502 || first.status === 503;
+
+    if (!isAuthError && isTransient && remaining > 10000) {
+      // Brief pause — 500ms is enough for transient errors, no need to wait 2s
+      await new Promise((r) => window.setTimeout(r, 500));
+      const second = await singleAttempt(remaining - 500);
+      if (second.ok && second.text) return second.text;
+      const bestError = second.apiError || first.apiError;
+      if (bestError) throw new Error(bestError);
     }
-    return text.trim();
+
+    // Report the failure
+    if (first.apiError === "timeout") {
+      throw new Error("Request timed out — your model may be too slow for this task. Try a faster model or lower the word count.");
+    }
+    if (first.apiError) throw new Error(first.apiError);
+    if (!first.ok && first.status === 400) {
+      throw new Error(`${selectedProviderOption.label} rejected this request. Check your model and connection settings, then try again.`);
+    }
+    if (first.text === "") {
+      throw new Error("Model returned an empty response. Try again or switch to a different model.");
+    }
+    throw new Error("Assistant request failed.");
   }
 
   function stripJsonMarkdownFence(text: string) {
@@ -2513,23 +2534,24 @@ function NovelWorkspacePage() {
   }
 
   function parseJsonFromAi<T>(rawText: string): T | null {
-    const trimmed = rawText.trim();
-    if (!trimmed) return null;
+    // Strip thinking blocks first — models like Infermatic wrap output in <think>...</think>
+    const cleaned = stripThinkingBlocks(rawText).trim();
+    if (!cleaned) return null;
     const attempts: string[] = [];
     const pushAttempt = (value: string) => {
       const normalized = sanitizeJsonCandidate(value);
       if (!normalized || attempts.includes(normalized)) return;
       attempts.push(normalized);
     };
-    pushAttempt(trimmed);
-    pushAttempt(stripJsonMarkdownFence(trimmed));
-    const extractedFromRaw = extractBalancedJsonBlock(trimmed);
+    pushAttempt(cleaned);
+    pushAttempt(stripJsonMarkdownFence(cleaned));
+    const extractedFromRaw = extractBalancedJsonBlock(cleaned);
     if (extractedFromRaw) pushAttempt(extractedFromRaw);
-    const stripped = stripJsonMarkdownFence(trimmed);
+    const stripped = stripJsonMarkdownFence(cleaned);
     const extractedFromStripped = extractBalancedJsonBlock(stripped);
     if (extractedFromStripped) pushAttempt(extractedFromStripped);
     // Attempt to close truncated JSON (model ran out of tokens)
-    const truncationRepair = attemptCloseTruncatedJson(stripped || trimmed);
+    const truncationRepair = attemptCloseTruncatedJson(stripped || cleaned);
     if (truncationRepair) pushAttempt(truncationRepair);
     for (const candidate of attempts) {
       try {
@@ -2546,26 +2568,38 @@ function NovelWorkspacePage() {
     maxTokens = 900,
     options?: { timeoutMs?: number; systemMessage?: string },
   ) {
-    const timeoutMs = options?.timeoutMs ?? 45000;
+    const totalBudgetMs = options?.timeoutMs ?? 90000;
     const sysMsg = options?.systemMessage;
     // Do NOT use jsonMode (response_format) — many providers (Infermatic/vLLM) don't support it.
-    // Instead, rely on prompt instructions + manual JSON parsing.
-    const firstPass = await requestOpenRouterText(prompt, maxTokens, timeoutMs, sysMsg, false, 0.3);
+    const startMs = Date.now();
+    const firstPass = await requestOpenRouterText(prompt, maxTokens, totalBudgetMs, sysMsg, false, 0.3);
     const firstParsed = parseJsonFromAi<T>(firstPass);
     if (firstParsed) return firstParsed;
-    // Single retry with stricter instruction and even lower temperature
-    const retryMaxTokens = Math.max(320, Math.min(maxTokens, 700));
-    const retryPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON. No markdown fences, no explanation, no trailing text.`;
-    const secondPass = await requestOpenRouterText(retryPrompt, retryMaxTokens, timeoutMs, sysMsg, false, 0.1);
-    const secondParsed = parseJsonFromAi<T>(secondPass);
-    if (secondParsed) return secondParsed;
-    // Try to repair the best available output locally before burning a third API call
-    const repairSource = (secondPass.trim() || firstPass.trim());
+
+    // Try to repair the output locally first (free, no API call)
+    const repairSource = stripThinkingBlocks(firstPass).trim();
     const truncationRepair = attemptCloseTruncatedJson(repairSource);
     if (truncationRepair) {
-      try {
-        return JSON.parse(truncationRepair) as T;
-      } catch { /* fall through */ }
+      try { return JSON.parse(truncationRepair) as T; } catch { /* fall through */ }
+    }
+
+    // Only retry if we have enough time budget left
+    const remainingMs = totalBudgetMs - (Date.now() - startMs);
+    if (remainingMs < 15000) {
+      throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
+    }
+
+    // Retry with short, strict prompt (don't resend the full context — saves input tokens)
+    const retryPrompt = `Your previous response was not valid JSON. Respond with ONLY the JSON object requested. No explanation.\n\nOriginal request (respond with JSON only):\n${prompt.slice(0, 1500)}`;
+    const retryMaxTokens = Math.max(300, Math.min(maxTokens, 600));
+    const secondPass = await requestOpenRouterText(retryPrompt, retryMaxTokens, remainingMs, "Return ONLY valid JSON. No markdown, no text.", false, 0.1);
+    const secondParsed = parseJsonFromAi<T>(secondPass);
+    if (secondParsed) return secondParsed;
+
+    // Last chance: repair retry output
+    const retryRepair = attemptCloseTruncatedJson(stripThinkingBlocks(secondPass).trim() || repairSource);
+    if (retryRepair) {
+      try { return JSON.parse(retryRepair) as T; } catch { /* fall through */ }
     }
     throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
   }
@@ -2592,21 +2626,13 @@ function NovelWorkspacePage() {
     setStoryAiBusyAction("summary-autofill");
     setStoryAiError(null);
     try {
-      const sysMsg = "You are a novel planning assistant. Given a story idea, you create a structured summary. Return valid JSON only.";
+      const sysMsg = "Novel planning assistant. Return valid JSON only.";
 
       const prompt = [
         `Story idea: ${userPrompt}`,
-        "",
-        "Based on this idea, create a novel summary. Return JSON:",
-        `{"synopsis":"140-260 word synopsis of the full story arc","themes":["theme1","theme2"],"genre":["genre1","genre2"],"tone":["tone1","tone2"],"coreConflict":"1-3 sentences about the central tension"}`,
-        "",
-        "Rules:",
-        "- synopsis: 140-260 words covering setup, conflict, and resolution arc.",
-        "- themes: 2-5 thematic elements (e.g. \"redemption\", \"power and corruption\").",
-        "- genre: 2-4 genre tags (e.g. \"Fantasy\", \"Thriller\", \"Romance\").",
-        "- tone: 2-4 tone tags (e.g. \"dark\", \"witty\", \"suspenseful\").",
-        "- coreConflict: the main source of tension in 1-3 sentences.",
-      ].join("\n");
+        `Create a novel summary. Return JSON:`,
+        `{"synopsis":"140-260 word synopsis","themes":["2-5 themes"],"genre":["2-4 genres"],"tone":["2-4 tones"],"coreConflict":"1-3 sentences of central tension"}`,
+      ].join("\n\n");
 
       type SummaryResult = {
         synopsis?: string;
@@ -2620,7 +2646,7 @@ function NovelWorkspacePage() {
 
       // Attempt 1: direct call
       try {
-        const raw = await requestOpenRouterText(prompt, 800, 40000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 800, 90000, sysMsg, false, 0.7);
         data = parseJsonFromAi<SummaryResult>(raw);
       } catch { /* continue */ }
 
@@ -2628,7 +2654,7 @@ function NovelWorkspacePage() {
       if (!data || !data.synopsis) {
         try {
           const retryPrompt = prompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 800, 40000, sysMsg, false, 0.4);
+          const raw2 = await requestOpenRouterText(retryPrompt, 800, 90000, sysMsg, false, 0.4);
           data = parseJsonFromAi<SummaryResult>(raw2);
         } catch { /* continue */ }
       }
@@ -2677,22 +2703,17 @@ function NovelWorkspacePage() {
                 : focus === "action"
                   ? "Favor momentum, danger, tactical decisions, and consequence."
                   : "Balance plot progression, conflict, and character change.";
-      const systemMsg = "You are a story architect. Generate plot-driving events that respect established Canon — characters, locations, lore, and timeline. Return only valid JSON. No prose.";
+      const systemMsg = "Story architect. Return only valid JSON.";
       const prompt = [
-        "Generate key story events for the novel based on the summary and style context.",
-        focusInstruction,
-        "Return JSON only in this shape:",
-        `{
-  "events": [{"name":"string","summary":"string","chapterHint":"string"}]
-}`,
-        `Generate ${count} events. Keep each summary compact and story-driving.`,
-        `Story context:\n${context}`,
-        `Chapter list:\n${chapterNames}`,
+        `Generate ${count} plot events. ${focusInstruction}`,
+        `Return JSON: { "events": [{"name":"string","summary":"string","chapterHint":"string"}] }`,
+        `Canon:\n${context}`,
+        `Chapters:\n${chapterNames}`,
       ].join("\n\n");
 
       const data = await requestOpenRouterJson<{
         events?: Array<{ name?: string; summary?: string; chapterHint?: string }>;
-      }>(prompt, 850, { systemMessage: systemMsg });
+      }>(prompt, 600, { systemMessage: systemMsg });
 
       const events = Array.isArray(data.events) ? data.events : [];
       const mapped = events
@@ -2734,23 +2755,17 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const context = buildStoryBibleContext("characterCompact");
-      const systemMsg = "You are a writing style analyst. Describe author styles in practical, actionable terms that a prose-generation AI can follow. Return only valid JSON.";
+      const systemMsg = "Writing style analyst. Return only valid JSON.";
       const prompt = [
-        `Describe the writing style of ${styleAuthorDraft.trim()} in a way an author can apply to their novel.`,
-        "Return JSON only in this shape:",
-        `{
-  "voiceRules": "string",
-  "toneTags": ["string"],
-  "styleComparables": ["string"]
-}`,
-        "voiceRules must be max 1000 characters and practical — sentence structure, vocabulary level, pacing, dialogue style, prose density.",
-        `Novel context (match style advice to this genre/tone):\n${context}`,
+        `Describe ${styleAuthorDraft.trim()}'s writing style. Return JSON:`,
+        `{ "voiceRules": "practical style rules (max 800 chars): sentence structure, vocabulary, pacing, dialogue", "toneTags": ["tone1"], "styleComparables": ["similar author"] }`,
+        `Novel context:\n${context}`,
       ].join("\n\n");
       const data = await requestOpenRouterJson<{
         voiceRules?: string;
         toneTags?: string[];
         styleComparables?: string[];
-      }>(prompt, 450, { systemMessage: systemMsg });
+      }>(prompt, 350, { systemMessage: systemMsg });
 
       const currentComps = novel.storyBible.styleVoice.comps ?? [];
       const aiComps = parseStringList(data.styleComparables);
@@ -2859,17 +2874,16 @@ function NovelWorkspacePage() {
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
       const prompt = [
-        `${genre} novel. Synopsis: ${clampPromptText(synopsis, 400)}`,
+        `${genre} novel: ${clampPromptText(synopsis, 300)}`,
         summaryNamesText ? `Key names: ${summaryNamesText}` : "",
-        existingNames !== "none" ? `Already exist (skip): ${existingNames}` : "",
-        `List 4-6 characters with realistic first + last names. JSON:`,
-        `[{"name":"Ada Voss","role":"Protagonist","logline":"A fierce pilot haunted by guilt"},{"name":"Marcus Chen","role":"Antagonist","logline":"A charming politician with a hidden agenda"}]`,
+        existingNames !== "none" ? `Skip: ${existingNames}` : "",
+        `List 4-6 characters. JSON: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
       ].filter(Boolean).join("\n");
 
       let roster: RosterEntry[] = [];
 
       try {
-        const raw = await requestOpenRouterText(prompt, 400, 15000, "Return a JSON array of characters. Each needs name, role, and a one-sentence logline.", false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 300, 90000, "Return JSON array only.", false, 0.7);
         const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
         if (Array.isArray(parsed)) {
           roster = parsed;
@@ -2886,7 +2900,7 @@ function NovelWorkspacePage() {
         try {
           const raw2 = await requestOpenRouterText(
             `List 4 characters for a ${genre} novel: ${clampPromptText(synopsis, 300)}\nJSON array: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
-            300, 12000, "Return JSON array only.", false, 0.5,
+            300, 60000, "Return JSON array only.", false, 0.5,
           );
           const parsed2 = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw2);
           if (Array.isArray(parsed2)) roster = parsed2;
@@ -3141,7 +3155,7 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const context = buildStoryBibleContext("summary");
-      const summarySystemMsg = "You are a Canon refinement specialist. Improve story metadata while preserving established canon facts. Return only valid JSON. No prose, no markdown.";
+      const summarySystemMsg = "Canon refinement specialist. Return only valid JSON.";
 
       if (target === "synopsis") {
         const prompt = [
@@ -3160,7 +3174,7 @@ function NovelWorkspacePage() {
           `Core conflict:\n${novel.storyBible.summary.stakes || "(empty)"}`,
           `Story context:\n${context}`,
         ].join("\n\n");
-        const data = await requestOpenRouterJson<{ synopsis?: string }>(prompt, 700, { systemMessage: summarySystemMsg });
+        const data = await requestOpenRouterJson<{ synopsis?: string }>(prompt, 500, { systemMessage: summarySystemMsg });
         if (typeof data.synopsis === "string" && data.synopsis.trim()) {
           updateStoryBible({
             summary: { ...novel.storyBible.summary, synopsisShort: data.synopsis.trim() },
@@ -3614,15 +3628,14 @@ function NovelWorkspacePage() {
     setPlanError(null);
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
-      const systemMsg =
-        "You are a professional novel outliner. You produce structured chapter plans that respect every detail of the author's Canon — characters, locations, lore, timeline, and style rules. You never contradict established canon. Return only valid JSON.";
+      const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
 
       /* ── Phase 0: Generate chapter titles only (minimal tokens) ── */
       type TitlesResult = { titles?: string[] };
       const titlesResponse = await requestOpenRouterJson<TitlesResult>(
         buildPhase1TitlesPrompt(planTarget),
         400,
-        { timeoutMs: 30000, systemMessage: systemMsg },
+        { timeoutMs: 90000, systemMessage: systemMsg },
       );
       let allTitles = Array.isArray(titlesResponse.titles) ? titlesResponse.titles : [];
       if (!allTitles.length) {
@@ -3771,7 +3784,7 @@ function NovelWorkspacePage() {
         let result: Phase2Result | null = null;
         for (let attempt = 0; attempt < 2 && !result; attempt++) {
           try {
-            const raw = await requestOpenRouterText(prompt, 400, 25000, systemMsg, false, 0.3);
+            const raw = await requestOpenRouterText(prompt, 400, 90000, systemMsg, false, 0.3);
             let parsed = parseJsonFromAi<Phase2Result>(raw);
             if (!parsed) {
               const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -3873,8 +3886,7 @@ function NovelWorkspacePage() {
     setStoryAiBusyAction(`plan-regen-${chapterIndex}`);
     setPlanError(null);
     try {
-      const systemMsg =
-        "You are a professional novel outliner. You produce structured chapter plans that respect every detail of the author's Canon — characters, locations, lore, timeline, and style rules. You never contradict established canon. Return only valid JSON.";
+      const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
       const prevSynopsis = chapterIndex > 0 ? (plan.chapters[chapterIndex - 1]?.synopsis ?? "") : "";
       const nextTitle = chapterIndex < allTitles.length - 1 ? allTitles[chapterIndex + 1] : "";
       const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
@@ -3884,7 +3896,7 @@ function NovelWorkspacePage() {
       let result: Phase2Result | null = null;
       for (let attempt = 0; attempt < 2 && !result; attempt++) {
         try {
-          const raw = await requestOpenRouterText(prompt, 400, 25000, systemMsg, false, 0.3);
+          const raw = await requestOpenRouterText(prompt, 400, 90000, systemMsg, false, 0.3);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -4291,7 +4303,7 @@ function NovelWorkspacePage() {
     const maxTokens = Math.min(1200, Math.max(300, paragraphs.length * 120));
     const data = await requestOpenRouterJson<{
       edits?: Array<{ p?: number; text?: string; reason?: string }>;
-    }>(prompt, maxTokens, { timeoutMs: 30000, systemMessage: sysMsg });
+    }>(prompt, maxTokens, { timeoutMs: 90000, systemMessage: sysMsg });
 
     const edits = Array.isArray(data?.edits) ? data.edits : [];
     const changes: EditorChange[] = [];
@@ -4352,7 +4364,7 @@ function NovelWorkspacePage() {
 
           try {
             const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
-              prompt, 500, { timeoutMs: 25000, systemMessage: sysMsg },
+              prompt, 500, { timeoutMs: 90000, systemMessage: sysMsg },
             );
             if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
           } catch {
@@ -4463,7 +4475,7 @@ function NovelWorkspacePage() {
         try {
           const data = await requestOpenRouterJson<{
             edits?: Array<{ p?: number; text?: string; reason?: string }>;
-          }>(prompt, 600, { timeoutMs: 25000, systemMessage: sysMsg });
+          }>(prompt, 600, { timeoutMs: 90000, systemMessage: sysMsg });
 
           const edits = Array.isArray(data?.edits) ? data.edits : [];
           for (const e of edits) {
@@ -4749,31 +4761,13 @@ function NovelWorkspacePage() {
 
       const synopsisBlock = [synopsis, stakes ? `Stakes: ${stakes}` : "", themes ? `Themes: ${themes}` : ""].filter(Boolean).join("\n");
 
-      const sysMsg = "You are a worldbuilding architect for novels. You ONLY create LORE — world rules, magic systems, cultural traditions, historical events, religions, political systems, and world facts. You NEVER create characters, people, or physical locations. Return valid JSON only.";
+      const sysMsg = "Worldbuilding architect. Create ONLY lore (rules, systems, culture, history). NO characters or locations. Return valid JSON.";
 
       const userPrompt = [
-        `Genre: ${genre}${tone ? ` | Tone: ${tone}` : ""}`,
-        "",
-        synopsisBlock,
-        "",
-        charNames !== "none" ? `Characters (DO NOT recreate these as lore): ${charNames}` : "",
-        locNames !== "none" ? `Locations (DO NOT recreate these as lore): ${locNames}` : "",
-        existingLoreNames !== "none" ? `Existing lore (DO NOT repeat these): ${existingLoreNames}` : "",
-        "",
-        "Create 4-10 LORE entries for this novel. Each entry is a world rule, system, culture, history, or fact.",
-        "",
-        "Return JSON:",
-        `{"entries":[{"title":"Entry Title","category":"Magic|Tech|Culture|History|Religion|Politics|Other","content":"2-5 sentence description of this lore element","constraints":["optional rule the story must follow"]}]}`,
-        "",
-        "STRICT RULES:",
-        "- ONLY LORE. Every entry must be a worldbuilding element: a rule, system, tradition, historical event, or world fact.",
-        "- DO NOT include character profiles or bios — those belong in Characters.",
-        "- DO NOT include physical place descriptions — those belong in Locations.",
-        "- DO NOT recreate entries that already exist in the existing lore list above.",
-        "- No placeholder titles: no \"Lore 1\", \"Entry A\", \"New Entry\", \"Unknown\".",
-        "- Reference characters and locations by name where relevant to the lore.",
-        "- Include practical constraints to prevent contradictions during writing.",
-        "- category must be exactly one of: Magic, Tech, Culture, History, Religion, Politics, Other.",
+        `${genre} novel${tone ? ` (${tone})` : ""}. ${synopsisBlock}`,
+        existingLoreNames !== "none" ? `Existing (skip): ${existingLoreNames}` : "",
+        `Create 4-8 lore entries. Return JSON:`,
+        `{"entries":[{"title":"Name","category":"Magic|Tech|Culture|History|Religion|Politics|Other","content":"2-4 sentences","constraints":["rule the story must follow"]}]}`,
       ].filter(Boolean).join("\n");
 
       // ── Call WITHOUT jsonMode — works with any model ──
@@ -4789,14 +4783,14 @@ function NovelWorkspacePage() {
       let data: LoreGenResult | null = null;
 
       try {
-        const raw = await requestOpenRouterText(userPrompt, 1200, 45000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(userPrompt, 800, 90000, sysMsg, false, 0.7);
         data = parseJsonFromAi<LoreGenResult>(raw);
       } catch { /* continue */ }
 
       if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
         try {
-          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 1200, 45000, sysMsg, false, 0.4);
+          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
+          const raw2 = await requestOpenRouterText(retryPrompt, 800, 90000, sysMsg, false, 0.4);
           data = parseJsonFromAi<LoreGenResult>(raw2);
         } catch { /* continue */ }
       }
@@ -5020,29 +5014,13 @@ function NovelWorkspacePage() {
 
       const synopsisBlock = [synopsis, stakes ? `Stakes: ${stakes}` : "", themes ? `Themes: ${themes}` : ""].filter(Boolean).join("\n");
 
-      const sysMsg = "You are a location designer for novels. You ONLY create PLACES — cities, buildings, landscapes, regions, and settings. You NEVER create characters, people, organisations, factions, lore, or world rules. Return valid JSON only.";
+      const sysMsg = "Location designer. Create ONLY physical places. NO characters, factions, or lore. Return valid JSON.";
 
       const userPrompt = [
-        `Genre: ${genre}${tone ? ` | Tone: ${tone}` : ""}`,
-        "",
-        synopsisBlock,
-        "",
-        charNames !== "none" ? `Characters in this story (DO NOT include these as locations): ${charNames}` : "",
-        existingLocNames !== "none" ? `Locations already created (DO NOT repeat these): ${existingLocNames}` : "",
-        "",
-        "Create 4-8 LOCATIONS for this novel. Every entry must be a physical place.",
-        "",
-        "Return JSON:",
-        `{"locations":[{"name":"Place Name","description":"2-4 sentence description of this place and its atmosphere","type":"City|Building|Wilderness|Region|Residence|Other"}]}`,
-        "",
-        "STRICT RULES:",
-        "- ONLY PLACES. Every entry must be a physical location — a city, town, building, landscape, or region.",
-        "- DO NOT include any person or character name as a location.",
-        "- DO NOT include organisations, factions, guilds, councils, or groups — those are not places.",
-        "- DO NOT include lore entries, magic systems, rules, or world facts — those are not places.",
-        "- No placeholder names: no \"Location 1\", \"New Place\", \"Unknown\".",
-        "- Give each location a distinct, evocative name that fits the genre.",
-        "- description should cover atmosphere, what the place looks and feels like.",
+        `${genre} novel${tone ? ` (${tone})` : ""}. ${synopsisBlock}`,
+        existingLocNames !== "none" ? `Existing (skip): ${existingLocNames}` : "",
+        `Create 4-8 locations. Return JSON:`,
+        `{"locations":[{"name":"Place Name","description":"2-3 sentences","type":"City|Building|Wilderness|Region|Residence|Other"}]}`,
       ].filter(Boolean).join("\n");
 
       // ── Call WITHOUT jsonMode — works with any model ──
@@ -5053,14 +5031,14 @@ function NovelWorkspacePage() {
       let data: LocGenResult | null = null;
 
       try {
-        const raw = await requestOpenRouterText(userPrompt, 1000, 40000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(userPrompt, 700, 90000, sysMsg, false, 0.7);
         data = parseJsonFromAi<LocGenResult>(raw);
       } catch { /* continue */ }
 
       if (!data || !Array.isArray(data.locations) || data.locations.length === 0) {
         try {
-          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 1000, 40000, sysMsg, false, 0.4);
+          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
+          const raw2 = await requestOpenRouterText(retryPrompt, 700, 90000, sysMsg, false, 0.4);
           data = parseJsonFromAi<LocGenResult>(raw2);
         } catch { /* continue */ }
       }
@@ -5482,10 +5460,10 @@ function NovelWorkspacePage() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={storyAiBusyAction === "chapter-blocks"}
+                    disabled={storyAiBusyAction === `chapter-blocks-${activeChapter.id}`}
                     onClick={() => void runGenerateChapterBlocks()}
                   >
-                    {storyAiBusyAction === "chapter-blocks" ? "Generating…" : "✦ Generate blocs"}
+                    {storyAiBusyAction === `chapter-blocks-${activeChapter.id}` ? "Generating…" : "✦ Generate blocs"}
                   </button>
                   )}
                   {(() => {
@@ -5771,7 +5749,7 @@ function NovelWorkspacePage() {
                                       type="button"
                                       className={`pw-block-btn ${block.prose ? "pw-block-btn-regenerate" : "pw-block-btn-generate"}`}
                                       title={!block.synopsis?.trim() ? "Add a synopsis first" : block.prose ? "Regenerate prose" : "Generate prose"}
-                                      disabled={storyAiBusyAction === `block-${idx}` || !block.synopsis?.trim()}
+                                      disabled={storyAiBusyAction === `block-${activeChapter.id}-${idx}` || !block.synopsis?.trim()}
                                       onClick={() =>
                                         void runGenerateBlockProse(
                                           idx,
@@ -5779,7 +5757,7 @@ function NovelWorkspacePage() {
                                         )
                                       }
                                     >
-                                      {storyAiBusyAction === `block-${idx}` ? "…" : block.prose ? "↻" : "✦ Generate"}
+                                      {storyAiBusyAction === `block-${activeChapter.id}-${idx}` ? "…" : block.prose ? "↻" : "✦ Generate"}
                                     </button>
                                     {block.prose && (
                                       <button
@@ -5824,8 +5802,10 @@ function NovelWorkspacePage() {
                             ref={(el) => {
                               blockProseRefs.current[idx] = el;
                               if (el) {
+                                const scrollY = window.scrollY;
                                 el.style.height = "auto";
                                 el.style.height = el.scrollHeight + "px";
+                                window.scrollTo(0, scrollY);
                               }
                             }}
                             style={{
@@ -5835,7 +5815,7 @@ function NovelWorkspacePage() {
                             }}
                             placeholder="Continue writing..."
                             defaultValue={block.prose}
-                            key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}`}
+                            key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}-${block.prose ? block.prose.length : 0}`}
                             onBlur={(e) => {
                               const val = e.target.value;
                               if (val !== block.prose) {
@@ -6128,7 +6108,7 @@ function NovelWorkspacePage() {
                           <button
                             type="button"
                             className="btn btn-primary"
-                            disabled={storyAiBusyAction === `block-${focusBlockIndex}`}
+                            disabled={storyAiBusyAction === `block-${activeChapter.id}-${focusBlockIndex}`}
                             onClick={() =>
                               void runGenerateBlockProse(
                                 focusBlockIndex,
@@ -6136,7 +6116,7 @@ function NovelWorkspacePage() {
                               )
                             }
                           >
-                            {storyAiBusyAction === `block-${focusBlockIndex}`
+                            {storyAiBusyAction === `block-${activeChapter.id}-${focusBlockIndex}`
                               ? "Regenerating..."
                               : "✦ Regenerate"}
                           </button>

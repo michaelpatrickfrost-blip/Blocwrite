@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+// Force long-lived connections for slow model providers
+export const maxDuration = 300; // 5 minutes — prevents Vercel/serverless timeout before client timeout
+
 type ProviderId = "openrouter" | "infermatic" | "lmstudio";
 type CompletionRequest = {
   provider?: ProviderId;
@@ -16,10 +19,11 @@ type CompletionRequest = {
 };
 
 type OpenRouterErrorPayload = {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   error?: { message?: string; code?: number | string } | string;
   detail?: string | { message?: string } | Array<unknown>;
   message?: string | { content?: string };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
 const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
@@ -136,20 +140,33 @@ export async function POST(request: Request) {
     if (system) messages.push({ role: "system", content: system });
     messages.push({ role: "user", content: prompt });
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    // OpenRouter-specific: skip moderation for speed, request no streaming
+    if (provider === "openrouter") {
+      headers["X-Title"] = "PilotWriter";
+    }
+
+    const requestBody: Record<string, unknown> = {
+      model,
+      max_tokens: maxTokens,
+      messages,
+      stream: false, // Explicit: never stream — faster TTFT for non-streaming endpoints
+    };
+    if (temperature != null) requestBody.temperature = temperature;
+    if (jsonMode) requestBody.response_format = { type: "json_object" };
+    // Infermatic/vLLM: add stop sequences for common non-prose output patterns
+    if (provider === "infermatic") {
+      requestBody.stop = ["```", "\n\n\n\n"];
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        messages,
-        ...(temperature != null ? { temperature } : {}),
-        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      }),
+      headers,
+      body: JSON.stringify(requestBody),
     });
 
     const payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
@@ -161,7 +178,8 @@ export async function POST(request: Request) {
     }
 
     const text = payload.choices?.[0]?.message?.content ?? "";
-    return NextResponse.json({ text });
+    const finishReason = payload.choices?.[0]?.finish_reason ?? "";
+    return NextResponse.json({ text, finishReason });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Provider request failed.";
     return NextResponse.json({ error: message }, { status: 500 });
