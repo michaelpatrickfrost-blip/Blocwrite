@@ -49,7 +49,7 @@ type AssistantProviderOption = {
 type SummaryAiField = "synopsis" | "palette" | "conflict";
 type SummaryAiMenuTarget = "events";
 type EventsAiFocus = "balanced" | "character" | "twists" | "romance" | "mystery" | "action";
-type CharacterAiMode = "profile" | "voice" | "reaction" | "secrets";
+type CharacterAiMode = "profile" | "voice" | "psyche";
 type PlanChapter = NonNullable<Novel["storyBible"]["bookPlan"]["chapters"][number]>;
 type PlanAiChapterTarget = number; // 1-15, user-selected
 type PlanChapterDraft = {
@@ -217,19 +217,15 @@ function normalizeClientApiKey(raw: string) {
 const CHARACTER_AI_MODE_COPY: Record<CharacterAiMode, { label: string; description: string }> = {
   profile: {
     label: "Full Profile",
-    description: "Builds a complete character profile from your summary and existing notes.",
+    description: "Builds appearance, personality, goals, fears, and backstory from your Canon.",
   },
   voice: {
-    label: "Voice + Accent",
-    description: "Refines accent, dialogue rhythm, vocabulary, and signature speech patterns.",
+    label: "Voice & Style",
+    description: "Crafts how they speak — accent, rhythm, vocabulary — matched to your author style.",
   },
-  reaction: {
-    label: "Reaction Pattern",
-    description: "Defines how this character responds under stress, conflict, betrayal, and pressure.",
-  },
-  secrets: {
-    label: "Secrets Safety",
-    description: "Improves author-only secrets and generates reader-safe hints without spoiling reveals.",
+  psyche: {
+    label: "Inner World",
+    description: "Deepens their psychology — hidden secrets, stress reactions, and subtle reader foreshadowing.",
   },
 };
 const SUMMARY_NAME_BLOCKLIST = new Set([
@@ -1908,7 +1904,6 @@ function NovelWorkspacePage() {
     character: NonNullable<Novel["storyBible"]["characters"][number]>,
     mode: CharacterAiMode,
   ): Record<string, unknown> {
-    // Always include identity fields
     const base: Record<string, unknown> = {
       name: character.name,
       role: character.role,
@@ -1916,13 +1911,10 @@ function NovelWorkspacePage() {
       pronouns: character.pronouns,
     };
     if (mode === "voice") {
-      return { ...base, accent: character.accent, speakingStyle: character.speakingStyle, voiceNotes: character.voiceNotes };
+      return { ...base, personality: character.personality, accent: character.accent, speakingStyle: character.speakingStyle, voiceNotes: character.voiceNotes };
     }
-    if (mode === "reaction") {
-      return { ...base, personality: character.personality, reactionPattern: character.reactionPattern, fears: character.fears };
-    }
-    if (mode === "secrets") {
-      return { ...base, secrets: character.secrets, readerSecretHint: character.readerSecretHint, backstory: character.backstory };
+    if (mode === "psyche") {
+      return { ...base, personality: character.personality, fears: character.fears, backstory: character.backstory, reactionPattern: character.reactionPattern, secrets: character.secrets, readerSecretHint: character.readerSecretHint };
     }
     // "profile" mode — send everything
     return character;
@@ -2782,207 +2774,164 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const summaryNameHints = extractSummaryNameHints();
-      const existingNames =
-        storyCharacters.map((character) => character.name).filter(Boolean).join(", ") || "none";
+      const existingNames = storyCharacters.map((c) => c.name).filter(Boolean).join(", ") || "none";
       const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "";
       const sb = novel.storyBible;
       const genre = (sb.summary.genre ?? []).slice(0, 4).join(", ") || "fiction";
-      const tone = (sb.summary.tone ?? []).slice(0, 3).join(", ") || "";
       const synopsis = sb.summary.synopsisShort?.trim() || "";
-      const stakes = sb.summary.stakes?.trim() || "";
-      const themes = (sb.summary.themes ?? []).slice(0, 5).join(", ");
 
-      // ── Build a SHORT, focused prompt — no Canon dump, just synopsis ──
-      const synopsisBlock = [
-        synopsis,
-        stakes ? `Stakes: ${stakes}` : "",
-        themes ? `Themes: ${themes}` : "",
-      ].filter(Boolean).join("\n");
-
-      const sysMsg = "You are a character designer for novels. You ONLY create PEOPLE — human beings with names, personalities, and goals. You NEVER create locations, places, buildings, cities, organisations, or world elements. If the synopsis mentions a city or place, IGNORE IT. Only output people. Return valid JSON only.";
-
-      const userPrompt = [
-        `Genre: ${genre}${tone ? ` | Tone: ${tone}` : ""}`,
-        "",
-        synopsisBlock,
-        "",
-        summaryNamesText ? `Names mentioned in synopsis (use these as character names): ${summaryNamesText}` : "",
-        existingNames !== "none" ? `Already created (do NOT include these): ${existingNames}` : "",
-        "",
-        "Create 4-7 PEOPLE for this novel. Every single entry must be a human person.",
-        "",
-        "Return JSON:",
-        `{"characters":[{"name":"Firstname Lastname","role":"Protagonist","logline":"who they are","appearance":"how they look","personality":"traits","goals":"desires","fears":"fear","backstory":"past","accent":"accent","speakingStyle":"speech","reactionPattern":"under stress","voiceNotes":"notes","secrets":"secret","readerSecretHint":"hint","tags":["keyword"],"pronouns":"she/her"}]}`,
-        "",
-        "STRICT RULES:",
-        "- ONLY PEOPLE. Every entry must be a person with a first name and last name.",
-        "- DO NOT include cities, towns, kingdoms, buildings, forests, mountains, rivers, temples, guilds, schools, or ANY location.",
-        "- DO NOT include organisations, factions, councils, orders, or groups.",
-        "- If the synopsis names a place like \"Ravenholm\" or \"The Iron Coast\" — SKIP IT, do not turn it into a character.",
-        "- No placeholder names: no \"New Character\", \"The Stranger\", \"Unknown\", \"Character 1\".",
-        "- role must be exactly one of: Protagonist, Antagonist, Supporting, Minor, Love Interest.",
-        "- Give every person a realistic human name that fits the genre.",
-      ].filter(Boolean).join("\n");
-
-      // ── Call WITHOUT jsonMode — many models don't support response_format ──
-      type CharGenResult = {
-        characters?: Array<{
-          name?: string; role?: string; logline?: string; appearance?: string;
-          personality?: string; goals?: string; fears?: string; backstory?: string;
-          accent?: string; speakingStyle?: string; reactionPattern?: string;
-          voiceNotes?: string; secrets?: string; readerSecretHint?: string;
-          tags?: string[]; pronouns?: string;
-        }>;
-      };
-
-      let data: CharGenResult | null = null;
-
-      // Attempt 1: direct text call, parse JSON manually
-      try {
-        const raw = await requestOpenRouterText(userPrompt, 1200, 40000, sysMsg, false, 0.7);
-        data = parseJsonFromAi<CharGenResult>(raw);
-      } catch { /* continue to fallback */ }
-
-      // Attempt 2: with explicit JSON instruction
-      if (!data || !Array.isArray(data.characters) || data.characters.length === 0) {
-        try {
-          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 1200, 40000, sysMsg, false, 0.4);
-          data = parseJsonFromAi<CharGenResult>(raw2);
-        } catch { /* continue to fallback */ }
-      }
-
-      // Attempt 3: plain text pipe format
-      if (!data || !Array.isArray(data.characters) || data.characters.length === 0) {
-        const pipeSysMsg = "You are a character designer. List characters in the exact pipe format requested. No JSON.";
-        const pipePrompt = [
-          `Genre: ${genre}${tone ? `, ${tone}` : ""}`,
-          synopsis ? `Synopsis: ${clampPromptText(synopsis, 800)}` : "",
-          summaryNamesText ? `Use these names: ${summaryNamesText}` : "",
-          existingNames !== "none" ? `Skip these: ${existingNames}` : "",
-          "",
-          "List 4-6 characters, one per line:",
-          "Firstname Lastname | Role | One-line logline | Pronouns | Accent | Speaking style | Goal | Fear",
-          "Role = Protagonist, Antagonist, Supporting, Minor, or Love Interest.",
-        ].filter(Boolean).join("\n");
-
-        const pipeText = await requestOpenRouterText(pipePrompt, 500, 30000, pipeSysMsg, false, 0.7);
-        const parsedFallback = parseCharacterRowsFromText(pipeText);
-        if (parsedFallback.length > 0) {
-          data = {
-            characters: parsedFallback.map((item) => ({
-              name: item.name, role: item.role, logline: item.logline,
-              pronouns: item.pronouns, accent: item.accent, speakingStyle: item.speakingStyle,
-              goals: item.goals, fears: item.fears,
-            })),
-          };
-        }
-      }
-
-      if (!data || !Array.isArray(data.characters) || data.characters.length === 0) {
-        throw new Error("Character generation failed. Try a different model or add more detail to your synopsis.");
-      }
-
-      // ── Filter: reject locations, placeholders, non-people ──────────
-      const locationNamesLower = new Set(
+      // ── Name validation ──
+      const allKnownLocations = new Set<string>(
         (novel.storyBible.locations ?? []).map((l) => l.name?.trim().toLowerCase()).filter(Boolean),
       );
+      const allKnownLore = new Set<string>(
+        (novel.storyBible.lore ?? []).map((l) => l.title?.trim().toLowerCase()).filter(Boolean),
+      );
+      const NEVER_A_NAME = new Set([
+        "despite","although","because","before","after","during","against","between","through",
+        "without","within","around","among","behind","beneath","beside","beyond","another",
+        "either","neither","every","several","already","always","perhaps","whether","however",
+        "moreover","therefore","otherwise","meanwhile","together","toward","towards",
+        "about","above","across","along","below","under","until","upon","while","since","often",
+        "never","still","almost","rather","quite","further","where","there","whose","which",
+        "other","these","those","their","would","could","should","might","being","having",
+        "broken","forgotten","hidden","golden","wooden","fallen","chosen","frozen","spoken",
+        "stolen","woven","driven","risen","taken","shaken","forsaken","molten","rotten","sunken",
+        "written","sacred","cursed","blessed","damned","haunted","ruined","twisted","scarred",
+        "lost","found","silent","gentle","bitter","wicked","lonely","savage","hollow","ancient",
+        "eternal","divine","mortal","phantom","shadow","spectral","mystic","arcane","celestial",
+        "crimson","scarlet","midnight","obsidian","emerald","azure","amber","onyx","ivory",
+      ]);
+      const NAME_OK = new Set(["ashley","beverly","courtney","emily","holly","kelly","lily","molly","sally","shelley","shirley","stanley","timothy","anthony","brittany","destiny","harmony","melody","charity","trinity","felicity","dorothy","kimberly","audrey","avery","henry","harry","perry","terry","jerry","barry","gary","danny","jimmy","kenny","billy","bobby","tommy","jenny","penny","mary","betty","jeffrey","geoffrey","gregory","zachary","hillary","mallory","rory","ivory","emery","valery","rosemary","florence","grace","pierce","lance","chance","vince","bruce","joyce","wayne","shane","blaine","claire","blake","drake","luke","june","rose","hope","jade","eve","skye","brooke","paige"]);
+      const PLACE_WORDS = new Set(["city","town","village","kingdom","castle","forest","mountain","river","lake","temple","palace","tower","tavern","inn","market","arena","ruins","island","realm","empire","port","harbor","bridge","gate","academy","school","library","cathedral","church","guild","order","council","faction","manor","estate","dungeon","fortress","citadel","desert","oasis","coast","canyon","continent","province","district","sea","ocean","bay","peninsula","valley","monastery","abbey","chapel","shrine","museum","theatre","theater","stadium","settlement","colony","garrison","abyss","wilderness","house"]);
 
-      function isNotAPerson(entry: { name?: string; logline?: string; role?: string; appearance?: string; personality?: string; goals?: string; fears?: string }): boolean {
-        const name = (entry.name ?? "").trim();
-        if (!name) return true;
-        const lower = name.toLowerCase();
-        // Match known locations
-        if (locationNamesLower.has(lower)) return true;
-        for (const loc of locationNamesLower) {
-          if (loc && (lower.includes(loc) || loc.includes(lower))) return true;
+      function looksLikeRealName(word: string): boolean {
+        if (!word || word.length < 2 || word.length > 20) return false;
+        if (!/^[A-Z]/.test(word)) return false;
+        if (!/[aeiouAEIOU]/.test(word)) return false;
+        const lw = word.toLowerCase();
+        if (NEVER_A_NAME.has(lw)) return false;
+        if (!NAME_OK.has(lw)) {
+          if (/(?:ly|ness|ment|tion|sion|ful|less|ous|ive|able|ible|ally|erly|ward|wise|ght|ism|ist|ity|ety|ance|ence|dom|ship|ened|ated|ized|ised|eous|ious|ical|shire|holm|burg|berg|wich|wick|ford|land|dale|wood|field|pool|port|mouth|town|stead|bury|polis|grad|stan)$/.test(lw)) return false;
+          if (/(?:ing|ful|less|ness|ment|tion|sion|ous|ive|ble|ish|ise|ize|ude|ade|ite|ete|ose|ure|age|ual|ial|ght|nce|tch|dge)$/.test(lw) && lw.length > 5) return false;
         }
-        // Match known lore entries
-        const loreNamesLower = new Set((novel.storyBible.lore ?? []).map((l) => l.title?.trim().toLowerCase()).filter(Boolean));
-        for (const lore of loreNamesLower) {
-          if (lore && (lower === lore || lower.includes(lore))) return true;
-        }
-        // Place-sounding name prefixes
-        if (/^(the |city of |town of |kingdom of |empire of |realm of |land of |isle of |island of |castle |fort |mount |lake |river |forest of |village of |temple of |guild of |order of |council of |republic of |federation of |house of |tower of |palace of |port of |bay of |vale of |valley of )/i.test(name)) return true;
-        // Placeholder names
-        if (/^(new character|character \d|character [a-z]$|unknown|unnamed|n\/a|the stranger|the hero|the villain)/i.test(name)) return true;
-        // Single word that's a place/thing word
-        const placeWords = /^(city|town|village|kingdom|castle|forest|mountain|river|lake|temple|palace|tower|tavern|inn|market|arena|ruins|island|realm|empire|port|harbour|harbor|bridge|gate|academy|school|library|cathedral|church|guild|order|council|faction|organisation|organization|alliance|brotherhood|sisterhood|society|league|clan|tribe|dynasty|house|manor|estate|dungeon|crypt|vault|sanctuary|haven|refuge|outpost|fortress|citadel|stronghold|barracks|docks|shipyard|quarry|mine|cavern|cave|swamp|marsh|wasteland|tundra|desert|oasis|grove|meadow|coast|shore|cliff|canyon|volcano|glacier|continent|province|district|quarter|ward|street|road|path|trail|alley|plaza|square|courtyard|garden|park|cemetery|graveyard)$/i;
-        if (placeWords.test(name)) return true;
-        // Name contains "of the" (very common for locations: "Temple of the Sun", "City of the Dead")
-        if (/\bof the\b/i.test(name) && !/\b(son|daughter|child|heir|queen|king|prince|princess|lord|lady|duke|duchess|baron|baroness|count|countess|master|servant|captain|general|commander)\b/i.test(name)) return true;
-        // Logline describes a place or thing, not a person
-        const logline = (entry.logline ?? "").toLowerCase();
-        if (logline && /^(a |an |the )?(city|town|village|kingdom|realm|land|forest|mountain|building|region|location|place|setting|world|area|territory|guild|order|council|faction|organisation|organization|alliance|secret society|ancient|sprawling|vast|hidden|remote|mysterious|legendary)\b/i.test(logline)) return true;
-        if (logline && /\b(located in|situated|borders|stretches across|lies (in|on|at|between|north|south|east|west)|founded in|built on|stands at|overlooks)\b/i.test(logline)) return true;
-        // Role field is a location/thing type
-        const role = (entry.role ?? "").toLowerCase();
-        if (/\b(location|setting|place|city|world|environment|building|region|territory|organisation|organization|faction|guild|landmark|institution)\b/i.test(role)) return true;
-        // Missing all human traits — probably not a person
-        const hasPersonality = Boolean((entry.personality ?? "").trim());
-        const hasGoals = Boolean((entry.goals ?? "").trim());
-        const hasFears = Boolean((entry.fears ?? "").trim());
-        const hasAppearance = Boolean((entry.appearance ?? "").trim());
-        if (!hasPersonality && !hasGoals && !hasFears && !hasAppearance && !logline) return true;
-        return false;
+        if (/^(un|dis|over|under|out|mis|pre|non|anti|counter|super|semi|sub|trans|inter|multi|ultra|extra|mega|auto|self|home|some|any|every|no)/.test(lw) && lw.length > 6) return false;
+        return true;
       }
 
-      const generated = (Array.isArray(data.characters) ? data.characters : [])
-        .map((item, generatedIndex) => {
-          const name = typeof item.name === "string" ? item.name.trim() : "";
-          if (!name) return null;
-          if (isNotAPerson(item)) return null;
-          const fullName = ensureFullCharacterName(name, generatedIndex);
-          if (!fullName) return null;
-          return {
-            id: createEntityId("charv2"),
-            name: fullName,
-            role: normalizeCharacterRole(item.role),
-            logline: typeof item.logline === "string" ? item.logline.trim() : "",
-            appearance: typeof item.appearance === "string" ? item.appearance.trim() : "",
-            personality: typeof item.personality === "string" ? item.personality.trim() : "",
-            goals: typeof item.goals === "string" ? item.goals.trim() : "",
-            fears: typeof item.fears === "string" ? item.fears.trim() : "",
-            backstory: typeof item.backstory === "string" ? item.backstory.trim() : "",
-            secrets: typeof item.secrets === "string" ? item.secrets.trim() : "",
-            readerSecretHint: typeof item.readerSecretHint === "string" ? item.readerSecretHint.trim() : "",
-            accent: typeof item.accent === "string" ? item.accent.trim() : "",
-            speakingStyle: typeof item.speakingStyle === "string" ? item.speakingStyle.trim() : "",
-            reactionPattern: typeof item.reactionPattern === "string" ? item.reactionPattern.trim() : "",
-            voiceNotes: typeof item.voiceNotes === "string" ? item.voiceNotes.trim() : "",
-            tags: parseStringList(item.tags),
-            pronouns: typeof item.pronouns === "string" ? item.pronouns.trim() : "",
-            groups: "",
-            otherNames: "",
-            relationships: [],
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
-      const presentNames = [...storyCharacters.map((character) => character.name), ...generated.map((item) => item.name)]
-        .map((name) => name.trim().toLowerCase())
-        .filter(Boolean);
-      const generatedNameSet = new Set(presentNames);
-      const missingSummaryNames = summaryNameHints.filter((nameHint) => {
-        const normalizedHint = nameHint.trim().toLowerCase();
-        if (!normalizedHint) return false;
-        if (generatedNameSet.has(normalizedHint)) return false;
-        const hintParts = normalizedHint.split(" ").filter(Boolean);
-        if (hintParts.length <= 1) {
-          return !generated.some((candidate) =>
-            candidate.name.trim().toLowerCase().startsWith(`${hintParts[0]} `),
-          );
+      function isValidName(name: string): boolean {
+        if (!name || name.length < 3) return false;
+        const words = name.split(/\s+/).filter(Boolean);
+        if (words.length < 2) return false;
+        for (const w of words) {
+          if (!looksLikeRealName(w)) return false;
+          const wl = w.toLowerCase();
+          if (allKnownLocations.has(wl) || allKnownLore.has(wl) || PLACE_WORDS.has(wl)) return false;
         }
+        if (/^(new character|character \d|unknown|unnamed|n\/a|the )/i.test(name)) return false;
+        if (/\bof the\b/i.test(name)) return false;
         return true;
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // FAST — names + roles only. User clicks "Run: Full Profile" per character.
+      // ═══════════════════════════════════════════════════════════════
+      type RosterEntry = { name?: string; role?: string; logline?: string };
+
+      const prompt = [
+        `${genre} novel. Synopsis: ${clampPromptText(synopsis, 400)}`,
+        summaryNamesText ? `Key names: ${summaryNamesText}` : "",
+        existingNames !== "none" ? `Already exist (skip): ${existingNames}` : "",
+        `List 4-6 characters with realistic first + last names. JSON:`,
+        `[{"name":"Ada Voss","role":"Protagonist","logline":"A fierce pilot haunted by guilt"},{"name":"Marcus Chen","role":"Antagonist","logline":"A charming politician with a hidden agenda"}]`,
+      ].filter(Boolean).join("\n");
+
+      let roster: RosterEntry[] = [];
+
+      try {
+        const raw = await requestOpenRouterText(prompt, 400, 15000, "Return a JSON array of characters. Each needs name, role, and a one-sentence logline.", false, 0.7);
+        const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
+        if (Array.isArray(parsed)) {
+          roster = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          const obj = parsed as Record<string, unknown>;
+          for (const key of Object.keys(obj)) {
+            if (Array.isArray(obj[key])) { roster = obj[key] as RosterEntry[]; break; }
+          }
+        }
+      } catch { /* continue */ }
+
+      // Retry if empty
+      if (roster.length === 0) {
+        try {
+          const raw2 = await requestOpenRouterText(
+            `List 4 characters for a ${genre} novel: ${clampPromptText(synopsis, 300)}\nJSON array: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
+            300, 12000, "Return JSON array only.", false, 0.5,
+          );
+          const parsed2 = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw2);
+          if (Array.isArray(parsed2)) roster = parsed2;
+          else if (parsed2 && typeof parsed2 === "object") {
+            const obj2 = parsed2 as Record<string, unknown>;
+            for (const key of Object.keys(obj2)) {
+              if (Array.isArray(obj2[key])) { roster = obj2[key] as RosterEntry[]; break; }
+            }
+          }
+        } catch { /* continue */ }
+      }
+
+      // Filter through name validation
+      roster = roster.filter((r) => typeof r.name === "string" && isValidName(r.name.trim()));
+
+      // Add any summary name hints not in roster
+      const rosterNames = new Set(roster.map((r) => (r.name ?? "").trim().toLowerCase()));
+      const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
+
+      summaryNameHints.forEach((hint) => {
+        const normalized = hint.trim().toLowerCase();
+        if (normalized && !rosterNames.has(normalized) && !existingNamesSet.has(normalized)) {
+          const fullName = ensureFullCharacterName(hint, roster.length);
+          if (fullName && isValidName(fullName)) {
+            roster.push({ name: fullName, role: roster.length === 0 ? "Protagonist" : "Supporting" });
+            rosterNames.add(fullName.toLowerCase());
+          }
+        }
       });
-      missingSummaryNames.forEach((missingName, index) => {
-        const fullName = ensureFullCharacterName(missingName, index + generated.length);
+
+      if (roster.length === 0) {
+        throw new Error("Could not generate characters. Try a different model or add more synopsis detail.");
+      }
+
+      // Build character shells (name + role + logline only)
+      const nextCharacters = [...storyCharacters];
+      const nameIndex = new Map<string, number>();
+      const firstNameIndex = new Set<string>();
+      nextCharacters.forEach((c, i) => {
+        const k = c.name.trim().toLowerCase();
+        if (k) {
+          nameIndex.set(k, i);
+          const firstName = k.split(/\s+/)[0];
+          if (firstName) firstNameIndex.add(firstName);
+        }
+      });
+
+      let addedCount = 0;
+      roster.forEach((entry, idx) => {
+        const name = (entry.name ?? "").trim();
+        if (!name) return;
+        const fullName = ensureFullCharacterName(name, idx);
         if (!fullName) return;
-        generated.push({
+        const k = fullName.trim().toLowerCase();
+        const firstName = k.split(/\s+/)[0] ?? "";
+        // Skip if exact full name already exists
+        if (nameIndex.has(k) || existingNamesSet.has(k)) return;
+        // Skip if first name already used (prevents "Liam Fletcher" + "Liam Thompson" dupes)
+        if (firstName && firstNameIndex.has(firstName)) return;
+
+        nextCharacters.push({
           id: createEntityId("charv2"),
           name: fullName,
-          role: index === 0 ? "Protagonist" : "Supporting",
-          logline: "Mentioned in summary. Expand this character to fit the canon.",
+          role: normalizeCharacterRole(entry.role),
+          logline: typeof entry.logline === "string" ? entry.logline.trim() : "",
           appearance: "",
           personality: "",
           goals: "",
@@ -2997,50 +2946,17 @@ function NovelWorkspacePage() {
           tags: [],
           pronouns: "",
           groups: "",
-          otherNames: fullName.toLowerCase() === missingName.trim().toLowerCase() ? "" : missingName.trim(),
+          otherNames: "",
           relationships: [],
         });
+        nameIndex.set(k, nextCharacters.length - 1);
+        if (firstName) firstNameIndex.add(firstName);
+        addedCount++;
       });
 
-      if (!generated.length) {
-        throw new Error("Assistant did not return valid characters.");
+      if (addedCount === 0) {
+        throw new Error("No new characters to add. They may already exist.");
       }
-
-      const nextCharacters = [...storyCharacters];
-      const normalizedNameToIndex = new Map<string, number>();
-      nextCharacters.forEach((character, index) => {
-        const key = character.name.trim().toLowerCase();
-        if (key) normalizedNameToIndex.set(key, index);
-      });
-
-      generated.forEach((generatedCharacter) => {
-        const key = generatedCharacter.name.trim().toLowerCase();
-        const matchIndex = normalizedNameToIndex.get(key);
-        if (matchIndex === undefined) {
-          nextCharacters.push(generatedCharacter);
-          normalizedNameToIndex.set(key, nextCharacters.length - 1);
-          return;
-        }
-        const current = nextCharacters[matchIndex];
-        nextCharacters[matchIndex] = {
-          ...current,
-          role: current.role && current.role !== "Type" ? current.role : generatedCharacter.role,
-          logline: current.logline || generatedCharacter.logline,
-          appearance: current.appearance || generatedCharacter.appearance,
-          personality: current.personality || generatedCharacter.personality,
-          goals: current.goals || generatedCharacter.goals,
-          fears: current.fears || generatedCharacter.fears,
-          backstory: current.backstory || generatedCharacter.backstory,
-          secrets: current.secrets || generatedCharacter.secrets,
-          readerSecretHint: current.readerSecretHint || generatedCharacter.readerSecretHint,
-          accent: current.accent || generatedCharacter.accent,
-          speakingStyle: current.speakingStyle || generatedCharacter.speakingStyle,
-          reactionPattern: current.reactionPattern || generatedCharacter.reactionPattern,
-          voiceNotes: current.voiceNotes || generatedCharacter.voiceNotes,
-          pronouns: current.pronouns || generatedCharacter.pronouns,
-          tags: Array.from(new Set([...(current.tags ?? []), ...(generatedCharacter.tags ?? [])])),
-        };
-      });
 
       updateStoryBible({ characters: nextCharacters });
       if (!selectedV2CharacterId && nextCharacters[0]) {
@@ -3081,13 +2997,15 @@ function NovelWorkspacePage() {
         /^character\s+\d+$/i.test(character.name.trim());
       const focusInstruction =
         characterAiMode === "voice"
-          ? "Focus on accent, speaking style, voice notes, and dialogue signature."
-          : characterAiMode === "reaction"
-            ? "Focus on reaction pattern under stress, conflict behavior, and decision style."
-            : characterAiMode === "secrets"
-              ? "Focus on author-only secret and a reader-safe hint that does not spoil the secret."
-              : "Build a full but concise character profile suitable for novel drafting.";
-      const systemMsg = "You are a character development specialist. Refine characters to be vivid, consistent with Canon, and useful for prose generation. Return only valid JSON.";
+          ? "Focus on how this character speaks — accent, dialect, vocabulary, sentence rhythm, speech patterns, and voice notes. Reference the author's style from Canon to make dialogue feel authentic."
+          : characterAiMode === "psyche"
+            ? "Focus on inner psychology — hidden secrets, how they react under stress/conflict/betrayal, subconscious fears, and a reader-safe foreshadowing hint that does not spoil the secret."
+            : "Build a full character profile — appearance, personality, goals, fears, and backstory. Make them vivid and grounded in the Canon.";
+      const systemMsg = characterAiMode === "voice"
+        ? "You are a dialogue and voice specialist. Craft how characters speak based on the author's style rules in Canon. Return only valid JSON."
+        : characterAiMode === "psyche"
+          ? "You are a character psychologist. Build rich inner worlds — secrets, stress responses, and subtle foreshadowing. Return only valid JSON."
+          : "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return only valid JSON.";
       const prompt = [
         `Refine this character: ${character.name}`,
         focusInstruction,
@@ -3453,6 +3371,26 @@ function NovelWorkspacePage() {
     return 8;
   }
 
+  function clearAllPlanChapters() {
+    if (!novel) return;
+    mutateNovel((current) => {
+      const now = new Date().toISOString();
+      return {
+        ...current,
+        chapters: [],
+        storyBible: {
+          ...current.storyBible,
+          bookPlan: {
+            ...(current.storyBible.bookPlan ?? { chapters: [], aiChapterTarget: 8, updatedAt: now }),
+            chapters: [],
+            updatedAt: now,
+          },
+        },
+      };
+    });
+    setActiveChapterId(null);
+  }
+
   function openPlanGenerationModal() {
     if (!novel) return;
     const target = normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
@@ -3508,12 +3446,11 @@ function NovelWorkspacePage() {
         const titleKey = (plan.title || "").trim().toLowerCase();
         const titleMatch = !linked && titleKey ? existingByTitle.get(titleKey) : undefined;
         const existing = linked ?? titleMatch;
-        const contentFromPlan = buildPlanChapterDetails(plan, current);
         return {
           id: existing?.id ?? createEntityId("chapter"),
           title: plan.title || existing?.title || `Chapter ${index + 1}`,
           subtitle: (plan.synopsis || existing?.subtitle || "").slice(0, 140),
-          content: existing?.content?.trim() ? existing.content : contentFromPlan,
+          content: existing?.content?.trim() ? existing.content : "",
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         };
@@ -3678,7 +3615,7 @@ function NovelWorkspacePage() {
         allTitles.push(`Chapter ${allTitles.length + 1}`);
       }
 
-      /* ── Phase 2: Generate each chapter sequentially (one at a time to save tokens) ── */
+      /* ── Show skeleton plan immediately so user sees progress ── */
       type Phase2Result = {
         synopsis?: string;
         characters?: string[];
@@ -3686,37 +3623,20 @@ function NovelWorkspacePage() {
         events?: string[];
         lore?: string[];
       };
-      const phase2Results: Phase2Result[] = [];
-      for (let index = 0; index < allTitles.length; index++) {
-        const prevSummary = index > 0 ? (phase2Results[index - 1]?.synopsis ?? "") : "";
-        const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
-        const chapterContext = buildPhase2ChapterContext(
-          allTitles[index],
-          "",
-          index,
-          allTitles,
-          prevSummary,
-          nextTitle,
-        );
-        const prompt = buildPhase2Prompt(chapterContext);
-        try {
-          const result = await requestOpenRouterJson<Phase2Result>(prompt, 600, {
-            timeoutMs: 45000,
-            systemMessage: systemMsg,
-          });
-          phase2Results.push(result);
-        } catch {
-          phase2Results.push({
-            synopsis: `Chapter outline for ${allTitles[index]}.`,
-            characters: [],
-            locations: [],
-            events: [`${allTitles[index]} key event`],
-            lore: [],
-          });
-        }
-      }
 
-      /* ── Merge results: resolve entity references ── */
+      const planChapterIds = allTitles.map(() => createEntityId("plan"));
+      const skeletonChapters: PlanChapter[] = allTitles.map((title, i) => ({
+        id: planChapterIds[i],
+        title,
+        synopsis: "",
+        characterIds: [],
+        locationIds: [],
+        loreIds: [],
+        manuscriptChapterId: "",
+      }));
+      applyPlanToChapters(skeletonChapters, { activateFirst: true });
+
+      /* ── Phase 2: Generate each chapter's detail sequentially, updating UI live ── */
       const characterByName = new Map<string, Novel["storyBible"]["characters"][number]>();
       const mergedCharacters = [...(novel.storyBible.characters ?? [])];
       mergedCharacters.forEach((character) => {
@@ -3808,7 +3728,6 @@ function NovelWorkspacePage() {
         return created.id;
       };
 
-      // Existing lore stays untouched (no lore generation in two-phase approach)
       const mergedLore = [...(novel.storyBible.lore ?? [])];
       const loreByTitle = new Map(mergedLore.map((e) => [normalizeLookup(e.title || ""), e]));
       const resolveLoreId = (rawTitle: string): string => {
@@ -3816,62 +3735,210 @@ function NovelWorkspacePage() {
         return key ? (loreByTitle.get(key)?.id ?? "") : "";
       };
 
-      const chapters = phase2Results.map((result, index) => {
+      let prevSummary = "";
+      for (let index = 0; index < allTitles.length; index++) {
+        const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
+        const chapterContext = buildPhase2ChapterContext(
+          allTitles[index],
+          "",
+          index,
+          allTitles,
+          prevSummary,
+          nextTitle,
+        );
+        const prompt = buildPhase2Prompt(chapterContext);
+
+        let result: Phase2Result | null = null;
+        for (let attempt = 0; attempt < 2 && !result; attempt++) {
+          try {
+            const raw = await requestOpenRouterText(prompt, 400, 25000, systemMsg, false, 0.3);
+            let parsed = parseJsonFromAi<Phase2Result>(raw);
+            if (!parsed) {
+              const repaired = attemptCloseTruncatedJson(raw.trim());
+              if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
+            }
+            // Validate the result actually has real detail (not just a generic fallback-like synopsis)
+            if (parsed?.synopsis && parsed.synopsis.length > 40 && (parsed.characters?.length || parsed.locations?.length)) {
+              result = parsed;
+            }
+          } catch { /* retry */ }
+        }
+        if (!result) {
+          result = {
+            synopsis: `Chapter outline for ${allTitles[index]}.`,
+            characters: [],
+            locations: [],
+            events: [`${allTitles[index]} key event`],
+            lore: [],
+          };
+        }
+
         const chapterTitle = allTitles[index];
         const synopsis =
           (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${chapterTitle}.`;
+        prevSummary = synopsis;
+
         const chapterCharacterIds = mergeUniqueIds(
           parseStringList(result.characters).map(ensureCharacterId).filter(Boolean),
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedCharacters.map((c) => ({
-            id: c.id,
-            name: c.name || "",
+            id: c.id, name: c.name || "",
           }))),
         );
         const chapterLocationIds = mergeUniqueIds(
           parseStringList(result.locations).map(ensureLocationId).filter(Boolean),
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
-            id: l.id,
-            name: l.name || "",
+            id: l.id, name: l.name || "",
           }))),
         );
-        // Resolve lore: match AI-returned titles + infer from synopsis text
         const chapterLoreIds = mergeUniqueIds(
           parseStringList(result.lore).map(resolveLoreId).filter(Boolean),
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
-            id: e.id,
-            name: e.title || "",
+            id: e.id, name: e.title || "",
           }))),
         );
-        return {
-          id: createEntityId("plan"),
-          title: chapterTitle,
-          synopsis: synopsis || "Chapter outline pending.",
-          characterIds: chapterCharacterIds,
-          locationIds: chapterLocationIds,
-          loreIds: chapterLoreIds,
-          manuscriptChapterId: "",
-        } as PlanChapter;
-      });
+        // Resolve events
+        parseStringList(result.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
 
-      if (!chapters.length) throw new Error("Assistant did not return a usable plan.");
-
-      const enrichedTimeline = mergedEvents.map((event) => {
-        return {
-          ...event,
-        };
-      });
-
-      applyPlanToChapters(chapters, {
-        activateFirst: false,
-        storyBiblePatch: {
-          characters: mergedCharacters,
-          locations: mergedLocations,
-          lore: mergedLore,
-          timeline: enrichedTimeline,
-        },
-      });
+        // ── Live UI update: fill in this chapter's detail immediately ──
+        mutateNovel((current) => {
+          const plan = current.storyBible.bookPlan;
+          if (!plan) return current;
+          const updatedPlanChapters = [...plan.chapters];
+          if (updatedPlanChapters[index]) {
+            updatedPlanChapters[index] = {
+              ...updatedPlanChapters[index],
+              synopsis,
+              characterIds: chapterCharacterIds,
+              locationIds: chapterLocationIds,
+              loreIds: chapterLoreIds,
+            };
+          }
+          // Also update subtitle on the manuscript chapter
+          const updatedChapters = [...current.chapters];
+          if (updatedChapters[index]) {
+            updatedChapters[index] = {
+              ...updatedChapters[index],
+              subtitle: synopsis.slice(0, 140),
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return {
+            ...current,
+            chapters: updatedChapters,
+            storyBible: {
+              ...current.storyBible,
+              characters: [...mergedCharacters],
+              locations: [...mergedLocations],
+              timeline: [...mergedEvents],
+              lore: [...mergedLore],
+              bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+            },
+          };
+        });
+      }
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
+  async function runRegenPlanChapter(chapterIndex: number) {
+    if (!novel || !ensureStoryAiReady()) return;
+    const plan = novel.storyBible.bookPlan;
+    if (!plan || !plan.chapters[chapterIndex]) return;
+    const allTitles = plan.chapters.map((c) => c.title);
+    const title = allTitles[chapterIndex];
+
+    setStoryAiBusyAction(`plan-regen-${chapterIndex}`);
+    setPlanError(null);
+    try {
+      const systemMsg =
+        "You are a professional novel outliner. You produce structured chapter plans that respect every detail of the author's Canon — characters, locations, lore, timeline, and style rules. You never contradict established canon. Return only valid JSON.";
+      const prevSynopsis = chapterIndex > 0 ? (plan.chapters[chapterIndex - 1]?.synopsis ?? "") : "";
+      const nextTitle = chapterIndex < allTitles.length - 1 ? allTitles[chapterIndex + 1] : "";
+      const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
+      const prompt = buildPhase2Prompt(chapterContext);
+
+      type Phase2Result = { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[]; lore?: string[] };
+      let result: Phase2Result | null = null;
+      for (let attempt = 0; attempt < 2 && !result; attempt++) {
+        try {
+          const raw = await requestOpenRouterText(prompt, 400, 25000, systemMsg, false, 0.3);
+          let parsed = parseJsonFromAi<Phase2Result>(raw);
+          if (!parsed) {
+            const repaired = attemptCloseTruncatedJson(raw.trim());
+            if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
+          }
+          if (parsed?.synopsis && parsed.synopsis.length > 40 && (parsed.characters?.length || parsed.locations?.length)) {
+            result = parsed;
+          }
+        } catch { /* retry */ }
+      }
+      if (!result) {
+        setPlanError(`Failed to regenerate chapter ${chapterIndex + 1}. Try again or use a different model.`);
+        return;
+      }
+
+      const synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${title}.`;
+      const characters = novel.storyBible.characters ?? [];
+      const locations = novel.storyBible.locations ?? [];
+      const lore = novel.storyBible.lore ?? [];
+
+      const charIds = mergeUniqueIds(
+        parseStringList(result.characters).map((n) => {
+          const key = normalizeLookup(n);
+          return characters.find((c) => normalizeLookup(c.name || "") === key)?.id ?? "";
+        }).filter(Boolean),
+        inferEntityIdsFromText(`${title}\n${synopsis}`, characters.map((c) => ({ id: c.id, name: c.name || "" }))),
+      );
+      const locIds = mergeUniqueIds(
+        parseStringList(result.locations).map((n) => {
+          const key = normalizeLookup(n);
+          return locations.find((l) => normalizeLookup(l.name || "") === key)?.id ?? "";
+        }).filter(Boolean),
+        inferEntityIdsFromText(`${title}\n${synopsis}`, locations.map((l) => ({ id: l.id, name: l.name || "" }))),
+      );
+      const loreIds = mergeUniqueIds(
+        parseStringList(result.lore).map((n) => {
+          const key = normalizeLookup(n);
+          return lore.find((e) => normalizeLookup(e.title || "") === key)?.id ?? "";
+        }).filter(Boolean),
+        inferEntityIdsFromText(`${title}\n${synopsis}`, lore.map((e) => ({ id: e.id, name: e.title || "" }))),
+      );
+
+      mutateNovel((current) => {
+        const curPlan = current.storyBible.bookPlan;
+        if (!curPlan) return current;
+        const updatedPlanChapters = [...curPlan.chapters];
+        if (updatedPlanChapters[chapterIndex]) {
+          updatedPlanChapters[chapterIndex] = {
+            ...updatedPlanChapters[chapterIndex],
+            synopsis,
+            characterIds: charIds,
+            locationIds: locIds,
+            loreIds: loreIds,
+          };
+        }
+        const updatedChapters = [...current.chapters];
+        if (updatedChapters[chapterIndex]) {
+          updatedChapters[chapterIndex] = {
+            ...updatedChapters[chapterIndex],
+            subtitle: synopsis.slice(0, 140),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return {
+          ...current,
+          chapters: updatedChapters,
+          storyBible: {
+            ...current.storyBible,
+            bookPlan: { ...curPlan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+          },
+        };
+      });
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : "Failed to regenerate chapter.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -4792,31 +4859,38 @@ function NovelWorkspacePage() {
         throw new Error("Location generation failed. Try a different model or add more detail to your synopsis.");
       }
 
-      // Filter out any entries that are clearly characters, organisations, or lore — not places
+      // Filter: reject characters, organisations, lore masquerading as locations
       const charNamesLower = new Set((sb.characters ?? []).map((c) => c.name.trim().toLowerCase()).filter(Boolean));
+      // Also build first-name and last-name sets for partial matching
+      const charNameParts = new Set<string>();
+      for (const c of sb.characters ?? []) {
+        for (const part of c.name.trim().toLowerCase().split(/\s+/)) {
+          if (part.length > 2) charNameParts.add(part);
+        }
+      }
       const loreNamesLower = new Set((sb.lore ?? []).map((l) => l.title?.trim().toLowerCase()).filter(Boolean));
 
       function isNotALocation(entry: { name?: string; description?: string; type?: string }): boolean {
         const name = (entry.name ?? "").trim();
         if (!name) return true;
         const lower = name.toLowerCase();
-        // Matches a character name
+        const words = lower.split(/\s+/).filter(Boolean);
+        // Exact match with a character name
         if (charNamesLower.has(lower)) return true;
-        for (const cn of charNamesLower) {
-          if (cn && (lower.includes(cn) || cn.includes(lower))) return true;
-        }
+        // Partial match — if the location name IS a character's first or last name
+        if (words.length <= 2 && words.every((w) => charNameParts.has(w))) return true;
         // Matches a lore entry
         if (loreNamesLower.has(lower)) return true;
         // Placeholder names
         if (/^(location \d|new location|place \d|unnamed|unknown|n\/a|lore \d|entry \d)/i.test(name)) return true;
-        // Description sounds like a person
+        // Description sounds like a person bio
         const desc = (entry.description ?? "").toLowerCase();
-        if (desc && /^(a |an |the )?(young |old |brave |wise |cunning )?(man|woman|boy|girl|warrior|knight|mage|wizard|witch|queen|king|prince|princess|thief|assassin|priest|priestess|healer|merchant|farmer|soldier|captain|general|lord|lady|duke|duchess)\b/i.test(desc)) return true;
-        // Description sounds like lore/rules, not a physical place
-        if (desc && /^(a |an |the )?(system|rule|law|custom|tradition|belief|magic|spell|ritual|prophecy|legend|myth|code|pact|treaty|curse|blessing|practice|philosophy)\b/i.test(desc)) return true;
+        if (desc && /^(a |an |the )?(young |old |brave |wise |cunning |fierce |gentle |quiet |tall |short )?(man|woman|boy|girl|warrior|knight|mage|wizard|witch|queen|king|prince|princess|thief|assassin|priest|priestess|healer|merchant|farmer|soldier|captain|general|lord|lady|duke|duchess|orphan|scholar|blacksmith|bard|ranger|druid|paladin|monk|rogue|sorcerer|sorceress|necromancer|alchemist|detective|spy|hunter|sailor|pirate|noble|servant|slave|gladiator|chef|artist|poet|musician|inventor|scientist|doctor|nurse|teacher|student|child|elder|chief|warden|guardian|sentinel|champion)\b/.test(desc)) return true;
+        // Description sounds like lore/rules
+        if (desc && /^(a |an |the )?(system|rule|law|custom|tradition|belief|magic|spell|ritual|prophecy|legend|myth|code|pact|treaty|curse|blessing|practice|philosophy|covenant|doctrine|mandate|edict|decree|tenet|principle|creed|ideology|movement|rebellion|revolution|conspiracy)\b/.test(desc)) return true;
         // Type field is suspicious
         const type = (entry.type ?? "").toLowerCase();
-        if (/\b(person|character|faction|guild|order|organisation|organization|alliance|council|rule|system|magic|lore)\b/i.test(type)) return true;
+        if (/\b(person|character|faction|guild|order|organisation|organization|alliance|council|rule|system|magic|lore|creature|beast|monster|spirit|deity|god|goddess)\b/.test(type)) return true;
         return false;
       }
 
@@ -6063,8 +6137,9 @@ function NovelWorkspacePage() {
                   type="button"
                   className="btn"
                   onClick={openPlanGenerationModal}
-                  disabled={storyAiBusyAction === "plan-generate"}
+                  disabled={storyAiBusyAction === "plan-generate" || planChapters.length > 0}
                   style={{ gap: "6px" }}
+                  title={planChapters.length > 0 ? "Clear all chapters first to regenerate" : ""}
                 >
                   {storyAiBusyAction === "plan-generate" ? (
                     <>
@@ -6075,6 +6150,18 @@ function NovelWorkspacePage() {
                     <>&#10022; AI Generate</>
                   )}
                 </button>
+                {planChapters.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={clearAllPlanChapters}
+                    disabled={storyAiBusyAction !== null}
+                    style={{ color: "var(--color-danger, #e55)", gap: "4px" }}
+                    title="Clear all chapters to start fresh"
+                  >
+                    Clear All
+                  </button>
+                )}
                 <button type="button" className="btn" onClick={addPlanChapter}>
                   + Add chapter
                 </button>
@@ -6172,6 +6259,32 @@ function NovelWorkspacePage() {
                               onChange={(e) => updatePlanChapter(plan.id, { title: e.target.value })}
                               placeholder="Chapter title..."
                             />
+                            <button
+                              type="button"
+                              className="pw-plan-regen-btn"
+                              onClick={() => void runRegenPlanChapter(index)}
+                              disabled={storyAiBusyAction !== null}
+                              title="Regenerate this chapter"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: storyAiBusyAction !== null ? "not-allowed" : "pointer",
+                                opacity: storyAiBusyAction === `plan-regen-${index}` ? 0.5 : 0.7,
+                                padding: "2px 4px",
+                                fontSize: "14px",
+                                lineHeight: 1,
+                                color: "var(--color-text-secondary, #999)",
+                                transition: "opacity 0.15s",
+                              }}
+                              onMouseEnter={(e) => { if (!storyAiBusyAction) (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = storyAiBusyAction === `plan-regen-${index}` ? "0.5" : "0.7"; }}
+                            >
+                              {storyAiBusyAction === `plan-regen-${index}` ? (
+                                <span className="pw-plan-spinner" style={{ width: "12px", height: "12px" }} />
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                              )}
+                            </button>
                             <button
                               type="button"
                               className="pw-plan-remove-btn"

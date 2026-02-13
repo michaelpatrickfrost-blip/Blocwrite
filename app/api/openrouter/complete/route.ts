@@ -94,6 +94,12 @@ function normalizeProviderError(message: string, status: number, model: string, 
   if (status === 401) return `${providerLabel} rejected your API key. Re-save your key in Settings.`;
   if (status === 402) return `${providerLabel} credits or billing are required for this model.`;
   if (status === 429) return `${providerLabel} rate limit reached. Wait a moment, then try again.`;
+  if (/Model Group.*Fallbacks=None/i.test(message) || /model.*not found/i.test(message) || /does not exist/i.test(message)) {
+    return `Model "${model}" is no longer available on ${providerLabel}. Open Settings and pick a different model.`;
+  }
+  if (status === 500 && provider === "infermatic") {
+    return `${providerLabel} server error for model "${model}". The model may be offline — try a different one in Settings.`;
+  }
   return message || `${providerLabel} error ${status}`;
 }
 

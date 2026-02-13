@@ -238,6 +238,13 @@ export function ProfilePopup({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showModelDropdown]);
 
+  // Auto-fetch models when AI section is expanded
+  useEffect(() => {
+    if (showAiSection && models.length === 0 && !modelsLoading && !modelsError) {
+      void fetchModels();
+    }
+  }, [showAiSection, models.length, modelsLoading, modelsError, fetchModels]);
+
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -358,7 +365,7 @@ export function ProfilePopup({
               </div>
 
               <div className="pw-profile-row" ref={modelDropdownRef}>
-                <label>Model</label>
+                <label>Model {modelsLoading && <span style={{ fontWeight: 400, opacity: 0.6 }}> — loading models…</span>}</label>
                 <div className="pw-profile-input-group">
                   <input
                     className="pw-profile-input"
@@ -366,6 +373,9 @@ export function ProfilePopup({
                     placeholder={selectedProvider.defaultModel}
                     value={openRouterModel}
                     onChange={(e) => persistModel(e.target.value)}
+                    onFocus={() => {
+                      if (models.length > 0 && !showModelDropdown) setShowModelDropdown(true);
+                    }}
                   />
                   <button
                     type="button"
@@ -386,7 +396,15 @@ export function ProfilePopup({
                   </button>
                 </div>
                 {modelsError && (
-                  <p className="pw-profile-status pw-profile-status-error" style={{ marginTop: 4 }}>{modelsError}</p>
+                  <p className="pw-profile-status pw-profile-status-error" style={{ marginTop: 4 }}>
+                    {modelsError}{" "}
+                    <button type="button" style={{ color: "var(--pw-accent)", background: "none", border: "none", cursor: "pointer", fontSize: "inherit", textDecoration: "underline" }} onClick={() => void fetchModels()}>Retry</button>
+                  </p>
+                )}
+                {!modelsLoading && !modelsError && models.length > 0 && !showModelDropdown && (
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "4px 0 0" }}>
+                    {models.length} models available — click ▼ or focus the input to browse
+                  </p>
                 )}
                 {showModelDropdown && models.length > 0 && (
                   <div className="pw-model-dropdown" style={{ marginTop: 6 }}>
