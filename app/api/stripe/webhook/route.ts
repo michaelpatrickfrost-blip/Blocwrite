@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getResolvedStripeConfig } from "@/lib/admin-config";
 
 export const runtime = "nodejs";
 
@@ -9,10 +10,11 @@ function toDate(value: number | null | undefined) {
   return new Date(value * 1000);
 }
 
-async function resolveUserByCustomerId(stripeCustomerId: string): Promise<string | null> {
-  const { getStripeClient } = await import("@/lib/stripe");
-  const stripe = getStripeClient();
+async function getStripe(secretKey: string) {
+  return new Stripe(secretKey, { apiVersion: "2025-12-18.acacia" as Stripe.LatestApiVersion, typescript: true });
+}
 
+async function resolveUserByCustomerId(stripeCustomerId: string, stripe: Stripe): Promise<string | null> {
   const existing = await prisma.stripeCustomer.findUnique({
     where: { stripeCustomerId },
     select: { userId: true },
@@ -24,10 +26,7 @@ async function resolveUserByCustomerId(stripeCustomerId: string): Promise<string
   const email = customer.email?.trim().toLowerCase();
   if (!email) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (!user) return null;
 
   await prisma.stripeCustomer.upsert({
@@ -38,9 +37,9 @@ async function resolveUserByCustomerId(stripeCustomerId: string): Promise<string
   return user.id;
 }
 
-async function upsertFromSubscription(subscription: Stripe.Subscription) {
+async function upsertFromSubscription(subscription: Stripe.Subscription, stripe: Stripe) {
   const stripeCustomerId = String(subscription.customer);
-  const userId = await resolveUserByCustomerId(stripeCustomerId);
+  const userId = await resolveUserByCustomerId(stripeCustomerId, stripe);
   if (!userId) return;
 
   const firstItem = subscription.items.data[0];
@@ -54,9 +53,7 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
       stripeCustomerId,
       stripePriceId,
       status: subscription.status,
-      currentPeriodEnd: toDate(
-        (subscription as { current_period_end?: number | null }).current_period_end,
-      ),
+      currentPeriodEnd: toDate((subscription as { current_period_end?: number | null }).current_period_end),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       trialEnd: toDate(subscription.trial_end),
     },
@@ -66,9 +63,7 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
       stripeSubscriptionId: subscription.id,
       stripePriceId,
       status: subscription.status,
-      currentPeriodEnd: toDate(
-        (subscription as { current_period_end?: number | null }).current_period_end,
-      ),
+      currentPeriodEnd: toDate((subscription as { current_period_end?: number | null }).current_period_end),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       trialEnd: toDate(subscription.trial_end),
     },
@@ -76,13 +71,8 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
 }
 
 async function markSubscriptionStatusByInvoice(invoice: Stripe.Invoice, status: string) {
-  const invoiceWithSubscription = invoice as unknown as {
-    subscription?: string | Stripe.Subscription;
-  };
-  const subscriptionId =
-    typeof invoiceWithSubscription.subscription === "string"
-      ? invoiceWithSubscription.subscription
-      : null;
+  const inv = invoice as unknown as { subscription?: string | Stripe.Subscription };
+  const subscriptionId = typeof inv.subscription === "string" ? inv.subscription : null;
   if (!subscriptionId) return;
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: subscriptionId },
@@ -91,18 +81,16 @@ async function markSubscriptionStatusByInvoice(invoice: Stripe.Invoice, status: 
 }
 
 export async function POST(request: Request) {
-  /* ── env guard ── */
-  const stripeKey = process.env.STRIPE_SECRET_KEY;
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!stripeKey || !secret) {
+  /* ── resolve config ──────────────────────────────── */
+  const config = await getResolvedStripeConfig();
+  if (!config.secretKey || !config.webhookSecret) {
     return NextResponse.json(
-      { error: "Stripe webhook is not configured (missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET)." },
+      { error: "Stripe webhook is not configured. Connect Stripe in the Admin Hub." },
       { status: 503 },
     );
   }
 
-  const { getStripeClient } = await import("@/lib/stripe");
-  const stripe = getStripeClient();
+  const stripe = await getStripe(config.secretKey);
 
   const signature = request.headers.get("stripe-signature");
   if (!signature) {
@@ -112,12 +100,10 @@ export async function POST(request: Request) {
   const body = await request.text();
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, secret);
+    event = stripe.webhooks.constructEvent(body, signature, config.webhookSecret);
   } catch (error) {
     return NextResponse.json(
-      {
-        error: `Webhook signature verification failed: ${error instanceof Error ? error.message : "unknown"}`,
-      },
+      { error: `Webhook signature verification failed: ${error instanceof Error ? error.message : "unknown"}` },
       { status: 400 },
     );
   }
@@ -136,7 +122,7 @@ export async function POST(request: Request) {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.subscription && typeof session.subscription === "string") {
           const subscription = await stripe.subscriptions.retrieve(session.subscription);
-          await upsertFromSubscription(subscription);
+          await upsertFromSubscription(subscription, stripe);
         }
         break;
       }
@@ -144,7 +130,7 @@ export async function POST(request: Request) {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        await upsertFromSubscription(subscription);
+        await upsertFromSubscription(subscription, stripe);
         break;
       }
       case "invoice.paid": {
@@ -175,8 +161,7 @@ export async function POST(request: Request) {
         stripeEventId: event.id,
         eventType: event.type,
         status: "error",
-        error:
-          error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook error",
+        error: error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook error",
       },
     });
     return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });

@@ -3,20 +3,16 @@ import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPageAccess } from "@/lib/admin-auth";
+import { StripeSetupCard } from "./components/StripeSetupCard";
+import { CouponCard } from "./components/CouponCard";
 
 export const dynamic = "force-dynamic";
 
 /* ── helpers ────────────────────────────────────────────── */
 
-function envCheck(name: string): { ok: boolean; label: string } {
-  const val = process.env[name];
-  return { ok: Boolean(val && val.length > 4), label: name };
-}
-
 async function countNovelsFromFile(): Promise<number> {
   try {
-    const novelsPath = join(process.cwd(), "data", "novels.json");
-    const raw = await readFile(novelsPath, "utf-8");
+    const raw = await readFile(join(process.cwd(), "data", "novels.json"), "utf-8");
     const arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr.length : 0;
   } catch {
@@ -26,8 +22,7 @@ async function countNovelsFromFile(): Promise<number> {
 
 async function getNovelSummaries(): Promise<{ id: string; title: string; chapterCount: number; wordCount: number }[]> {
   try {
-    const novelsPath = join(process.cwd(), "data", "novels.json");
-    const raw = await readFile(novelsPath, "utf-8");
+    const raw = await readFile(join(process.cwd(), "data", "novels.json"), "utf-8");
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
     return arr.slice(0, 20).map((n: Record<string, unknown>) => ({
@@ -43,13 +38,11 @@ async function getNovelSummaries(): Promise<{ id: string; title: string; chapter
 
 async function getDataFileSize(): Promise<string> {
   try {
-    const novelsPath = join(process.cwd(), "data", "novels.json");
-    const s = await stat(novelsPath);
+    const s = await stat(join(process.cwd(), "data", "novels.json"));
     const kb = s.size / 1024;
-    if (kb > 1024) return `${(kb / 1024).toFixed(1)} MB`;
-    return `${kb.toFixed(0)} KB`;
+    return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`;
   } catch {
-    return "–";
+    return "\u2013";
   }
 }
 
@@ -58,63 +51,36 @@ async function getDataFileSize(): Promise<string> {
 export default async function AdminPage() {
   const adminEmail = await requireAdminPageAccess();
 
-  // Environment checks
-  const envChecks = [
-    envCheck("BW_SESSION_SECRET"),
-    envCheck("DATABASE_URL"),
-    envCheck("STRIPE_SECRET_KEY"),
-    envCheck("STRIPE_WEBHOOK_SECRET"),
-    envCheck("STRIPE_PRICE_ID"),
-    envCheck("NEXT_PUBLIC_APP_URL"),
-  ];
-  const stripeReady = envChecks
-    .filter((e) => e.label.startsWith("STRIPE"))
-    .every((e) => e.ok);
-
-  // Data queries (all wrapped in try/catch for resilience)
+  // DB queries with fallback
   let userCount = 0;
   let subscriptionCounts: { status: string; count: number }[] = [];
-  let recentEvents: { id: string; stripeEventId: string; eventType: string; status: string; processedAt: Date }[] = [];
+  let recentEvents: { id: string; eventType: string; status: string; processedAt: Date }[] = [];
 
   try {
     const [uc, sc, re] = await Promise.all([
       prisma.user.count(),
-      prisma.subscription.groupBy({
-        by: ["status"],
-        _count: { status: true },
-      }),
-      prisma.stripeWebhookEvent.findMany({
-        orderBy: { processedAt: "desc" },
-        take: 10,
-      }),
+      prisma.subscription.groupBy({ by: ["status"], _count: { status: true } }),
+      prisma.stripeWebhookEvent.findMany({ orderBy: { processedAt: "desc" }, take: 10 }),
     ]);
     userCount = uc;
     subscriptionCounts = sc.map((r) => ({ status: r.status, count: r._count.status }));
     recentEvents = re;
   } catch {
-    // DB might not have tables yet — that's fine
+    // DB not ready
   }
 
   const statusMap = new Map(subscriptionCounts.map((r) => [r.status, r.count]));
-
-  // Novel data (file-based)
   const [novelCount, novelSummaries, dataFileSize] = await Promise.all([
     countNovelsFromFile(),
     getNovelSummaries(),
     getDataFileSize(),
   ]);
 
-  const allGreen = envChecks.every((e) => e.ok);
-
   return (
     <main className="pw-wallpaper" style={{ minHeight: "100vh" }}>
       <div
         className="pw-window"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "240px 1fr",
-          minHeight: "75vh",
-        }}
+        style={{ display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "75vh" }}
       >
         {/* ── sidebar ── */}
         <aside className="pw-sidebar">
@@ -123,138 +89,52 @@ export default async function AdminPage() {
           </div>
           <div className="pw-section-title">Admin Hub</div>
           <div className="pw-list">
-            <Link href="/admin" className="pw-item active">
-              Dashboard
-            </Link>
-            <Link href="/studio" className="pw-item">
-              Open Studio
-            </Link>
+            <Link href="/admin" className="pw-item active">Dashboard</Link>
+            <Link href="/studio" className="pw-item">Open Studio</Link>
           </div>
           <div className="pw-sidebar-foot">
-            <span className="pw-sidebar-user" style={{ fontSize: 12, opacity: 0.7 }}>
-              {adminEmail}
-            </span>
+            <span className="pw-sidebar-user" style={{ fontSize: 12, opacity: 0.7 }}>{adminEmail}</span>
           </div>
         </aside>
 
-        {/* ── main content ── */}
+        {/* ── main ── */}
         <section style={{ padding: 28, overflow: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
             <div>
               <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Admin Dashboard</h1>
               <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "4px 0 0" }}>
-                System status and billing overview
+                Connect Stripe, manage discounts, and see your stats
               </p>
             </div>
-            <Link
-              href="/studio"
-              className="btn btn-primary"
-              style={{ fontSize: 13, padding: "8px 18px" }}
-            >
+            <Link href="/studio" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 18px" }}>
               Go to Studio
             </Link>
           </div>
 
-          {/* ── system health ── */}
-          <div className="card" style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-              System Status
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: allGreen ? "#22c55e" : "#eab308",
-                  marginLeft: 8,
-                  verticalAlign: "middle",
-                }}
-              />
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
-              {envChecks.map((check) => (
-                <div
-                  key={check.label}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 12,
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    border: "1px solid var(--pw-border-light)",
-                    background: check.ok ? "rgba(34,197,94,0.06)" : "rgba(234,179,8,0.06)",
-                  }}
-                >
-                  <span style={{ fontSize: 14 }}>{check.ok ? "\u2705" : "\u26A0\uFE0F"}</span>
-                  <span style={{ fontFamily: "monospace", fontWeight: 500 }}>{check.label}</span>
-                  <span style={{ marginLeft: "auto", fontWeight: 600, color: check.ok ? "#22c55e" : "#eab308" }}>
-                    {check.ok ? "Set" : "Missing"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {!stripeReady && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  background: "rgba(234,179,8,0.08)",
-                  border: "1px solid rgba(234,179,8,0.2)",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: "var(--pw-text-dim)",
-                }}
-              >
-                <strong>Stripe not configured.</strong> Add{" "}
-                <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, and{" "}
-                <code>STRIPE_PRICE_ID</code> to your <code>.env</code> file and restart.
-                Billing features will show placeholder data until then.
-              </div>
-            )}
-          </div>
+          {/* ── 1. Stripe Setup (interactive client component) ── */}
+          <StripeSetupCard />
 
-          {/* ── stat cards ── */}
+          {/* ── 2. Discount Codes (interactive client component) ── */}
+          <CouponCard />
+
+          {/* ── 3. Stats cards ── */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
               gap: 12,
               marginBottom: 20,
             }}
           >
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{novelCount}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>Novels</div>
-            </div>
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{dataFileSize}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>Data size</div>
-            </div>
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{userCount}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>
-                Registered users
-              </div>
-            </div>
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{statusMap.get("active") ?? 0}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>
-                Active subs
-              </div>
-            </div>
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{statusMap.get("trialing") ?? 0}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>Trialing</div>
-            </div>
-            <div className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 700 }}>{statusMap.get("past_due") ?? 0}</div>
-              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>Past due</div>
-            </div>
+            <StatCard value={novelCount} label="Novels" />
+            <StatCard value={dataFileSize} label="Data size" />
+            <StatCard value={userCount} label="Registered users" />
+            <StatCard value={statusMap.get("active") ?? 0} label="Active subs" />
+            <StatCard value={statusMap.get("trialing") ?? 0} label="Trialing" />
+            <StatCard value={statusMap.get("past_due") ?? 0} label="Past due" />
           </div>
 
-          {/* ── two-column: novels + webhooks ── */}
+          {/* ── 4. Two-column: novels + webhooks ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {/* Novels */}
             <div className="card">
@@ -262,9 +142,7 @@ export default async function AdminPage() {
                 Novels ({novelCount})
               </h3>
               {novelSummaries.length === 0 ? (
-                <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
-                  No novels yet. Create one in the Studio.
-                </p>
+                <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No novels yet. Create one in the Studio.</p>
               ) : (
                 <div style={{ display: "grid", gap: 6 }}>
                   {novelSummaries.map((n) => (
@@ -284,7 +162,7 @@ export default async function AdminPage() {
                         <div style={{ fontWeight: 600 }}>{n.title}</div>
                         <div style={{ color: "var(--pw-text-dim)", marginTop: 2 }}>
                           {n.chapterCount} chapter{n.chapterCount !== 1 ? "s" : ""}
-                          {n.wordCount > 0 ? ` · ${n.wordCount.toLocaleString()} words` : ""}
+                          {n.wordCount > 0 ? ` \u00B7 ${n.wordCount.toLocaleString()} words` : ""}
                         </div>
                       </div>
                       <Link
@@ -309,39 +187,21 @@ export default async function AdminPage() {
 
             {/* Webhook log */}
             <div className="card">
-              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-                Stripe Webhook Log
-              </h3>
-              {!stripeReady ? (
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Webhook Log</h3>
+              {recentEvents.length === 0 ? (
                 <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
-                  Stripe is not configured. Webhooks will appear here once connected.
-                </p>
-              ) : recentEvents.length === 0 ? (
-                <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
-                  No webhook events received yet.
+                  No webhook events received yet. They'll appear here once Stripe is connected and sending events.
                 </p>
               ) : (
                 <div style={{ display: "grid", gap: 6 }}>
                   {recentEvents.map((event) => (
                     <div
                       key={event.id}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1px solid var(--pw-border-light)",
-                        fontSize: 12,
-                      }}
+                      style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--pw-border-light)", fontSize: 12 }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontWeight: 600, fontFamily: "monospace" }}>
-                          {event.eventType}
-                        </span>
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            color: event.status === "processed" ? "#22c55e" : "#ef4444",
-                          }}
-                        >
+                        <span style={{ fontWeight: 600, fontFamily: "monospace" }}>{event.eventType}</span>
+                        <span style={{ fontWeight: 600, color: event.status === "processed" ? "#22c55e" : "#ef4444" }}>
                           {event.status}
                         </span>
                       </div>
@@ -357,5 +217,14 @@ export default async function AdminPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function StatCard({ value, label }: { value: string | number; label: string }) {
+  return (
+    <div className="card" style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 26, fontWeight: 700 }}>{value}</div>
+      <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 4 }}>{label}</div>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensurePrismaUserForSessionEmail } from "@/lib/session-user";
+import { getResolvedStripeConfig } from "@/lib/admin-config";
 
 export const runtime = "nodejs";
 
@@ -11,22 +12,17 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
   }
 
-  /* ── stripe env guard ─────────────────────────────── */
-  const stripeKey = process.env.STRIPE_SECRET_KEY;
-  const priceId = process.env.STRIPE_PRICE_ID;
-  if (!stripeKey || !priceId) {
+  /* ── resolved stripe config (admin UI > env var) ── */
+  const config = await getResolvedStripeConfig();
+  if (!config.secretKey || !config.priceId) {
     return NextResponse.json(
-      {
-        error: "Stripe is not configured yet. Ask the admin to add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to .env.",
-        configured: false,
-      },
+      { error: "Stripe is not configured. The admin needs to connect Stripe in the Admin Hub.", configured: false },
       { status: 503 },
     );
   }
 
-  /* ── lazy-load stripe ─────────────────────────────── */
-  const { getStripeClient } = await import("@/lib/stripe");
-  const stripe = getStripeClient();
+  const Stripe = (await import("stripe")).default;
+  const stripe = new Stripe(config.secretKey, { apiVersion: "2025-12-18.acacia" as import("stripe").Stripe.LatestApiVersion, typescript: true });
 
   let stripeCustomerId = user.stripeCustomer?.stripeCustomerId || "";
   if (!stripeCustomerId) {
@@ -42,14 +38,13 @@ export async function POST() {
     });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: stripeCustomerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{ price: config.priceId, quantity: 1 }],
     allow_promotion_codes: true,
-    success_url: `${appUrl}/studio?billing=success`,
-    cancel_url: `${appUrl}/studio?billing=cancelled`,
+    success_url: `${config.appUrl}/studio?billing=success`,
+    cancel_url: `${config.appUrl}/studio?billing=cancelled`,
     metadata: { userId: user.id },
   });
 
