@@ -280,6 +280,68 @@ const SUMMARY_NAME_BLOCKLIST = new Set([
   "Anonymous",
   "Stranger",
   "Blackmailer",
+  // Common sentence-starters and transition words that regex matches as "names"
+  "However",
+  "Although",
+  "Despite",
+  "Meanwhile",
+  "Throughout",
+  "Furthermore",
+  "Moreover",
+  "Nevertheless",
+  "Nonetheless",
+  "Perhaps",
+  "Eventually",
+  "Ultimately",
+  "Suddenly",
+  "Finally",
+  "Initially",
+  "Before",
+  "After",
+  "During",
+  "Between",
+  "Through",
+  "Against",
+  "Without",
+  "Within",
+  "Around",
+  "Beneath",
+  "Beyond",
+  "Behind",
+  "Together",
+  "Already",
+  "Almost",
+  "Another",
+  "Because",
+  "Whether",
+  "Therefore",
+  "Otherwise",
+  "Several",
+  // Common place-related words that appear capitalised in text
+  "City",
+  "Town",
+  "Village",
+  "County",
+  "Street",
+  "Road",
+  "Park",
+  "Church",
+  "School",
+  "Hospital",
+  "Station",
+  "House",
+  "Estate",
+  "Forest",
+  "Castle",
+  "Palace",
+  "Market",
+  "Bridge",
+  "Square",
+  "North",
+  "South",
+  "East",
+  "West",
+  "Central",
 ]);
 const CHARACTER_SURNAME_FALLBACKS = [
   "Hale",
@@ -1370,6 +1432,9 @@ function NovelWorkspacePage() {
     const unique: string[] = [];
     const seen = new Set<string>();
 
+    // Place-name suffixes to filter out (Yorkshire, Wakefield, etc.)
+    const PLACE_SUFFIXES = /(?:shire|field|burg|berg|holm|wick|wich|ford|land|dale|wood|pool|port|mouth|town|stead|bury|polis|grad|stan|minster|ville|vale|cester|chester)$/i;
+
     for (const rawMatch of matches) {
       const candidate = rawMatch.trim().replace(/\s+/g, " ");
       if (!candidate) continue;
@@ -1378,6 +1443,8 @@ function NovelWorkspacePage() {
       if (hasBlockedToken) continue;
       if (isRoleLikeCharacterLabel(candidate)) continue;
       if (candidate.length > 34) continue;
+      // Filter out place names based on suffix
+      if (parts.some((part) => PLACE_SUFFIXES.test(part))) continue;
       const key = candidate.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -3582,11 +3649,12 @@ function NovelWorkspacePage() {
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
       const prompt = [
-        `${genre} novel: ${clampPromptText(synopsis, 300)}`,
-        summaryNamesText ? `Key names: ${summaryNamesText}` : "",
-        existingNames !== "none" ? `Skip: ${existingNames}` : "",
-        "Use ONLY names from Key names. Never invent new names. Never output placeholders, roles, or abstract words.",
-        `List up to ${requestedCount} characters. JSON: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
+        `${genre} novel: ${clampPromptText(synopsis, 400)}`,
+        summaryNamesText ? `Character first names from the synopsis: ${summaryNamesText}` : "",
+        existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
+        "For each character name from the synopsis, generate a full name (add a surname if only a first name is given — choose a surname that fits the setting and era).",
+        "Only create characters for names mentioned in the synopsis. Do NOT invent entirely new characters.",
+        `List up to ${requestedCount} characters. Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
       ].filter(Boolean).join("\n");
 
       let roster: RosterEntry[] = [];
@@ -3622,23 +3690,57 @@ function NovelWorkspacePage() {
         } catch { /* continue */ }
       }
 
-      // Filter through name validation
-      roster = roster.filter((r) => typeof r.name === "string" && isValidName(r.name.trim()));
-      const hintSet = new Set(summaryNameHints.map((hint) => hint.trim().toLowerCase()));
-      roster = roster.filter((r) => hintSet.has((r.name || "").trim().toLowerCase()));
+      // Build a set of first-name tokens from summary hints for flexible matching.
+      // This allows "Sarah" (hint) to match "Sarah Thompson" (AI-generated full name).
+      const hintFirstNames = new Set(
+        summaryNameHints.map((h) => h.trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
+      );
+      const hintFullNames = new Set(
+        summaryNameHints.map((h) => h.trim().toLowerCase()),
+      );
 
-      // Add any summary name hints not in roster
-      const rosterNames = new Set(roster.map((r) => (r.name ?? "").trim().toLowerCase()));
+      // Filter roster: accept names that are valid OR whose first name matches a hint
+      roster = roster.filter((r) => {
+        if (typeof r.name !== "string" || !r.name.trim()) return false;
+        const name = r.name.trim();
+        const words = name.split(/\s+/).filter(Boolean);
+        if (words.length === 0) return false;
+        // Single-word name: accept if it matches a summary hint
+        if (words.length === 1) {
+          return hintFirstNames.has(name.toLowerCase());
+        }
+        // Multi-word name: accept if valid OR first name matches a hint
+        const firstName = words[0].toLowerCase();
+        return isValidName(name) || hintFirstNames.has(firstName);
+      });
+
+      // Keep only characters whose name overlaps with summary hints (by first name)
+      roster = roster.filter((r) => {
+        const firstName = (r.name || "").trim().toLowerCase().split(/\s+/)[0] || "";
+        const fullName = (r.name || "").trim().toLowerCase();
+        return hintFirstNames.has(firstName) || hintFullNames.has(fullName);
+      });
+
+      // Add any summary name hints not yet in roster
+      const rosterFirstNames = new Set(
+        roster.map((r) => (r.name ?? "").trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
+      );
       const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
+      const existingFirstNames = new Set(
+        storyCharacters.map((c) => c.name.trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
+      );
 
       summaryNameHints.forEach((hint) => {
-        const normalized = hint.trim().toLowerCase();
-        if (normalized && !rosterNames.has(normalized) && !existingNamesSet.has(normalized)) {
-          const fullName = hint.trim();
-          if (fullName && isValidName(fullName)) {
-            roster.push({ name: fullName, role: roster.length === 0 ? "Protagonist" : "Supporting" });
-            rosterNames.add(fullName.toLowerCase());
-          }
+        const firstName = hint.trim().toLowerCase().split(/\s+/)[0] || "";
+        if (
+          firstName &&
+          !rosterFirstNames.has(firstName) &&
+          !existingFirstNames.has(firstName) &&
+          !existingNamesSet.has(hint.trim().toLowerCase())
+        ) {
+          // Accept single first names from the synopsis — they're real character names
+          roster.push({ name: hint.trim(), role: roster.length === 0 ? "Protagonist" : "Supporting" });
+          rosterFirstNames.add(firstName);
         }
       });
 
@@ -3869,27 +3971,35 @@ function NovelWorkspacePage() {
       const summarySystemMsg = "Canon refinement specialist. Return only valid JSON.";
 
       if (target === "synopsis") {
+        const currentSynopsis = novel.storyBible.summary.synopsisShort || "";
+        if (!currentSynopsis.trim()) {
+          setStoryAiError("Write a synopsis first before using AI tools on it. Describe your story idea in the synopsis box above.");
+          return;
+        }
         const prompt = [
           "Refine a novel synopsis for planning and drafting.",
           mode === "tighten"
             ? "Tighten this synopsis to be concise, vivid, and clear (110-170 words)."
             : mode === "expand"
-              ? "Expand this synopsis with richer narrative detail and causality (190-320 words)."
+              ? "Expand this synopsis with richer narrative detail, emotional depth, and causality (190-320 words). Add texture about setting, character motivations, and consequences."
               : mode === "blurb"
                 ? "Rewrite this as compelling back-cover copy while preserving canon facts."
                 : mode === "beats"
                   ? "Rewrite this synopsis as a chapter-ready arc summary with clear progression."
               : "Improve clarity, pacing, tension, and emotional pull while preserving canon.",
           "Return JSON only: {\"synopsis\":\"string\"}",
-          `Current synopsis:\n${novel.storyBible.summary.synopsisShort || "(empty)"}`,
-          `Core conflict:\n${novel.storyBible.summary.stakes || "(empty)"}`,
+          `Current synopsis:\n${currentSynopsis}`,
+          `Core conflict:\n${novel.storyBible.summary.stakes || "(not set yet)"}`,
           `Story context:\n${context}`,
         ].join("\n\n");
-        const data = await requestOpenRouterJson<{ synopsis?: string }>(prompt, 500, { systemMessage: summarySystemMsg });
-        if (typeof data.synopsis === "string" && data.synopsis.trim()) {
+        const data = await requestOpenRouterJson<{ synopsis?: string; result?: string; text?: string }>(prompt, 700, { systemMessage: summarySystemMsg });
+        const newSynopsis = (data.synopsis || data.result || data.text || "").trim();
+        if (newSynopsis && newSynopsis.length > 20) {
           updateStoryBible({
-            summary: { ...novel.storyBible.summary, synopsisShort: data.synopsis.trim() },
+            summary: { ...novel.storyBible.summary, synopsisShort: newSynopsis },
           });
+        } else {
+          setStoryAiError("AI returned an empty or too-short result. Try again or switch model.");
         }
       }
 
