@@ -22,10 +22,9 @@ function getStripeSecretKey(): string {
 /** Standard Stripe client using env var. For admin-config-aware usage, use getConfiguredStripeClient(). */
 export function getStripeClient(): Stripe {
   if (globalForStripe.stripe) return globalForStripe.stripe;
-  const client = new Stripe(getStripeSecretKey(), {
-    apiVersion: "2025-12-18.acacia" as Stripe.LatestApiVersion,
-    typescript: true,
-  });
+  // Don't hardcode apiVersion — let Stripe use the account's dashboard version.
+  // This avoids "Invalid Stripe API version" errors when the account is on a newer version.
+  const client = new Stripe(getStripeSecretKey());
   if (process.env.NODE_ENV !== "production") {
     globalForStripe.stripe = client;
   }
@@ -38,10 +37,7 @@ export async function getConfiguredStripeClient(): Promise<Stripe | null> {
   const { getResolvedStripeConfig } = await import("@/lib/admin-config");
   const config = await getResolvedStripeConfig();
   if (!config.secretKey) return null;
-  return new Stripe(config.secretKey, {
-    apiVersion: "2025-12-18.acacia" as Stripe.LatestApiVersion,
-    typescript: true,
-  });
+  return new Stripe(config.secretKey);
 }
 
 export function getStripePriceId(): string {

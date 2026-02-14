@@ -250,98 +250,50 @@ const CHARACTER_AI_MODE_COPY: Record<CharacterAiMode, { label: string; descripti
     description: "Deepens their psychology — hidden secrets, stress reactions, and subtle reader foreshadowing.",
   },
 };
+// ── Common English words that should NEVER be treated as character names ──
+// This blocklist catches words that appear capitalised at sentence starts.
+// The extraction function also skips sentence-initial words, so this is a safety net.
 const SUMMARY_NAME_BLOCKLIST = new Set([
-  "The",
-  "A",
-  "An",
-  "Chapter",
-  "Act",
-  "Scene",
-  "Prologue",
-  "Epilogue",
-  "Summary",
-  "Premise",
-  "Synopsis",
-  "Genre",
-  "Tone",
-  "Theme",
-  "Conflict",
-  "Stakes",
-  "Story",
-  "Novel",
-  "Book",
-  "Part",
-  "Day",
-  "Week",
-  "Month",
-  "Year",
-  "Love",
-  "Sex",
-  "Anonymous",
-  "Stranger",
-  "Blackmailer",
-  // Common sentence-starters and transition words that regex matches as "names"
-  "However",
-  "Although",
-  "Despite",
-  "Meanwhile",
-  "Throughout",
-  "Furthermore",
-  "Moreover",
-  "Nevertheless",
-  "Nonetheless",
-  "Perhaps",
-  "Eventually",
-  "Ultimately",
-  "Suddenly",
-  "Finally",
-  "Initially",
-  "Before",
-  "After",
-  "During",
-  "Between",
-  "Through",
-  "Against",
-  "Without",
-  "Within",
-  "Around",
-  "Beneath",
-  "Beyond",
-  "Behind",
-  "Together",
-  "Already",
-  "Almost",
-  "Another",
-  "Because",
-  "Whether",
-  "Therefore",
-  "Otherwise",
-  "Several",
-  // Common place-related words that appear capitalised in text
-  "City",
-  "Town",
-  "Village",
-  "County",
-  "Street",
-  "Road",
-  "Park",
-  "Church",
-  "School",
-  "Hospital",
-  "Station",
-  "House",
-  "Estate",
-  "Forest",
-  "Castle",
-  "Palace",
-  "Market",
-  "Bridge",
-  "Square",
-  "North",
-  "South",
-  "East",
-  "West",
-  "Central",
+  // Articles, determiners, pronouns
+  "the","a","an","this","that","these","those","my","your","his","her","its","our","their",
+  "he","she","they","them","him","her","who","whom","what","which","each","every","both",
+  "few","many","much","some","any","all","most","none","other","another","either","neither",
+  // Common verbs & auxiliaries
+  "is","are","was","were","has","had","have","been","being","would","could","should","might",
+  "will","shall","may","can","must","does","did","let","got","get","set","put","run","ran",
+  "but","and","yet","nor","for","not","now","then","when","where","here","there","how","why",
+  // Conjunctions, prepositions, adverbs
+  "however","although","despite","meanwhile","throughout","furthermore","moreover",
+  "nevertheless","nonetheless","perhaps","eventually","ultimately","suddenly","finally",
+  "initially","before","after","during","between","through","against","without","within",
+  "around","beneath","beyond","behind","together","already","almost","because","whether",
+  "therefore","otherwise","several","also","just","only","very","still","often","never",
+  "always","sometimes","soon","later","once","while","since","until","upon","about","above",
+  "across","along","below","under","toward","towards","into","onto","from","over","with",
+  // Common sentence starters
+  "slowly","quickly","gently","deeply","strongly","quietly","loudly","softly","barely",
+  "merely","simply","truly","really","actually","certainly","clearly","definitely",
+  "absolutely","completely","entirely","exactly","hardly","nearly","probably","possibly",
+  "apparently","evidently","obviously","presumably","supposedly","fortunately","unfortunately",
+  "interestingly","surprisingly","importantly","significantly","increasingly","gradually",
+  // Narrative / structural words
+  "chapter","act","scene","prologue","epilogue","summary","premise","synopsis","genre",
+  "tone","theme","conflict","stakes","story","novel","book","part",
+  // Time words
+  "day","week","month","year","morning","evening","night","afternoon","dawn","dusk",
+  "today","yesterday","tomorrow","tonight",
+  // Emotion / abstract words
+  "love","fear","hope","anger","grief","pain","loss","truth","lies","death","life","fate",
+  "power","honor","shame","guilt","trust","doubt","peace","war","home","work",
+  // Role-like words
+  "anonymous","stranger","blackmailer","killer","victim","witness","detective","inspector",
+  "doctor","nurse","teacher","soldier","captain","sergeant","king","queen","prince","princess",
+  "lord","lady","father","mother","brother","sister","uncle","aunt","cousin","friend","enemy",
+  // Place-related
+  "city","town","village","county","street","road","park","church","school","hospital",
+  "station","house","estate","forest","castle","palace","market","bridge","square",
+  "north","south","east","west","central","country","world","land","island","river","lake",
+  "mountain","valley","coast","harbour","harbor","port",
 ]);
 const CHARACTER_SURNAME_FALLBACKS = [
   "Hale",
@@ -493,6 +445,7 @@ function NovelWorkspacePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [novels, setNovels] = useState<Novel[]>(() => loadNovels());
+  const [novelSyncDone, setNovelSyncDone] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -951,16 +904,27 @@ function NovelWorkspacePage() {
     setOpenRouterModelSearch("");
   }, [profileOpen]);
 
-  // Load novels from server on mount — server is the source of truth
+  // Load novels from server on mount — merge with local to prevent race conditions.
+  // When a novel is just created, it might exist locally but not yet on the server.
   useEffect(() => {
     void (async () => {
+      const localNovels = loadNovels();
       const serverNovels = await loadNovelsFromServer();
+
       if (serverNovels !== null && serverNovels.length > 0) {
-        setNovels(serverNovels);
-        saveNovels(serverNovels); // cache locally
+        // Merge: use server data as base, but keep any local novels that aren't on the server
+        // (e.g. a novel that was just created and saved before navigation)
+        const serverIds = new Set(serverNovels.map((n) => n.id));
+        const localOnly = localNovels.filter((n) => !serverIds.has(n.id));
+        const merged = [...localOnly, ...serverNovels];
+        setNovels(merged);
+        saveNovels(merged); // cache merged result locally
+        // If there were local-only novels, push the merged list to the server
+        if (localOnly.length > 0) {
+          void saveNovelsToServer(merged);
+        }
       } else if (serverNovels !== null && serverNovels.length === 0) {
         // Server empty — push local data up
-        const localNovels = loadNovels();
         if (localNovels.length > 0) {
           void saveNovelsToServer(localNovels);
         }
@@ -970,6 +934,7 @@ function NovelWorkspacePage() {
       if (serverSettings && Object.keys(serverSettings).length > 0) {
         applySettings(serverSettings);
       }
+      setNovelSyncDone(true);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1428,26 +1393,59 @@ function NovelWorkspacePage() {
       .join("\n");
     if (!source.trim()) return [] as string[];
 
-    const matches = source.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g) ?? [];
-    const unique: string[] = [];
-    const seen = new Set<string>();
+    // ── Strategy: only pick capitalised words that appear MID-SENTENCE ──
+    // Words at the start of a sentence are capitalised by grammar, not because
+    // they're proper nouns. We split into sentences, then only consider words
+    // that are NOT the first word of any sentence.
 
     // Place-name suffixes to filter out (Yorkshire, Wakefield, etc.)
     const PLACE_SUFFIXES = /(?:shire|field|burg|berg|holm|wick|wich|ford|land|dale|wood|pool|port|mouth|town|stead|bury|polis|grad|stan|minster|ville|vale|cester|chester)$/i;
 
-    for (const rawMatch of matches) {
-      const candidate = rawMatch.trim().replace(/\s+/g, " ");
+    // Split text into sentences (on . ! ? followed by space+capital or end)
+    const sentences = source.split(/(?<=[.!?])\s+/);
+
+    // Collect capitalised words that appear in non-first position within sentences.
+    // Also accept capitalised words after commas (", Sarah,") as those are names.
+    const midSentenceCapitals = new Set<string>();
+
+    for (const sentence of sentences) {
+      // Find all capitalised words in this sentence with their position
+      const wordMatches = [...sentence.matchAll(/\b([A-Z][a-z]{2,})\b/g)];
+      for (let i = 0; i < wordMatches.length; i++) {
+        const word = wordMatches[i][0];
+        const matchIndex = wordMatches[i].index ?? 0;
+
+        // Skip the very first capitalised word in the sentence (grammar capitalisation)
+        if (i === 0 && matchIndex < 3) continue;
+
+        // Accept: this word appears mid-sentence, so it's likely a proper noun
+        midSentenceCapitals.add(word);
+      }
+    }
+
+    // Also look for words after commas (", David,") which are almost always names
+    const afterCommaPattern = /,\s+([A-Z][a-z]{2,})/g;
+    for (const m of source.matchAll(afterCommaPattern)) {
+      midSentenceCapitals.add(m[1]);
+    }
+
+    // Now filter the candidates
+    const unique: string[] = [];
+    const seen = new Set<string>();
+
+    for (const candidate of midSentenceCapitals) {
       if (!candidate) continue;
-      const parts = candidate.split(" ");
-      const hasBlockedToken = parts.some((part) => SUMMARY_NAME_BLOCKLIST.has(part));
-      if (hasBlockedToken) continue;
+      const lower = candidate.toLowerCase();
+      // Check blocklist (case-insensitive)
+      if (SUMMARY_NAME_BLOCKLIST.has(lower)) continue;
       if (isRoleLikeCharacterLabel(candidate)) continue;
-      if (candidate.length > 34) continue;
+      if (candidate.length > 20) continue;
       // Filter out place names based on suffix
-      if (parts.some((part) => PLACE_SUFFIXES.test(part))) continue;
-      const key = candidate.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (PLACE_SUFFIXES.test(candidate)) continue;
+      // Filter out words that look like common English words (adjectives, adverbs, etc.)
+      if (/(?:ly|ness|ment|tion|sion|ful|less|ous|ive|able|ible|ally|erly|ward|wise|ght|ism|ist|ity|ance|ence|dom|ship|ened|ated|ized|ised|eous|ious|ical|ing)$/i.test(lower) && lower.length > 5) continue;
+      if (seen.has(lower)) continue;
+      seen.add(lower);
       unique.push(candidate);
       if (unique.length >= 12) break;
     }
@@ -3649,12 +3647,13 @@ function NovelWorkspacePage() {
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
       const prompt = [
-        `${genre} novel: ${clampPromptText(synopsis, 400)}`,
-        summaryNamesText ? `Character first names from the synopsis: ${summaryNamesText}` : "",
+        `${genre} novel synopsis: ${clampPromptText(synopsis, 400)}`,
+        summaryNamesText ? `Person names identified in the synopsis: ${summaryNamesText}` : "",
         existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
-        "For each character name from the synopsis, generate a full name (add a surname if only a first name is given — choose a surname that fits the setting and era).",
-        "Only create characters for names mentioned in the synopsis. Do NOT invent entirely new characters.",
-        `List up to ${requestedCount} characters. Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
+        "IMPORTANT: Only create characters for ACTUAL PERSON NAMES from the synopsis above. Ignore any common English words that are not real person names.",
+        "For each real person name, generate a full name (first + last). Choose a surname that fits the story's setting, era, and culture.",
+        "Give each character a role (Protagonist, Antagonist, Supporting, or Minor) and a one-sentence hook that fits the synopsis.",
+        `Return up to ${requestedCount} characters as JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
       ].filter(Boolean).join("\n");
 
       let roster: RosterEntry[] = [];
@@ -3699,19 +3698,22 @@ function NovelWorkspacePage() {
         summaryNameHints.map((h) => h.trim().toLowerCase()),
       );
 
-      // Filter roster: accept names that are valid OR whose first name matches a hint
+      // Filter roster: reject nonsense, accept real names
       roster = roster.filter((r) => {
         if (typeof r.name !== "string" || !r.name.trim()) return false;
         const name = r.name.trim();
         const words = name.split(/\s+/).filter(Boolean);
         if (words.length === 0) return false;
+        // Safety: reject any character whose first name is a common English word
+        const firstLower = words[0].toLowerCase();
+        if (SUMMARY_NAME_BLOCKLIST.has(firstLower)) return false;
+        if (NEVER_A_NAME.has(firstLower)) return false;
         // Single-word name: accept if it matches a summary hint
         if (words.length === 1) {
           return hintFirstNames.has(name.toLowerCase());
         }
         // Multi-word name: accept if valid OR first name matches a hint
-        const firstName = words[0].toLowerCase();
-        return isValidName(name) || hintFirstNames.has(firstName);
+        return isValidName(name) || hintFirstNames.has(firstLower);
       });
 
       // Keep only characters whose name overlaps with summary hints (by first name)
@@ -3963,7 +3965,11 @@ function NovelWorkspacePage() {
   }
 
   async function runSummaryFieldAi(target: SummaryAiField, mode: string) {
-    if (!novel || !ensureStoryAiReady()) return;
+    if (!novel) return;
+    if (!ensureStoryAiReady()) {
+      console.warn("[runSummaryFieldAi] AI not ready — check Settings for API key, base URL, and model.");
+      return;
+    }
     setStoryAiBusyAction(`summary-field-${target}`);
     setStoryAiError(null);
     try {
@@ -3986,15 +3992,32 @@ function NovelWorkspacePage() {
                 ? "Rewrite this as compelling back-cover copy while preserving canon facts."
                 : mode === "beats"
                   ? "Rewrite this synopsis as a chapter-ready arc summary with clear progression."
-              : "Improve clarity, pacing, tension, and emotional pull while preserving canon.",
+                  : "Improve clarity, pacing, tension, and emotional pull while preserving canon.",
           "Return JSON only: {\"synopsis\":\"string\"}",
           `Current synopsis:\n${currentSynopsis}`,
           `Core conflict:\n${novel.storyBible.summary.stakes || "(not set yet)"}`,
           `Story context:\n${context}`,
         ].join("\n\n");
-        const data = await requestOpenRouterJson<{ synopsis?: string; result?: string; text?: string }>(prompt, 700, { systemMessage: summarySystemMsg });
-        const newSynopsis = (data.synopsis || data.result || data.text || "").trim();
-        if (newSynopsis && newSynopsis.length > 20) {
+        const data = await requestOpenRouterJson<Record<string, unknown>>(prompt, 700, { systemMessage: summarySystemMsg });
+        // Accept multiple possible key names the AI might use
+        let newSynopsis = "";
+        for (const key of ["synopsis", "result", "text", "refined_synopsis", "improved_synopsis", "synopsisShort", "content", "output"]) {
+          const val = data[key];
+          if (typeof val === "string" && val.trim().length > 20) {
+            newSynopsis = val.trim();
+            break;
+          }
+        }
+        // Fallback: grab the first string value that's long enough
+        if (!newSynopsis) {
+          for (const val of Object.values(data)) {
+            if (typeof val === "string" && val.trim().length > 20) {
+              newSynopsis = val.trim();
+              break;
+            }
+          }
+        }
+        if (newSynopsis) {
           updateStoryBible({
             summary: { ...novel.storyBible.summary, synopsisShort: newSynopsis },
           });
@@ -4065,7 +4088,8 @@ function NovelWorkspacePage() {
         }
       }
     } catch (error) {
-      setStoryAiError(error instanceof Error ? error.message : "Unable to run assistant action.");
+      console.error("[runSummaryFieldAi] Error:", error);
+      setStoryAiError(error instanceof Error ? error.message : "Unable to run assistant action. Check the browser console for details.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -6345,6 +6369,26 @@ function NovelWorkspacePage() {
   }
 
   if (!novel) {
+    // While server sync is in progress, show a loading state instead of "not found"
+    if (!novelSyncDone) {
+      return (
+        <div className="pw-wallpaper">
+          <div className="pw-window">
+            <aside className="pw-sidebar">
+              <div className="pw-logo">
+                <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+              </div>
+              <div className="pw-sidebar-foot">Loading...</div>
+            </aside>
+            <section className="pw-home-main">
+              <div className="pw-empty">
+                <p className="pw-empty-title" style={{ opacity: 0.5 }}>Opening novel...</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="pw-wallpaper">
         <div className="pw-window">
@@ -8054,6 +8098,9 @@ function NovelWorkspacePage() {
                     <p className="pw-field-help">
                       {novel.storyBible.summary.synopsisShort.length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}
                     </p>
+                    {!aiOff && storyAiError && storyAiBusyAction === null && (
+                      <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>
+                    )}
                     <div className="pw-bible-grid-3">
                       <div>
                         <label>Themes (comma separated)</label>

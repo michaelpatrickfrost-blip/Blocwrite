@@ -35,7 +35,7 @@ export async function POST() {
   }
 
   const Stripe = (await import("stripe")).default;
-  const stripe = new Stripe(config.secretKey, { apiVersion: "2025-12-18.acacia" as import("stripe").Stripe.LatestApiVersion, typescript: true });
+  const stripe = new Stripe(config.secretKey);
 
   const portal = await stripe.billingPortal.sessions.create({
     customer: stripeCustomerId,

@@ -153,13 +153,22 @@ function StudioHomePage() {
     saveNovelsWithSync(next);
   }
 
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!titleDraft.trim()) return;
     const novel = createNovel(titleDraft);
     const next = [novel, ...novels];
-    writeNovels(next);
+    setNovels(next);
+    saveNovels(next);
     setTitleDraft("");
-    router.push(`/studio/${novel.id}`);
+    setHoveredNovelId(novel.id);
+    setJustCreatedId(novel.id);
+    // Save to server in background so it's ready when they click in
+    void saveNovelsToServer(next);
+    // Clear the highlight after a moment
+    setTimeout(() => setJustCreatedId(null), 2000);
   }
 
   function confirmDelete() {
@@ -284,10 +293,15 @@ function StudioHomePage() {
               placeholder="Novel title"
               dir="ltr"
             />
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary" disabled={!titleDraft.trim()}>
               Create
             </button>
           </form>
+          {justCreatedId && (
+            <p style={{ fontSize: 12, color: "var(--pw-accent)", margin: "8px 0 0", fontWeight: 500 }}>
+              Novel created — click it to open.
+            </p>
+          )}
 
           <div className="pw-sidebar-foot">
             <span>Hover a novel to see details.</span>
@@ -322,14 +336,19 @@ function StudioHomePage() {
                 {sortedNovels.map((novel) => (
                   <article
                     key={novel.id}
-                    className={`pw-novel-card${hoveredNovelId === novel.id ? " pw-novel-card-active" : ""}`}
+                    className={`pw-novel-card${hoveredNovelId === novel.id ? " pw-novel-card-active" : ""}${justCreatedId === novel.id ? " pw-novel-card-new" : ""}`}
                     role="button"
                     tabIndex={0}
                     onMouseEnter={() => setHoveredNovelId(novel.id)}
-                    onClick={() => router.push(`/studio/${novel.id}`)}
-                    onKeyDown={(event) => {
+                    onClick={async () => {
+                      // Ensure server has the latest before navigating
+                      await saveNovelsToServer(novels);
+                      router.push(`/studio/${novel.id}`);
+                    }}
+                    onKeyDown={async (event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
+                        await saveNovelsToServer(novels);
                         router.push(`/studio/${novel.id}`);
                       }
                     }}

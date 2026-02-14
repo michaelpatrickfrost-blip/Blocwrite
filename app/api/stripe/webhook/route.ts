@@ -11,7 +11,7 @@ function toDate(value: number | null | undefined) {
 }
 
 async function getStripe(secretKey: string) {
-  return new Stripe(secretKey, { apiVersion: "2025-12-18.acacia" as Stripe.LatestApiVersion, typescript: true });
+  return new Stripe(secretKey);
 }
 
 async function resolveUserByCustomerId(stripeCustomerId: string, stripe: Stripe): Promise<string | null> {

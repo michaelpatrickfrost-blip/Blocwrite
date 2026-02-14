@@ -57,10 +57,7 @@ export async function POST(request: Request) {
     }
 
     const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe(config.secretKey, {
-      apiVersion: "2025-12-18.acacia" as import("stripe").Stripe.LatestApiVersion,
-      typescript: true,
-    });
+    const stripe = new Stripe(config.secretKey);
 
     /* ── ensure Stripe customer ────────────────────── */
     let stripeCustomerId = user.stripeCustomer?.stripeCustomerId || "";

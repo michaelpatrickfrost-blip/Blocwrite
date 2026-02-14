@@ -9,10 +9,7 @@ export const runtime = "nodejs";
 async function getConfiguredStripe(): Promise<Stripe | null> {
   const config = await getResolvedStripeConfig();
   if (!config.secretKey) return null;
-  return new Stripe(config.secretKey, {
-    apiVersion: "2025-12-18.acacia" as Stripe.LatestApiVersion,
-    typescript: true,
-  });
+  return new Stripe(config.secretKey);
 }
 
 /** GET — list existing promotion codes with their coupons. */
