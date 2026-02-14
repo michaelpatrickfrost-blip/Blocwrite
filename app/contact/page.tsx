@@ -65,14 +65,12 @@ export default function ContactPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       {/* Nav */}
-      <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "16px 28px" }}>
+      <nav style={{ background: "rgba(20,20,24,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "14px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <span style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
-              <span style={{ color: "#4d6a00", fontWeight: 900 }}>/</span>Blocwrite
-            </span>
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
           </Link>
-          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
+          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
             &larr; Back to Home
           </Link>
         </div>
