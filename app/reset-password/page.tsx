@@ -85,7 +85,7 @@ function ResetPasswordForm() {
       >
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           <Link href="/" style={{ textDecoration: "none" }}>
-            <Image src="/blocwrite-main-dark.png" alt="Blocwrite" width={200} height={60} priority />
+            <Image src="/blocwrite-logo-white.png" alt="Blocwrite" width={200} height={60} priority />
           </Link>
           <p style={{ color: "#ff6b6b", marginTop: 24, fontSize: 14 }}>
             Invalid reset link. Please request a new password reset from the login page.
@@ -133,7 +133,7 @@ function ResetPasswordForm() {
         }}
       >
         <Link href="/" style={{ textDecoration: "none" }}>
-          <Image src="/blocwrite-main-dark.png" alt="Blocwrite" width={200} height={60} priority />
+          <Image src="/blocwrite-logo-white.png" alt="Blocwrite" width={200} height={60} priority />
         </Link>
 
         <div

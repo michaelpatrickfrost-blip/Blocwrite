@@ -53,7 +53,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         {/* Sidebar */}
         <aside className="pw-sidebar">
           <div className="pw-logo">
-            <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
           </div>
 
           <Link href="/dashboard" className="pw-back-link">

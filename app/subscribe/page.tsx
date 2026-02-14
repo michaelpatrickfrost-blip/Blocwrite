@@ -72,7 +72,7 @@ export default function SubscribePage() {
         {/* Logo */}
         <Link href="/" style={{ textDecoration: "none" }}>
           <Image
-            src="/blocwrite-main-dark.png"
+            src="/blocwrite-logo-white.png"
             alt="Blocwrite"
             width={180}
             height={54}

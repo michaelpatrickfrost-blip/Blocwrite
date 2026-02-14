@@ -142,7 +142,7 @@ function LoginForm() {
         {/* Logo */}
         <Link href="/" style={{ textDecoration: "none" }}>
           <Image
-            src="/blocwrite-main-dark.png"
+            src="/blocwrite-logo-white.png"
             alt="Blocwrite"
             width={200}
             height={60}

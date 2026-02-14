@@ -101,7 +101,7 @@ function Nav() {
     >
       <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
+          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
@@ -861,7 +861,7 @@ function Footer() {
     <footer style={{ padding: "52px 0 44px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
       <div style={{ ...wrap(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
+          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
           <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
             &copy; {new Date().getFullYear()} Blocwrite
           </span>

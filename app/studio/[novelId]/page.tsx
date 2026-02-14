@@ -6453,7 +6453,7 @@ function NovelWorkspacePage() {
           <div className="pw-window">
             <aside className="pw-sidebar">
               <div className="pw-logo">
-                <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+                <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
               </div>
               <div className="pw-sidebar-foot">Loading...</div>
             </aside>
@@ -6471,7 +6471,7 @@ function NovelWorkspacePage() {
         <div className="pw-window">
           <aside className="pw-sidebar">
             <div className="pw-logo">
-              <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+              <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
             </div>
             <div className="pw-sidebar-foot">Novel not found.</div>
           </aside>
@@ -6559,7 +6559,7 @@ function NovelWorkspacePage() {
         <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
             <div className="pw-logo-swap">
-              <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+              <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
               <img src={currentTheme === "dark" ? "/blocwrite-icon-dark.png" : "/blocwrite-icon-light.png"} alt="Bw" className="pw-logo-icon-img" />
             </div>
             <button type="button" className={`pw-collapse-btn ${sidebarPinned ? "pw-pin-active" : ""}`} onClick={toggleSidebarPin} title={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}>

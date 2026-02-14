@@ -36,7 +36,7 @@ export default function MobileGate({ children }: { children: React.ReactNode }) 
         }}
       >
         <img
-          src="/blocwrite-main-dark.png"
+          src="/blocwrite-logo-white.png"
           alt="Blocwrite"
           style={{ height: 40, marginBottom: 32 }}
         />

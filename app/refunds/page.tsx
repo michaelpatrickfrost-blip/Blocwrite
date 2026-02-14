@@ -100,7 +100,7 @@ export default function RefundPolicyPage() {
       <footer style={{ padding: "48px 0 40px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
               &copy; {new Date().getFullYear()} Blocwrite
             </span>

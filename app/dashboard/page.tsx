@@ -52,7 +52,7 @@ export default async function DashboardPage() {
         {/* Sidebar */}
         <aside className="pw-sidebar">
           <div className="pw-logo">
-            <img src="/blocwrite-main-dark.png" alt="Blocwrite" className="pw-logo-full" />
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
           </div>
 
           <div className="pw-section-title">Navigation</div>
