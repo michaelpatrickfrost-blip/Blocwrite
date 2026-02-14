@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const normalizedEmail = email.toLowerCase().trim();
     const response = NextResponse.json({
       ok: true,
-      redirectTo: normalizedEmail === ADMIN_EMAIL ? "/admin" : "/studio",
+      redirectTo: "/studio",
     });
 
     response.cookies.set(COOKIE_NAME, token, {

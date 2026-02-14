@@ -10,44 +10,49 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const search = request.nextUrl.searchParams.get("q")?.trim() || "";
-  const where = search
-    ? {
-        OR: [
-          { email: { contains: search } },
-          { name: { contains: search } },
-        ],
-      }
-    : undefined;
+  try {
+    const search = request.nextUrl.searchParams.get("q")?.trim() || "";
+    const where = search
+      ? {
+          OR: [
+            { email: { contains: search } },
+            { name: { contains: search } },
+          ],
+        }
+      : undefined;
 
-  const users = await prisma.user.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      createdAt: true,
-      stripeCustomer: {
-        select: {
-          stripeCustomerId: true,
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        createdAt: true,
+        stripeCustomer: {
+          select: { stripeCustomerId: true },
+        },
+        subscriptions: {
+          orderBy: { updatedAt: "desc" },
+          take: 3,
+          select: {
+            id: true,
+            status: true,
+            stripePriceId: true,
+            currentPeriodEnd: true,
+            cancelAtPeriodEnd: true,
+            updatedAt: true,
+          },
         },
       },
-      subscriptions: {
-        orderBy: { updatedAt: "desc" },
-        take: 3,
-        select: {
-          id: true,
-          status: true,
-          stripePriceId: true,
-          currentPeriodEnd: true,
-          cancelAtPeriodEnd: true,
-          updatedAt: true,
-        },
-      },
-    },
-  });
+    });
 
-  return NextResponse.json({ users });
+    return NextResponse.json({ users });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Failed to query users", detail: error instanceof Error ? error.message : "unknown" },
+      { status: 500 },
+    );
+  }
 }

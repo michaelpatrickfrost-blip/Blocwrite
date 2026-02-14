@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getStripeClient } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -11,7 +10,9 @@ function toDate(value: number | null | undefined) {
 }
 
 async function resolveUserByCustomerId(stripeCustomerId: string): Promise<string | null> {
+  const { getStripeClient } = await import("@/lib/stripe");
   const stripe = getStripeClient();
+
   const existing = await prisma.stripeCustomer.findUnique({
     where: { stripeCustomerId },
     select: { userId: true },
@@ -53,7 +54,9 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
       stripeCustomerId,
       stripePriceId,
       status: subscription.status,
-      currentPeriodEnd: toDate((subscription as { current_period_end?: number | null }).current_period_end),
+      currentPeriodEnd: toDate(
+        (subscription as { current_period_end?: number | null }).current_period_end,
+      ),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       trialEnd: toDate(subscription.trial_end),
     },
@@ -63,7 +66,9 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
       stripeSubscriptionId: subscription.id,
       stripePriceId,
       status: subscription.status,
-      currentPeriodEnd: toDate((subscription as { current_period_end?: number | null }).current_period_end),
+      currentPeriodEnd: toDate(
+        (subscription as { current_period_end?: number | null }).current_period_end,
+      ),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       trialEnd: toDate(subscription.trial_end),
     },
@@ -71,10 +76,13 @@ async function upsertFromSubscription(subscription: Stripe.Subscription) {
 }
 
 async function markSubscriptionStatusByInvoice(invoice: Stripe.Invoice, status: string) {
-  const invoiceWithSubscription = invoice as unknown as { subscription?: string | Stripe.Subscription };
-  const subscriptionId = typeof invoiceWithSubscription.subscription === "string"
-    ? invoiceWithSubscription.subscription
-    : null;
+  const invoiceWithSubscription = invoice as unknown as {
+    subscription?: string | Stripe.Subscription;
+  };
+  const subscriptionId =
+    typeof invoiceWithSubscription.subscription === "string"
+      ? invoiceWithSubscription.subscription
+      : null;
   if (!subscriptionId) return;
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: subscriptionId },
@@ -83,11 +91,18 @@ async function markSubscriptionStatusByInvoice(invoice: Stripe.Invoice, status: 
 }
 
 export async function POST(request: Request) {
-  const stripe = getStripeClient();
+  /* ── env guard ── */
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: "STRIPE_WEBHOOK_SECRET is not configured" }, { status: 500 });
+  if (!stripeKey || !secret) {
+    return NextResponse.json(
+      { error: "Stripe webhook is not configured (missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET)." },
+      { status: 503 },
+    );
   }
+
+  const { getStripeClient } = await import("@/lib/stripe");
+  const stripe = getStripeClient();
 
   const signature = request.headers.get("stripe-signature");
   if (!signature) {
@@ -99,7 +114,12 @@ export async function POST(request: Request) {
   try {
     event = stripe.webhooks.constructEvent(body, signature, secret);
   } catch (error) {
-    return NextResponse.json({ error: `Webhook signature verification failed: ${error instanceof Error ? error.message : "unknown"}` }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: `Webhook signature verification failed: ${error instanceof Error ? error.message : "unknown"}`,
+      },
+      { status: 400 },
+    );
   }
 
   const alreadyProcessed = await prisma.stripeWebhookEvent.findUnique({
@@ -155,7 +175,8 @@ export async function POST(request: Request) {
         stripeEventId: event.id,
         eventType: event.type,
         status: "error",
-        error: error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook error",
+        error:
+          error instanceof Error ? error.message.slice(0, 1000) : "Unknown webhook error",
       },
     });
     return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });

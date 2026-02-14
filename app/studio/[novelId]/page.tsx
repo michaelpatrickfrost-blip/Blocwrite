@@ -6411,6 +6411,23 @@ function NovelWorkspacePage() {
               The Plan
             </button>
             <ProfileButton onClick={() => setProfileOpen(true)} />
+            <Link
+              href="/admin"
+              className="pw-admin-link"
+              title="Admin Hub"
+              style={{
+                fontSize: 11,
+                padding: "5px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--pw-border-light)",
+                color: "var(--pw-text-dim)",
+                textDecoration: "none",
+                fontWeight: 500,
+                transition: "color 0.15s, border-color 0.15s",
+              }}
+            >
+              Admin
+            </Link>
           </div>
         </div>
 

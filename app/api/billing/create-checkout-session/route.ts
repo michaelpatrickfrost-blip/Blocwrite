@@ -1,28 +1,32 @@
 import { NextResponse } from "next/server";
-import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getStripeClient, getStripePriceId } from "@/lib/stripe";
+import { ensurePrismaUserForSessionEmail } from "@/lib/session-user";
 
 export const runtime = "nodejs";
 
 export async function POST() {
-  const stripe = getStripeClient();
-  const session = await getAuthSession();
-  if (!session?.user?.id || !session.user.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  /* ── auth ─────────────────────────────────────────── */
+  const user = await ensurePrismaUserForSessionEmail();
+  if (!user?.id || !user.email) {
+    return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      id: true,
-      email: true,
-      stripeCustomer: { select: { stripeCustomerId: true } },
-    },
-  });
-  if (!user?.email) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  /* ── stripe env guard ─────────────────────────────── */
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const priceId = process.env.STRIPE_PRICE_ID;
+  if (!stripeKey || !priceId) {
+    return NextResponse.json(
+      {
+        error: "Stripe is not configured yet. Ask the admin to add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to .env.",
+        configured: false,
+      },
+      { status: 503 },
+    );
   }
+
+  /* ── lazy-load stripe ─────────────────────────────── */
+  const { getStripeClient } = await import("@/lib/stripe");
+  const stripe = getStripeClient();
 
   let stripeCustomerId = user.stripeCustomer?.stripeCustomerId || "";
   if (!stripeCustomerId) {
@@ -42,15 +46,10 @@ export async function POST() {
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: stripeCustomerId,
-    line_items: [
-      {
-        price: getStripePriceId(),
-        quantity: 1,
-      },
-    ],
+    line_items: [{ price: priceId, quantity: 1 }],
     allow_promotion_codes: true,
-    success_url: `${appUrl}/dashboard?billing=success`,
-    cancel_url: `${appUrl}/dashboard?billing=cancelled`,
+    success_url: `${appUrl}/studio?billing=success`,
+    cancel_url: `${appUrl}/studio?billing=cancelled`,
     metadata: { userId: user.id },
   });
 
