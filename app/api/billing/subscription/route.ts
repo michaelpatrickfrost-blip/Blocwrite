@@ -21,6 +21,7 @@ export async function GET() {
   // Admin bypass — they never have a real subscription
   if (email === ADMIN_EMAIL) {
     return NextResponse.json({
+      email,
       plan: "admin",
       status: "active",
       isAdmin: true,
@@ -49,6 +50,7 @@ export async function GET() {
 
   if (!sub) {
     return NextResponse.json({
+      email,
       plan: null,
       status: null,
       isAdmin: false,
@@ -74,6 +76,7 @@ export async function GET() {
   else if (sub.stripePriceId === annualPriceId) plan = "Annual";
 
   return NextResponse.json({
+    email,
     plan,
     status: sub.status,
     isAdmin: false,

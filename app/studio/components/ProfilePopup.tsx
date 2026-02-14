@@ -125,6 +125,7 @@ export function ProfilePopup({
     plan: string | null;
     status: string | null;
     isAdmin: boolean;
+    email?: string;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
     trialEnd: string | null;
@@ -136,6 +137,15 @@ export function ProfilePopup({
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelSuccess, setCancelSuccess] = useState(false);
+
+  // Password change state
+  const [pwExpanded, setPwExpanded] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -795,6 +805,147 @@ export function ProfilePopup({
                     >
                       Subscribe
                     </a>
+                  </div>
+                )}
+              </div>
+
+              {/* Email & Password */}
+              <div className="pw-settings-group" style={{ borderTop: "1px solid var(--pw-border, rgba(255,255,255,0.08))", paddingTop: 16 }}>
+                <div className="pw-settings-group-title">Account Details</div>
+
+                {/* Email display — read only */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 4 }}>Email</label>
+                  <input
+                    className="pw-settings-input"
+                    type="email"
+                    value={subInfo?.email ?? ""}
+                    disabled
+                    readOnly
+                    style={{ opacity: 0.55, cursor: "not-allowed" }}
+                  />
+                </div>
+
+                {/* Password change */}
+                {!pwExpanded ? (
+                  <button
+                    type="button"
+                    className="pw-settings-btn"
+                    onClick={() => { setPwExpanded(true); setPwError(null); setPwSuccess(false); }}
+                    style={{ fontSize: 13 }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Change Password
+                  </button>
+                ) : (
+                  <div style={{
+                    padding: "14px 16px",
+                    borderRadius: 12,
+                    background: "var(--pw-bg-hover, rgba(255,255,255,0.04))",
+                    border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                  }}>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 4 }}>Current Password</label>
+                        <input
+                          className="pw-settings-input"
+                          type="password"
+                          placeholder="Enter current password"
+                          value={pwCurrent}
+                          onChange={(e) => setPwCurrent(e.target.value)}
+                          disabled={pwLoading}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 4 }}>New Password</label>
+                        <input
+                          className="pw-settings-input"
+                          type="password"
+                          placeholder="At least 6 characters"
+                          value={pwNew}
+                          onChange={(e) => setPwNew(e.target.value)}
+                          disabled={pwLoading}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 4 }}>Confirm New Password</label>
+                        <input
+                          className="pw-settings-input"
+                          type="password"
+                          placeholder="Type new password again"
+                          value={pwConfirm}
+                          onChange={(e) => setPwConfirm(e.target.value)}
+                          disabled={pwLoading}
+                        />
+                      </div>
+                    </div>
+
+                    {pwError && (
+                      <p style={{ fontSize: 12, color: "#ef4444", marginTop: 10, marginBottom: 0 }}>{pwError}</p>
+                    )}
+                    {pwSuccess && (
+                      <p style={{ fontSize: 12, color: "#10b981", marginTop: 10, marginBottom: 0 }}>Password changed successfully.</p>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="pw-settings-btn"
+                        disabled={pwLoading}
+                        onClick={async () => {
+                          setPwError(null);
+                          setPwSuccess(false);
+                          if (!pwCurrent || !pwNew || !pwConfirm) {
+                            setPwError("All fields are required.");
+                            return;
+                          }
+                          if (pwNew.length < 6) {
+                            setPwError("New password must be at least 6 characters.");
+                            return;
+                          }
+                          if (pwNew !== pwConfirm) {
+                            setPwError("New passwords do not match.");
+                            return;
+                          }
+                          setPwLoading(true);
+                          try {
+                            const res = await fetch("/api/auth/change-password", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew, confirmPassword: pwConfirm }),
+                            });
+                            const data = await res.json() as { ok?: boolean; error?: string };
+                            if (res.ok && data.ok) {
+                              setPwSuccess(true);
+                              setPwCurrent("");
+                              setPwNew("");
+                              setPwConfirm("");
+                              setTimeout(() => { setPwExpanded(false); setPwSuccess(false); }, 2000);
+                            } else {
+                              setPwError(data.error || "Failed to change password.");
+                            }
+                          } catch {
+                            setPwError("Network error. Please try again.");
+                          } finally {
+                            setPwLoading(false);
+                          }
+                        }}
+                        style={{ fontWeight: 600, fontSize: 13 }}
+                      >
+                        {pwLoading ? "Saving..." : "Update Password"}
+                      </button>
+                      <button
+                        type="button"
+                        className="pw-settings-btn"
+                        onClick={() => { setPwExpanded(false); setPwError(null); setPwSuccess(false); setPwCurrent(""); setPwNew(""); setPwConfirm(""); }}
+                        style={{ fontSize: 13 }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

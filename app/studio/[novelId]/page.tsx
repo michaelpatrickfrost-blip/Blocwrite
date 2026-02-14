@@ -20,6 +20,8 @@ import {
   gatherSettings,
   saveSettingsToServer,
   enforceNovelIntegrity,
+  initUserScope,
+  clearNovelStorage,
   type Novel,
   type Relationship,
   type Bolton,
@@ -444,8 +446,9 @@ function NovelWorkspacePage() {
   const params = useParams<{ novelId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [novels, setNovels] = useState<Novel[]>(() => loadNovels());
+  const [novels, setNovels] = useState<Novel[]>([]);
   const [novelSyncDone, setNovelSyncDone] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -454,6 +457,17 @@ function NovelWorkspacePage() {
   const [selectedExportChapterIds, setSelectedExportChapterIds] = useState<string[]>([]);
   const [exportingFile, setExportingFile] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedShareChapterIds, setSelectedShareChapterIds] = useState<string[]>([]);
+  const [sharingLink, setSharingLink] = useState(false);
+  const [shareResult, setShareResult] = useState<{ token: string; url: string; expiresAt: string } | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [shareLinks, setShareLinks] = useState<Array<{ id: string; token: string; status: string; readerName: string | null; expiresAt: string; createdAt: string; chapters: Array<{ id: string; chapterTitle: string }> }>>([]);
+  const [shareLinksLoading, setShareLinksLoading] = useState(false);
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [applyingFeedbackId, setApplyingFeedbackId] = useState<string | null>(null);
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
   const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
@@ -922,30 +936,25 @@ function NovelWorkspacePage() {
     setOpenRouterModelSearch("");
   }, [profileOpen]);
 
-  // Load novels from server on mount — merge with local to prevent race conditions.
-  // When a novel is just created, it might exist locally but not yet on the server.
+  // Load novels from server on mount — server is the single source of truth.
+  // No cross-user merge: we scope localStorage per user and always trust the server.
   useEffect(() => {
     void (async () => {
-      const localNovels = loadNovels();
-      const serverNovels = await loadNovelsFromServer();
+      // Get user email to scope localStorage before loading anything
+      try {
+        const subRes = await fetch("/api/billing/subscription");
+        if (subRes.ok) {
+          const subData = await subRes.json() as { email?: string; isAdmin?: boolean };
+          if (subData.email) initUserScope(subData.email);
+          if (subData.isAdmin) setIsAdmin(true);
+        }
+      } catch { /* ignore */ }
 
+      // Server is the single source of truth
+      const serverNovels = await loadNovelsFromServer();
       if (serverNovels !== null && serverNovels.length > 0) {
-        // Merge: use server data as base, but keep any local novels that aren't on the server
-        // (e.g. a novel that was just created and saved before navigation)
-        const serverIds = new Set(serverNovels.map((n) => n.id));
-        const localOnly = localNovels.filter((n) => !serverIds.has(n.id));
-        const merged = [...localOnly, ...serverNovels];
-        setNovels(merged);
-        saveNovels(merged); // cache merged result locally
-        // If there were local-only novels, push the merged list to the server
-        if (localOnly.length > 0) {
-          void saveNovelsToServer(merged);
-        }
-      } else if (serverNovels !== null && serverNovels.length === 0) {
-        // Server empty — push local data up
-        if (localNovels.length > 0) {
-          void saveNovelsToServer(localNovels);
-        }
+        setNovels(serverNovels);
+        saveNovels(serverNovels); // cache locally (user-scoped)
       }
       // Also sync settings
       const serverSettings = await loadSettingsFromServer();
@@ -1001,6 +1010,14 @@ function NovelWorkspacePage() {
         setShowExportModal(false);
         return;
       }
+      if (showShareModal) {
+        setShowShareModal(false);
+        return;
+      }
+      if (showFeedbackPanel) {
+        setShowFeedbackPanel(false);
+        return;
+      }
       if (showPlanModal) {
         setShowPlanModal(false);
         return;
@@ -1027,6 +1044,8 @@ function NovelWorkspacePage() {
     pendingChapterDelete,
     showPlanGenerateModal,
     showExportModal,
+    showShareModal,
+    showFeedbackPanel,
     showPlanModal,
     showEditorModal,
     showStoryBibleModal,
@@ -3076,18 +3095,52 @@ function NovelWorkspacePage() {
       const lengthRule = useBestFit
         ? `Write the best-fit scene length around ${wt} words. You may choose the most natural length between ${Math.round(wt * 0.75)} and ${Math.round(wt * 1.15)} words.`
         : `Write at least ${Math.round(wt * 0.85)} words, aiming for ${wt}. If the scene finishes early, expand with dialogue, action, interiority, and sensory detail until you reach the target.`;
-      const systemMsg = `Write prose in ${profileLangLabel}. ${lengthRule}${styleDirective} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Keep one continuous chapter voice and POV, and never break story continuity.`;
-      const novelistQualityRule = `Grammar and prose quality are non-negotiable: use correct ${profileLangLabel} spelling, punctuation, paragraphing, and sentence structure like a published novelist.`;
+
+      // ── Collect opening lines from other blocs to avoid repetitive starts ──
+      const existingOpenings = blocks
+        .filter((_b, i) => i !== blockIndex && _b.prose?.trim())
+        .map((_b) => _b.prose!.trim().split(/[.!?\n]/)[0]?.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+      const openingAvoidRule = existingOpenings.length > 0
+        ? ` VARIETY RULE: Other scenes in this chapter start with: ${existingOpenings.map((o) => `"${o.slice(0, 50)}"`).join(", ")}. You MUST NOT start your prose with any similar opening. Choose a completely different first sentence — vary structure, subject, and rhythm.`
+        : "";
+
+      // ── Character usage rule ──
+      const relevantCharNames = (novel.storyBible.characters ?? [])
+        .filter((c) => planCharIds.includes(c.id))
+        .map((c) => c.name)
+        .filter(Boolean);
+      const charUsageRule = relevantCharNames.length > 0
+        ? ` CHARACTER RULE: These characters appear in this scene: ${relevantCharNames.join(", ")}. Refer to them by name (not pronouns alone). Show their personality, mannerisms, and speech patterns from the Canon.`
+        : "";
+
+      const antiAiRule = ` ANTI-AI PROSE RULES: Write like a professional published author. NEVER use: em dashes (—) more than once per 500 words, "a testament to", "the weight of", "couldn't help but", "sent a shiver", "a sense of", "it was as if", "in the silence that followed", "eyes that held", "a mix of", "palpable tension". Avoid purple prose and over-description. Use varied sentence lengths — short punchy sentences mixed with longer flowing ones. Prefer concrete nouns and active verbs over abstract language. Dialogue should sound like real people talking, not performing.`;
+
+      const systemMsg = `Write prose in ${profileLangLabel}. ${lengthRule}${styleDirective}${openingAvoidRule}${charUsageRule}${antiAiRule} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Keep one continuous chapter voice and POV, and never break story continuity.`;
+      const novelistQualityRule = `Grammar and prose quality are non-negotiable: use correct ${profileLangLabel} spelling, punctuation, paragraphing, and sentence structure like a published novelist. Write as a professional author — not AI.`;
 
       // Build concise prompt — word count hammered at top, middle, and bottom
       const wcReminder = useBestFit
         ? `[TARGET LENGTH: Best fit around ${wt} words, allowed range ${Math.round(wt * 0.75)}-${Math.round(wt * 1.15)}.]`
         : `[TARGET LENGTH: At least ${Math.round(wt * 0.85)} words, aim for ${wt}. Keep writing until you reach the target.]`;
+      // Inline opening-variety rule for the prompt body
+      const openingVarietyPrompt = existingOpenings.length > 0
+        ? `IMPORTANT — Do NOT start your prose similarly to these existing openings in this chapter: ${existingOpenings.map((o) => `"${o.slice(0, 40)}"`).join(", ")}. Use a completely different opening sentence.`
+        : "";
+      // Inline character-usage rule for the prompt body
+      const charUsagePrompt = relevantCharNames.length > 0
+        ? `Characters in this scene: ${relevantCharNames.join(", ")}. Use their names, show their personality and speech patterns. Do NOT refer to characters generically — use their proper names from the Canon.`
+        : "";
+
       const prompt = isRegenerate
         ? [
             wcReminder,
             `Rewrite this scene. Same story beats, fresh prose. ${useBestFit ? `Best-fit target: around ${wt} words.` : `Aim for ${wt} words (at least ${Math.round(wt * 0.85)}).`}`,
             novelistQualityRule,
+            "Write like a professional published author. No AI-sounding prose. No clichés, no purple language, no flowery over-description. Concrete, vivid, human prose.",
+            openingVarietyPrompt,
+            charUsagePrompt,
             boltonLine,
             constraint ? `Change: ${constraint}` : "",
             storyPosition.chapterNumber > 0
@@ -3109,6 +3162,9 @@ function NovelWorkspacePage() {
               ? `Write this scene with best-fit length around ${wt} words. Prioritize narrative fit and continuity over exact count.`
               : `Write at least ${Math.round(wt * 0.85)} words of prose for this scene, aiming for ${wt}. If you finish early, expand with setting detail, character thoughts, and dialogue.`,
             novelistQualityRule,
+            "Write like a professional published author. No AI-sounding prose. No clichés, no purple language, no flowery over-description. Concrete, vivid, human prose.",
+            openingVarietyPrompt,
+            charUsagePrompt,
             boltonLine,
             storyPosition.chapterNumber > 0
               ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
@@ -3155,6 +3211,9 @@ function NovelWorkspacePage() {
         const simplePrompt = [
           `[TARGET LENGTH: At least ${Math.round(wt * 0.85)} words, aim for ${wt}.]`,
           `Write prose for this scene aiming for ${wt} words. If the scene finishes naturally, expand with detail and dialogue.`,
+          `Write like a professional published novelist — concrete, vivid, human. No AI clichés.`,
+          charUsagePrompt,
+          openingVarietyPrompt,
           `Scene: ${block.synopsis}`,
           prevProse ? `Continue from: "${prevProse.slice(-150)}"` : "",
           `Aim for ${wt} words. Return ONLY prose paragraphs — no metadata, labels, or notes.`,
@@ -4270,7 +4329,7 @@ function NovelWorkspacePage() {
           ...current,
           chapters: current.chapters.map((ch) =>
             ch.id === planChapter.manuscriptChapterId
-              ? { ...ch, subtitle: patch.synopsis!.slice(0, 140), updatedAt: new Date().toISOString() }
+              ? { ...ch, subtitle: patch.synopsis!, updatedAt: new Date().toISOString() }
               : ch,
           ),
         }));
@@ -4469,7 +4528,7 @@ function NovelWorkspacePage() {
         return {
           id: existing?.id ?? createEntityId("chapter"),
           title: plan.title || existing?.title || `Chapter ${index + 1}`,
-          subtitle: (plan.synopsis || existing?.subtitle || "").slice(0, 140),
+          subtitle: plan.synopsis || existing?.subtitle || "",
           content: existing?.content?.trim() ? existing.content : "",
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
@@ -4908,7 +4967,7 @@ function NovelWorkspacePage() {
           if (updatedChapters[index]) {
             updatedChapters[index] = {
               ...updatedChapters[index],
-              subtitle: (synopsis || `Outline for ${chapterTitle}.`).slice(0, 140),
+              subtitle: synopsis || `Outline for ${chapterTitle}.`,
               updatedAt: new Date().toISOString(),
             };
           }
@@ -4975,7 +5034,7 @@ function NovelWorkspacePage() {
                 }
                 const updatedChapters = [...current.chapters];
                 if (updatedChapters[idx]) {
-                  updatedChapters[idx] = { ...updatedChapters[idx], subtitle: synopsis.slice(0, 140), updatedAt: new Date().toISOString() };
+                  updatedChapters[idx] = { ...updatedChapters[idx], subtitle: synopsis, updatedAt: new Date().toISOString() };
                 }
                 return {
                   ...current,
@@ -5105,7 +5164,7 @@ function NovelWorkspacePage() {
         if (updatedChapters[chapterIndex]) {
           updatedChapters[chapterIndex] = {
             ...updatedChapters[chapterIndex],
-            subtitle: synopsis.slice(0, 140),
+            subtitle: synopsis,
             updatedAt: new Date().toISOString(),
           };
         }
@@ -5405,9 +5464,9 @@ function NovelWorkspacePage() {
     event.target.value = "";
   }
 
-  /* ─── The Editor: chunked-burst approach (5 paragraphs per call) ─── */
+  /* ─── The Editor: chunked-burst approach (8 paragraphs per call) ─── */
 
-  const EDITOR_CHUNK = 5; // paragraphs per AI call — small = fast, no timeouts
+  const EDITOR_CHUNK = 8; // paragraphs per AI call — increased for better context coherence
 
   function getEditorContext() {
     if (!activeChapter || !novel) return null;
@@ -5415,21 +5474,86 @@ function NovelWorkspacePage() {
     const paragraphs = baseContent.split(/\n\n+/).filter((p) => p.trim());
     const summary = novel.storyBible.summary;
     const genreStr = (summary.genre ?? []).join(", ") || "Fiction";
-    const planChapters = novel.storyBible.bookPlan?.chapters ?? [];
+    const bpChapters = novel.storyBible.bookPlan?.chapters ?? [];
     const ci = novel.chapters.findIndex((c) => c.id === activeChapter.id);
-    const planCh = planChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id) ?? planChapters[ci];
+    const planCh = bpChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id) ?? bpChapters[ci];
     const synopsis = planCh?.synopsis?.trim() || activeChapter.subtitle?.trim() || "";
     const lower = baseContent.toLowerCase();
-    const chars = (novel.storyBible.characters ?? [])
-      .filter((c) => c.name && lower.includes(c.name.toLowerCase()))
-      .map((c) => `${c.name} (${c.role || ""})`.trim()).join(", ");
-    /* 3-line context — kept tiny so every chunk call stays fast */
-    const brief = [
-      `${genreStr} novel. Chapter: ${activeChapter.title || "Untitled"}.`,
-      synopsis ? `Synopsis: ${synopsis.slice(0, 200)}` : "",
-      chars ? `Characters: ${chars}` : "",
-    ].filter(Boolean).join(" ");
-    return { paragraphs, brief, genreStr };
+
+    // Characters appearing in this chapter
+    const charsInChapter = (novel.storyBible.characters ?? [])
+      .filter((c) => c.name && lower.includes(c.name.toLowerCase()));
+    const charNames = charsInChapter.map((c) => c.name);
+    const charDetails = charsInChapter
+      .map((c) => {
+        const parts = [`${c.name} (${c.role || ""})`];
+        if (c.logline) parts.push(c.logline.slice(0, 80));
+        if (c.speakingStyle) parts.push(`Speech: ${c.speakingStyle.slice(0, 60)}`);
+        if (c.accent) parts.push(`Accent: ${c.accent.slice(0, 40)}`);
+        return parts.join(" — ");
+      }).join("\n  ");
+
+    // Locations appearing in this chapter
+    const locsInChapter = (novel.storyBible.locations ?? [])
+      .filter((l) => l.name && lower.includes(l.name.toLowerCase()));
+    const locNames = locsInChapter.map((l) => l.name);
+    const locDetails = locsInChapter
+      .map((l) => `${l.name}: ${(l.description || "").slice(0, 80)}`)
+      .join("\n  ");
+
+    // Adjacent chapter context — crucial for continuity checks
+    const prevChapter = ci > 0 ? novel.chapters[ci - 1] : null;
+    const nextChapter = ci + 1 < novel.chapters.length ? novel.chapters[ci + 1] : null;
+    const prevPlanCh = prevChapter ? bpChapters.find((pc) => pc.manuscriptChapterId === prevChapter.id) : null;
+    const nextPlanCh = nextChapter ? bpChapters.find((pc) => pc.manuscriptChapterId === nextChapter.id) : null;
+
+    const prevChapterInfo = prevChapter ? [
+      `Previous chapter: "${prevChapter.title}"`,
+      prevPlanCh?.synopsis ? `Synopsis: ${prevPlanCh.synopsis.slice(0, 200)}` : "",
+      (() => { const prose = contentForExport(prevChapter.content); return prose ? `Ends with: "${prose.slice(-400)}"` : ""; })(),
+    ].filter(Boolean).join("\n") : "";
+
+    const nextChapterInfo = nextChapter ? [
+      `Next chapter: "${nextChapter.title}"`,
+      nextPlanCh?.synopsis ? `Synopsis: ${nextPlanCh.synopsis.slice(0, 200)}` : "",
+    ].filter(Boolean).join("\n") : "";
+
+    // Style/voice rules
+    const sv = novel.storyBible.styleVoice;
+    const styleRules: string[] = [];
+    if (sv.pov) styleRules.push(`POV: ${sv.pov}`);
+    if (sv.tense) styleRules.push(`Tense: ${sv.tense}`);
+    if (sv.comps?.length) styleRules.push(`Style comparables: ${sv.comps.slice(0, 3).join(", ")}`);
+    if (sv.voiceRules) styleRules.push(`Voice rules: ${sv.voiceRules.slice(0, 150)}`);
+    if (sv.bannedWords?.length) styleRules.push(`Banned words: ${sv.bannedWords.slice(0, 8).join(", ")}`);
+    const styleInfo = styleRules.length > 0 ? styleRules.join(". ") + "." : "";
+
+    // Story position
+    const totalChapters = novel.chapters.length;
+    const chapterNumber = ci + 1;
+
+    /* Rich context for the editor — includes story position, characters, locations, style, adjacent chapters */
+    const briefParts = [
+      `${genreStr} novel. Chapter ${chapterNumber}/${totalChapters}: "${activeChapter.title || "Untitled"}".`,
+      synopsis ? `Chapter synopsis: ${synopsis.slice(0, 250)}` : "",
+      charDetails ? `Characters in this chapter:\n  ${charDetails}` : "",
+      locDetails ? `Locations in this chapter:\n  ${locDetails}` : "",
+      styleInfo ? `Style rules: ${styleInfo}` : "",
+      prevChapterInfo,
+      nextChapterInfo,
+    ].filter(Boolean);
+    const brief = briefParts.join("\n");
+
+    return {
+      paragraphs,
+      brief,
+      genreStr,
+      charNames,
+      locNames,
+      chapterNumber,
+      totalChapters,
+      wordCount: paragraphs.reduce((sum, p) => sum + countWords(p), 0),
+    };
   }
 
   /** Process a small chunk of paragraphs (one fast AI call) */
@@ -5473,7 +5597,7 @@ function NovelWorkspacePage() {
     return changes;
   }
 
-  async function runEditorPass(mode: EditorMode, targetedFocus?: TargetedFocus) {
+  async function runEditorPass(mode: EditorMode, targetedFocus?: TargetedFocus, editorTab?: string) {
     if (!activeChapter || !novel || !ensureStoryAiReady()) return;
     const baseContent = contentForExport(activeChapter.content);
     if (!baseContent.trim()) {
@@ -5491,30 +5615,51 @@ function NovelWorkspacePage() {
     const totalParas = ctx.paragraphs.length;
     const totalChunks = Math.ceil(totalParas / EDITOR_CHUNK);
 
+    /* ─── Tab-specific system messages and task lines ─── */
+    const tab = editorTab || "grammar";
+
     try {
-      if (mode === "report") {
-        /* ═══ REPORT — also chunked for large chapters ═══ */
-        const sysMsg = `Professional ${ctx.genreStr} editor. ${ctx.brief} Flag real issues only. JSON.`;
+      if (tab === "consistency") {
+        /* ═══ CONSISTENCY — report mode: deep story-aware analysis ═══ */
+        const sysMsg = [
+          `You are a professional continuity editor for a ${ctx.genreStr} novel.`,
+          `You have deep knowledge of the story context:`,
+          ctx.brief,
+          "",
+          "Your job is to catch REAL continuity and consistency errors — things a reader would notice.",
+          "Focus on:",
+          "1. CHARACTER PLACEMENT — Is a character in two places at once? Does someone appear who shouldn't be there? Does someone vanish mid-scene?",
+          "2. LOCATION TRANSITIONS — Does the setting change without a transition? Are characters suddenly somewhere new?",
+          "3. CHARACTER BEHAVIOUR — Does anyone act wildly out of character based on their personality/role?",
+          "4. TIMELINE — Do events happen in the wrong order? Time jumps without explanation?",
+          "5. NAMES & REFERENCES — Wrong names, pronoun confusion, characters referred to differently without reason?",
+          "6. CONTINUITY WITH ADJACENT CHAPTERS — Does this chapter's opening match how the previous chapter ended? Any contradictions?",
+          "7. POV BREAKS — Does the narration slip out of the established POV?",
+          "",
+          "CRITICAL: Only flag genuine issues. Do NOT flag stylistic choices. Be specific — quote the exact problematic text.",
+        ].join("\n");
+
         const allIssues: EditorialIssue[] = [];
 
         for (let c = 0; c < totalChunks; c++) {
           const start = c * EDITOR_CHUNK;
           const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
           const numbered = slice.map((p, i) => `[${start + i}] ${p}`).join("\n\n");
-          setEditorLoadingPhase(`Scanning ${c + 1}/${totalChunks}...`);
+          setEditorLoadingPhase(`Checking consistency ${c + 1}/${totalChunks}...`);
 
           const prompt = [
-            "Return ONLY valid JSON:",
-            `{"issues":[{"severity":"high|medium|low","category":"Consistency|Character|Continuity|Placement|Repetition|Prose|Genre","quote":"excerpt","issue":"desc","suggestion":"fix"}]}`,
-            "Max 4 issues for this section. Evidence-based only.",
-            "Flag character-placement and location-transition breaks (for example, a character is suddenly in a new place without transition).",
+            "Analyse these paragraphs for consistency issues. Return ONLY valid JSON:",
+            `{"issues":[{"severity":"high|medium|low","category":"Character Placement|Location|Timeline|Names|POV|Continuity|Behaviour","quote":"exact quote from text","issue":"clear description","suggestion":"specific fix"}]}`,
+            "Max 5 issues for this section. Evidence-based only — quote the problematic text.",
+            "high = reader will definitely notice, medium = attentive reader catches it, low = minor but worth fixing.",
+            "If no issues: {\"issues\":[]}",
             "",
             numbered,
           ].join("\n");
 
           try {
             const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
-              prompt, 500, { timeoutMs: 180000, systemMessage: sysMsg },
+              prompt, 600, { timeoutMs: 180000, systemMessage: sysMsg },
             );
             if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
           } catch {
@@ -5525,56 +5670,112 @@ function NovelWorkspacePage() {
         setEditorResult({
           mode: "report",
           issues: allIssues,
-          summary: allIssues.length > 0 ? `Found ${allIssues.length} issue(s) across ${totalChunks} section(s).` : "No issues found.",
+          summary: allIssues.length > 0
+            ? `Found ${allIssues.length} consistency issue${allIssues.length !== 1 ? "s" : ""} across the chapter.`
+            : "No consistency issues found. Characters, locations, and timeline are coherent.",
         });
 
-      } else {
-        /* ═══ QUICK FIX / TARGETED — chunked bursts ═══ */
-        const focusMap: Record<TargetedFocus, string> = {
-          pacing: "tighten pacing/transitions",
-          dialogue: "sharpen dialogue/voices",
-          tension: "increase tension/suspense",
-          exposition: "reduce exposition, show don't tell",
-          action: "clarify action/choreography",
-        };
-        const isTargeted = mode === "targeted";
-        const focus = isTargeted ? focusMap[targetedFocus ?? "pacing"] : "";
+      } else if (tab === "grammar") {
+        /* ═══ GRAMMAR & STYLE — fix real errors, no creative changes ═══ */
+        const sysMsg = [
+          `You are a professional copy editor for a ${ctx.genreStr} novel.`,
+          ctx.brief,
+          "",
+          "Fix ONLY genuine grammar, spelling, and style errors:",
+          "1. SPELLING ERRORS — Actual misspellings (not intentional dialect/accent)",
+          "2. PUNCTUATION — Missing or incorrect punctuation, dialogue punctuation errors",
+          "3. TENSE AGREEMENT — Unintentional tense shifts (respect the author's chosen tense)",
+          "4. SENTENCE STRUCTURE — Run-on sentences, fragments that aren't intentional",
+          "5. WORD USAGE — Wrong word, malapropisms, homophones (their/there/they're)",
+          "6. REPETITION — Same word used too many times in close proximity",
+          "7. DIALOGUE FORMATTING — Missing dialogue tags, attribution errors",
+          "",
+          "CRITICAL RULES:",
+          "- Do NOT change the author's voice or style",
+          "- Do NOT rewrite for preference — only fix actual errors",
+          "- Do NOT change intentional dialect, slang, or character speech patterns",
+          "- Preserve the meaning exactly — only improve the correctness",
+          "- Each change must cite a specific grammatical rule being violated",
+        ].join("\n");
 
-        const sysMsg = isTargeted
-          ? `Professional ${ctx.genreStr} editor. ${ctx.brief} TARGETED: ${focus}. Preserve voice. Never invent plot.`
-          : `Professional ${ctx.genreStr} editor. ${ctx.brief} Quick polish: fix continuity, repetition, tighten prose, and catch scene-placement continuity errors (character location jumps without transitions). Preserve voice. Never invent plot.`;
-
-        const taskLine = isTargeted
-          ? `Focus: ${focus}. Change ONLY paragraphs where this applies.`
-          : "Fix continuity, repetition, weak prose, dialogue, and location/placement inconsistencies between adjacent blocs. Do NOT add plot/characters.";
+        const taskLine = "Fix grammar, spelling, punctuation, and clear errors. Do NOT change style, voice, or creative choices. Cite the specific error for each change.";
 
         const allChanges: EditorChange[] = [];
 
         for (let c = 0; c < totalChunks; c++) {
           const start = c * EDITOR_CHUNK;
           const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
-          setEditorLoadingPhase(`Editing ${c + 1}/${totalChunks}...`);
+          setEditorLoadingPhase(`Checking grammar ${c + 1}/${totalChunks}...`);
 
           try {
             const chunkChanges = await editorChunkCall(slice, start, sysMsg, taskLine);
             allChanges.push(...chunkChanges);
-            /* Progressive update — show results as they come in */
             setEditorResult({
-              mode,
+              mode: "quick-fix",
               changes: [...allChanges],
-              summary: `Processed ${Math.min((c + 1) * EDITOR_CHUNK, totalParas)}/${totalParas} paragraphs — ${allChanges.length} edit(s) so far...`,
+              summary: `Checked ${Math.min((c + 1) * EDITOR_CHUNK, totalParas)}/${totalParas} paragraphs — ${allChanges.length} correction${allChanges.length !== 1 ? "s" : ""} so far...`,
             });
-          } catch {
-            /* If one chunk fails, continue with the rest */
-          }
+          } catch { /* continue */ }
         }
 
         setEditorResult({
-          mode,
+          mode: "quick-fix",
           changes: allChanges,
           summary: allChanges.length > 0
-            ? `${allChanges.length} edit(s) across ${totalParas} paragraphs.`
-            : "No changes needed. Chapter looks clean.",
+            ? `${allChanges.length} grammar/style correction${allChanges.length !== 1 ? "s" : ""} found.`
+            : "No grammar or spelling errors found. Chapter is clean.",
+        });
+
+      } else {
+        /* ═══ FINAL POLISH — elevate prose quality ═══ */
+        const sysMsg = [
+          `You are a world-class literary editor doing a final polish on a ${ctx.genreStr} novel.`,
+          ctx.brief,
+          "",
+          "Your job is to elevate the prose to publication standard while preserving the author's voice:",
+          "1. SENTENCE VARIETY — Vary sentence length and structure (short punchy + longer flowing)",
+          "2. WEAK VERBS — Replace was/were/had constructions with active, specific verbs where possible",
+          "3. FILLER — Cut unnecessary words: 'very', 'really', 'just', 'that', 'seemed to', 'began to'",
+          "4. SHOWING VS TELLING — Convert 'She was angry' to show anger through action/dialogue where natural",
+          "5. REPEATED OPENINGS — Consecutive paragraphs starting the same way",
+          "6. CLICHÉS — Replace tired phrases with fresh language",
+          "7. PROSE RHYTHM — Ensure the rhythm matches the scene's emotional beat",
+          "",
+          "CRITICAL RULES:",
+          "- NEVER add new plot, characters, or information",
+          "- NEVER use AI-sounding phrases: 'a testament to', 'palpable', 'couldn't help but', 'sent a shiver'",
+          "- NEVER add em dashes where the author hasn't used them",
+          "- Preserve the author's voice — tighten, don't transform",
+          "- Changes should be subtle improvements, not rewrites",
+          "- Only change paragraphs that genuinely benefit from polish",
+        ].join("\n");
+
+        const taskLine = "Polish prose to publication standard. Tighten, vary rhythm, strengthen verbs, cut filler. Subtle improvements only — preserve voice. Do NOT invent anything.";
+
+        const allChanges: EditorChange[] = [];
+
+        for (let c = 0; c < totalChunks; c++) {
+          const start = c * EDITOR_CHUNK;
+          const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+          setEditorLoadingPhase(`Polishing ${c + 1}/${totalChunks}...`);
+
+          try {
+            const chunkChanges = await editorChunkCall(slice, start, sysMsg, taskLine);
+            allChanges.push(...chunkChanges);
+            setEditorResult({
+              mode: "quick-fix",
+              changes: [...allChanges],
+              summary: `Polished ${Math.min((c + 1) * EDITOR_CHUNK, totalParas)}/${totalParas} paragraphs — ${allChanges.length} improvement${allChanges.length !== 1 ? "s" : ""} so far...`,
+            });
+          } catch { /* continue */ }
+        }
+
+        setEditorResult({
+          mode: "quick-fix",
+          changes: allChanges,
+          summary: allChanges.length > 0
+            ? `${allChanges.length} polish improvement${allChanges.length !== 1 ? "s" : ""} suggested.`
+            : "Chapter prose is already at a strong standard. No improvements needed.",
         });
       }
     } catch (err) {
@@ -6792,27 +6993,44 @@ function NovelWorkspacePage() {
               The Editor
             </button>
             )}
+            <button type="button" className="btn" onClick={() => {
+              if (!novel) return;
+              setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
+              setShareResult(null);
+              setShareError(null);
+              setShowShareModal(true);
+              // Fetch existing share links
+              setShareLinksLoading(true);
+              fetch("/api/share").then((r) => r.json()).then((data) => {
+                if (Array.isArray(data)) setShareLinks(data);
+              }).catch(() => {}).finally(() => setShareLinksLoading(false));
+            }} title="Share chapters for feedback">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              Share
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
             <ProfileButton onClick={() => setProfileOpen(true)} />
-            <Link
-              href="/admin"
-              className="pw-admin-link"
-              title="Admin Hub"
-              style={{
-                fontSize: 11,
-                padding: "5px 10px",
-                borderRadius: 6,
-                border: "1px solid var(--pw-border-light)",
-                color: "var(--pw-text-dim)",
-                textDecoration: "none",
-                fontWeight: 500,
-                transition: "color 0.15s, border-color 0.15s",
-              }}
-            >
-              Admin
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="pw-admin-link"
+                title="Admin Hub"
+                style={{
+                  fontSize: 11,
+                  padding: "5px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--pw-border-light)",
+                  color: "var(--pw-text-dim)",
+                  textDecoration: "none",
+                  fontWeight: 500,
+                  transition: "color 0.15s, border-color 0.15s",
+                }}
+              >
+                Admin
+              </Link>
+            )}
           </div>
         </div>
 
@@ -6850,7 +7068,8 @@ function NovelWorkspacePage() {
                 {(() => {
                   const ci = novel.chapters.findIndex((c) => c.id === activeChapter.id);
                   const pc = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id) ?? planChapters[ci];
-                  const overview = activeChapter.subtitle || pc?.synopsis || "";
+                  // Always prefer the FULL plan synopsis — subtitle is a truncated copy
+                  const overview = pc?.synopsis?.trim() || activeChapter.subtitle || "";
                   if (!overview) return null;
                   return (
                     <span
@@ -8266,26 +8485,296 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {showEditorModal && activeChapter && (
-        <TheEditor
-          open={showEditorModal}
-          onClose={() => { setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
-          chapterTitle={activeChapter.title || "Untitled chapter"}
-          loadingPhase={editorLoadingPhase}
-          error={editorError}
-          result={editorResult}
-          originalParagraphs={editorOriginalParagraphs}
-          onRun={runEditorPass}
-          onResultUpdate={setEditorResult}
-          onFixIssues={runEditorFixIssues}
-          onApply={(revisedText) => {
-            if (!activeChapter) return;
-            updateChapter(activeChapter.id, { content: revisedText });
-            /* Update original paragraphs so further edits work on the new text */
-            setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
-          }}
-        />
+      {/* ── Share Modal ── */}
+      {showShareModal && novel && (
+        <div className="pw-modal-overlay" onClick={() => setShowShareModal(false)}>
+          <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="pw-export-header">
+              <div className="pw-delete-modal-title">Share for Feedback</div>
+              <p className="pw-delete-modal-copy">
+                Select chapters to share. Recipients get a read-only link where they can highlight text and leave notes.
+              </p>
+            </div>
+
+            {/* Chapter selection */}
+            <div className="pw-export-section">
+              <div className="pw-export-scope-bar" style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  Chapters {selectedShareChapterIds.length}/{novel.chapters.length}
+                </span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds(novel.chapters.map((c) => c.id))}>All</button>
+                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds([])}>None</button>
+                </div>
+              </div>
+              <div className="pw-export-chapter-list">
+                {novel.chapters.map((ch, idx) => {
+                  const checked = selectedShareChapterIds.includes(ch.id);
+                  return (
+                    <label key={ch.id} className={`pw-export-chapter-row${checked ? " active" : ""}`}>
+                      <input type="checkbox" checked={checked} onChange={() => {
+                        setSelectedShareChapterIds((cur) => cur.includes(ch.id) ? cur.filter((x) => x !== ch.id) : [...cur, ch.id]);
+                      }} />
+                      <span className="pw-export-chapter-num">Ch {idx + 1}</span>
+                      <span className="pw-export-chapter-title">{ch.title || "Untitled"}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {shareResult && (
+              <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", margin: "0 0 12px" }}>
+                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#10b981" }}>Share link created!</p>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="text" readOnly value={shareResult.url} style={{ flex: 1, fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--pw-border)", background: "var(--pw-bg)", color: "var(--pw-text)" }} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                  <button type="button" className="btn" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>Copy</button>
+                </div>
+                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 4 }}>Expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+              </div>
+            )}
+
+            {shareError && <p className="pw-export-error">{shareError}</p>}
+
+            <div className="pw-delete-modal-actions">
+              <button type="button" className="btn pw-cancel-btn" onClick={() => setShowShareModal(false)}>Close</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={sharingLink || selectedShareChapterIds.length === 0}
+                onClick={async () => {
+                  setSharingLink(true);
+                  setShareError(null);
+                  setShareResult(null);
+                  try {
+                    const res = await fetch("/api/share", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ novelId: novel.id, chapterIds: selectedShareChapterIds }),
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.token) {
+                      setShareResult(data);
+                      // Refresh link list
+                      fetch("/api/share").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
+                    } else {
+                      setShareError(data.error || "Failed to create share link.");
+                    }
+                  } catch {
+                    setShareError("Network error. Please try again.");
+                  } finally {
+                    setSharingLink(false);
+                  }
+                }}
+              >
+                {sharingLink ? "Creating..." : `Create Share Link (${selectedShareChapterIds.length} ch)`}
+              </button>
+            </div>
+
+            {/* Existing share links */}
+            {(shareLinks.length > 0 || shareLinksLoading) && (
+              <div style={{ borderTop: "1px solid var(--pw-border, rgba(255,255,255,0.08))", paddingTop: 14, marginTop: 14 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Active Share Links</p>
+                {shareLinksLoading ? (
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>Loading...</p>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {shareLinks.filter((l) => l.status !== "revoked").map((link) => (
+                      <div key={link.id} style={{ padding: "10px 12px", borderRadius: 8, background: "var(--pw-bg-hover, rgba(255,255,255,0.03))", border: "1px solid var(--pw-border, rgba(255,255,255,0.06))", fontSize: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {link.chapters.length} chapter{link.chapters.length !== 1 ? "s" : ""}
+                            {link.readerName ? ` — ${link.readerName}` : ""}
+                          </span>
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            background: link.status === "submitted" ? "rgba(16,185,129,0.12)" : "rgba(59,130,246,0.12)",
+                            color: link.status === "submitted" ? "#10b981" : "#3b82f6",
+                          }}>
+                            {link.status === "submitted" ? "Feedback received" : "Awaiting"}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "var(--pw-text-dim)" }}>
+                          <span>Created {new Date(link.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {link.status === "submitted" && (
+                              <button type="button" className="pw-export-tool-btn" style={{ color: "#10b981" }} onClick={() => {
+                                setShowShareModal(false);
+                                setShowFeedbackPanel(true);
+                                setFeedbackLoading(true);
+                                fetch("/api/share/feedback").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setFeedbackData(d); }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                              }}>View Notes</button>
+                            )}
+                            <button type="button" className="pw-export-tool-btn" style={{ color: "#ef4444" }} onClick={async () => {
+                              await fetch(`/api/share/${link.token}`, { method: "DELETE" });
+                              setShareLinks((cur) => cur.filter((l) => l.id !== link.id));
+                            }}>Revoke</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
+
+      {/* ── Feedback Panel ── */}
+      {showFeedbackPanel && (
+        <div className="pw-modal-overlay" onClick={() => setShowFeedbackPanel(false)}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: "80vh", overflow: "auto" }}>
+            <div className="pw-export-header">
+              <div className="pw-delete-modal-title">Reader Feedback</div>
+              <p className="pw-delete-modal-copy">Notes and suggestions from your readers. Click &ldquo;Apply with AI&rdquo; to let AI incorporate the feedback.</p>
+            </div>
+
+            {feedbackLoading ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--pw-text-dim)" }}>Loading feedback...</div>
+            ) : feedbackData.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--pw-text-dim)" }}>No feedback received yet. Share chapters with readers to get started.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                {feedbackData.map((fb) => (
+                  <div key={fb.id} style={{ borderBottom: "1px solid var(--pw-border, rgba(255,255,255,0.06))", paddingBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>
+                        {fb.readerName || "Anonymous Reader"} — {new Date(fb.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    </div>
+                    {fb.chapters.map((ch) => (
+                      <div key={ch.id} style={{ marginBottom: 12 }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "var(--pw-text)" }}>{ch.title}</p>
+                        {ch.annotations.length === 0 ? (
+                          <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No notes on this chapter.</p>
+                        ) : (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {ch.annotations.map((ann) => (
+                              <div key={ann.id} style={{
+                                padding: "10px 12px",
+                                borderRadius: 8,
+                                background: ann.type === "issue" ? "rgba(239,68,68,0.06)" : ann.type === "suggestion" ? "rgba(59,130,246,0.06)" : "rgba(255,255,255,0.03)",
+                                border: `1px solid ${ann.type === "issue" ? "rgba(239,68,68,0.15)" : ann.type === "suggestion" ? "rgba(59,130,246,0.15)" : "var(--pw-border, rgba(255,255,255,0.06))"}`,
+                              }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                                  <span style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    padding: "2px 8px",
+                                    borderRadius: 6,
+                                    background: ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.12)",
+                                    color: ann.type === "issue" ? "#ef4444" : ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6",
+                                    textTransform: "uppercase",
+                                  }}>
+                                    {ann.type}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ fontSize: 11, padding: "3px 10px" }}
+                                    disabled={applyingFeedbackId === ann.id}
+                                    onClick={async () => {
+                                      if (!novel || !activeChapter) {
+                                        alert("Open the chapter you want to apply this feedback to first.");
+                                        return;
+                                      }
+                                      setApplyingFeedbackId(ann.id);
+                                      try {
+                                        const res = await fetch("/api/openrouter/complete", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({
+                                            provider: assistantProvider,
+                                            apiKey: openRouterKey,
+                                            baseUrl: assistantBaseUrl,
+                                            model: openRouterModel || "openai/gpt-4o-mini",
+                                            systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
+                                            prompt: `Reader highlighted this text:\n"${ann.selectedText}"\n\nReader's note: "${ann.note}" (type: ${ann.type})\n\nSurrounding context from the chapter:\n${ch.content.slice(Math.max(0, ann.startOffset - 300), ann.endOffset + 300)}\n\nRevise the highlighted passage to address the feedback:`,
+                                            maxTokens: 1000,
+                                          }),
+                                        });
+                                        const data = await res.json() as { text?: string; error?: string };
+                                        if (data.text) {
+                                          // Apply the revision to the active chapter content
+                                          const currentContent = activeChapter.content || "";
+                                          const idx = currentContent.indexOf(ann.selectedText);
+                                          if (idx !== -1) {
+                                            const newContent = currentContent.slice(0, idx) + data.text.trim() + currentContent.slice(idx + ann.selectedText.length);
+                                            updateChapter(activeChapter.id, { content: newContent });
+                                            alert("Feedback applied! Review the change in your chapter.");
+                                          } else {
+                                            alert("Could not find the exact text in your current chapter. The passage may have changed since sharing.");
+                                          }
+                                        } else {
+                                          alert(data.error || "AI could not process this feedback.");
+                                        }
+                                      } catch {
+                                        alert("Failed to apply feedback. Check your AI connection.");
+                                      } finally {
+                                        setApplyingFeedbackId(null);
+                                      }
+                                    }}
+                                  >
+                                    {applyingFeedbackId === ann.id ? "Applying..." : "Apply with AI"}
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--pw-text-dim)", fontStyle: "italic", marginBottom: 4, lineHeight: 1.5 }}>
+                                  &ldquo;{ann.selectedText.slice(0, 120)}{ann.selectedText.length > 120 ? "…" : ""}&rdquo;
+                                </div>
+                                <div style={{ fontSize: 13, lineHeight: 1.5 }}>{ann.note}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pw-delete-modal-actions" style={{ marginTop: 16 }}>
+              <button type="button" className="btn pw-cancel-btn" onClick={() => setShowFeedbackPanel(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditorModal && activeChapter && (() => {
+        const edCtx = getEditorContext();
+        const chNum = edCtx?.chapterNumber ?? (novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1);
+        const chTotal = edCtx?.totalChapters ?? novel.chapters.length;
+        const chWc = edCtx?.wordCount ?? 0;
+        return (
+          <TheEditor
+            open={showEditorModal}
+            onClose={() => { setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
+            chapterTitle={activeChapter.title || "Untitled chapter"}
+            chapterNumber={chNum}
+            totalChapters={chTotal}
+            charactersInChapter={edCtx?.charNames ?? []}
+            locationsInChapter={edCtx?.locNames ?? []}
+            wordCount={chWc}
+            loadingPhase={editorLoadingPhase}
+            error={editorError}
+            result={editorResult}
+            originalParagraphs={editorOriginalParagraphs}
+            onRun={runEditorPass}
+            onResultUpdate={setEditorResult}
+            onFixIssues={runEditorFixIssues}
+            onApply={(revisedText) => {
+              if (!activeChapter) return;
+              updateChapter(activeChapter.id, { content: revisedText });
+              /* Update original paragraphs so further edits work on the new text */
+              setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
+            }}
+          />
+        );
+      })()}
 
       {showStoryBibleModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowStoryBibleModal(false)}>
@@ -9927,6 +10416,7 @@ function NovelWorkspacePage() {
           try {
             await fetch("/api/auth/logout", { method: "POST" });
           } catch { /* ignore */ }
+          clearNovelStorage();
           window.location.href = "/";
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}

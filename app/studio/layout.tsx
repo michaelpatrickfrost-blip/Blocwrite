@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { checkSubscriptionGate } from "@/lib/subscription-gate";
 import MobileGate from "./components/MobileGate";
+
+export const metadata: Metadata = {
+  title: "Studio",
+  robots: { index: false, follow: false },
+};
 
 /**
  * Server component layout that wraps all /studio/* pages.

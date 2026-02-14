@@ -17,6 +17,8 @@ import {
   applySettings,
   gatherSettings,
   saveSettingsToServer,
+  initUserScope,
+  clearNovelStorage,
   type Novel,
 } from "./studio-store";
 import { ProfileButton } from "./components/ProfileButton";
@@ -60,7 +62,7 @@ function contentForExport(content: string): string {
 
 function StudioHomePage() {
   const router = useRouter();
-  const [novels, setNovels] = useState<Novel[]>(() => loadNovels());
+  const [novels, setNovels] = useState<Novel[]>([]);
   const [serverLoaded, setServerLoaded] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [createHint, setCreateHint] = useState("");
@@ -98,29 +100,23 @@ function StudioHomePage() {
         }
       }
 
-      // Check admin status
+      // Check admin status + get user email to scope localStorage
       try {
         const subRes = await fetch("/api/billing/subscription");
         if (subRes.ok) {
-          const subData = await subRes.json() as { isAdmin?: boolean };
+          const subData = await subRes.json() as { isAdmin?: boolean; email?: string };
           if (subData.isAdmin) setIsAdmin(true);
+          // Scope localStorage to this user before loading anything
+          if (subData.email) initUserScope(subData.email);
         }
       } catch { /* ignore */ }
 
-      // Load novels from server
+      // Load novels from server — server is the single source of truth
       const serverNovels = await loadNovelsFromServer();
       if (serverNovels !== null) {
-        if (serverNovels.length > 0) {
-          // Server has data — use it as truth
-          setNovels(serverNovels);
-          saveNovels(serverNovels); // cache locally
-        } else {
-          // Server is empty — upload local data if we have any
-          const localNovels = loadNovels();
-          if (localNovels.length > 0) {
-            void saveNovelsToServer(localNovels);
-          }
-        }
+        // Always use server data as truth
+        setNovels(serverNovels);
+        saveNovels(serverNovels); // cache locally (now user-scoped)
       }
       setServerLoaded(true);
     })();
@@ -782,6 +778,7 @@ function StudioHomePage() {
           try {
             await fetch("/api/auth/logout", { method: "POST" });
           } catch { /* ignore */ }
+          clearNovelStorage();
           window.location.href = "/";
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}

@@ -47,8 +47,22 @@ const PUBLIC_API_PREFIXES = [
   "/api/contact",     // public contact form
 ];
 
+/** Share token routes are public (readers don't need auth), but /api/share and /api/share/feedback are protected. */
+function isPublicShareRoute(pathname: string): boolean {
+  // Match /api/share/<token> and sub-routes like /api/share/<token>/annotate, /api/share/<token>/submit
+  // But NOT /api/share (root) or /api/share/feedback (both need auth)
+  const shareMatch = pathname.match(/^\/api\/share\/([^/]+)/);
+  if (!shareMatch) return false;
+  const segment = shareMatch[1];
+  // "feedback" is an authenticated route, not a token
+  if (segment === "feedback") return false;
+  return true;
+}
+
 function isPublicApi(pathname: string): boolean {
-  return PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return true;
+  if (isPublicShareRoute(pathname)) return true;
+  return false;
 }
 
 export async function middleware(request: NextRequest) {
@@ -145,5 +159,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/studio/:path*", "/admin/:path*", "/subscribe/:path*", "/api/:path*", "/login"],
+  matcher: ["/studio/:path*", "/admin/:path*", "/subscribe/:path*", "/api/:path*", "/login", "/share/:path*"],
 };

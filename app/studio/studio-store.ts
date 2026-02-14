@@ -212,9 +212,70 @@ export type Novel = {
   archived?: boolean;
 };
 
-const STORAGE_KEY = "pilotwriter.novels.v1";
-const BACKUP_STORAGE_KEY = "pilotwriter.novels.backup.v1";
-const SESSION_STORAGE_KEY = "pilotwriter.novels.session.v1";
+// ─── User-scoped localStorage keys ────────────────────────────────────────────
+// Each user gets their own localStorage slot to prevent cross-user data leakage.
+// We use a simple hash of the email to scope the key.
+
+const LEGACY_STORAGE_KEY = "pilotwriter.novels.v1";
+const LEGACY_BACKUP_KEY = "pilotwriter.novels.backup.v1";
+
+let _currentUserHash: string | null = null;
+
+function userHash(email: string): string {
+  // Simple deterministic hash for localStorage key scoping
+  let h = 0;
+  const s = email.trim().toLowerCase();
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36);
+}
+
+/** Call once when the user session is known to scope all storage to that user. */
+export function initUserScope(email: string) {
+  _currentUserHash = userHash(email);
+  if (typeof window === "undefined") return;
+  // Clear any legacy (unscoped) data so it never leaks to the wrong user
+  try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+  try { window.localStorage.removeItem(LEGACY_BACKUP_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem(LEGACY_BACKUP_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem("pilotwriter.novels.session.v1"); } catch { /* ignore */ }
+}
+
+/** Clear all novel data from localStorage (call on logout). */
+export function clearNovelStorage() {
+  if (typeof window === "undefined") return;
+  // Clear legacy keys
+  try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+  try { window.localStorage.removeItem(LEGACY_BACKUP_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem(LEGACY_BACKUP_KEY); } catch { /* ignore */ }
+  try { window.sessionStorage.removeItem("pilotwriter.novels.session.v1"); } catch { /* ignore */ }
+  // Clear user-scoped keys
+  if (_currentUserHash) {
+    const sk = `pilotwriter.novels.${_currentUserHash}`;
+    try { window.localStorage.removeItem(sk); } catch { /* ignore */ }
+    try { window.localStorage.removeItem(sk + ".bak"); } catch { /* ignore */ }
+    try { window.sessionStorage.removeItem(sk); } catch { /* ignore */ }
+  }
+  _currentUserHash = null;
+}
+
+function STORAGE_KEY(): string {
+  if (_currentUserHash) return `pilotwriter.novels.${_currentUserHash}`;
+  return LEGACY_STORAGE_KEY;
+}
+
+function BACKUP_STORAGE_KEY(): string {
+  if (_currentUserHash) return `pilotwriter.novels.${_currentUserHash}.bak`;
+  return LEGACY_BACKUP_KEY;
+}
+
+function SESSION_STORAGE_KEY(): string {
+  if (_currentUserHash) return `pilotwriter.novels.${_currentUserHash}.session`;
+  return "pilotwriter.novels.session.v1";
+}
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -822,11 +883,11 @@ export function loadNovels(): Novel[] {
   };
 
   const sources: Array<{ key: string; storage: Storage }> = [
-    { key: STORAGE_KEY, storage: window.localStorage },
-    { key: BACKUP_STORAGE_KEY, storage: window.localStorage },
-    { key: STORAGE_KEY, storage: window.sessionStorage },
-    { key: BACKUP_STORAGE_KEY, storage: window.sessionStorage },
-    { key: SESSION_STORAGE_KEY, storage: window.sessionStorage },
+    { key: STORAGE_KEY(), storage: window.localStorage },
+    { key: BACKUP_STORAGE_KEY(), storage: window.localStorage },
+    { key: STORAGE_KEY(), storage: window.sessionStorage },
+    { key: BACKUP_STORAGE_KEY(), storage: window.sessionStorage },
+    { key: SESSION_STORAGE_KEY(), storage: window.sessionStorage },
   ];
 
   for (const source of sources) {
@@ -838,7 +899,7 @@ export function loadNovels(): Novel[] {
       // Save restored data
       try {
         const payload = JSON.stringify(restored);
-        window.localStorage.setItem(STORAGE_KEY, payload);
+        window.localStorage.setItem(STORAGE_KEY(), payload);
       } catch { /* ignore */ }
 
       return restored;
@@ -855,7 +916,7 @@ export function saveNovels(novels: Novel[]): boolean {
   let wroteAnything = false;
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, payload);
+    window.localStorage.setItem(STORAGE_KEY(), payload);
     wroteAnything = true;
   } catch (error) {
     console.warn("saveNovels primary write failed", error);
@@ -863,7 +924,7 @@ export function saveNovels(novels: Novel[]): boolean {
 
   // Keep an additional local backup copy in case the primary key gets corrupted.
   try {
-    window.localStorage.setItem(BACKUP_STORAGE_KEY, payload);
+    window.localStorage.setItem(BACKUP_STORAGE_KEY(), payload);
     wroteAnything = true;
   } catch {
     // ignore
@@ -871,9 +932,9 @@ export function saveNovels(novels: Novel[]): boolean {
 
   // Keep session copies as crash/recovery fallback.
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, payload);
-    window.sessionStorage.setItem(BACKUP_STORAGE_KEY, payload);
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+    window.sessionStorage.setItem(STORAGE_KEY(), payload);
+    window.sessionStorage.setItem(BACKUP_STORAGE_KEY(), payload);
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY(), payload);
     wroteAnything = true;
   } catch {
     // ignore
