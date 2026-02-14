@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { checkSubscriptionGate } from "@/lib/subscription-gate";
+import MobileGate from "./components/MobileGate";
 
 /**
  * Server component layout that wraps all /studio/* pages.
@@ -26,5 +27,5 @@ export default async function StudioLayout({
     redirect("/subscribe");
   }
 
-  return <>{children}</>;
+  return <MobileGate>{children}</MobileGate>;
 }
