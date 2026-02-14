@@ -9,6 +9,31 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 const DATA_DIR = join(process.cwd(), "data");
+
+const BLOCK_DELIM = "<<<BLOCK>>>";
+const PROSE_DELIM = "<<<PROSE>>>";
+const END_BLOCK = "<<<ENDBLOCK>>>";
+
+/** Extract only the prose from chapter content, stripping bloc structure (mirrors client contentForExport). */
+function extractProse(content: string): string {
+  if (!content.includes(BLOCK_DELIM)) {
+    // No bloc delimiters — strip any stray ones just in case
+    return content
+      .replace(/<<<BLOCK>>>/g, "").replace(/<<<PROSE>>>/g, "")
+      .replace(/<<<ENDBLOCK>>>/g, "").replace(/<<<META>>>/g, "")
+      .replace(/<<<SYNOPSIS>>>/g, "").trim() || "(No content yet)";
+  }
+  const parts = content.split(BLOCK_DELIM).filter(Boolean);
+  const proseChunks: string[] = [];
+  for (const part of parts) {
+    const proseIdx = part.indexOf(PROSE_DELIM);
+    const endIdx = part.indexOf(END_BLOCK);
+    if (proseIdx === -1 || endIdx === -1) continue;
+    const prose = part.slice(proseIdx + PROSE_DELIM.length, endIdx).replace(/^\n+/, "").replace(/\n+$/, "").trim();
+    if (prose) proseChunks.push(prose);
+  }
+  return proseChunks.join("\n\n\n") || "(No content yet)";
+}
 const ADMIN_EMAIL = "kickablur@icloud.com";
 
 async function getAuthEmail(): Promise<string | null> {
@@ -73,7 +98,7 @@ export async function POST(request: Request) {
       .map((ch, idx) => {
         return {
           chapterTitle: ch.title || `Chapter ${idx + 1}`,
-          chapterContent: ch.content || "(No content yet)",
+          chapterContent: extractProse(ch.content || ""),
           order: idx,
         };
       });
