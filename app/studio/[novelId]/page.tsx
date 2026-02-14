@@ -8488,59 +8488,138 @@ function NovelWorkspacePage() {
       {/* ── Share Modal ── */}
       {showShareModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowShareModal(false)}>
-          <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
-            <div className="pw-export-header">
-              <div className="pw-delete-modal-title">Share for Feedback</div>
-              <p className="pw-delete-modal-copy">
-                Select chapters to share. Recipients get a read-only link where they can highlight text and leave notes.
-              </p>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            width: "90%",
+            maxWidth: 480,
+            background: "var(--pw-bg, #1a1a1a)",
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
+            border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Share for Feedback</h3>
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim, #888)", margin: "4px 0 0", lineHeight: 1.4 }}>
+                    Send a read-only link. Readers can highlight text and leave notes.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowShareModal(false)} style={{
+                  background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", padding: 4, marginTop: -2,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
             </div>
 
             {/* Chapter selection */}
-            <div className="pw-export-section">
-              <div className="pw-export-scope-bar" style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
-                  Chapters {selectedShareChapterIds.length}/{novel.chapters.length}
+            <div style={{ padding: "16px 24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text-dim, #888)" }}>
+                  {selectedShareChapterIds.length} of {novel.chapters.length} chapters selected
                 </span>
                 <div style={{ display: "flex", gap: 4 }}>
-                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds(novel.chapters.map((c) => c.id))}>All</button>
-                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds([])}>None</button>
+                  <button type="button" onClick={() => setSelectedShareChapterIds(novel.chapters.map((c) => c.id))} style={{
+                    fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5,
+                    border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                    background: "transparent", color: "var(--pw-text, #fff)", cursor: "pointer",
+                  }}>Select All</button>
+                  <button type="button" onClick={() => setSelectedShareChapterIds([])} style={{
+                    fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5,
+                    border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                    background: "transparent", color: "var(--pw-text, #fff)", cursor: "pointer",
+                  }}>Clear</button>
                 </div>
               </div>
-              <div className="pw-export-chapter-list">
+
+              <div style={{
+                border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+                borderRadius: 10,
+                maxHeight: 240,
+                overflowY: "auto",
+              }}>
                 {novel.chapters.map((ch, idx) => {
                   const checked = selectedShareChapterIds.includes(ch.id);
                   return (
-                    <label key={ch.id} className={`pw-export-chapter-row${checked ? " active" : ""}`}>
-                      <input type="checkbox" checked={checked} onChange={() => {
-                        setSelectedShareChapterIds((cur) => cur.includes(ch.id) ? cur.filter((x) => x !== ch.id) : [...cur, ch.id]);
-                      }} />
-                      <span className="pw-export-chapter-num">Ch {idx + 1}</span>
-                      <span className="pw-export-chapter-title">{ch.title || "Untitled"}</span>
-                    </label>
+                    <div
+                      key={ch.id}
+                      onClick={() => setSelectedShareChapterIds((cur) => cur.includes(ch.id) ? cur.filter((x) => x !== ch.id) : [...cur, ch.id])}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "9px 14px",
+                        cursor: "pointer",
+                        borderTop: idx > 0 ? "1px solid var(--pw-border-light, rgba(255,255,255,0.05))" : "none",
+                        background: checked ? "rgba(59,130,246,0.08)" : "transparent",
+                        transition: "background 0.12s",
+                      }}
+                    >
+                      <div style={{
+                        width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                        border: checked ? "none" : "1.5px solid var(--pw-border-light, rgba(255,255,255,0.2))",
+                        background: checked ? "#3b82f6" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        transition: "all 0.12s",
+                      }}>
+                        {checked && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--pw-text-dim, #666)", fontWeight: 600, flexShrink: 0, width: 32 }}>
+                        {idx + 1}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: checked ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {ch.title || "Untitled"}
+                      </span>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
+            {/* Share result */}
             {shareResult && (
-              <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", margin: "0 0 12px" }}>
-                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#10b981" }}>Share link created!</p>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input type="text" readOnly value={shareResult.url} style={{ flex: 1, fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--pw-border)", background: "var(--pw-bg)", color: "var(--pw-text)" }} onClick={(e) => (e.target as HTMLInputElement).select()} />
-                  <button type="button" className="btn" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>Copy</button>
+              <div style={{ margin: "0 24px 12px", padding: "12px 14px", borderRadius: 10, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>Link created</span>
                 </div>
-                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 4 }}>Expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input type="text" readOnly value={shareResult.url} style={{
+                    flex: 1, fontSize: 11, padding: "7px 10px", borderRadius: 6,
+                    border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                    background: "var(--pw-bg, #1a1a1a)", color: "var(--pw-text, #fff)",
+                    fontFamily: "monospace",
+                  }} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                  <button type="button" onClick={() => { navigator.clipboard.writeText(shareResult.url); }} style={{
+                    fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6,
+                    border: "none", background: "#10b981", color: "#fff", cursor: "pointer",
+                  }}>Copy</button>
+                </div>
+                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6, marginBottom: 0 }}>
+                  Expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
               </div>
             )}
 
-            {shareError && <p className="pw-export-error">{shareError}</p>}
+            {shareError && (
+              <div style={{ margin: "0 24px 12px", padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.15)", fontSize: 13, color: "#ef4444" }}>
+                {shareError}
+              </div>
+            )}
 
-            <div className="pw-delete-modal-actions">
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setShowShareModal(false)}>Close</button>
+            {/* Actions */}
+            <div style={{ padding: "12px 24px 20px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setShowShareModal(false)} style={{
+                fontSize: 13, fontWeight: 500, padding: "8px 18px", borderRadius: 8,
+                border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                background: "transparent", color: "var(--pw-text, #fff)", cursor: "pointer",
+              }}>Cancel</button>
               <button
                 type="button"
-                className="btn btn-primary"
                 disabled={sharingLink || selectedShareChapterIds.length === 0}
                 onClick={async () => {
                   setSharingLink(true);
@@ -8555,7 +8634,6 @@ function NovelWorkspacePage() {
                     const data = await res.json();
                     if (res.ok && data.token) {
                       setShareResult(data);
-                      // Refresh link list
                       fetch("/api/share").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
                     } else {
                       setShareError(data.error || "Failed to create share link.");
@@ -8566,53 +8644,69 @@ function NovelWorkspacePage() {
                     setSharingLink(false);
                   }
                 }}
+                style={{
+                  fontSize: 13, fontWeight: 600, padding: "8px 20px", borderRadius: 8,
+                  border: "none", cursor: sharingLink || selectedShareChapterIds.length === 0 ? "default" : "pointer",
+                  background: selectedShareChapterIds.length === 0 ? "var(--pw-border-light, rgba(255,255,255,0.1))" : "#3b82f6",
+                  color: selectedShareChapterIds.length === 0 ? "var(--pw-text-dim, #666)" : "#fff",
+                  opacity: sharingLink ? 0.6 : 1,
+                  transition: "all 0.15s",
+                }}
               >
-                {sharingLink ? "Creating..." : `Create Share Link (${selectedShareChapterIds.length} ch)`}
+                {sharingLink ? "Creating..." : selectedShareChapterIds.length === 0 ? "Select chapters" : `Share ${selectedShareChapterIds.length} chapter${selectedShareChapterIds.length !== 1 ? "s" : ""}`}
               </button>
             </div>
 
             {/* Existing share links */}
-            {(shareLinks.length > 0 || shareLinksLoading) && (
-              <div style={{ borderTop: "1px solid var(--pw-border, rgba(255,255,255,0.08))", paddingTop: 14, marginTop: 14 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Active Share Links</p>
+            {(shareLinks.filter((l) => l.status !== "revoked").length > 0 || shareLinksLoading) && (
+              <div style={{ borderTop: "1px solid var(--pw-border-light, rgba(255,255,255,0.06))", padding: "16px 24px 20px" }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text-dim, #888)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>Active Links</p>
                 {shareLinksLoading ? (
                   <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>Loading...</p>
                 ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 6 }}>
                     {shareLinks.filter((l) => l.status !== "revoked").map((link) => (
-                      <div key={link.id} style={{ padding: "10px 12px", borderRadius: 8, background: "var(--pw-bg-hover, rgba(255,255,255,0.03))", border: "1px solid var(--pw-border, rgba(255,255,255,0.06))", fontSize: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <span style={{ fontWeight: 600 }}>
+                      <div key={link.id} style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: "10px 12px", borderRadius: 8,
+                        background: "var(--pw-bg-hover, rgba(255,255,255,0.03))",
+                        border: "1px solid var(--pw-border-light, rgba(255,255,255,0.05))",
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>
                             {link.chapters.length} chapter{link.chapters.length !== 1 ? "s" : ""}
-                            {link.readerName ? ` — ${link.readerName}` : ""}
-                          </span>
-                          <span style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "2px 8px",
-                            borderRadius: 6,
-                            background: link.status === "submitted" ? "rgba(16,185,129,0.12)" : "rgba(59,130,246,0.12)",
-                            color: link.status === "submitted" ? "#10b981" : "#3b82f6",
-                          }}>
-                            {link.status === "submitted" ? "Feedback received" : "Awaiting"}
-                          </span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "var(--pw-text-dim)" }}>
-                          <span>Created {new Date(link.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {link.status === "submitted" && (
-                              <button type="button" className="pw-export-tool-btn" style={{ color: "#10b981" }} onClick={() => {
-                                setShowShareModal(false);
-                                setShowFeedbackPanel(true);
-                                setFeedbackLoading(true);
-                                fetch("/api/share/feedback").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setFeedbackData(d); }).catch(() => {}).finally(() => setFeedbackLoading(false));
-                              }}>View Notes</button>
-                            )}
-                            <button type="button" className="pw-export-tool-btn" style={{ color: "#ef4444" }} onClick={async () => {
-                              await fetch(`/api/share/${link.token}`, { method: "DELETE" });
-                              setShareLinks((cur) => cur.filter((l) => l.id !== link.id));
-                            }}>Revoke</button>
+                            {link.readerName ? <span style={{ color: "var(--pw-text-dim)", fontWeight: 400 }}> — {link.readerName}</span> : ""}
                           </div>
+                          <div style={{ fontSize: 11, color: "var(--pw-text-dim, #666)" }}>
+                            {new Date(link.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            <span style={{
+                              marginLeft: 8, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 4,
+                              background: link.status === "submitted" ? "rgba(16,185,129,0.12)" : "rgba(59,130,246,0.1)",
+                              color: link.status === "submitted" ? "#10b981" : "#3b82f6",
+                            }}>
+                              {link.status === "submitted" ? "Feedback" : "Pending"}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {link.status === "submitted" && (
+                            <button type="button" onClick={() => {
+                              setShowShareModal(false);
+                              setShowFeedbackPanel(true);
+                              setFeedbackLoading(true);
+                              fetch("/api/share/feedback").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setFeedbackData(d); }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                            }} style={{
+                              fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 5,
+                              border: "none", background: "rgba(16,185,129,0.12)", color: "#10b981", cursor: "pointer",
+                            }}>View</button>
+                          )}
+                          <button type="button" onClick={async () => {
+                            await fetch(`/api/share/${link.token}`, { method: "DELETE" });
+                            setShareLinks((cur) => cur.filter((l) => l.id !== link.id));
+                          }} style={{
+                            fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 5,
+                            border: "none", background: "rgba(239,68,68,0.1)", color: "#ef4444", cursor: "pointer",
+                          }}>Revoke</button>
                         </div>
                       </div>
                     ))}
