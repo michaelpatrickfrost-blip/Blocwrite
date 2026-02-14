@@ -275,7 +275,7 @@ function AiBanner() {
   );
 }
 
-/* ── How It Works — 4 stages ─────────────────────────── */
+/* ── How It Works — 5 stages ─────────────────────────── */
 const STAGES = [
   {
     step: "01",
@@ -286,9 +286,10 @@ const STAGES = [
       "Characters: name, personality, secrets, speech patterns, relationships",
       "Locations: physical details, mood, sensory notes, rules",
       "Lore: world rules, magic systems, factions, timelines",
-      "Genre & tone: set the style the AI must follow",
+      "Bolt-ons: reusable AI directives like 'write in first person'",
     ],
     color: "#6366f1",
+    screenshot: "/screenshots/canon.png",
   },
   {
     step: "02",
@@ -302,6 +303,7 @@ const STAGES = [
       "Chapters know what comes before and after them",
     ],
     color: "#f59e0b",
+    screenshot: "/screenshots/plan.png",
   },
   {
     step: "03",
@@ -311,13 +313,28 @@ const STAGES = [
     details: [
       "3-4 blocs per chapter with individual synopses",
       "Word targets keep each scene the right length",
-      "Bolt-ons: reusable AI directives (e.g. 'write in first person', 'focus on internal monologue')",
+      "Bolt-ons: reusable AI directives for precise control",
       "AI reads the Canon + chapter context for every generation",
     ],
     color: "#10b981",
+    screenshot: "/screenshots/blocs.png",
   },
   {
     step: "04",
+    title: "Polish with The Editor",
+    subtitle: "Professional chapter-level editing.",
+    desc: "When your draft is written, run The Editor over any chapter. It enhances prose quality, catches inconsistencies with your Canon, and checks continuity across scenes — all while respecting your voice and story. Only changed paragraphs are returned, so it is fast and safe. Think of it as a careful second pass that never rewrites your intent.",
+    details: [
+      "Prose quality check and enhancement",
+      "Scene and place consistency verification",
+      "Respects your voice — only touches what needs fixing",
+      "Returns only changed paragraphs for speed",
+    ],
+    color: "#8b5cf6",
+    screenshot: "/screenshots/editor.png",
+  },
+  {
+    step: "05",
     title: "Export your manuscript",
     subtitle: "Prose only. Your words, your file.",
     desc: "When you are ready, export your novel as a professionally formatted EPUB or DOCX. The export strips out all planning notes, synopses, and AI metadata. What you get is clean, chaptered prose — ready to send to agents, share with beta readers, or upload for self-publishing. No cleanup required.",
@@ -328,6 +345,7 @@ const STAGES = [
       "Zero metadata clutter in the output",
     ],
     color: "#ec4899",
+    screenshot: "/screenshots/export.png",
   },
 ];
 
@@ -388,34 +406,47 @@ function HowItWorks() {
                 </p>
               </div>
 
-              <div style={{
-                order: i % 2 === 0 ? 2 : 1,
-                padding: 24,
-                borderRadius: 16,
-                background: C.bgSoft,
-                border: `1px solid ${C.border}`,
-              }}>
-                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 14 }}>
-                  WHAT YOU GET
-                </p>
-                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              <div style={{ order: i % 2 === 0 ? 2 : 1, display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Screenshot */}
+                <div style={{
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  border: `1px solid ${C.border}`,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+                  background: C.bgSoft,
+                }}>
+                  <img
+                    src={s.screenshot}
+                    alt={`${s.title} screenshot`}
+                    style={{ width: "100%", height: "auto", display: "block" }}
+                  />
+                </div>
+
+                {/* Detail pills */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {s.details.map((d) => (
-                    <li key={d} style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      fontSize: 14,
-                      lineHeight: 1.55,
-                      color: C.textSoft,
-                      padding: "7px 0",
-                    }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+                    <span
+                      key={d}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 12px",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: C.textSoft,
+                        background: C.bgSoft,
+                        borderRadius: 10,
+                        border: `1px solid ${C.border}`,
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                       {d}
-                    </li>
+                    </span>
                   ))}
-                </ul>
+                </div>
               </div>
             </div>
           ))}
