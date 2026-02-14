@@ -24,8 +24,8 @@ import { ProfilePopup } from "./components/ProfilePopup";
 
 type ExportFormat = "docx" | "epub";
 
-/** Soft cap on active novels per user. Admin can still create more. */
-const MAX_NOVELS_PER_USER = 10;
+/** Hard cap on total novels (active + archived) per user. Admin bypasses. */
+const MAX_NOVELS_TOTAL = 10;
 
 function contentForExport(content: string): string {
   // Handle <<<BLOCK>>> delimiter format — extract only prose
@@ -68,6 +68,8 @@ function StudioHomePage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [hoveredNovelId, setHoveredNovelId] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -95,6 +97,15 @@ function StudioHomePage() {
           void saveSettingsToServer(local);
         }
       }
+
+      // Check admin status
+      try {
+        const subRes = await fetch("/api/billing/subscription");
+        if (subRes.ok) {
+          const subData = await subRes.json() as { isAdmin?: boolean };
+          if (subData.isAdmin) setIsAdmin(true);
+        }
+      } catch { /* ignore */ }
 
       // Load novels from server
       const serverNovels = await loadNovelsFromServer();
@@ -132,10 +143,18 @@ function StudioHomePage() {
   const [exportingFile, setExportingFile] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  const sortedNovels = useMemo(
-    () => [...novels].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+  const activeNovels = useMemo(
+    () => [...novels].filter((n) => !n.archived).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [novels],
   );
+
+  const archivedNovels = useMemo(
+    () => [...novels].filter((n) => n.archived).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [novels],
+  );
+
+  // For backward compat, keep sortedNovels pointing to active
+  const sortedNovels = activeNovels;
 
   const pendingDeleteNovel = useMemo(
     () => novels.find((n) => n.id === pendingDeleteId) ?? null,
@@ -159,7 +178,7 @@ function StudioHomePage() {
 
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
-  const atNovelCap = novels.length >= MAX_NOVELS_PER_USER;
+  const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
 
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -177,7 +196,17 @@ function StudioHomePage() {
     setTimeout(() => setJustCreatedId(null), 2000);
   }
 
-  function confirmDelete() {
+  function archiveNovel(id: string) {
+    const next = novels.map((n) => n.id === id ? { ...n, archived: true, updatedAt: new Date().toISOString() } : n);
+    writeNovels(next);
+  }
+
+  function restoreNovel(id: string) {
+    const next = novels.map((n) => n.id === id ? { ...n, archived: false, updatedAt: new Date().toISOString() } : n);
+    writeNovels(next);
+  }
+
+  function confirmPermanentDelete() {
     if (!pendingDeleteId) return;
     const next = novels.filter((n) => n.id !== pendingDeleteId);
     writeNovels(next);
@@ -314,12 +343,12 @@ function StudioHomePage() {
           )}
           {atNovelCap && (
             <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-              You&apos;ve reached the limit of {MAX_NOVELS_PER_USER} novels. Delete one to create a new one.
+              You&apos;ve reached the limit of {MAX_NOVELS_TOTAL} novels. Permanently delete an archived novel to create a new one.
             </p>
           )}
-          {!atNovelCap && novels.length > 0 && (
+          {!isAdmin && !atNovelCap && novels.length > 0 && (
             <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>
-              {novels.length}/{MAX_NOVELS_PER_USER} novels
+              {novels.length}/{MAX_NOVELS_TOTAL} novels
             </p>
           )}
           {justCreatedId && (
@@ -394,14 +423,14 @@ function StudioHomePage() {
                     <button
                       type="button"
                       className="pw-novel-delete-x"
-                      title="Delete novel"
+                      title="Archive novel"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setPendingDeleteId(novel.id);
+                        archiveNovel(novel.id);
                       }}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
-                      ×
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
                     </button>
                   </article>
                 ))}
@@ -484,23 +513,121 @@ function StudioHomePage() {
               </div>
             </>
           )}
+
+          {/* ── Archive section ── */}
+          {archivedNovels.length > 0 && (
+            <div style={{ marginTop: 32 }}>
+              <button
+                type="button"
+                onClick={() => setShowArchive(!showArchive)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "var(--pw-text-dim)", fontSize: 13, fontWeight: 600,
+                  padding: "8px 0",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+                Archive ({archivedNovels.length})
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showArchive ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+
+              {showArchive && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 12, padding: "16px 0", borderTop: "1px solid var(--pw-border-light)" }}>
+                  {archivedNovels.map((novel) => (
+                    <div
+                      key={novel.id}
+                      style={{
+                        width: 160, borderRadius: "var(--pw-radius-xl)", overflow: "hidden",
+                        background: "var(--pw-surface)", boxShadow: "var(--pw-shadow-sm)",
+                        opacity: 0.7, transition: "opacity 0.15s",
+                        position: "relative",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.7"; }}
+                    >
+                      <div
+                        style={{
+                          width: "100%", aspectRatio: "2 / 3",
+                          background: novel.coverImage
+                            ? `url(${novel.coverImage}) center/cover`
+                            : "linear-gradient(160deg, var(--pw-surface-alt) 0%, var(--pw-surface) 50%, var(--pw-surface-alt) 100%)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}
+                      >
+                        {!novel.coverImage && (
+                          <span style={{ color: "var(--pw-accent)", fontSize: 28, fontWeight: 700, opacity: 0.4 }}>
+                            {novel.title.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        {/* Archived badge */}
+                        <div style={{
+                          position: "absolute", top: 8, left: 8,
+                          padding: "3px 8px", borderRadius: 6,
+                          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+                          fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)",
+                          letterSpacing: "0.04em",
+                        }}>
+                          Archived
+                        </div>
+                      </div>
+                      <div style={{ padding: "8px 10px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {novel.title}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => restoreNovel(novel.id)}
+                            style={{
+                              flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                              background: "var(--pw-accent)", color: "#111", border: "none", cursor: "pointer",
+                            }}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeleteId(novel.id)}
+                            style={{
+                              padding: "5px 8px", fontSize: 11, borderRadius: 6,
+                              background: "rgba(220,38,38,0.1)", color: "#ef4444",
+                              border: "1px solid rgba(220,38,38,0.2)", cursor: "pointer",
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </div>
 
-      {/* Delete modal */}
+      {/* Permanent delete confirmation modal */}
       {pendingDeleteNovel && (
         <div className="pw-modal-overlay" onClick={() => setPendingDeleteId(null)}>
           <div className="pw-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="pw-delete-modal-title">Delete novel?</div>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px",
+              background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div className="pw-delete-modal-title">Are you sure?</div>
             <p className="pw-delete-modal-copy">
-              This will permanently remove <strong>{pendingDeleteNovel.title}</strong>.
+              This will <strong>permanently delete</strong> &ldquo;{pendingDeleteNovel.title}&rdquo; and all its chapters, characters, and content. This cannot be undone.
             </p>
             <div className="pw-delete-modal-actions">
               <button type="button" className="btn pw-cancel-btn" onClick={() => setPendingDeleteId(null)}>
                 Cancel
               </button>
-              <button type="button" className="btn pw-danger-btn" onClick={confirmDelete}>
-                Delete permanently
+              <button type="button" className="btn pw-danger-btn" onClick={confirmPermanentDelete}>
+                Yes, delete permanently
               </button>
             </div>
           </div>

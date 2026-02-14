@@ -209,6 +209,7 @@ export type Novel = {
   storyBible: StoryBible;
   createdAt: string;
   updatedAt: string;
+  archived?: boolean;
 };
 
 const STORAGE_KEY = "pilotwriter.novels.v1";
