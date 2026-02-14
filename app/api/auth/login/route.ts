@@ -10,8 +10,8 @@ const ADMIN_HASH = "$2b$12$FEpsrmuLlPRCayHGoamab.ERBf4ZWM6xHzfz3t/OrOFtSV5inqije
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { email?: string; password?: string };
-    const { email, password } = body;
+    const body = (await request.json()) as { email?: string; password?: string; force?: boolean };
+    const { email, password, force } = body;
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     // ── 2. Regular user login (Prisma lookup) ──
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, passwordHash: true },
+      select: { id: true, passwordHash: true, sessionNonce: true },
     });
 
     if (!user || !user.passwordHash) {
@@ -59,6 +59,16 @@ export async function POST(request: Request) {
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+    }
+
+    // ── Single-session check ──
+    // If the user already has an active session (nonce set) and force isn't true,
+    // warn them instead of silently overriding the other session.
+    if (user.sessionNonce && !force) {
+      return NextResponse.json({
+        activeSession: true,
+        message: "You're already logged in on another device or browser. Continuing will log you out of the other session.",
+      }, { status: 200 });
     }
 
     // Generate nonce — invalidates any previous session
