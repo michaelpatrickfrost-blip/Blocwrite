@@ -7036,10 +7036,6 @@ function NovelWorkspacePage() {
                             const proseDraftKey = `${activeChapter.id}:${idx}`;
                             const proseValue = blockProseDrafts[proseDraftKey] ?? block.prose;
                             const proseWordCount = proseValue ? countWords(proseValue) : 0;
-                            const progressPct = Math.max(
-                              0,
-                              Math.min(100, Math.round((proseWordCount / Math.max(block.wordTarget, 1)) * 100)),
-                            );
                             return (
                               <div style={{ position: "relative" }}>
                                 <textarea
@@ -7088,20 +7084,12 @@ function NovelWorkspacePage() {
                                     el.style.height = el.scrollHeight + "px";
                                   }}
                                 />
-                                <div className={`pw-writing-bar ${isGenerating ? "is-generating" : ""}`}>
-                                  <div className="pw-writing-bar-head">
-                                    <span className="pw-writing-bar-label">
-                                      {isGenerating ? "AI writing..." : "Writing"}
-                                    </span>
-                                    <span className="pw-writing-bar-value">
-                                      {proseWordCount}/{block.wordTarget}
-                                      {block.lengthMode === "best-fit" ? " best fit" : " words"}
-                                    </span>
+                                {/* Minimal word count — no bar, just a quiet counter */}
+                                {proseWordCount > 0 && (
+                                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 6px 0", fontSize: 11, color: "var(--pw-text-dim, #777)", opacity: 0.6 }}>
+                                    {proseWordCount}/{block.wordTarget} words
                                   </div>
-                                  <div className="pw-writing-bar-track">
-                                    <span style={{ width: `${progressPct}%` }} />
-                                  </div>
-                                </div>
+                                )}
                               </div>
                             );
                           })()}
