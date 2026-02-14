@@ -4010,3 +4010,8 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   .pw-bible-genre-picker { grid-template-columns: 1fr; }
   .pw-bible-characters-layout { grid-template-columns: 1fr; }
 }
+
+@keyframes pw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

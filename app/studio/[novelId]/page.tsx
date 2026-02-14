@@ -498,6 +498,7 @@ function NovelWorkspacePage() {
   const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
   const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
+  const [boltonLibraryOpen, setBoltonLibraryOpen] = useState(false);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
@@ -5811,6 +5812,62 @@ function NovelWorkspacePage() {
     updateChapter(activeChapter.id, { content: serializeChapterBlocks(aligned) });
   }
 
+  /** Save a single bolt-on to the global library (localStorage + server settings) */
+  async function saveSingleBoltonToLibrary(bolton: { title: string; description?: string; prompt?: string; category?: string }) {
+    if (typeof window === "undefined") return;
+    const library = readBoltonLibrary();
+    const desc = bolton.description || "";
+    const key = `${bolton.title.trim().toLowerCase()}|${desc.trim().toLowerCase()}`;
+    const exists = library.some((item) => `${item.title.trim().toLowerCase()}|${(item.description || "").trim().toLowerCase()}` === key);
+    if (!exists) {
+      library.push({
+        title: clampText(bolton.title, 40),
+        description: clampPromptText(desc, 500),
+        prompt: clampPromptText(bolton.prompt || "", 500),
+        category: normalizeBoltonCategory(bolton.category || "custom"),
+      });
+    }
+    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library));
+    setBoltonLibraryCount(library.length);
+    const syncOk = await saveSettingsToServer(gatherSettings());
+    const now = new Date().toISOString();
+    setAutosaveStatus({
+      status: syncOk ? "ok" : "error",
+      message: syncOk ? "Bolt-on saved to library" : "Saved locally, but cloud sync failed.",
+      at: now,
+    });
+  }
+
+  /** Delete a bolt-on from the global library by index */
+  async function deleteLibraryBolton(index: number) {
+    if (typeof window === "undefined") return;
+    const library = readBoltonLibrary();
+    library.splice(index, 1);
+    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library));
+    setBoltonLibraryCount(library.length);
+    await saveSettingsToServer(gatherSettings());
+  }
+
+  /** Load a single bolt-on from the library into the current novel */
+  function loadSingleFromLibrary(item: { title: string; description?: string; prompt?: string; category?: string }) {
+    if (!novel) return;
+    const existing = novel.storyBible.boltons ?? [];
+    if (existing.length >= 10) return;
+    const itemDesc = item.description || "";
+    const key = `${item.title.trim().toLowerCase()}|${itemDesc.trim().toLowerCase()}`;
+    const already = existing.some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
+    if (already) return;
+    const merged = [...existing, {
+      id: createEntityId("bolton"),
+      title: item.title || "Imported Plugin",
+      category: normalizeBoltonCategory(item.category || "custom"),
+      description: itemDesc,
+      prompt: item.prompt || "",
+      createdAt: new Date().toISOString(),
+    }];
+    updateStoryBible({ boltons: merged });
+  }
+
   async function saveBoltonLibrary() {
     if (!novel || typeof window === "undefined") return;
     const source = (novel.storyBible.boltons ?? [])
@@ -7074,11 +7131,10 @@ function NovelWorkspacePage() {
                                   ref={(el) => {
                                     blockProseRefs.current[idx] = el;
                                     if (el) {
-                                      // Measure correct height without collapsing — avoids scroll jump
+                                      // Auto-size without scroll jump: only grow, never shrink to 0
                                       el.style.overflow = "hidden";
-                                      el.style.height = "0px";
                                       const h = el.scrollHeight;
-                                      el.style.height = h + "px";
+                                      if (h > 0) el.style.height = h + "px";
                                     }
                                   }}
                                   style={{
@@ -7086,7 +7142,7 @@ function NovelWorkspacePage() {
                                       EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
                                         ?.font ?? "Georgia, serif",
                                     overflow: "hidden",
-                                    ...(isGenerating ? { opacity: 0.55, pointerEvents: "none" as const } : {}),
+                                    ...(isGenerating ? { opacity: 0.45, pointerEvents: "none" as const } : {}),
                                   }}
                                   placeholder="Continue writing..."
                                   value={proseValue}
@@ -7110,13 +7166,33 @@ function NovelWorkspacePage() {
                                   }}
                                   onInput={(e) => {
                                     const el = e.currentTarget;
-                                    // Shrink to 0 then expand — overflow:hidden prevents layout shift
-                                    el.style.height = "0px";
-                                    el.style.height = el.scrollHeight + "px";
+                                    // Expand only — measure new scrollHeight without collapsing first
+                                    const newH = el.scrollHeight;
+                                    if (newH > el.clientHeight) el.style.height = newH + "px";
                                   }}
                                 />
+                                {/* Writing indicator */}
+                                {isGenerating && (
+                                  <div style={{
+                                    position: "absolute", top: 12, left: 0, right: 0,
+                                    display: "flex", justifyContent: "center", alignItems: "center", gap: 8,
+                                    pointerEvents: "none",
+                                  }}>
+                                    <span style={{
+                                      display: "inline-flex", alignItems: "center", gap: 6,
+                                      padding: "6px 16px", borderRadius: 8,
+                                      background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
+                                      color: "var(--pw-accent, #a3e635)", fontSize: 12, fontWeight: 600,
+                                      letterSpacing: "0.02em",
+                                      animation: "pw-pulse 1.5s ease-in-out infinite",
+                                    }}>
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                      Writing&hellip;
+                                    </span>
+                                  </div>
+                                )}
                                 {/* Minimal word count — no bar, just a quiet counter */}
-                                {proseWordCount > 0 && (
+                                {proseWordCount > 0 && !isGenerating && (
                                   <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 6px 0", fontSize: 11, color: "var(--pw-text-dim, #777)", opacity: 0.6 }}>
                                     {proseWordCount}/{block.wordTarget} words
                                   </div>
@@ -9003,38 +9079,110 @@ function NovelWorkspacePage() {
                       <div>
                         <h3>Bolt-Ons</h3>
                         <p className="pw-bible-section-note">
-                          Steer the AI with reusable instructions. Describe what you want in plain English, then build it into a focused prompt.
+                          Steer the AI with reusable instructions. Saved bolt-ons persist across all your novels.
                         </p>
                       </div>
                       <div className="pw-bible-inline-actions">
                         <button
                           type="button"
-                          className="pw-bolton-add-btn pw-bolton-save-btn"
-                          disabled={allBoltons.length === 0}
-                          onClick={() => void saveBoltonLibrary()}
-                          title="Save all bolt-ons so they're available in new projects"
-                        >
-                          Save All
-                        </button>
-                        <button
-                          type="button"
                           className="pw-bolton-add-btn"
-                          disabled={boltonLibraryCount === 0 || allBoltons.length >= 10}
-                          onClick={loadBoltonLibrary}
-                          title={boltonLibraryCount > 0 ? `Load ${boltonLibraryCount} saved bolt-on(s)` : "No saved bolt-ons yet"}
+                          onClick={() => setBoltonLibraryOpen(true)}
+                          title={`Bolt-on library (${boltonLibraryCount} saved)`}
                         >
-                          Load Saved {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                          Library {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
                         </button>
                         <button
                           type="button"
                           className="pw-bible-clear-btn"
                           onClick={() => clearBibleSection("boltons")}
-                          title="Clear all bolt-ons"
+                          title="Clear all bolt-ons from this novel"
+                          disabled={allBoltons.length === 0}
                         >
                           Clear
                         </button>
                       </div>
                     </div>
+
+                    {/* ── Library modal ── */}
+                    {boltonLibraryOpen && (
+                      <div style={{
+                        position: "fixed", inset: 0, zIndex: 9999,
+                        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}
+                        onClick={() => setBoltonLibraryOpen(false)}
+                      >
+                        <div
+                          style={{
+                            background: "var(--pw-bg, #18181b)", border: "1px solid var(--pw-border, rgba(255,255,255,0.1))",
+                            borderRadius: 16, width: "90%", maxWidth: 540, maxHeight: "70vh", overflow: "auto",
+                            padding: 24, boxShadow: "0 24px 80px rgba(0,0,0,0.4)",
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Bolt-On Library</h3>
+                            <button type="button" onClick={() => setBoltonLibraryOpen(false)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", fontSize: 20, cursor: "pointer" }}>&times;</button>
+                          </div>
+                          <p style={{ fontSize: 13, color: "var(--pw-text-dim)", marginBottom: 16 }}>
+                            Saved bolt-ons are shared across all your novels. Load them into any project.
+                          </p>
+                          {(() => {
+                            const library = readBoltonLibrary();
+                            if (library.length === 0) return (
+                              <div style={{ textAlign: "center", padding: "32px 0", opacity: 0.5 }}>
+                                <p>No saved bolt-ons yet.</p>
+                                <p style={{ fontSize: 12 }}>Save a bolt-on from any novel to see it here.</p>
+                              </div>
+                            );
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                {library.map((item, i) => (
+                                  <div key={i} style={{
+                                    padding: "12px 14px", borderRadius: 10,
+                                    background: "var(--pw-bg-hover, rgba(255,255,255,0.04))",
+                                    border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                                  }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title || "Untitled"}</div>
+                                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>
+                                          {BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === item.category)?.label || item.category}
+                                          {item.prompt ? " • Ready" : " • Draft"}
+                                        </div>
+                                        {item.description && <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4, lineHeight: 1.4 }}>{item.description.slice(0, 100)}{item.description.length > 100 ? "…" : ""}</div>}
+                                      </div>
+                                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                        <button
+                                          type="button"
+                                          className="pw-bolton-add-btn"
+                                          style={{ padding: "4px 10px", fontSize: 12 }}
+                                          disabled={allBoltons.length >= 10}
+                                          onClick={() => { loadSingleFromLibrary(item); setBoltonLibraryOpen(false); }}
+                                          title="Load into this novel"
+                                        >
+                                          Load
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="pw-bible-clear-btn"
+                                          style={{ padding: "4px 10px", fontSize: 12 }}
+                                          onClick={() => { void deleteLibraryBolton(i); setBoltonLibraryOpen(false); setTimeout(() => setBoltonLibraryOpen(true), 50); }}
+                                          title="Remove from library"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── Quick-add by category ── */}
                     <div className="pw-bolton-quick-cats">
@@ -9130,6 +9278,16 @@ function NovelWorkspacePage() {
                                   </option>
                                 ))}
                               </select>
+                              <button
+                                type="button"
+                                className="pw-bolton-add-btn"
+                                style={{ padding: "2px 8px", fontSize: 11, lineHeight: 1.4 }}
+                                disabled={!bolton.title.trim() && !bolton.description.trim()}
+                                onClick={() => void saveSingleBoltonToLibrary(bolton)}
+                                title="Save to library (available across all novels)"
+                              >
+                                Save
+                              </button>
                               <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete bolt-on">×</button>
                             </div>
 
