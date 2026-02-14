@@ -554,8 +554,11 @@ function NovelWorkspacePage() {
   const [editingGoalWords, setEditingGoalWords] = useState<string | null>(null);
   const [hideBlocks, setHideBlocks] = useState(false);
   const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("pilotwriter.sidebar.pinned") === "true";
+  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => !sidebarPinned);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
   const sidebarHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -609,6 +612,7 @@ function NovelWorkspacePage() {
     setSidebarPinned((prev) => {
       const next = !prev;
       setSidebarCollapsed(!next);
+      try { window.localStorage.setItem("pilotwriter.sidebar.pinned", String(next)); } catch { /* ignore */ }
       return next;
     });
   }
