@@ -3063,7 +3063,7 @@ function NovelWorkspacePage() {
         styleRules.push(`Narrating character: ${povCharName}. Write from ${povCharName}'s perspective`);
       }
       if (sv.tense) styleRules.push(`Tense: ${sv.tense}`);
-      if (sv.comps?.length) styleRules.push(`Style like: ${sv.comps.slice(0, 3).join(", ")}`);
+      if (sv.comps?.length) styleRules.push(`Style: ${sv.comps.slice(0, 3).join(", ")}`);
       if (sv.voiceRules) styleRules.push(`Voice: ${clampPromptText(sv.voiceRules, 200)}`);
       if (sv.bannedWords?.length) styleRules.push(`Never use these words: ${sv.bannedWords.slice(0, 10).join(", ")}`);
       const styleDirective = styleRules.length > 0
@@ -3723,10 +3723,10 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const context = buildStoryBibleContext("characterCompact");
-      const systemMsg = "Writing style analyst. Return only valid JSON.";
+      const systemMsg = "Writing style analyst. Return only valid JSON. CRITICAL: NEVER mention any author or writer names in voiceRules. Describe the style purely in terms of technique — sentence structure, vocabulary, pacing, dialogue patterns, tone, and rhythm. The output must read as original style guidance, not as a reference to any real person.";
       const prompt = [
-        `Describe ${styleAuthorDraft.trim()}'s writing style. Return JSON:`,
-        `{ "voiceRules": "practical style rules (max 800 chars): sentence structure, vocabulary, pacing, dialogue", "toneTags": ["tone1"], "styleComparables": ["similar author"] }`,
+        `Analyze the writing style of: ${styleAuthorDraft.trim()}. Return JSON:`,
+        `{ "voiceRules": "practical style rules (max 800 chars) describing sentence structure, vocabulary, pacing, dialogue patterns, tone, and rhythm. NEVER name any author — describe only the techniques and characteristics.", "toneTags": ["tone1"], "styleComparables": ["similar style descriptor, e.g. visceral suspense, literary minimalism"] }`,
         `Novel context:\n${context}`,
       ].join("\n\n");
       const data = await requestOpenRouterJson<{
@@ -3737,7 +3737,7 @@ function NovelWorkspacePage() {
 
       const currentComps = novel.storyBible.styleVoice.comps ?? [];
       const aiComps = parseStringList(data.styleComparables);
-      const mergedComps = Array.from(new Set([...currentComps, styleAuthorDraft.trim(), ...aiComps]));
+      const mergedComps = Array.from(new Set([...currentComps, ...aiComps]));
 
       updateStoryBible({
         styleVoice: {
