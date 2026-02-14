@@ -2307,23 +2307,17 @@ function NovelWorkspacePage() {
 
   function evaluateBlocSynopsisResult(
     synopsis: string,
-    index: number,
-    isLast: boolean,
+    _index: number,
+    _isLast: boolean,
   ) {
     const text = synopsis.trim();
-    const sentenceCount = text ? text.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
     const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
-    const hasActionCue = /\b(confronts|discovers|reveals|decides|forces|escalates|fails|succeeds|chooses|arrives|leaves|admits|threatens|fights|negotiates|betrays)\b/i.test(text);
-    const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up)\b/i.test(text);
-    const hasMultiLocationCue = /\b(meanwhile|elsewhere|across town|back at|cut to|later at|in another location)\b/i.test(text);
+    const sentenceCount = text ? text.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
+    // Relaxed gate: only reject truly garbage results. Let creative variety through.
     const ok =
-      wordCount >= 14 &&
+      wordCount >= 10 &&
       sentenceCount >= 1 &&
-      sentenceCount <= 4 &&
-      hasActionCue &&
-      (!isLast || hasOutcomeCue || /\b(resolve|resolution|outcome|choice|cost)\b/i.test(text)) &&
-      (index === 0 || !/^\s*(new location|meanwhile in a new place)/i.test(text)) &&
-      !hasMultiLocationCue;
+      sentenceCount <= 6;
     return { ok, text, sentenceCount, wordCount };
   }
 
@@ -2679,105 +2673,128 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
 
     try {
-      const blocks: ChapterBlock[] = [];
+      /* ══════════════════════════════════════════════════════════════
+       * SINGLE BATCH CALL — generate all bloc synopses at once.
+       * Replaces the old 4 sequential calls (each with 5 retries +
+       * repair calls = up to 24 API calls) with ONE call.
+       * ══════════════════════════════════════════════════════════════ */
 
-      for (let i = 0; i < BLOC_COUNT; i++) {
-        const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
-        const isLast = i === BLOC_COUNT - 1;
-        const MAX_RETRIES = 5;
+      type BatchBlocResult = { blocs?: Array<{ synopsis?: string }> };
 
-        let synopsis = "";
+      const batchPrompt = [
+        `Split this chapter into exactly ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into prose.`,
+        `Return JSON: { "blocs": [{ "synopsis": "1-3 sentences" }, { "synopsis": "1-3 sentences" }, ...] }`,
+        "",
+        "RULES:",
+        `- Return EXACTLY ${BLOC_COUNT} blocs.`,
+        "- Each synopsis must be 1-3 concrete sentences describing what HAPPENS in the scene.",
+        "- Use character names from the Canon below. Do not invent new characters.",
+        "- All blocs share ONE primary location unless a transition is essential for the plot.",
+        "- Bloc 1 opens the chapter. The final bloc resolves or closes the chapter.",
+        "- Each bloc flows naturally into the next — no jumps.",
+        "- Be specific: name characters, describe actions, state emotional shifts and consequences.",
+        "- This is an internal drafting plan, NOT reader-facing copy.",
+        "",
+        storyPosition.chapterNumber > 0
+          ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
+          : "",
+        storyPosition.arcGuidance,
+        `Chapter: ${activeChapter.title}`,
+        `Chapter synopsis: ${chapterSynopsis}`,
+        previousChapterSynopsis ? `Previous chapter: ${clampPromptText(previousChapterSynopsis, 200)}` : "",
+        nextChapterSynopsis ? `Next chapter: ${clampPromptText(nextChapterSynopsis, 200)}` : "",
+        "",
+        context,
+      ].filter(Boolean).join("\n");
 
-        for (let attempt = 0; attempt < MAX_RETRIES && !synopsis; attempt++) {
-          const isSimple = attempt >= 1; // Use simpler prompt on retry
+      let batchBlocs: Array<{ synopsis?: string }> = [];
 
-          const prompt = isSimple
-            ? [
-                storyPosition.chapterNumber > 0
-                  ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
-                  : "",
-                storyPosition.arcGuidance,
-                `Chapter: ${chapterSynopsis}`,
-                previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 180)}` : "",
-                nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 180)}` : "",
-                previousSynopses ? `\n${previousSynopses}` : "",
-                `\nWrite a 1-3 sentence synopsis for scene ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the final scene — resolve the chapter." : ""}`,
-                "Use existing Canon character names only. Do not invent role labels as character names.",
-                "Keep this chapter grounded to one primary location unless a clear transition is essential. A new bloc does not require a new location.",
-                "Each bloc must flow directly from the previous bloc while setting up the next one.",
-                `Return JSON: { "synopsis": "your synopsis here" }`,
-              ].filter(Boolean).join("\n")
-            : [
-                `You are splitting a chapter into ${BLOC_COUNT} scene blocs. Write the synopsis for bloc ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the FINAL bloc — resolve or close the chapter." : ""}`,
-                `Return JSON: { "synopsis": "1-3 sentences describing what happens in this scene" }`,
-                "Use existing Canon character names where possible; avoid creating duplicate/role-only identities.",
-                "Keep one primary location for the chapter unless story-critical movement is required.",
-                storyPosition.chapterNumber > 0
-                  ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
-                  : "",
-                storyPosition.arcGuidance,
-                "",
-                `Chapter: ${activeChapter.title}`,
-                `Chapter synopsis: ${chapterSynopsis}`,
-                previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 180)}` : "",
-                nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 180)}` : "",
-                previousSynopses ? `\nPrevious blocs:\n${previousSynopses}` : "",
-                i === 0 ? `\n${context}` : "",
-              ].filter(Boolean).join("\n");
-
-          try {
-            const data = await requestOpenRouterJson<{ synopsis?: string }>(
-              prompt,
-              400,
-              { timeoutMs: 180000, systemMessage: isSimple ? "Return ONLY valid JSON." : systemMsg },
-            );
-            const candidate = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
-            const quality = evaluateBlocSynopsisResult(candidate, i, isLast);
-            if (quality.ok) {
-              synopsis = quality.text;
-            } else if (candidate.length >= 24) {
-              try {
-                const repaired = await repairBlocSynopsisResult({
-                  chapterSynopsis,
-                  previousChapterSynopsis,
-                  nextChapterSynopsis,
-                  previousSynopses,
-                  currentSynopsis: candidate,
-                  blocNumber: i + 1,
-                  totalBlocs: BLOC_COUNT,
-                  isLast,
-                  systemMsg: "Return ONLY valid JSON.",
-                });
-                const repairedText = (typeof repaired?.synopsis === "string" ? repaired.synopsis : "").trim();
-                if (evaluateBlocSynopsisResult(repairedText, i, isLast).ok) {
-                  synopsis = repairedText;
-                }
-              } catch {
-                // keep retry loop alive
+      // Attempt batch call (with 2 retries max)
+      for (let attempt = 0; attempt < 3 && batchBlocs.length < BLOC_COUNT; attempt++) {
+        try {
+          const raw = await requestOpenRouterText(
+            batchPrompt,
+            800,
+            240000,
+            systemMsg,
+            false,
+            0.3,
+          );
+          let parsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string }>>(raw);
+          if (!parsed) {
+            const repaired = attemptCloseTruncatedJson(raw.trim());
+            if (repaired) try { parsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
+          }
+          if (Array.isArray(parsed)) {
+            batchBlocs = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            const obj = parsed as Record<string, unknown>;
+            if (Array.isArray(obj.blocs)) {
+              batchBlocs = obj.blocs as Array<{ synopsis?: string }>;
+            } else if (Array.isArray(obj.blocks)) {
+              batchBlocs = obj.blocks as Array<{ synopsis?: string }>;
+            } else if (Array.isArray(obj.scenes)) {
+              batchBlocs = obj.scenes as Array<{ synopsis?: string }>;
+            } else {
+              // Try any array value
+              for (const key of Object.keys(obj)) {
+                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
               }
             }
-          } catch {
-            // Will retry
           }
+          // Validate entries
+          batchBlocs = batchBlocs.filter((b) => {
+            const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
+            return syn.length >= 10;
+          });
+          if (batchBlocs.length >= BLOC_COUNT) break;
+        } catch {
+          // retry
         }
-
-        if (!synopsis && blocks.length === 0) {
-          throw new Error("Could not generate blocs. Try again or use a different model.");
-        }
-        if (!synopsis) {
-          // Got some blocs already — stop early rather than fail entirely
-          break;
-        }
-
-        blocks.push({ ...DEFAULT_BLOCK, synopsis, notes: chapterLevelBolton });
-
-        // Update the chapter progressively so the user sees blocs appearing one by one
-        updateChapter(targetChapterId, { content: serializeChapterBlocks(blocks) });
       }
 
-      if (blocks.length < 3) {
-        throw new Error(`Only generated ${blocks.length} blocs. Try again or use a different model.`);
+      // ── Build blocks from batch results ──
+      const blocks: ChapterBlock[] = [];
+      for (let i = 0; i < Math.min(BLOC_COUNT, batchBlocs.length); i++) {
+        const synopsis = (typeof batchBlocs[i]?.synopsis === "string" ? batchBlocs[i].synopsis!.trim() : "");
+        if (synopsis.length >= 10) {
+          blocks.push({ ...DEFAULT_BLOCK, synopsis, notes: chapterLevelBolton });
+        }
       }
+
+      // ── Quick repair: fill any missing blocs individually ──
+      if (blocks.length < BLOC_COUNT && blocks.length > 0) {
+        for (let i = blocks.length; i < BLOC_COUNT; i++) {
+          const isLast = i === BLOC_COUNT - 1;
+          const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
+          const repairPrompt = [
+            `Write a 1-3 sentence synopsis for scene bloc ${i + 1} of ${BLOC_COUNT} in this chapter.`,
+            `Return JSON: { "synopsis": "your synopsis" }`,
+            `Chapter: ${activeChapter.title}`,
+            `Chapter synopsis: ${chapterSynopsis}`,
+            previousSynopses ? `Previous blocs:\n${previousSynopses}` : "",
+            isLast ? "This is the FINAL bloc — close the chapter." : "",
+          ].filter(Boolean).join("\n");
+          try {
+            const data = await requestOpenRouterJson<{ synopsis?: string }>(
+              repairPrompt,
+              300,
+              { timeoutMs: 120000, systemMessage: "Return ONLY valid JSON." },
+            );
+            const syn = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
+            if (syn.length >= 10) {
+              blocks.push({ ...DEFAULT_BLOCK, synopsis: syn, notes: chapterLevelBolton });
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      if (blocks.length === 0) {
+        throw new Error("Could not generate blocs. Try again or use a different model.");
+      }
+
+      // Update the chapter with all blocs at once
+      updateChapter(targetChapterId, { content: serializeChapterBlocks(blocks) });
 
       // Link generated bloc names back to Canon IDs for this chapter plan.
       if (planChapter) {
