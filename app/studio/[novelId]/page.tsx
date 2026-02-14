@@ -6871,7 +6871,7 @@ function NovelWorkspacePage() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={storyAiBusyAction === `chapter-blocks-${activeChapter.id}`}
+                    disabled={storyAiBusyAction !== null}
                     onClick={() => void runGenerateChapterBlocks()}
                   >
                     {storyAiBusyAction === `chapter-blocks-${activeChapter.id}` ? "Generating…" : "✦ Generate blocs"}
@@ -7172,7 +7172,7 @@ function NovelWorkspacePage() {
                                       type="button"
                                       className={`pw-block-btn ${block.prose ? "pw-block-btn-regenerate" : "pw-block-btn-generate"}`}
                                       title={!block.synopsis?.trim() ? "Add a synopsis first" : block.prose ? "Regenerate prose" : "Generate prose"}
-                                      disabled={storyAiBusyAction === `block-${activeChapter.id}-${idx}` || !block.synopsis?.trim()}
+                                      disabled={storyAiBusyAction !== null || !block.synopsis?.trim()}
                                       onClick={() =>
                                         void runGenerateBlockProse(
                                           idx,
@@ -7594,7 +7594,7 @@ function NovelWorkspacePage() {
                           <button
                             type="button"
                             className="btn btn-primary"
-                            disabled={storyAiBusyAction === `block-${activeChapter.id}-${focusBlockIndex}`}
+                            disabled={storyAiBusyAction !== null}
                             onClick={() =>
                               void runGenerateBlockProse(
                                 focusBlockIndex,
