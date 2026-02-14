@@ -612,29 +612,7 @@ export function ProfilePopup({
 
                 {subLoading ? (
                   <p className="pw-settings-hint" style={{ padding: "12px 0" }}>Loading subscription details...</p>
-                ) : subInfo?.isAdmin ? (
-                  <div style={{
-                    padding: "16px",
-                    borderRadius: 12,
-                    background: "rgba(var(--pw-accent-rgb, 134,239,172), 0.08)",
-                    border: "1px solid rgba(var(--pw-accent-rgb, 134,239,172), 0.18)",
-                    marginTop: 8,
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{
-                        display: "inline-block",
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "var(--pw-accent, #86efac)",
-                      }} />
-                      <span style={{ fontSize: 14, fontWeight: 700 }}>Admin Account</span>
-                    </div>
-                    <p className="pw-settings-hint" style={{ margin: 0 }}>
-                      Full access. No subscription required.
-                    </p>
-                  </div>
-                ) : subInfo?.status ? (
+                ) : subInfo?.status || subInfo?.isAdmin ? (
                   <div style={{ marginTop: 8 }}>
                     {/* Status card */}
                     <div style={{
