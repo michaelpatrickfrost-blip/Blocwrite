@@ -63,6 +63,7 @@ function StudioHomePage() {
   const [novels, setNovels] = useState<Novel[]>(() => loadNovels());
   const [serverLoaded, setServerLoaded] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [createHint, setCreateHint] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [hoveredNovelId, setHoveredNovelId] = useState<string | null>(null);
@@ -290,19 +291,27 @@ function StudioHomePage() {
           </div>
 
           <div className="pw-section-title">Create Novel</div>
-          <form className="pw-create-form" onSubmit={handleCreate}>
+          <form className="pw-create-form" onSubmit={(e) => {
+            e.preventDefault();
+            if (!titleDraft.trim()) { setCreateHint("Please enter a title to create your novel."); return; }
+            setCreateHint("");
+            handleCreate(e);
+          }}>
             <input
               value={titleDraft}
-              onChange={(event) => setTitleDraft(event.target.value)}
+              onChange={(event) => { setTitleDraft(event.target.value); if (event.target.value.trim()) setCreateHint(""); }}
               className="pw-create-input"
-              placeholder="Novel title"
+              placeholder="Enter a title for your novel"
               dir="ltr"
               disabled={atNovelCap}
             />
-            <button type="submit" className="btn btn-primary" disabled={!titleDraft.trim() || atNovelCap}>
+            <button type="submit" className="btn btn-primary" disabled={atNovelCap}>
               Create
             </button>
           </form>
+          {createHint && (
+            <p style={{ fontSize: 12, color: "#f59e0b", margin: "8px 0 0" }}>{createHint}</p>
+          )}
           {atNovelCap && (
             <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
               You&apos;ve reached the limit of {MAX_NOVELS_PER_USER} novels. Delete one to create a new one.
