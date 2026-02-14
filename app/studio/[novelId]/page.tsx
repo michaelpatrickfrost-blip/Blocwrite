@@ -524,6 +524,16 @@ function NovelWorkspacePage() {
   const [editorFontFamily, setEditorFontFamily] = useState<string>("serif");
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
+  // ── Right-click prose context menu ──
+  const [proseCtx, setProseCtx] = useState<{
+    x: number; y: number;
+    blockIdx: number;
+    selStart: number; selEnd: number;
+    selectedText: string;
+    fullProse: string;
+  } | null>(null);
+  const [proseCtxBusy, setProseCtxBusy] = useState(false);
+
   const EDITOR_FONT_OPTIONS = [
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
     { id: "sans", label: "Sans", font: "var(--font-sans), 'Inter', system-ui, sans-serif" },
@@ -2377,6 +2387,74 @@ function NovelWorkspacePage() {
       timeoutMs: 180000,
       systemMessage: args.systemMsg,
     });
+  }
+
+  // ── Right-click prose rewrite ──────────────────────────
+  async function runProseContextAction(action: "rewrite" | "expand" | "tighten" | "natural") {
+    if (!proseCtx || !novel || !activeChapter || !ensureStoryAiReady()) return;
+    const { blockIdx, selStart, selEnd, selectedText, fullProse } = proseCtx;
+    setProseCtxBusy(true);
+    setProseCtx(null); // close menu
+
+    const before = fullProse.slice(Math.max(0, selStart - 600), selStart);
+    const after = fullProse.slice(selEnd, selEnd + 600);
+
+    // Get author style from profile if available
+    const styleAuthor = readStoredProviderField(assistantProvider, "key") ? "" : ""; // placeholder
+    const novelGenre = novel.storyBible.summary.genre.join(", ") || "fiction";
+
+    const actionInstructions: Record<string, string> = {
+      rewrite: `Rewrite the SELECTED TEXT to be clearer, more engaging, and better crafted. Keep the same meaning, events, and intent. Match the surrounding voice and rhythm.`,
+      expand: `Expand the SELECTED TEXT with more detail, sensory description, interiority, or dialogue. Keep it grounded in the same scene and voice. Don't change the events — enrich them.`,
+      tighten: `Tighten the SELECTED TEXT. Cut filler, reduce wordiness, sharpen sentences. Keep every important beat but make it leaner and punchier.`,
+      natural: `Make the SELECTED TEXT sound more natural and human. Remove any AI-sounding patterns: excessive em dashes, overly formal phrasing, "a testament to", "the weight of", "couldn't help but", "a sense of". Replace with plain, direct prose that sounds like a real person wrote it.`,
+    };
+
+    const systemMsg = [
+      `You are a prose editor working on a ${novelGenre} novel.`,
+      `You MUST return ONLY the replacement prose — nothing else. No quotes, no labels, no "Here is the rewritten text:", no explanations.`,
+      `NEVER include your thinking, notes, word counts, or meta-commentary.`,
+      `The replacement must flow naturally with the text before and after it.`,
+      `Avoid AI writing patterns: no excessive em dashes (—), no "a testament to", "the weight of", "couldn't help but", "sent a shiver", "a sense of". Write like a human author.`,
+      `Match the voice, tense, POV, and style of the surrounding prose exactly.`,
+    ].join(" ");
+
+    const prompt = [
+      `TEXT BEFORE (for context only — do NOT include in output):`,
+      `"""${before}"""`,
+      ``,
+      `SELECTED TEXT (rewrite this):`,
+      `"""${selectedText}"""`,
+      ``,
+      `TEXT AFTER (for context only — do NOT include in output):`,
+      `"""${after}"""`,
+      ``,
+      actionInstructions[action],
+      `Return ONLY the replacement prose. Nothing else.`,
+    ].join("\n");
+
+    try {
+      const result = await requestOpenRouterText(prompt, Math.max(500, Math.round(selectedText.split(/\s+/).length * 3)), 120000, systemMsg, false, 0.7);
+      if (!result || !result.trim()) { setProseCtxBusy(false); return; }
+
+      // Clean any wrapping quotes the AI might add
+      let cleaned = result.trim();
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+      if (cleaned.startsWith("'") && cleaned.endsWith("'")) cleaned = cleaned.slice(1, -1);
+
+      // Replace the selected text in the full prose
+      const newProse = fullProse.slice(0, selStart) + cleaned + fullProse.slice(selEnd);
+      const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+      if (hasBlocks && blockIdx >= 0 && blockIdx < blocks.length) {
+        const next = [...blocks];
+        next[blockIdx] = { ...blocks[blockIdx], prose: newProse };
+        updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+      }
+    } catch (err) {
+      console.error("Prose context action failed:", err);
+    } finally {
+      setProseCtxBusy(false);
+    }
   }
 
   function evaluateProseResult(
@@ -7170,6 +7248,21 @@ function NovelWorkspacePage() {
                                     const newH = el.scrollHeight;
                                     if (newH > el.clientHeight) el.style.height = newH + "px";
                                   }}
+                                  onContextMenu={(e) => {
+                                    const el = e.currentTarget;
+                                    const selText = el.value.slice(el.selectionStart, el.selectionEnd).trim();
+                                    if (!selText) return; // no selection — use default browser menu
+                                    e.preventDefault();
+                                    setProseCtx({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      blockIdx: idx,
+                                      selStart: el.selectionStart,
+                                      selEnd: el.selectionEnd,
+                                      selectedText: selText,
+                                      fullProse: el.value,
+                                    });
+                                  }}
                                 />
                                 {/* Writing indicator */}
                                 {isGenerating && (
@@ -9797,6 +9890,74 @@ function NovelWorkspacePage() {
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
+
+      {/* ── Prose right-click context menu ── */}
+      {proseCtx && !proseCtxBusy && (
+        <>
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 99998 }}
+            onClick={() => setProseCtx(null)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              left: proseCtx.x,
+              top: proseCtx.y,
+              zIndex: 99999,
+              background: "var(--pw-bg, #18181b)",
+              border: "1px solid var(--pw-border, rgba(255,255,255,0.12))",
+              borderRadius: 10,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+              padding: "6px 0",
+              minWidth: 180,
+              fontFamily: "var(--font-sans), system-ui, sans-serif",
+            }}
+          >
+            <div style={{ padding: "6px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--pw-text-dim, #888)", userSelect: "none" }}>
+              {proseCtx.selectedText.length > 40 ? proseCtx.selectedText.slice(0, 40) + "…" : proseCtx.selectedText}
+            </div>
+            {([
+              { id: "rewrite" as const, label: "Rewrite", icon: "✦" },
+              { id: "expand" as const, label: "Expand", icon: "↔" },
+              { id: "tighten" as const, label: "Tighten", icon: "⊟" },
+              { id: "natural" as const, label: "Make more natural", icon: "♾" },
+            ]).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "8px 14px", background: "none", border: "none",
+                  color: "var(--pw-text, #e4e4e7)", fontSize: 13, fontWeight: 500,
+                  cursor: "pointer", textAlign: "left",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-bg-hover, rgba(255,255,255,0.06))"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                onClick={() => void runProseContextAction(opt.id)}
+              >
+                <span style={{ width: 18, textAlign: "center", fontSize: 14 }}>{opt.icon}</span>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Busy indicator while prose context action runs */}
+      {proseCtxBusy && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 99999,
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 18px", borderRadius: 10,
+          background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
+          color: "var(--pw-accent, #a3e635)", fontSize: 13, fontWeight: 600,
+          animation: "pw-pulse 1.5s ease-in-out infinite",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Rewriting&hellip;
+        </div>
+      )}
     </div>
   );
 }
