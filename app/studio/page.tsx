@@ -24,6 +24,9 @@ import { ProfilePopup } from "./components/ProfilePopup";
 
 type ExportFormat = "docx" | "epub";
 
+/** Soft cap on active novels per user. Admin can still create more. */
+const MAX_NOVELS_PER_USER = 10;
+
 function contentForExport(content: string): string {
   // Handle <<<BLOCK>>> delimiter format — extract only prose
   if (content.includes("<<<BLOCK>>>")) {
@@ -155,9 +158,11 @@ function StudioHomePage() {
 
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
+  const atNovelCap = novels.length >= MAX_NOVELS_PER_USER;
+
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!titleDraft.trim()) return;
+    if (!titleDraft.trim() || atNovelCap) return;
     const novel = createNovel(titleDraft);
     const next = [novel, ...novels];
     setNovels(next);
@@ -292,11 +297,22 @@ function StudioHomePage() {
               className="pw-create-input"
               placeholder="Novel title"
               dir="ltr"
+              disabled={atNovelCap}
             />
-            <button type="submit" className="btn btn-primary" disabled={!titleDraft.trim()}>
+            <button type="submit" className="btn btn-primary" disabled={!titleDraft.trim() || atNovelCap}>
               Create
             </button>
           </form>
+          {atNovelCap && (
+            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
+              You&apos;ve reached the limit of {MAX_NOVELS_PER_USER} novels. Delete one to create a new one.
+            </p>
+          )}
+          {!atNovelCap && novels.length > 0 && (
+            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>
+              {novels.length}/{MAX_NOVELS_PER_USER} novels
+            </p>
+          )}
           {justCreatedId && (
             <p style={{ fontSize: 12, color: "var(--pw-accent)", margin: "8px 0 0", fontWeight: 500 }}>
               Novel created — click it to open.
