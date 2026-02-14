@@ -252,18 +252,20 @@ function Hero() {
 
 /* ── Trust bar — social proof strip ───────────────────── */
 function TrustBar() {
+  const items = [
+    { icon: "⚡", headline: "Try free for 7 days", sub: "Full studio access, no card required" },
+    { icon: "🔑", headline: "You own your AI key", sub: "Connect OpenRouter — we never charge for AI" },
+    { icon: "🔒", headline: "Your work stays yours", sub: "Private projects, no training on your data" },
+    { icon: "📦", headline: "Publish-ready export", sub: "EPUB & DOCX — clean prose, no AI metadata" },
+  ];
   return (
-    <div style={{ background: C.bg, padding: "28px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
-      <div style={{ ...wrap(), display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
-        {[
-          { value: "7 days", label: "Free trial" },
-          { value: "£0", label: "AI fees from us" },
-          { value: "100%", label: "Your data, private" },
-          { value: "EPUB + DOCX", label: "Export formats" },
-        ].map((s) => (
-          <div key={s.label} style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, color: C.text }}>{s.value}</p>
-            <p style={{ fontSize: 12, fontWeight: 500, color: C.textMuted, margin: "4px 0 0" }}>{s.label}</p>
+    <div style={{ background: C.bg, padding: "36px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
+      <div style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 24 }}>
+        {items.map((s) => (
+          <div key={s.headline} style={{ textAlign: "center", padding: "0 8px" }}>
+            <span style={{ fontSize: 28, display: "block", marginBottom: 8 }}>{s.icon}</span>
+            <p style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em", margin: 0, color: C.text }}>{s.headline}</p>
+            <p style={{ fontSize: 13, fontWeight: 400, color: C.textMuted, margin: "6px 0 0", lineHeight: 1.5 }}>{s.sub}</p>
           </div>
         ))}
       </div>
