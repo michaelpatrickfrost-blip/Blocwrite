@@ -224,26 +224,23 @@ function Hero() {
         </div>
 
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 40, flexWrap: "wrap" }}>
-          {["7-day free trial", "Cancel anytime", "Bring your own AI key", "Toggle AI off anytime", "EPUB & DOCX export"].map((t) => {
-            const isHighlight = t.includes("AI") || t.includes("Toggle");
-            return (
-              <span
-                key={t}
-                style={{
-                  display: "inline-block",
-                  padding: "7px 18px",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: isHighlight ? C.accent : "rgba(255,255,255,0.4)",
-                  background: isHighlight ? "rgba(200,230,48,0.08)" : "rgba(255,255,255,0.03)",
-                  borderRadius: 20,
-                  border: isHighlight ? "1px solid rgba(200,230,48,0.18)" : "1px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                {t}
-              </span>
-            );
-          })}
+          {["Canon-aware AI drafting", "Scene-by-scene bloc system", "Full character & lore bible", "EPUB & DOCX export", "Bring your own AI key", "Toggle AI on or off"].map((t) => (
+            <span
+              key={t}
+              style={{
+                display: "inline-block",
+                padding: "7px 18px",
+                fontSize: 12,
+                fontWeight: 600,
+                color: C.accent,
+                background: "rgba(200,230,48,0.08)",
+                borderRadius: 20,
+                border: "1px solid rgba(200,230,48,0.18)",
+              }}
+            >
+              {t}
+            </span>
+          ))}
         </div>
       </div>
     </section>
@@ -253,7 +250,7 @@ function Hero() {
 /* ── Trust bar — social proof strip ───────────────────── */
 function TrustBar() {
   const items = [
-    { icon: "⚡", headline: "Try free for 7 days", sub: "Full studio access, no card required" },
+    { icon: "⚡", headline: "Try free for 7 days", sub: "Full studio access from day one" },
     { icon: "🔑", headline: "You own your AI key", sub: "Connect OpenRouter — we never charge for AI" },
     { icon: "🔒", headline: "Your work stays yours", sub: "Private projects, no training on your data" },
     { icon: "📦", headline: "Publish-ready export", sub: "EPUB & DOCX — clean prose, no AI metadata" },
@@ -649,7 +646,7 @@ function Pricing() {
           The subscription covers the workspace. AI costs are yours to manage with your own API key.
         </p>
         <p style={{ fontSize: 14, color: C.textMuted, marginBottom: 56 }}>
-          Start with a 7-day free trial. Cancel anytime.
+          Every plan includes a 7-day free trial. Cancel anytime — no lock-in.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 720, margin: "0 auto" }}>
@@ -737,9 +734,10 @@ function PriceCard({
           justifyContent: "center",
           padding: "14px 0",
           borderRadius: 14,
-          ...(highlighted
-            ? { background: C.accent, color: C.bgDark, boxShadow: "0 4px 16px rgba(200,230,48,0.2)" }
-            : { background: "transparent", color: C.text, border: `1.5px solid ${C.border}`, boxShadow: "none" }),
+          background: C.accent,
+          color: C.bgDark,
+          fontWeight: 700,
+          boxShadow: highlighted ? "0 4px 16px rgba(200,230,48,0.25)" : "0 2px 8px rgba(200,230,48,0.12)",
         }}
       >
         Start Free Trial
