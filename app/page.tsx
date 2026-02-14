@@ -4,19 +4,22 @@ import Link from "next/link";
 import { useState } from "react";
 
 /* ────────────────────────────────────────────────────────
-   Colour palette
+   Colour palette — refined for premium feel
    ────────────────────────────────────────────────────── */
 const C = {
   bg: "#ffffff",
-  bgSoft: "#f6f6f8",
+  bgSoft: "#f8f8fa",
   bgDark: "#0e0e12",
   bgDarkSoft: "#18181e",
-  text: "#1a1a1f",
-  textSoft: "#5a5d66",
-  textMuted: "#9ea0a8",
-  border: "#e5e6ea",
+  text: "#111114",
+  textSoft: "#4a4d56",
+  textMuted: "#8c8f98",
+  border: "#e8e9ed",
+  borderSoft: "#f0f0f3",
   card: "#ffffff",
   accent: "#c8e630",
+  /** Darker accent for text on light backgrounds — passes WCAG AA */
+  accentText: "#4d6a00",
   accentSoft: "#e8f5a0",
   btnBg: "linear-gradient(135deg, #2a2a30, #1a1a1f)",
   btnText: "#ffffff",
@@ -45,7 +48,7 @@ const btnPrimary: React.CSSProperties = {
   cursor: "pointer",
   textDecoration: "none",
   transition: "transform 0.15s, box-shadow 0.15s",
-  boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+  boxShadow: "0 2px 12px rgba(0,0,0,0.10)",
 };
 
 const btnOutline: React.CSSProperties = {
@@ -64,12 +67,13 @@ const btnOutline: React.CSSProperties = {
   transition: "all 0.15s",
 };
 
-/* ════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════ */
 export default function LandingPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)" }}>
       <Nav />
       <Hero />
+      <TrustBar />
       <AiBanner />
       <HowItWorks />
       <FeatureGrid />
@@ -89,17 +93,19 @@ function Nav() {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: C.bg,
-        borderBottom: `1px solid ${C.border}`,
+        background: "rgba(255,255,255,0.92)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
+        borderBottom: `1px solid ${C.borderSoft}`,
       }}
     >
-      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px" }}>
+      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 64, width: "auto" }} />
+          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 56, width: "auto" }} />
         </Link>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
-          <div style={{ display: "flex", gap: 28 }} className="bw-nav-links">
+        <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+          <div style={{ display: "flex", gap: 32 }} className="bw-nav-links">
             {[
               { label: "How it works", href: "#how-it-works" },
               { label: "Features", href: "#features" },
@@ -118,11 +124,11 @@ function Nav() {
             ))}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <Link href="/login" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
               Log in
             </Link>
-            <Link href="/subscribe" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.1)" }}>
+            <Link href="/subscribe" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 13, borderRadius: 12, boxShadow: "0 1px 6px rgba(0,0,0,0.08)" }}>
               Start Free Trial
               <ArrowIcon />
             </Link>
@@ -138,48 +144,67 @@ function Hero() {
   return (
     <section
       style={{
-        padding: "0",
-        background: `linear-gradient(180deg, ${C.bgDark} 0%, ${C.bgDarkSoft} 100%)`,
+        padding: 0,
+        background: `linear-gradient(180deg, ${C.bgDark} 0%, #151519 60%, #1a1a20 100%)`,
         position: "relative",
         overflow: "hidden",
       }}
     >
+      {/* Subtle radial glow */}
       <div
         style={{
           position: "absolute",
-          top: "-30%",
+          top: "-20%",
           left: "50%",
           transform: "translateX(-50%)",
-          width: "120%",
+          width: "140%",
           height: "100%",
-          background: "radial-gradient(ellipse at center, rgba(200,230,48,0.06) 0%, transparent 70%)",
+          background: "radial-gradient(ellipse at center, rgba(200,230,48,0.05) 0%, transparent 65%)",
           pointerEvents: "none",
         }}
       />
 
-      <div style={{ ...wrap(), textAlign: "center", padding: "80px 28px 72px", position: "relative", zIndex: 1 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: C.accent, marginBottom: 28 }}>
+      <div style={{ ...wrap(), textAlign: "center", padding: "96px 28px 88px", position: "relative", zIndex: 1 }}>
+        <p style={{
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: "0.16em",
+          textTransform: "uppercase",
+          color: C.accent,
+          marginBottom: 32,
+        }}>
           Instant Clarity
         </p>
 
-        <h1 style={{ fontSize: "clamp(36px, 5.5vw, 60px)", fontWeight: 700, letterSpacing: "-0.035em", lineHeight: 1.1, margin: "0 auto", maxWidth: 780, color: "#ffffff" }}>
+        <h1 style={{
+          fontSize: "clamp(38px, 5.5vw, 64px)",
+          fontWeight: 800,
+          letterSpacing: "-0.04em",
+          lineHeight: 1.08,
+          margin: "0 auto",
+          maxWidth: 800,
+          color: "#ffffff",
+        }}>
           The writing studio that keeps
           <br />
-          <span style={{ color: "rgba(255,255,255,0.45)" }}>your entire novel in focus.</span>
+          <span style={{ color: "rgba(255,255,255,0.35)" }}>your entire novel in focus.</span>
         </h1>
 
-        <p style={{ fontSize: 18, lineHeight: 1.65, color: "rgba(255,255,255,0.55)", maxWidth: 600, margin: "28px auto 0" }}>
+        <p style={{ fontSize: 18, lineHeight: 1.7, color: "rgba(255,255,255,0.5)", maxWidth: 580, margin: "32px auto 0" }}>
           Blocwrite is a structured workspace for novelists. Build a story bible, plan every chapter, draft scene-by-scene in focused blocs, and export a clean manuscript. Your AI key powers the assistant — we never charge for AI usage.
         </p>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 44, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 48, flexWrap: "wrap" }}>
           <Link
             href="/subscribe"
             style={{
               ...btnPrimary,
+              padding: "16px 40px",
+              fontSize: 15,
               background: C.accent,
               color: C.bgDark,
-              boxShadow: "0 4px 20px rgba(200,230,48,0.25)",
+              boxShadow: "0 4px 24px rgba(200,230,48,0.3)",
+              borderRadius: 14,
             }}
           >
             Start 7-Day Free Trial
@@ -189,67 +214,88 @@ function Hero() {
             href="#how-it-works"
             style={{
               ...btnOutline,
-              color: "rgba(255,255,255,0.7)",
-              borderColor: "rgba(255,255,255,0.15)",
+              padding: "16px 40px",
+              color: "rgba(255,255,255,0.65)",
+              borderColor: "rgba(255,255,255,0.12)",
             }}
           >
             See how it works
           </a>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 36, flexWrap: "wrap" }}>
-          {["7-day free trial", "Cancel anytime", "Bring your own AI key", "Toggle AI off anytime", "EPUB & DOCX export"].map((t) => (
-            <span
-              key={t}
-              style={{
-                display: "inline-block",
-                padding: "6px 16px",
-                fontSize: 12,
-                fontWeight: 600,
-                color: (t.includes("AI") || t.includes("Toggle")) ? C.accent : "rgba(255,255,255,0.45)",
-                background: (t.includes("AI") || t.includes("Toggle")) ? "rgba(200,230,48,0.08)" : "rgba(255,255,255,0.04)",
-                borderRadius: 20,
-                border: (t.includes("AI") || t.includes("Toggle")) ? "1px solid rgba(200,230,48,0.2)" : "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              {t}
-            </span>
-          ))}
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 40, flexWrap: "wrap" }}>
+          {["7-day free trial", "Cancel anytime", "Bring your own AI key", "Toggle AI off anytime", "EPUB & DOCX export"].map((t) => {
+            const isHighlight = t.includes("AI") || t.includes("Toggle");
+            return (
+              <span
+                key={t}
+                style={{
+                  display: "inline-block",
+                  padding: "7px 18px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: isHighlight ? C.accent : "rgba(255,255,255,0.4)",
+                  background: isHighlight ? "rgba(200,230,48,0.08)" : "rgba(255,255,255,0.03)",
+                  borderRadius: 20,
+                  border: isHighlight ? "1px solid rgba(200,230,48,0.18)" : "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                {t}
+              </span>
+            );
+          })}
         </div>
       </div>
     </section>
   );
 }
 
+/* ── Trust bar — social proof strip ───────────────────── */
+function TrustBar() {
+  return (
+    <div style={{ background: C.bg, padding: "28px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
+      <div style={{ ...wrap(), display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
+        {[
+          { value: "7 days", label: "Free trial" },
+          { value: "£0", label: "AI fees from us" },
+          { value: "100%", label: "Your data, private" },
+          { value: "EPUB + DOCX", label: "Export formats" },
+        ].map((s) => (
+          <div key={s.label} style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, color: C.text }}>{s.value}</p>
+            <p style={{ fontSize: 12, fontWeight: 500, color: C.textMuted, margin: "4px 0 0" }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── AI Banner — make it unmissable ──────────────────── */
 function AiBanner() {
   return (
-    <section style={{ padding: "0", background: C.bg }}>
-      <div style={{
-        ...wrap(),
-        maxWidth: 900,
-        padding: "40px 28px",
-      }}>
+    <section style={{ padding: 0, background: C.bg }}>
+      <div style={{ ...wrap(), maxWidth: 920, padding: "48px 28px" }}>
         <div style={{
-          padding: "28px 32px",
-          borderRadius: 16,
-          background: `linear-gradient(135deg, #1a1a1f 0%, #2a2a32 100%)`,
-          border: "1px solid rgba(200,230,48,0.15)",
+          padding: "32px 36px",
+          borderRadius: 20,
+          background: `linear-gradient(135deg, #16161c 0%, #22222a 100%)`,
+          border: "1px solid rgba(200,230,48,0.12)",
           display: "grid",
           gridTemplateColumns: "auto 1fr",
-          gap: 24,
+          gap: 28,
           alignItems: "center",
+          boxShadow: "0 12px 48px rgba(0,0,0,0.12)",
         }}>
           <div style={{
-            width: 56,
-            height: 56,
-            borderRadius: 16,
-            background: "rgba(200,230,48,0.1)",
-            border: "1px solid rgba(200,230,48,0.2)",
+            width: 60,
+            height: 60,
+            borderRadius: 18,
+            background: "rgba(200,230,48,0.08)",
+            border: "1px solid rgba(200,230,48,0.15)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 24,
             flexShrink: 0,
           }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -257,10 +303,10 @@ function AiBanner() {
             </svg>
           </div>
           <div>
-            <p style={{ fontSize: 16, fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
+            <p style={{ fontSize: 17, fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>
               Bring Your Own AI Key — we never charge for AI
             </p>
-            <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.55)", margin: 0 }}>
+            <p style={{ fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.5)", margin: 0 }}>
               Blocwrite does <strong style={{ color: "rgba(255,255,255,0.8)" }}>not</strong> include AI credits. You connect your own API key from{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>OpenRouter</strong> (free models available),{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>Infermatic</strong>, or{" "}
@@ -281,10 +327,10 @@ const STAGES = [
     subtitle: "Set the rules before you write a word.",
     desc: "The Canon is your story bible — every character, location, piece of lore, and voice rule you define lives here. When you later ask the AI to draft prose, it reads your entire Canon first. That means characters stay in voice, your world stays consistent, and the AI never invents details that contradict your story.",
     details: [
-      "Characters: name, personality, secrets, speech patterns, relationships",
-      "Locations: physical details, mood, sensory notes, rules",
+      "Characters: name, personality, secrets, speech patterns",
+      "Locations: physical details, mood, sensory notes",
       "Lore: world rules, magic systems, factions, timelines",
-      "Bolt-ons: reusable AI directives like 'write in first person'",
+      "Bolt-ons: reusable AI directives like 'first person'",
     ],
     color: "#6366f1",
     screenshot: "/screenshots/canon.png",
@@ -293,12 +339,12 @@ const STAGES = [
     step: "02",
     title: "Plan your chapters",
     subtitle: "One-click outline, then refine.",
-    desc: "Hit Generate and Blocwrite builds a structured chapter plan from your synopsis and Canon. Each chapter gets a title, a detailed synopsis (not a vague blurb — real plot beats, named characters, specific locations), and linked entities. You can regenerate any chapter individually, adjust pacing, and add or remove chapters manually. When you are happy, sync the plan to your manuscript.",
+    desc: "Hit Generate and Blocwrite builds a structured chapter plan from your synopsis and Canon. Each chapter gets a title, a detailed synopsis with real plot beats, named characters, and specific locations. You can regenerate any chapter, adjust pacing, and sync the plan to your manuscript.",
     details: [
-      "AI generates all chapters in one batch call — fast",
-      "Each synopsis names characters, locations, and events",
+      "AI generates all chapters in one batch — fast",
+      "Each synopsis names characters and locations",
       "Pacing control: slow-burn, balanced, or fast",
-      "Chapters know what comes before and after them",
+      "Chapters know what comes before and after",
     ],
     color: "#f59e0b",
     screenshot: "/screenshots/plan.png",
@@ -307,12 +353,12 @@ const STAGES = [
     step: "03",
     title: "Draft in focused blocs",
     subtitle: "Small chunks. No drift.",
-    desc: "Each chapter splits into 3-4 scene blocs, each targeting 400-1000 words. When you generate prose for a bloc, the AI gets the chapter synopsis, the Canon, what happened in the previous bloc, and any bolt-on directives you have attached. Because each chunk is small and tightly scoped, the AI produces coherent prose that actually follows your plan instead of going off on tangents.",
+    desc: "Each chapter splits into 3-4 scene blocs, each targeting 400-1000 words. The AI gets the chapter synopsis, the Canon, and any bolt-on directives. Because each chunk is small and tightly scoped, the AI produces coherent prose that follows your plan instead of going off on tangents.",
     details: [
-      "3-4 blocs per chapter with individual synopses",
-      "Word targets keep each scene the right length",
-      "Bolt-ons: reusable AI directives for precise control",
-      "AI reads the Canon + chapter context for every generation",
+      "3-4 blocs per chapter with synopses",
+      "Word targets keep scenes the right length",
+      "Bolt-ons for precise AI control",
+      "Canon + context fed into every generation",
     ],
     color: "#10b981",
     screenshot: "/screenshots/blocs.png",
@@ -321,7 +367,7 @@ const STAGES = [
     step: "04",
     title: "Polish with The Editor",
     subtitle: "Professional chapter-level editing.",
-    desc: "When your draft is written, run The Editor over any chapter. It enhances prose quality, catches inconsistencies with your Canon, and checks continuity across scenes — all while respecting your voice and story. Only changed paragraphs are returned, so it is fast and safe. Think of it as a careful second pass that never rewrites your intent.",
+    desc: "When your draft is written, run The Editor over any chapter. It enhances prose quality, catches inconsistencies with your Canon, and checks continuity across scenes — all while respecting your voice. Only changed paragraphs are returned, so it is fast and safe.",
     details: [
       "Prose quality check and enhancement",
       "Scene and place consistency verification",
@@ -335,10 +381,10 @@ const STAGES = [
     step: "05",
     title: "Export your manuscript",
     subtitle: "Prose only. Your words, your file.",
-    desc: "When you are ready, export your novel as a professionally formatted EPUB or DOCX. The export strips out all planning notes, synopses, and AI metadata. What you get is clean, chaptered prose — ready to send to agents, share with beta readers, or upload for self-publishing. No cleanup required.",
+    desc: "Export your novel as a professionally formatted EPUB or DOCX. The export strips out all planning notes, synopses, and AI metadata. Clean, chaptered prose — ready for agents, beta readers, or self-publishing.",
     details: [
-      "EPUB format for e-readers and digital distribution",
-      "DOCX format for agents and traditional submission",
+      "EPUB for e-readers and digital distribution",
+      "DOCX for agents and traditional submission",
       "Select which chapters to include",
       "Zero metadata clutter in the output",
     ],
@@ -349,42 +395,43 @@ const STAGES = [
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" style={{ padding: "72px 0 80px" }}>
+    <section id="how-it-works" style={{ padding: "96px 0 100px" }}>
       <div style={wrap()}>
-        <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.accent, marginBottom: 12 }}>
+        <div style={{ textAlign: "center", marginBottom: 72 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             HOW IT WORKS
           </p>
-          <h2 style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 12px" }}>
+          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 14px" }}>
             From idea to finished manuscript.
           </h2>
-          <p style={{ fontSize: 16, color: C.textSoft, maxWidth: 520, margin: "0 auto" }}>
-            Four stages. Each one feeds the next. Your Canon stays in control throughout.
+          <p style={{ fontSize: 17, color: C.textSoft, maxWidth: 520, margin: "0 auto", lineHeight: 1.6 }}>
+            Five stages. Each one feeds the next. Your Canon stays in control throughout.
           </p>
         </div>
 
-        <div style={{ display: "grid", gap: 48 }}>
+        <div style={{ display: "grid", gap: 80 }}>
           {STAGES.map((s, i) => (
             <div
               key={s.step}
               style={{
                 display: "grid",
-                gridTemplateColumns: i % 2 === 0 ? "1fr 1fr" : "1fr 1fr",
-                gap: 48,
-                alignItems: "start",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 56,
+                alignItems: "center",
               }}
             >
+              {/* Text side */}
               <div style={{ order: i % 2 === 0 ? 1 : 2 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
                   <span style={{
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    width: 36,
-                    height: 36,
+                    width: 40,
+                    height: 40,
                     borderRadius: 12,
-                    background: `${s.color}12`,
-                    border: `1px solid ${s.color}25`,
+                    background: `${s.color}14`,
+                    border: `1.5px solid ${s.color}30`,
                     fontSize: 13,
                     fontWeight: 800,
                     color: s.color,
@@ -396,40 +443,23 @@ function HowItWorks() {
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.025em", lineHeight: 1.2, margin: "0 0 14px" }}>
+                <h3 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.18, margin: "0 0 16px" }}>
                   {s.subtitle}
                 </h3>
-                <p style={{ fontSize: 15, lineHeight: 1.7, color: C.textSoft, margin: "0 0 20px" }}>
+                <p style={{ fontSize: 15, lineHeight: 1.75, color: C.textSoft, margin: "0 0 24px" }}>
                   {s.desc}
                 </p>
-              </div>
-
-              <div style={{ order: i % 2 === 0 ? 2 : 1, display: "flex", flexDirection: "column", gap: 16 }}>
-                {/* Screenshot */}
-                <div style={{
-                  borderRadius: 16,
-                  overflow: "hidden",
-                  border: `1px solid ${C.border}`,
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
-                  background: C.bgSoft,
-                }}>
-                  <img
-                    src={s.screenshot}
-                    alt={`${s.title} screenshot`}
-                    style={{ width: "100%", height: "auto", display: "block" }}
-                  />
-                </div>
 
                 {/* Detail pills */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {s.details.map((d) => (
                     <span
                       key={d}
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 6,
-                        padding: "5px 12px",
+                        gap: 7,
+                        padding: "6px 14px",
                         fontSize: 12,
                         fontWeight: 500,
                         color: C.textSoft,
@@ -444,6 +474,33 @@ function HowItWorks() {
                       {d}
                     </span>
                   ))}
+                </div>
+              </div>
+
+              {/* Screenshot side */}
+              <div style={{ order: i % 2 === 0 ? 2 : 1 }}>
+                <div style={{
+                  borderRadius: 20,
+                  overflow: "hidden",
+                  border: `1px solid ${C.border}`,
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04)",
+                  background: C.bgSoft,
+                  /* Slight inset to hide grey edges of screenshots */
+                  padding: 0,
+                  position: "relative",
+                }}>
+                  <img
+                    src={s.screenshot}
+                    alt={`${s.title} screenshot`}
+                    style={{
+                      width: "104%",
+                      height: "auto",
+                      display: "block",
+                      marginLeft: "-2%",
+                      marginTop: "-1%",
+                      marginBottom: "-1%",
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -476,8 +533,8 @@ const FEATURES = [
   },
   {
     title: "Bring your own AI — or don't",
-    desc: "Use OpenRouter (free models available), Infermatic, or LM Studio. We never charge for AI. You control the model and the cost. Don't want AI? Toggle it off and write entirely by hand.",
-    color: "#c8e630",
+    desc: "Use OpenRouter, Infermatic, or LM Studio. We never charge for AI. Don't want AI? Toggle it off and write entirely by hand.",
+    color: "#4d6a00",
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
   },
   {
@@ -496,13 +553,13 @@ const FEATURES = [
 
 function FeatureGrid() {
   return (
-    <section id="features" style={{ padding: "80px 0", background: C.bgSoft }}>
+    <section id="features" style={{ padding: "96px 0", background: C.bgSoft }}>
       <div style={wrap()}>
-        <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.accent, marginBottom: 12 }}>
+        <div style={{ textAlign: "center", marginBottom: 64 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             FEATURES
           </p>
-          <h2 style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", margin: 0 }}>
+          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
             Everything you need to finish a novel.
           </h2>
         </div>
@@ -512,19 +569,29 @@ function FeatureGrid() {
             <div
               key={f.title}
               style={{
-                padding: 28,
-                borderRadius: 18,
+                padding: 32,
+                borderRadius: 20,
                 border: `1px solid ${C.border}`,
                 background: C.card,
+                transition: "box-shadow 0.25s, transform 0.25s",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.06)";
+                e.currentTarget.style.transform = "translateY(-4px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.02)";
+                e.currentTarget.style.transform = "translateY(0)";
               }}
             >
               <div
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 14,
+                  width: 52,
+                  height: 52,
+                  borderRadius: 16,
                   background: `${f.color}10`,
-                  border: `1px solid ${f.color}20`,
+                  border: `1.5px solid ${f.color}22`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -533,8 +600,8 @@ function FeatureGrid() {
               >
                 {f.icon}
               </div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginTop: 18, marginBottom: 6 }}>{f.title}</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.55, color: C.textSoft, margin: 0 }}>{f.desc}</p>
+              <h3 style={{ fontSize: 17, fontWeight: 700, marginTop: 20, marginBottom: 8 }}>{f.title}</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: C.textSoft, margin: 0 }}>{f.desc}</p>
             </div>
           ))}
         </div>
@@ -546,22 +613,22 @@ function FeatureGrid() {
 /* ── Pricing ──────────────────────────────────────────── */
 function Pricing() {
   return (
-    <section id="pricing" style={{ padding: "88px 0" }}>
+    <section id="pricing" style={{ padding: "100px 0" }}>
       <div style={wrap({ textAlign: "center" })}>
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.accent, marginBottom: 12 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
           PRICING
         </p>
-        <h2 style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 8px" }}>
+        <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 10px" }}>
           Studio access. No AI fees.
         </h2>
-        <p style={{ fontSize: 16, color: C.textSoft, marginBottom: 12 }}>
+        <p style={{ fontSize: 17, color: C.textSoft, marginBottom: 12, lineHeight: 1.6 }}>
           The subscription covers the workspace. AI costs are yours to manage with your own API key.
         </p>
-        <p style={{ fontSize: 14, color: C.textMuted, marginBottom: 48 }}>
+        <p style={{ fontSize: 14, color: C.textMuted, marginBottom: 56 }}>
           Start with a 7-day free trial. Cancel anytime.
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 700, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 720, margin: "0 auto" }}>
           <PriceCard
             name="Monthly"
             price="£12.99"
@@ -579,7 +646,7 @@ function Pricing() {
           />
         </div>
 
-        <p style={{ fontSize: 13, color: C.textMuted, marginTop: 28, maxWidth: 500, marginLeft: "auto", marginRight: "auto" }}>
+        <p style={{ fontSize: 13, color: C.textMuted, marginTop: 32, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
           AI usage is not included or billed by Blocwrite. You connect your own key from OpenRouter, Infermatic, or LM Studio. Free AI models are available on OpenRouter.
         </p>
       </div>
@@ -595,34 +662,43 @@ function PriceCard({
   return (
     <div
       style={{
-        padding: 32,
-        borderRadius: 20,
+        padding: 36,
+        borderRadius: 24,
         border: highlighted ? `2px solid ${C.text}` : `1px solid ${C.border}`,
         background: C.card,
         textAlign: "left",
         position: "relative",
-        boxShadow: highlighted ? "0 8px 40px rgba(0,0,0,0.08)" : "none",
+        boxShadow: highlighted ? "0 16px 56px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.02)",
+        transition: "box-shadow 0.25s, transform 0.25s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = highlighted ? "0 20px 64px rgba(0,0,0,0.12)" : "0 12px 40px rgba(0,0,0,0.06)";
+        e.currentTarget.style.transform = "translateY(-4px)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = highlighted ? "0 16px 56px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.02)";
+        e.currentTarget.style.transform = "translateY(0)";
       }}
     >
       {badge && (
         <span style={{
-          position: "absolute", top: 16, right: 16,
+          position: "absolute", top: 18, right: 18,
           padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 10,
           background: C.accent, color: C.bgDark,
         }}>
           {badge}
         </span>
       )}
-      <p style={{ fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 8 }}>{name}</p>
+      <p style={{ fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 10 }}>{name}</p>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-        <span style={{ fontSize: 42, fontWeight: 700, letterSpacing: "-0.03em" }}>{price}</span>
+        <span style={{ fontSize: 48, fontWeight: 800, letterSpacing: "-0.04em" }}>{price}</span>
         <span style={{ fontSize: 14, color: C.textMuted }}>/ {period}</span>
       </div>
-      <p style={{ fontSize: 13, color: C.textMuted, marginTop: 4, marginBottom: 24 }}>7-day free trial included</p>
+      <p style={{ fontSize: 13, color: C.textMuted, marginTop: 4, marginBottom: 28 }}>7-day free trial included</p>
 
-      <ul style={{ listStyle: "none", padding: 0, margin: "0 0 28px" }}>
+      <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px" }}>
         {features.map((f) => (
-          <li key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.textSoft, padding: "5px 0" }}>
+          <li key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.textSoft, padding: "6px 0" }}>
             <CheckIcon />
             {f}
           </li>
@@ -635,7 +711,8 @@ function PriceCard({
           ...btnPrimary,
           width: "100%",
           justifyContent: "center",
-          padding: "13px 0",
+          padding: "14px 0",
+          borderRadius: 14,
           ...(highlighted
             ? { background: C.accent, color: C.bgDark, boxShadow: "0 4px 16px rgba(200,230,48,0.2)" }
             : { background: "transparent", color: C.text, border: `1.5px solid ${C.border}`, boxShadow: "none" }),
@@ -661,18 +738,18 @@ const FAQ_ITEMS = [
 
 function FAQ() {
   return (
-    <section id="faq" style={{ padding: "88px 0", background: C.bgSoft }}>
+    <section id="faq" style={{ padding: "100px 0", background: C.bgSoft }}>
       <div style={wrap({ maxWidth: 720 })}>
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.accent, marginBottom: 12 }}>
+        <div style={{ textAlign: "center", marginBottom: 56 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             FAQ
           </p>
-          <h2 style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", margin: 0 }}>
+          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
             Common questions.
           </h2>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {FAQ_ITEMS.map((item) => (
             <FAQItem key={item.q} q={item.q} a={item.a} />
           ))}
@@ -685,7 +762,7 @@ function FAQ() {
 function FAQItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ borderBottom: `1px solid ${C.border}`, padding: "20px 0" }}>
+    <div style={{ borderBottom: `1px solid ${C.border}`, padding: "22px 0" }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -696,10 +773,14 @@ function FAQItem({ q, a }: { q: string; a: string }) {
         }}
       >
         {q}
-        <span style={{ fontSize: 20, color: C.textMuted, transition: "transform 0.2s", transform: open ? "rotate(45deg)" : "none" }}>+</span>
+        <span style={{
+          fontSize: 20, color: C.textMuted, transition: "transform 0.2s",
+          transform: open ? "rotate(45deg)" : "none",
+          flexShrink: 0, marginLeft: 16,
+        }}>+</span>
       </button>
       {open && (
-        <p style={{ fontSize: 15, lineHeight: 1.6, color: C.textSoft, marginTop: 12, marginBottom: 0 }}>{a}</p>
+        <p style={{ fontSize: 15, lineHeight: 1.65, color: C.textSoft, marginTop: 14, marginBottom: 0 }}>{a}</p>
       )}
     </div>
   );
@@ -710,8 +791,8 @@ function CTABanner() {
   return (
     <section
       style={{
-        padding: "88px 0",
-        background: `linear-gradient(135deg, ${C.bgDark}, ${C.bgDarkSoft})`,
+        padding: "100px 0",
+        background: `linear-gradient(135deg, ${C.bgDark}, #1e1e26)`,
         position: "relative",
         overflow: "hidden",
       }}
@@ -719,23 +800,26 @@ function CTABanner() {
       <div style={{
         position: "absolute", bottom: "-40%", left: "50%", transform: "translateX(-50%)",
         width: "80%", height: "100%",
-        background: "radial-gradient(ellipse, rgba(200,230,48,0.06) 0%, transparent 70%)",
+        background: "radial-gradient(ellipse, rgba(200,230,48,0.05) 0%, transparent 70%)",
         pointerEvents: "none",
       }} />
       <div style={{ ...wrap(), textAlign: "center", position: "relative", zIndex: 1 }}>
-        <h2 style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", color: "#fff", margin: "0 0 16px" }}>
+        <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", color: "#fff", margin: "0 0 18px" }}>
           Ready to write something real?
         </h2>
-        <p style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", marginBottom: 40, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+        <p style={{ fontSize: 17, color: "rgba(255,255,255,0.45)", marginBottom: 48, maxWidth: 500, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
           Start your 7-day free trial. Connect your AI key (or write without AI). Cancel anytime.
         </p>
         <Link
           href="/subscribe"
           style={{
             ...btnPrimary,
+            padding: "16px 40px",
+            fontSize: 15,
             background: C.accent,
             color: C.bgDark,
-            boxShadow: "0 4px 20px rgba(200,230,48,0.25)",
+            boxShadow: "0 4px 24px rgba(200,230,48,0.3)",
+            borderRadius: 14,
           }}
         >
           Start Free Trial
@@ -749,19 +833,19 @@ function CTABanner() {
 /* ── Footer ───────────────────────────────────────────── */
 function Footer() {
   const linkStyle: React.CSSProperties = {
-    fontSize: 14, color: "rgba(255,255,255,0.45)", textDecoration: "none", transition: "color 0.15s",
+    fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none", transition: "color 0.15s",
   };
   return (
-    <footer style={{ padding: "48px 0 40px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+    <footer style={{ padding: "52px 0 44px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
       <div style={{ ...wrap(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 28, width: "auto", opacity: 0.7 }} />
-          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.25)" }}>
+          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
             &copy; {new Date().getFullYear()} Blocwrite
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
           {[
             { label: "Terms", href: "/terms" },
             { label: "Refund Policy", href: "/refunds" },
@@ -772,8 +856,8 @@ function Footer() {
               key={l.href}
               href={l.href}
               style={linkStyle}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.8)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
             >
               {l.label}
             </Link>
