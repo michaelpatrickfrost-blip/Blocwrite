@@ -118,7 +118,16 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Redirect logged-in users away from login page ──
+  // Skip this redirect if there's a "reason" param (e.g. session-expired) —
+  // the user was kicked from the studio and needs to re-authenticate.
   if (pathname === "/login") {
+    const reason = request.nextUrl.searchParams.get("reason");
+    if (reason) {
+      // Clear the stale cookie so the user can log in fresh
+      const response = NextResponse.next();
+      response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
+      return response;
+    }
     const secret = process.env.BW_SESSION_SECRET;
     if (secret) {
       const token = request.cookies.get(COOKIE_NAME)?.value;

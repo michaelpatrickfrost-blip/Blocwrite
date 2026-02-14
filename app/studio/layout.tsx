@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { checkSubscriptionGate } from "@/lib/subscription-gate";
 import MobileGate from "./components/MobileGate";
+
+const COOKIE_NAME = "bw-session";
 
 /**
  * Server component layout that wraps all /studio/* pages.
@@ -19,7 +22,9 @@ export default async function StudioLayout({
   const gate = await checkSubscriptionGate();
 
   if (gate.sessionStale) {
-    // User logged in on another device/browser — kick this session out
+    // Clear the stale cookie so the login page doesn't redirect back here
+    const store = await cookies();
+    store.delete(COOKIE_NAME);
     redirect("/login?reason=session-expired");
   }
 
