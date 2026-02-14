@@ -198,7 +198,7 @@ function Hero() {
         </div>
 
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 36, flexWrap: "wrap" }}>
-          {["7-day free trial", "Cancel anytime", "Bring your own AI key", "EPUB & DOCX export"].map((t) => (
+          {["7-day free trial", "Cancel anytime", "Bring your own AI key", "Toggle AI off anytime", "EPUB & DOCX export"].map((t) => (
             <span
               key={t}
               style={{
@@ -206,10 +206,10 @@ function Hero() {
                 padding: "6px 16px",
                 fontSize: 12,
                 fontWeight: 600,
-                color: t.includes("AI") ? C.accent : "rgba(255,255,255,0.45)",
-                background: t.includes("AI") ? "rgba(200,230,48,0.08)" : "rgba(255,255,255,0.04)",
+                color: (t.includes("AI") || t.includes("Toggle")) ? C.accent : "rgba(255,255,255,0.45)",
+                background: (t.includes("AI") || t.includes("Toggle")) ? "rgba(200,230,48,0.08)" : "rgba(255,255,255,0.04)",
                 borderRadius: 20,
-                border: t.includes("AI") ? "1px solid rgba(200,230,48,0.2)" : "1px solid rgba(255,255,255,0.08)",
+                border: (t.includes("AI") || t.includes("Toggle")) ? "1px solid rgba(200,230,48,0.2)" : "1px solid rgba(255,255,255,0.08)",
               }}
             >
               {t}
@@ -264,7 +264,7 @@ function AiBanner() {
               Blocwrite does <strong style={{ color: "rgba(255,255,255,0.8)" }}>not</strong> include AI credits. You connect your own API key from{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>OpenRouter</strong> (free models available),{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>Infermatic</strong>, or{" "}
-              <strong style={{ color: "rgba(255,255,255,0.8)" }}>LM Studio</strong> (local, 100% free). You choose your model, you control your costs. The subscription covers the studio workspace only.
+              <strong style={{ color: "rgba(255,255,255,0.8)" }}>LM Studio</strong> (local, 100% free). You choose your model, you control your costs. Don&apos;t want AI? Just toggle it off — every feature works without it. The subscription covers the studio workspace only.
             </p>
           </div>
         </div>
@@ -475,8 +475,8 @@ const FEATURES = [
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 4V2m0 2v2m0-2h-4.5M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9H3z" /><path d="M3 10l2-6h14l2 6" /></svg>,
   },
   {
-    title: "Bring your own AI",
-    desc: "Use OpenRouter (free models available), Infermatic, or LM Studio. We never charge for AI. You control the model and the cost.",
+    title: "Bring your own AI — or don't",
+    desc: "Use OpenRouter (free models available), Infermatic, or LM Studio. We never charge for AI. You control the model and the cost. Don't want AI? Toggle it off and write entirely by hand.",
     color: "#c8e630",
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
   },
@@ -651,7 +651,7 @@ function PriceCard({
 const FAQ_ITEMS = [
   { q: "What exactly is Blocwrite?", a: "Blocwrite is a structured writing studio for long-form fiction. It gives you a story bible (Canon), a chapter planner, scene-by-scene drafting in focused blocs, and clean manuscript export. Think of it as the workspace between your outline and your finished book." },
   { q: "Is AI included in the subscription?", a: "No. Blocwrite does not include AI credits or charge for AI usage. You bring your own API key from OpenRouter, Infermatic, or LM Studio. Free models are available on OpenRouter, and LM Studio is completely free (runs locally on your computer). The subscription covers only the studio workspace." },
-  { q: "Can I use Blocwrite without AI at all?", a: "Yes. Every feature works without AI. You can plan chapters, write prose, manage your Canon, and export manuscripts entirely by hand. The AI assistant is optional." },
+  { q: "Can I use Blocwrite without AI at all?", a: "Absolutely. Every feature works without AI. You can plan chapters, write prose, manage your Canon, and export manuscripts entirely by hand. AI generation buttons are completely optional — you can toggle them off whenever you like and just use Blocwrite as a structured writing tool." },
   { q: "What is the Canon?", a: "The Canon is your story bible — characters with personalities and speech patterns, locations with sensory details, lore rules, and voice guidelines. When you ask the AI to generate prose, it reads your entire Canon first to stay consistent." },
   { q: "How does the 7-day free trial work?", a: "You get full access to every feature for 7 days. No charge until the trial ends. Cancel anytime during the trial and you will not be billed." },
   { q: "Can I cancel anytime?", a: "Yes. Cancel from your Settings panel inside the app. Your access continues until the end of the current billing period." },
