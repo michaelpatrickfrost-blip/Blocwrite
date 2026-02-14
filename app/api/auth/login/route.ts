@@ -28,11 +28,15 @@ export async function POST(request: Request) {
 
     // Create signed token and set cookie
     const token = createSessionToken(email.toLowerCase().trim());
-    const response = NextResponse.json({ ok: true });
+    const normalizedEmail = email.toLowerCase().trim();
+    const response = NextResponse.json({
+      ok: true,
+      redirectTo: normalizedEmail === ADMIN_EMAIL ? "/admin" : "/studio",
+    });
 
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
       maxAge: COOKIE_MAX_AGE,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const COOKIE_NAME = "bw-session";
+const ADMIN_EMAIL = "kickablur@icloud.com";
 
 /** HMAC-SHA256 sign using Web Crypto API (Edge-compatible). */
 async function hmacSign(payload: string, secret: string): Promise<string> {
@@ -42,8 +43,8 @@ async function verifyToken(token: string, secret: string): Promise<string | null
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only protect /studio routes
-  if (pathname.startsWith("/studio")) {
+  // Protect /studio and /admin routes.
+  if (pathname.startsWith("/studio") || pathname.startsWith("/admin")) {
     const secret = process.env.BW_SESSION_SECRET;
     if (!secret) {
       // No secret configured — block access
@@ -63,6 +64,10 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
+    if (pathname.startsWith("/admin") && email.toLowerCase() !== ADMIN_EMAIL) {
+      return NextResponse.redirect(new URL("/studio", request.url));
+    }
+
     // Refresh the cookie on every visit so it never expires while you're active
     const response = NextResponse.next();
     response.cookies.set(COOKIE_NAME, token, {
@@ -79,5 +84,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/studio/:path*"],
+  matcher: ["/studio/:path*", "/admin/:path*"],
 };

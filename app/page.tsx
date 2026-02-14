@@ -24,7 +24,8 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push("/studio");
+        const data = (await res.json().catch(() => null)) as { redirectTo?: string } | null;
+        router.push(data?.redirectTo || "/studio");
       } else {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         setError(data?.error || "Invalid email or password.");
