@@ -9215,78 +9215,117 @@ function NovelWorkspacePage() {
                     {boltonLibraryOpen && (
                       <div style={{
                         position: "fixed", inset: 0, zIndex: 9999,
-                        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+                        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}
                         onClick={() => setBoltonLibraryOpen(false)}
                       >
                         <div
                           style={{
-                            background: "var(--pw-bg, #18181b)", border: "1px solid var(--pw-border, rgba(255,255,255,0.1))",
-                            borderRadius: 16, width: "90%", maxWidth: 540, maxHeight: "70vh", overflow: "auto",
-                            padding: 24, boxShadow: "0 24px 80px rgba(0,0,0,0.4)",
+                            background: "var(--pw-bg, #18181b)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: 20, width: "92%", maxWidth: 480, maxHeight: "75vh",
+                            display: "flex", flexDirection: "column",
+                            boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Bolt-On Library</h3>
-                            <button type="button" onClick={() => setBoltonLibraryOpen(false)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", fontSize: 20, cursor: "pointer" }}>&times;</button>
+                          {/* Header */}
+                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Bolt-On Library</h3>
+                              </div>
+                              <button type="button" onClick={() => setBoltonLibraryOpen(false)} style={{
+                                background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                                width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                                color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                              }}>&times;</button>
+                            </div>
+                            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
+                              Your saved bolt-ons — available across all novels.
+                            </p>
                           </div>
-                          <p style={{ fontSize: 13, color: "var(--pw-text-dim)", marginBottom: 16 }}>
-                            Saved bolt-ons are shared across all your novels. Load them into any project.
-                          </p>
+
+                          {/* List */}
+                          <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
                           {(() => {
                             const library = readBoltonLibrary();
                             if (library.length === 0) return (
-                              <div style={{ textAlign: "center", padding: "32px 0", opacity: 0.5 }}>
-                                <p>No saved bolt-ons yet.</p>
-                                <p style={{ fontSize: 12 }}>Save a bolt-on from any novel to see it here.</p>
+                              <div style={{ textAlign: "center", padding: "40px 0", opacity: 0.4 }}>
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                <p style={{ fontWeight: 600, marginBottom: 4 }}>Library is empty</p>
+                                <p style={{ fontSize: 12 }}>Build a bolt-on and it auto-saves here.</p>
                               </div>
                             );
                             return (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {library.map((item, i) => (
-                                  <div key={i} style={{
-                                    padding: "12px 14px", borderRadius: 10,
-                                    background: "var(--pw-bg-hover, rgba(255,255,255,0.04))",
-                                    border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
-                                  }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title || "Untitled"}</div>
-                                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>
-                                          {BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === item.category)?.label || item.category}
-                                          {item.prompt ? " • Ready" : " • Draft"}
-                                        </div>
-                                        {item.description && <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4, lineHeight: 1.4 }}>{item.description.slice(0, 100)}{item.description.length > 100 ? "…" : ""}</div>}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {library.map((item, i) => {
+                                  const catLabel = BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === item.category)?.label || "Custom";
+                                  return (
+                                    <div key={i} style={{
+                                      display: "flex", alignItems: "center", gap: 12,
+                                      padding: "10px 12px", borderRadius: 10,
+                                      background: "rgba(255,255,255,0.025)",
+                                      border: "1px solid rgba(255,255,255,0.06)",
+                                      transition: "background 0.15s",
+                                    }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+                                    >
+                                      {/* Icon */}
+                                      <div style={{
+                                        width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+                                        background: item.prompt ? "rgba(163,230,53,0.1)" : "rgba(255,255,255,0.04)",
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                      }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={item.prompt ? "var(--pw-accent, #a3e635)" : "none"} stroke={item.prompt ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                       </div>
-                                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+
+                                      {/* Title + category */}
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                          {item.title || "Untitled"}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 1 }}>
+                                          {catLabel}
+                                        </div>
+                                      </div>
+
+                                      {/* Actions */}
+                                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                                         <button
                                           type="button"
-                                          className="pw-bolton-add-btn"
-                                          style={{ padding: "4px 10px", fontSize: 12 }}
                                           disabled={allBoltons.length >= 10}
                                           onClick={() => { loadSingleFromLibrary(item); setBoltonLibraryOpen(false); }}
                                           title="Load into this novel"
+                                          style={{
+                                            padding: "5px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                                            background: "var(--pw-accent, #a3e635)", color: "#111", border: "none", cursor: "pointer",
+                                          }}
                                         >
                                           Load
                                         </button>
                                         <button
                                           type="button"
-                                          className="pw-bible-clear-btn"
-                                          style={{ padding: "4px 10px", fontSize: 12 }}
                                           onClick={() => { void deleteLibraryBolton(i); setBoltonLibraryOpen(false); setTimeout(() => setBoltonLibraryOpen(true), 50); }}
                                           title="Remove from library"
+                                          style={{
+                                            padding: "5px 8px", fontSize: 11, borderRadius: 6,
+                                            background: "rgba(255,255,255,0.04)", color: "var(--pw-text-dim)", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer",
+                                          }}
                                         >
-                                          Delete
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                                         </button>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             );
                           })()}
+                          </div>
                         </div>
                       </div>
                     )}
