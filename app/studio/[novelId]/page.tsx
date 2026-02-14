@@ -450,6 +450,9 @@ function NovelWorkspacePage() {
   const [novelSyncDone, setNovelSyncDone] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  // Undo history: maps chapterId → array of previous content strings (max 5)
+  const chapterUndoHistory = useRef<Record<string, string[]>>({});
+  const [canUndo, setCanUndo] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("epub");
@@ -460,14 +463,19 @@ function NovelWorkspacePage() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedShareChapterIds, setSelectedShareChapterIds] = useState<string[]>([]);
   const [sharingLink, setSharingLink] = useState(false);
-  const [shareResult, setShareResult] = useState<{ token: string; url: string; expiresAt: string } | null>(null);
+  const [shareResult, setShareResult] = useState<{ token: string; url: string; expiresAt: string; emailSent?: boolean; hasPassword?: boolean } | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
-  const [shareLinks, setShareLinks] = useState<Array<{ id: string; token: string; status: string; readerName: string | null; expiresAt: string; createdAt: string; chapters: Array<{ id: string; chapterTitle: string }> }>>([]);
+  const [shareLinks, setShareLinks] = useState<Array<{ id: string; token: string; status: string; readerName: string | null; recipientEmail: string | null; passwordHash: string | null; expiryDays: number; expiresAt: string; createdAt: string; chapters: Array<{ id: string; chapterTitle: string }> }>>([]);
   const [shareLinksLoading, setShareLinksLoading] = useState(false);
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareExpiryDays, setShareExpiryDays] = useState(7);
+  const [shareRecipientEmail, setShareRecipientEmail] = useState("");
+  const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [applyingFeedbackId, setApplyingFeedbackId] = useState<string | null>(null);
+  const [dismissedAnnotations, setDismissedAnnotations] = useState<Set<string>>(new Set());
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
   const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
@@ -609,6 +617,13 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     setBlockProseDrafts({});
+    // Update undo availability for the new active chapter
+    if (activeChapterId) {
+      const stack = chapterUndoHistory.current[activeChapterId];
+      setCanUndo(!!stack && stack.length > 0);
+    } else {
+      setCanUndo(false);
+    }
   }, [activeChapterId]);
 
   function handleSidebarEnter() {
@@ -730,6 +745,21 @@ function NovelWorkspacePage() {
     setShowPlanGenerateModal(false);
     setPlanGenerateCustomCount("8");
     setPlanGeneratePacingMode("balanced");
+  }, [novelId]);
+
+  // Fetch pending feedback count on mount / novelId change
+  useEffect(() => {
+    fetch("/api/share/feedback").then((r) => r.json()).then((data) => {
+      if (Array.isArray(data)) {
+        let count = 0;
+        for (const fb of data) {
+          for (const ch of fb.chapters ?? []) {
+            count += (ch.annotations ?? []).length;
+          }
+        }
+        setPendingFeedbackCount(count);
+      }
+    }).catch(() => {});
   }, [novelId]);
 
   useEffect(() => {
@@ -956,10 +986,17 @@ function NovelWorkspacePage() {
         setNovels(serverNovels);
         saveNovels(serverNovels); // cache locally (user-scoped)
       }
-      // Also sync settings
+      // Also sync settings — restore AI config from server so it survives logout/login
       const serverSettings = await loadSettingsFromServer();
       if (serverSettings && Object.keys(serverSettings).length > 0) {
         applySettings(serverSettings);
+        // Refresh React state from the now-populated localStorage
+        const restoredProvider = getStoredProvider();
+        setAssistantProvider(restoredProvider);
+        const provOpt = getProviderOption(restoredProvider);
+        setOpenRouterKey(normalizeClientApiKey(readStoredProviderField(restoredProvider, "key")));
+        setOpenRouterModel(readStoredProviderField(restoredProvider, "model") || provOpt.defaultModel);
+        setAssistantBaseUrl(readStoredProviderField(restoredProvider, "baseUrl") || provOpt.defaultBaseUrl);
       }
       setNovelSyncDone(true);
     })();
@@ -3595,7 +3632,7 @@ function NovelWorkspacePage() {
 
     // Retry with strict prompt while preserving more context for accuracy.
     const retryPrompt = `Your previous response was not valid JSON. Respond with ONLY the JSON object requested. No explanation.\n\nOriginal request (respond with JSON only):\n${prompt.slice(0, 4000)}`;
-    const retryMaxTokens = Math.max(450, Math.min(maxTokens, 900));
+    const retryMaxTokens = Math.max(450, maxTokens);
     const secondPass = await requestOpenRouterText(retryPrompt, retryMaxTokens, remainingMs, "Return ONLY valid JSON. No markdown, no text.", false, 0.1);
     const secondParsed = parseJsonFromAi<T>(secondPass);
     if (secondParsed) return secondParsed;
@@ -3617,7 +3654,7 @@ function NovelWorkspacePage() {
       ].join("\n\n");
       const thirdPass = await requestOpenRouterText(
         thirdPrompt,
-        Math.max(450, Math.min(maxTokens, 850)),
+        Math.max(450, maxTokens),
         remainingAfterSecond,
         "Strict JSON mode. Output one JSON object only.",
         false,
@@ -5341,10 +5378,49 @@ function NovelWorkspacePage() {
     }
   }
 
+  /** Push a content snapshot onto the undo stack for a chapter (max 5 entries). */
+  function pushUndoSnapshot(chapterId: string, content: string) {
+    const stack = chapterUndoHistory.current[chapterId] ?? [];
+    // Don't push if identical to top of stack
+    if (stack.length > 0 && stack[stack.length - 1] === content) return;
+    stack.push(content);
+    if (stack.length > 5) stack.shift();
+    chapterUndoHistory.current[chapterId] = stack;
+    if (chapterId === activeChapterId) setCanUndo(stack.length > 0);
+  }
+
+  /** Pop the most recent undo snapshot for the active chapter. */
+  function handleUndo() {
+    if (!activeChapterId) return;
+    const stack = chapterUndoHistory.current[activeChapterId];
+    if (!stack || stack.length === 0) return;
+    const previousContent = stack.pop()!;
+    chapterUndoHistory.current[activeChapterId] = stack;
+    setCanUndo(stack.length > 0);
+    // Apply without pushing to undo (to avoid infinite loop)
+    mutateNovel((current) => {
+      const now = new Date().toISOString();
+      return {
+        ...current,
+        chapters: current.chapters.map((ch) =>
+          ch.id === activeChapterId ? { ...ch, content: previousContent, updatedAt: now } : ch
+        ),
+      };
+    });
+  }
+
   function updateChapter(
     chapterId: string,
     patch: { title?: string; subtitle?: string; content?: string; goalWords?: number },
   ) {
+    // If content is changing, save current content to undo history
+    if (typeof patch.content === "string" && novel) {
+      const existing = novel.chapters.find((c) => c.id === chapterId);
+      if (existing && existing.content !== patch.content) {
+        pushUndoSnapshot(chapterId, existing.content);
+      }
+    }
+
     mutateNovel((current) => {
       const now = new Date().toISOString();
       const nextChapters = current.chapters.map((chapter) =>
@@ -5556,6 +5632,9 @@ function NovelWorkspacePage() {
     };
   }
 
+  /** Words that indicate the AI echoed our placeholder instead of writing actual revised text */
+  const PLACEHOLDER_JUNK = new Set(["revised", "revised paragraph", "revised text", "revised version"]);
+
   /** Process a small chunk of paragraphs (one fast AI call) */
   async function editorChunkCall(
     paragraphs: string[],
@@ -5566,17 +5645,26 @@ function NovelWorkspacePage() {
     const numbered = paragraphs.map((p, i) => `[${startIdx + i}] ${p}`).join("\n\n");
     const prompt = [
       `${taskLine}`,
-      "Return ONLY changed paragraphs as JSON:",
-      `{"edits":[{"p":0,"text":"revised paragraph","reason":"why"}]}`,
-      "Omit unchanged paragraphs. If none need changes return {\"edits\":[]}",
+      "",
+      "Return ONLY changed paragraphs as a JSON object. For each paragraph you change, include the FULL revised paragraph text — not a summary or placeholder. Omit paragraphs that do not need changes.",
+      "",
+      "Format (p = paragraph index number from the brackets):",
+      `{"edits":[{"p":<index>,"text":"<the complete rewritten paragraph text>","reason":"<brief explanation of what you changed>"}]}`,
+      "",
+      "IMPORTANT: The \"text\" field must contain the ENTIRE revised paragraph — every sentence, word for word. Do NOT write placeholder words like 'revised' or 'fixed'. Write the actual corrected paragraph.",
+      "If no paragraphs need changes, return: {\"edits\":[]}",
       "",
       numbered,
     ].join("\n");
 
-    const maxTokens = Math.min(1200, Math.max(300, paragraphs.length * 120));
+    // Give enough tokens for paragraphs to be returned in full
+    const avgParaLen = paragraphs.reduce((s, p) => s + p.length, 0) / Math.max(1, paragraphs.length);
+    const estimatedTokensPerPara = Math.ceil(avgParaLen / 3); // rough char-to-token ratio
+    const maxTokens = Math.min(4000, Math.max(600, paragraphs.length * estimatedTokensPerPara));
+
     const data = await requestOpenRouterJson<{
       edits?: Array<{ p?: number; text?: string; reason?: string }>;
-    }>(prompt, maxTokens, { timeoutMs: 180000, systemMessage: sysMsg });
+    }>(prompt, maxTokens, { timeoutMs: 300000, systemMessage: sysMsg });
 
     const edits = Array.isArray(data?.edits) ? data.edits : [];
     const changes: EditorChange[] = [];
@@ -5585,7 +5673,12 @@ function NovelWorkspacePage() {
       const text = typeof e.text === "string" ? e.text.trim() : "";
       const localIdx = idx - startIdx;
       if (localIdx < 0 || localIdx >= paragraphs.length || !text) continue;
+      // Skip if text is unchanged
       if (text === paragraphs[localIdx].trim()) continue;
+      // Skip placeholder junk — AI echoed our example instead of writing actual text
+      if (PLACEHOLDER_JUNK.has(text.toLowerCase())) continue;
+      // Skip if the "revised" text is much shorter than original (likely truncated/placeholder)
+      if (text.length < paragraphs[localIdx].trim().length * 0.15 && text.split(/\s+/).length < 5) continue;
       changes.push({
         paragraphIndex: idx,
         original: paragraphs[localIdx],
@@ -5659,7 +5752,7 @@ function NovelWorkspacePage() {
 
           try {
             const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
-              prompt, 600, { timeoutMs: 180000, systemMessage: sysMsg },
+              prompt, 600, { timeoutMs: 300000, systemMessage: sysMsg },
             );
             if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
           } catch {
@@ -5696,9 +5789,11 @@ function NovelWorkspacePage() {
           "- Do NOT change intentional dialect, slang, or character speech patterns",
           "- Preserve the meaning exactly — only improve the correctness",
           "- Each change must cite a specific grammatical rule being violated",
+          "",
+          "OUTPUT FORMAT: Return JSON with edits. Each edit must contain the COMPLETE revised paragraph text — every word, every sentence. Never use placeholders like 'revised' or 'corrected' — always output the full paragraph with your corrections applied.",
         ].join("\n");
 
-        const taskLine = "Fix grammar, spelling, punctuation, and clear errors. Do NOT change style, voice, or creative choices. Cite the specific error for each change.";
+        const taskLine = "Fix grammar, spelling, punctuation, and clear errors. Do NOT change style, voice, or creative choices. Cite the specific error for each change. Return the FULL corrected paragraph text for each edit.";
 
         const allChanges: EditorChange[] = [];
 
@@ -5748,9 +5843,11 @@ function NovelWorkspacePage() {
           "- Preserve the author's voice — tighten, don't transform",
           "- Changes should be subtle improvements, not rewrites",
           "- Only change paragraphs that genuinely benefit from polish",
+          "",
+          "OUTPUT FORMAT: Return JSON with edits. Each edit must contain the COMPLETE polished paragraph text — every word, every sentence. Never use placeholders like 'revised' or 'polished' — always output the full paragraph with your improvements applied.",
         ].join("\n");
 
-        const taskLine = "Polish prose to publication standard. Tighten, vary rhythm, strengthen verbs, cut filler. Subtle improvements only — preserve voice. Do NOT invent anything.";
+        const taskLine = "Polish prose to publication standard. Tighten, vary rhythm, strengthen verbs, cut filler. Subtle improvements only — preserve voice. Do NOT invent anything. Return the FULL polished paragraph text for each edit.";
 
         const allChanges: EditorChange[] = [];
 
@@ -5803,7 +5900,7 @@ function NovelWorkspacePage() {
       `${i + 1}. [${iss.severity}] ${iss.issue}${iss.quote ? ` ("${iss.quote}")` : ""}`
     ).join("\n");
 
-    const sysMsg = `Professional ${ctx.genreStr} editor. Fix ONLY listed issues. Preserve voice.`;
+    const sysMsg = `Professional ${ctx.genreStr} editor. Fix ONLY listed issues. Preserve voice. When returning edits in JSON, the "text" field must contain the COMPLETE revised paragraph — every word, every sentence. Never use placeholder words like "revised" or "fixed".`;
     const allChanges: EditorChange[] = [];
 
     try {
@@ -5814,19 +5911,25 @@ function NovelWorkspacePage() {
         setEditorLoadingPhase(`Fixing ${c + 1}/${totalChunks}...`);
 
         const prompt = [
-          "Fix ONLY these issues in the paragraphs below. Return JSON:",
-          `{"edits":[{"p":0,"text":"revised","reason":"which issue"}]}`,
-          "Omit unchanged. If none affected return {\"edits\":[]}",
+          "Fix ONLY these issues in the paragraphs below.",
           "",
-          `Issues: ${issueList}`,
+          "Return a JSON object with your edits. For each paragraph you change, include the FULL revised paragraph text — not a summary or placeholder word.",
+          `{"edits":[{"p":<index>,"text":"<the complete rewritten paragraph text>","reason":"<which issue this fixes>"}]}`,
+          "IMPORTANT: The \"text\" field must contain the ENTIRE revised paragraph. Do NOT write 'revised' or 'fixed' — write the actual corrected paragraph text.",
+          "Omit unchanged paragraphs. If none are affected: {\"edits\":[]}",
+          "",
+          `Issues to fix:\n${issueList}`,
           "",
           numbered,
         ].join("\n");
 
+        const avgLen = slice.reduce((s, p) => s + p.length, 0) / Math.max(1, slice.length);
+        const fixMaxTokens = Math.min(4000, Math.max(600, slice.length * Math.ceil(avgLen / 3)));
+
         try {
           const data = await requestOpenRouterJson<{
             edits?: Array<{ p?: number; text?: string; reason?: string }>;
-          }>(prompt, 600, { timeoutMs: 180000, systemMessage: sysMsg });
+          }>(prompt, fixMaxTokens, { timeoutMs: 300000, systemMessage: sysMsg });
 
           const edits = Array.isArray(data?.edits) ? data.edits : [];
           for (const e of edits) {
@@ -5835,6 +5938,9 @@ function NovelWorkspacePage() {
             const localIdx = idx - start;
             if (localIdx < 0 || localIdx >= slice.length || !text) continue;
             if (text === slice[localIdx].trim()) continue;
+            // Skip placeholder junk
+            if (PLACEHOLDER_JUNK.has(text.toLowerCase())) continue;
+            if (text.length < slice[localIdx].trim().length * 0.15 && text.split(/\s+/).length < 5) continue;
             allChanges.push({
               paragraphIndex: idx, original: slice[localIdx], revised: text,
               reason: typeof e.reason === "string" ? e.reason : "Issue fix",
@@ -6967,6 +7073,7 @@ function NovelWorkspacePage() {
           <div className="pw-sidebar-foot">
             <span>{activeChapter ? "Editing chapter" : "Novel overview"}</span>
           </div>
+          <div style={{ fontSize: 9, color: "var(--pw-text-dim, rgba(255,255,255,0.12))", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>&copy; {new Date().getFullYear()} Blocwrite</div>
         </aside>
 
         <div className="pw-topbar">
@@ -6983,6 +7090,18 @@ function NovelWorkspacePage() {
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
             </button>
             <div className="pw-pill">{totalWords.toLocaleString()} words</div>
+            {canUndo && activeChapter && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleUndo}
+                title="Undo last change (up to 5 steps)"
+                style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.85 }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Undo
+              </button>
+            )}
             {!aiOff && (
             <button
               type="button"
@@ -6993,11 +7112,14 @@ function NovelWorkspacePage() {
               The Editor
             </button>
             )}
-            <button type="button" className="btn" onClick={() => {
+            <button type="button" className="btn" style={{ position: "relative" }} onClick={() => {
               if (!novel) return;
               setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
               setShareResult(null);
               setShareError(null);
+              setSharePassword("");
+              setShareExpiryDays(7);
+              setShareRecipientEmail("");
               setShowShareModal(true);
               // Fetch existing share links
               setShareLinksLoading(true);
@@ -7007,6 +7129,16 @@ function NovelWorkspacePage() {
             }} title="Share chapters for feedback">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               Share
+              {pendingFeedbackCount > 0 && (
+                <span style={{
+                  position: "absolute", top: -4, right: -4,
+                  width: 18, height: 18, borderRadius: "50%",
+                  background: "#ef4444", color: "#fff",
+                  fontSize: 10, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  lineHeight: 1,
+                }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
+              )}
             </button>
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
@@ -8490,7 +8622,10 @@ function NovelWorkspacePage() {
         <div className="pw-modal-overlay" onClick={() => setShowShareModal(false)}>
           <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()}>
             <div className="pw-export-header">
-              <div className="pw-delete-modal-title">Share for Feedback</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 20, width: "auto", opacity: 0.85 }} />
+                <div className="pw-delete-modal-title" style={{ margin: 0 }}>Share for Feedback</div>
+              </div>
               <p className="pw-delete-modal-copy">
                 Send a read-only link to a reader. They can highlight text, leave notes, and send feedback back to you.
               </p>
@@ -8529,12 +8664,68 @@ function NovelWorkspacePage() {
               </div>
             </div>
 
+            {/* Options section */}
+            <div className="pw-export-section" style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 14 }}>
+              <p className="pw-export-label">Options</p>
+              <div style={{ display: "grid", gap: 12 }}>
+                {/* Expiry */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Link expires after</label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {[1, 3, 7, 14, 30].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setShareExpiryDays(d)}
+                        style={{
+                          padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                          border: shareExpiryDays === d ? "1.5px solid var(--pw-accent, #3b82f6)" : "1px solid var(--pw-border, rgba(255,255,255,0.1))",
+                          background: shareExpiryDays === d ? "rgba(59,130,246,0.12)" : "transparent",
+                          color: shareExpiryDays === d ? "var(--pw-accent, #3b82f6)" : "var(--pw-text-muted)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {d === 1 ? "1 day" : `${d} days`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Password */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Password protection <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}>(optional)</span></label>
+                  <input
+                    className="pw-settings-input"
+                    type="text"
+                    placeholder="Leave empty for no password"
+                    value={sharePassword}
+                    onChange={(e) => setSharePassword(e.target.value)}
+                    style={{ width: "100%", fontSize: 13 }}
+                    autoComplete="off"
+                  />
+                </div>
+                {/* Email */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Email link to recipient <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}>(optional)</span></label>
+                  <input
+                    className="pw-settings-input"
+                    type="email"
+                    placeholder="reader@example.com"
+                    value={shareRecipientEmail}
+                    onChange={(e) => setShareRecipientEmail(e.target.value)}
+                    style={{ width: "100%", fontSize: 13 }}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            </div>
+
             {shareResult && (
               <div className="pw-export-section">
                 <div className="pw-export-success" style={{ padding: "12px 14px", borderRadius: 10, background: "var(--pw-success-bg, rgba(16,185,129,0.08))", border: "1px solid var(--pw-success-border, rgba(16,185,129,0.18))" }}>
                   <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--pw-success, #10b981)" }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ verticalAlign: "-2px", marginRight: 6 }}><polyline points="20 6 9 17 4 12"/></svg>
                     Share link created!
+                    {shareResult.hasPassword && <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>Password protected</span>}
                   </p>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input
@@ -8549,6 +8740,19 @@ function NovelWorkspacePage() {
                   </div>
                   <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6, marginBottom: 0 }}>
                     Link expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    {shareResult.emailSent && <span style={{ marginLeft: 8, color: "var(--pw-success, #10b981)" }}>Email sent</span>}
+                  </p>
+                </div>
+                <div style={{
+                  marginTop: 10, padding: "10px 12px", borderRadius: 8,
+                  background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",
+                  display: "flex", gap: 8, alignItems: "flex-start",
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <p style={{ fontSize: 11, color: "#f59e0b", lineHeight: 1.5, margin: 0 }}>
+                    <strong>Don&apos;t edit these chapters</strong> while waiting for feedback. If you change the text, reader annotations won&apos;t line up and &ldquo;Apply with AI&rdquo; may not work correctly.
                   </p>
                 </div>
               </div>
@@ -8567,10 +8771,18 @@ function NovelWorkspacePage() {
                   setShareError(null);
                   setShareResult(null);
                   try {
+                    const payload: Record<string, unknown> = {
+                      novelId: novel.id,
+                      chapterIds: selectedShareChapterIds,
+                      expiryDays: shareExpiryDays,
+                      novelTitle: novel.title || "Untitled Novel",
+                    };
+                    if (sharePassword.trim()) payload.password = sharePassword.trim();
+                    if (shareRecipientEmail.trim()) payload.recipientEmail = shareRecipientEmail.trim();
                     const res = await fetch("/api/share", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ novelId: novel.id, chapterIds: selectedShareChapterIds }),
+                      body: JSON.stringify(payload),
                     });
                     const data = await res.json();
                     if (res.ok && data.token) {
@@ -8591,19 +8803,22 @@ function NovelWorkspacePage() {
             </div>
 
             {/* Existing share links */}
-            {shareLinks.filter((l) => l.status !== "revoked").length > 0 && (
+            {shareLinks.filter((l) => l.status !== "revoked" && l.status !== "reviewed").length > 0 && (
               <div className="pw-export-section" style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 8, paddingTop: 16 }}>
                 <p className="pw-export-label">Active share links</p>
                 <div className="pw-export-chapter-list" style={{ maxHeight: 160 }}>
-                  {shareLinks.filter((l) => l.status !== "revoked").map((link) => (
+                  {shareLinks.filter((l) => l.status !== "revoked" && l.status !== "reviewed").map((link) => (
                     <div key={link.id} className="pw-export-chapter-item" style={{ justifyContent: "space-between" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600 }}>
                           {link.chapters.length} chapter{link.chapters.length !== 1 ? "s" : ""}
                           {link.readerName && <span style={{ fontWeight: 400, color: "var(--pw-text-muted)" }}> — {link.readerName}</span>}
+                          {link.passwordHash && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>🔒</span>}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
                           {new Date(link.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                          {" · "}Expires {new Date(link.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                          {link.recipientEmail && <span style={{ marginLeft: 6 }}>→ {link.recipientEmail}</span>}
                           {link.status === "submitted" && <span style={{ marginLeft: 6, color: "var(--pw-success, #10b981)", fontWeight: 600 }}>Feedback received</span>}
                         </div>
                       </div>
@@ -8612,6 +8827,7 @@ function NovelWorkspacePage() {
                           <button type="button" className="pw-export-tool-btn" onClick={() => {
                             setShowShareModal(false);
                             setShowFeedbackPanel(true);
+                            setDismissedAnnotations(new Set());
                             setFeedbackLoading(true);
                             fetch("/api/share/feedback").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setFeedbackData(d); }).catch(() => {}).finally(() => setFeedbackLoading(false));
                           }} style={{ color: "var(--pw-success, #10b981)" }}>View</button>
@@ -8633,10 +8849,13 @@ function NovelWorkspacePage() {
       {/* ── Feedback Panel ── */}
       {showFeedbackPanel && (
         <div className="pw-modal-overlay" onClick={() => setShowFeedbackPanel(false)}>
-          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: "80vh", overflow: "auto" }}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, maxHeight: "85vh", overflow: "auto" }}>
             <div className="pw-export-header">
-              <div className="pw-delete-modal-title">Reader Feedback</div>
-              <p className="pw-delete-modal-copy">Notes and suggestions from your readers. Click &ldquo;Apply with AI&rdquo; to let AI incorporate the feedback.</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 18, width: "auto", opacity: 0.7 }} />
+                <div className="pw-delete-modal-title" style={{ margin: 0 }}>Reader Feedback</div>
+              </div>
+              <p className="pw-delete-modal-copy">Notes and suggestions from your readers. Apply changes with AI or dismiss individual notes.</p>
             </div>
 
             {feedbackLoading ? (
@@ -8644,107 +8863,166 @@ function NovelWorkspacePage() {
             ) : feedbackData.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--pw-text-dim)" }}>No feedback received yet. Share chapters with readers to get started.</div>
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                {feedbackData.map((fb) => (
-                  <div key={fb.id} style={{ borderBottom: "1px solid var(--pw-border, rgba(255,255,255,0.06))", paddingBottom: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>
-                        {fb.readerName || "Anonymous Reader"} — {new Date(fb.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                      </span>
-                    </div>
-                    {fb.chapters.map((ch) => (
-                      <div key={ch.id} style={{ marginBottom: 12 }}>
-                        <p style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "var(--pw-text)" }}>{ch.title}</p>
-                        {ch.annotations.length === 0 ? (
-                          <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No notes on this chapter.</p>
-                        ) : (
-                          <div style={{ display: "grid", gap: 8 }}>
-                            {ch.annotations.map((ann) => (
-                              <div key={ann.id} style={{
-                                padding: "10px 12px",
-                                borderRadius: 8,
-                                background: ann.type === "issue" ? "rgba(239,68,68,0.06)" : ann.type === "suggestion" ? "rgba(59,130,246,0.06)" : "rgba(255,255,255,0.03)",
-                                border: `1px solid ${ann.type === "issue" ? "rgba(239,68,68,0.15)" : ann.type === "suggestion" ? "rgba(59,130,246,0.15)" : "var(--pw-border, rgba(255,255,255,0.06))"}`,
-                              }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                                  <span style={{
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    padding: "2px 8px",
-                                    borderRadius: 6,
-                                    background: ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.12)",
-                                    color: ann.type === "issue" ? "#ef4444" : ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6",
-                                    textTransform: "uppercase",
-                                  }}>
-                                    {ann.type}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="btn"
-                                    style={{ fontSize: 11, padding: "3px 10px" }}
-                                    disabled={applyingFeedbackId === ann.id}
-                                    onClick={async () => {
-                                      if (!novel || !activeChapter) {
-                                        alert("Open the chapter you want to apply this feedback to first.");
-                                        return;
-                                      }
-                                      setApplyingFeedbackId(ann.id);
-                                      try {
-                                        const res = await fetch("/api/openrouter/complete", {
-                                          method: "POST",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({
-                                            provider: assistantProvider,
-                                            apiKey: openRouterKey,
-                                            baseUrl: assistantBaseUrl,
-                                            model: openRouterModel || "openai/gpt-4o-mini",
-                                            systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
-                                            prompt: `Reader highlighted this text:\n"${ann.selectedText}"\n\nReader's note: "${ann.note}" (type: ${ann.type})\n\nSurrounding context from the chapter:\n${ch.content.slice(Math.max(0, ann.startOffset - 300), ann.endOffset + 300)}\n\nRevise the highlighted passage to address the feedback:`,
-                                            maxTokens: 1000,
-                                          }),
-                                        });
-                                        const data = await res.json() as { text?: string; error?: string };
-                                        if (data.text) {
-                                          // Apply the revision to the active chapter content
-                                          const currentContent = activeChapter.content || "";
-                                          const idx = currentContent.indexOf(ann.selectedText);
-                                          if (idx !== -1) {
-                                            const newContent = currentContent.slice(0, idx) + data.text.trim() + currentContent.slice(idx + ann.selectedText.length);
-                                            updateChapter(activeChapter.id, { content: newContent });
-                                            alert("Feedback applied! Review the change in your chapter.");
-                                          } else {
-                                            alert("Could not find the exact text in your current chapter. The passage may have changed since sharing.");
-                                          }
-                                        } else {
-                                          alert(data.error || "AI could not process this feedback.");
-                                        }
-                                      } catch {
-                                        alert("Failed to apply feedback. Check your AI connection.");
-                                      } finally {
-                                        setApplyingFeedbackId(null);
-                                      }
-                                    }}
-                                  >
-                                    {applyingFeedbackId === ann.id ? "Applying..." : "Apply with AI"}
-                                  </button>
-                                </div>
-                                <div style={{ fontSize: 12, color: "var(--pw-text-dim)", fontStyle: "italic", marginBottom: 4, lineHeight: 1.5 }}>
-                                  &ldquo;{ann.selectedText.slice(0, 120)}{ann.selectedText.length > 120 ? "…" : ""}&rdquo;
-                                </div>
-                                <div style={{ fontSize: 13, lineHeight: 1.5 }}>{ann.note}</div>
-                              </div>
-                            ))}
+              <div style={{ display: "grid", gap: 20 }}>
+                {feedbackData.map((fb) => {
+                  const totalAnns = fb.chapters.reduce((sum, ch) => sum + ch.annotations.length, 0);
+                  const visibleAnns = fb.chapters.reduce((sum, ch) => sum + ch.annotations.filter((a) => !dismissedAnnotations.has(a.id)).length, 0);
+                  return (
+                    <div key={fb.id} style={{
+                      borderRadius: 12, border: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
+                      overflow: "hidden",
+                    }}>
+                      {/* Reader header */}
+                      <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: "14px 16px",
+                        background: "var(--pw-surface-alt, rgba(255,255,255,0.02))",
+                        borderBottom: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)" }}>
+                            {fb.readerName || "Anonymous Reader"}
                           </div>
-                        )}
+                          <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
+                            {new Date(fb.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                            {" · "}{totalAnns} note{totalAnns !== 1 ? "s" : ""}
+                            {visibleAnns < totalAnns && <span> · {totalAnns - visibleAnns} dismissed</span>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: 11, padding: "5px 14px", fontWeight: 600, color: "var(--pw-success, #10b981)", border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.06)", borderRadius: 8 }}
+                          onClick={async () => {
+                            try {
+                              await fetch(`/api/share/${fb.token}`, { method: "PATCH" });
+                              setFeedbackData((prev) => prev.filter((f) => f.id !== fb.id));
+                              setPendingFeedbackCount((c) => Math.max(0, c - totalAnns));
+                            } catch { /* ignore */ }
+                          }}
+                        >
+                          Mark as Reviewed
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                ))}
+
+                      {/* Chapters & annotations */}
+                      <div style={{ padding: "12px 16px" }}>
+                        {fb.chapters.map((ch) => {
+                          const visibleChAnns = ch.annotations.filter((a) => !dismissedAnnotations.has(a.id));
+                          if (visibleChAnns.length === 0 && ch.annotations.length > 0) return null;
+                          return (
+                            <div key={ch.id} style={{ marginBottom: 16 }}>
+                              <p style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)", display: "flex", alignItems: "center", gap: 6 }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                                {ch.title}
+                                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--pw-text-muted)" }}>({visibleChAnns.length})</span>
+                              </p>
+                              {visibleChAnns.length === 0 ? (
+                                <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No notes on this chapter.</p>
+                              ) : (
+                                <div style={{ display: "grid", gap: 8 }}>
+                                  {visibleChAnns.map((ann) => (
+                                    <div key={ann.id} style={{
+                                      padding: "12px 14px",
+                                      borderRadius: 10,
+                                      background: ann.type === "issue" ? "rgba(239,68,68,0.05)" : ann.type === "suggestion" ? "rgba(59,130,246,0.05)" : "rgba(139,92,246,0.04)",
+                                      border: `1px solid ${ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.1)"}`,
+                                    }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                                        <span style={{
+                                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                                          background: ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.12)",
+                                          color: ann.type === "issue" ? "#ef4444" : ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6",
+                                          textTransform: "uppercase",
+                                        }}>
+                                          {ann.type}
+                                        </span>
+                                        <div style={{ display: "flex", gap: 4 }}>
+                                          <button
+                                            type="button"
+                                            className="btn"
+                                            style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, color: "var(--pw-text-muted)", border: "1px solid var(--pw-border, rgba(255,255,255,0.08))" }}
+                                            onClick={() => {
+                                              setDismissedAnnotations((prev) => { const next = new Set(prev); next.add(ann.id); return next; });
+                                            }}
+                                          >
+                                            Dismiss
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn"
+                                            style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, fontWeight: 600, color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", background: "rgba(59,130,246,0.06)" }}
+                                            disabled={applyingFeedbackId === ann.id}
+                                            onClick={async () => {
+                                              if (!novel || !activeChapter) {
+                                                alert("Open the chapter you want to apply this feedback to first.");
+                                                return;
+                                              }
+                                              setApplyingFeedbackId(ann.id);
+                                              try {
+                                                const res = await fetch("/api/openrouter/complete", {
+                                                  method: "POST",
+                                                  headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({
+                                                    provider: assistantProvider,
+                                                    apiKey: openRouterKey,
+                                                    baseUrl: assistantBaseUrl,
+                                                    model: openRouterModel || "openai/gpt-4o-mini",
+                                                    systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
+                                                    prompt: `Reader highlighted this text:\n"${ann.selectedText}"\n\nReader's note: "${ann.note}" (type: ${ann.type})\n\nSurrounding context from the chapter:\n${ch.content.slice(Math.max(0, ann.startOffset - 300), ann.endOffset + 300)}\n\nRevise the highlighted passage to address the feedback:`,
+                                                    maxTokens: 1000,
+                                                  }),
+                                                });
+                                                const data = await res.json() as { text?: string; error?: string };
+                                                if (data.text) {
+                                                  const currentContent = activeChapter.content || "";
+                                                  const idx = currentContent.indexOf(ann.selectedText);
+                                                  if (idx !== -1) {
+                                                    const newContent = currentContent.slice(0, idx) + data.text.trim() + currentContent.slice(idx + ann.selectedText.length);
+                                                    updateChapter(activeChapter.id, { content: newContent });
+                                                    setDismissedAnnotations((prev) => { const next = new Set(prev); next.add(ann.id); return next; });
+                                                  } else {
+                                                    alert("Could not find the exact text in your current chapter. The passage may have changed since sharing.");
+                                                  }
+                                                } else {
+                                                  alert(data.error || "AI could not process this feedback.");
+                                                }
+                                              } catch {
+                                                alert("Failed to apply feedback. Check your AI connection.");
+                                              } finally {
+                                                setApplyingFeedbackId(null);
+                                              }
+                                            }}
+                                          >
+                                            {applyingFeedbackId === ann.id ? "Applying..." : "Apply with AI"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {/* Highlighted excerpt */}
+                                      <div style={{
+                                        fontSize: 12, color: "var(--pw-text-dim)", fontStyle: "italic", marginBottom: 6, lineHeight: 1.6,
+                                        padding: "6px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)",
+                                        borderLeft: `3px solid ${ann.type === "issue" ? "rgba(239,68,68,0.3)" : ann.type === "suggestion" ? "rgba(59,130,246,0.3)" : "rgba(139,92,246,0.3)"}`,
+                                      }}>
+                                        &ldquo;{ann.selectedText.slice(0, 150)}{ann.selectedText.length > 150 ? "…" : ""}&rdquo;
+                                      </div>
+                                      <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--pw-text)" }}>{ann.note}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             <div className="pw-delete-modal-actions" style={{ marginTop: 16 }}>
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setShowFeedbackPanel(false)}>Close</button>
+              <button type="button" className="btn pw-cancel-btn" onClick={() => { setShowFeedbackPanel(false); setPendingFeedbackCount(0); }}>Close</button>
             </div>
           </div>
         </div>

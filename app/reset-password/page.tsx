@@ -269,6 +269,7 @@ function ResetPasswordForm() {
         >
           &larr; Back to sign in
         </Link>
+        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginTop: 16, textAlign: "center" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
       </div>
     </main>
   );

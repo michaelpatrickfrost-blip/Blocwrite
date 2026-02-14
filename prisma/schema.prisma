@@ -181,15 +181,18 @@ model AdminAuditLog {
 }
 
 model ShareLink {
-  id          String          @id @default(cuid())
-  token       String          @unique
-  novelId     String
-  ownerEmail  String
-  readerName  String?
-  expiresAt   DateTime
-  status      String          @default("active") // "active" | "submitted" | "revoked"
-  createdAt   DateTime        @default(now())
-  chapters    SharedChapter[]
+  id             String          @id @default(cuid())
+  token          String          @unique
+  novelId        String
+  ownerEmail     String
+  readerName     String?
+  recipientEmail String?
+  passwordHash   String?
+  expiryDays     Int             @default(7)
+  expiresAt      DateTime
+  status         String          @default("active") // "active" | "submitted" | "revoked" | "reviewed"
+  createdAt      DateTime        @default(now())
+  chapters       SharedChapter[]
 
   @@index([ownerEmail])
   @@index([token])

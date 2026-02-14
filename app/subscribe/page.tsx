@@ -364,6 +364,7 @@ export default function SubscribePage() {
         <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
           Secure payment via Stripe. Cancel anytime during your trial — no charge.
         </p>
+        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.12)", textAlign: "center", marginTop: 20 }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
       </div>
     </main>
   );

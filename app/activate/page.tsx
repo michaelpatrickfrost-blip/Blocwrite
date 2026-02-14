@@ -178,7 +178,7 @@ export default function ActivatePage() {
         </button>
 
         <p className="pw-activate-footer">
-          © 2026 PilotWriter. All rights reserved.
+          &copy; {new Date().getFullYear()} Blocwrite. All rights reserved.
         </p>
       </div>
     </div>

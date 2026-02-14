@@ -435,6 +435,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.12)", textAlign: "center", padding: "24px 0 12px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
     </div>
   );
 }

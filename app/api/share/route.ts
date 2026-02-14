@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { createHash, randomBytes } from "crypto";
+import bcrypt from "bcrypt";
 import { verifySessionToken, COOKIE_NAME } from "@/lib/bw-auth";
 import { prisma } from "@/lib/prisma";
 
@@ -14,10 +15,9 @@ const BLOCK_DELIM = "<<<BLOCK>>>";
 const PROSE_DELIM = "<<<PROSE>>>";
 const END_BLOCK = "<<<ENDBLOCK>>>";
 
-/** Extract only the prose from chapter content, stripping bloc structure (mirrors client contentForExport). */
+/** Extract only the prose from chapter content, stripping bloc structure. */
 function extractProse(content: string): string {
   if (!content.includes(BLOCK_DELIM)) {
-    // No bloc delimiters — strip any stray ones just in case
     return content
       .replace(/<<<BLOCK>>>/g, "").replace(/<<<PROSE>>>/g, "")
       .replace(/<<<ENDBLOCK>>>/g, "").replace(/<<<META>>>/g, "")
@@ -34,6 +34,7 @@ function extractProse(content: string): string {
   }
   return proseChunks.join("\n\n\n") || "(No content yet)";
 }
+
 const ADMIN_EMAIL = "kickablur@icloud.com";
 
 async function getAuthEmail(): Promise<string | null> {
@@ -50,10 +51,88 @@ function getUserDataDir(email: string): string {
   return join(DATA_DIR, "users", hash);
 }
 
+/** Send a branded share invitation email. Falls back to console.log if SMTP not configured. */
+async function sendShareEmail(
+  recipientEmail: string,
+  shareUrl: string,
+  expiresAt: Date,
+  chapterCount: number,
+  novelTitle: string,
+  hasPassword: boolean,
+) {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const smtpPort = process.env.SMTP_PORT;
+  const smtpFrom = process.env.SMTP_FROM || "noreply@blocwrite.com";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://blocwrite.com";
+
+  const expiryStr = expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const passwordNote = hasPassword ? "You'll need a password to open it — the person who shared this will provide it." : "";
+
+  const htmlEmail = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 40px 0;">
+      <div style="text-align: center; margin-bottom: 32px;">
+        <img src="${appUrl}/blocwrite-logo-white.png" alt="Blocwrite" style="height: 28px; width: auto;" />
+      </div>
+      <div style="background: #1a1a1a; border-radius: 16px; padding: 32px; color: #e5e7eb;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #f9fafb; margin: 0 0 12px; text-align: center;">
+          You've been invited to review
+        </h2>
+        <p style="font-size: 15px; color: #9ca3af; text-align: center; margin: 0 0 24px; line-height: 1.6;">
+          ${chapterCount} chapter${chapterCount !== 1 ? "s" : ""} from <strong style="color: #f9fafb;">${novelTitle}</strong> are waiting for your feedback.
+        </p>
+        <div style="text-align: center; margin-bottom: 24px;">
+          <a href="${shareUrl}" style="display: inline-block; padding: 14px 36px; background: #3b82f6; color: #fff; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px;">
+            Open &amp; Review
+          </a>
+        </div>
+        ${passwordNote ? `<p style="font-size: 13px; color: #6b7280; text-align: center; margin: 0 0 16px;">🔒 ${passwordNote}</p>` : ""}
+        <p style="font-size: 12px; color: #6b7280; text-align: center; margin: 0; line-height: 1.5;">
+          Select text to highlight it, add notes, and submit your feedback.<br/>
+          This link expires on ${expiryStr}.
+        </p>
+      </div>
+      <p style="font-size: 11px; color: #4b5563; text-align: center; margin-top: 24px;">
+        Sent via <a href="${appUrl}" style="color: #6b7280;">Blocwrite</a>
+      </p>
+    </div>
+  `;
+
+  const textEmail = `You've been invited to review ${chapterCount} chapter${chapterCount !== 1 ? "s" : ""} from "${novelTitle}" on Blocwrite.\n\nOpen the link to read, highlight, and leave notes:\n${shareUrl}\n\n${passwordNote}\n\nThis link expires on ${expiryStr}.`;
+
+  if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort || "587", 10),
+        secure: smtpPort === "465",
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+      await transporter.sendMail({
+        from: `"Blocwrite" <${smtpFrom}>`,
+        to: recipientEmail,
+        subject: `You've been invited to review "${novelTitle}" on Blocwrite`,
+        text: textEmail,
+        html: htmlEmail,
+      });
+      console.log(`[Share] Email sent to ${recipientEmail}`);
+      return true;
+    } catch (err) {
+      console.error("[Share] Failed to send email:", err);
+      console.log(`[Share] Fallback URL for ${recipientEmail}: ${shareUrl}`);
+      return false;
+    }
+  } else {
+    console.log(`[Share] No SMTP configured. Share URL for ${recipientEmail}: ${shareUrl}`);
+    return false;
+  }
+}
+
 /**
  * POST /api/share — Create a share link for selected chapters
- * Body: { novelId, chapterIds: string[] }
- * Returns: { token, url, expiresAt }
+ * Body: { novelId, chapterIds, password?, recipientEmail?, expiryDays?, novelTitle? }
  */
 export async function POST(request: Request) {
   const email = await getAuthEmail();
@@ -65,9 +144,15 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       novelId?: string;
       chapterIds?: string[];
+      password?: string;
+      recipientEmail?: string;
+      expiryDays?: number;
+      novelTitle?: string;
     };
 
-    const { novelId, chapterIds } = body;
+    const { novelId, chapterIds, password, recipientEmail, novelTitle } = body;
+    const expiryDays = Math.max(1, Math.min(30, body.expiryDays ?? 7));
+
     if (!novelId || !chapterIds || chapterIds.length === 0) {
       return NextResponse.json(
         { error: "novelId and at least one chapterId are required." },
@@ -80,11 +165,8 @@ export async function POST(request: Request) {
     const raw = await readFile(join(dir, "novels.json"), "utf-8").catch(() => "[]");
     const novels = JSON.parse(raw) as Array<{
       id: string;
-      chapters?: Array<{
-        id: string;
-        title: string;
-        content?: string;
-      }>;
+      title?: string;
+      chapters?: Array<{ id: string; title: string; content?: string }>;
     }>;
 
     const novel = novels.find((n) => n.id === novelId);
@@ -95,55 +177,64 @@ export async function POST(request: Request) {
     const chapters = novel.chapters ?? [];
     const selectedChapters = chapters
       .filter((ch) => chapterIds.includes(ch.id))
-      .map((ch, idx) => {
-        return {
-          chapterTitle: ch.title || `Chapter ${idx + 1}`,
-          chapterContent: extractProse(ch.content || ""),
-          order: idx,
-        };
-      });
+      .map((ch, idx) => ({
+        chapterTitle: ch.title || `Chapter ${idx + 1}`,
+        chapterContent: extractProse(ch.content || ""),
+        order: idx,
+      }));
 
     if (selectedChapters.length === 0) {
-      return NextResponse.json(
-        { error: "No matching chapters found." },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "No matching chapters found." }, { status: 400 });
     }
 
-    // Generate a crypto-random token
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    // Hash password if provided
+    const passwordHash = password?.trim() ? await bcrypt.hash(password.trim(), 10) : undefined;
 
-    // Create the share link and chapters in one transaction
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+
     const shareLink = await prisma.shareLink.create({
       data: {
         token,
         novelId,
         ownerEmail: email,
         expiresAt,
+        expiryDays,
+        passwordHash: passwordHash || null,
+        recipientEmail: recipientEmail?.trim().toLowerCase() || null,
         status: "active",
-        chapters: {
-          create: selectedChapters,
-        },
+        chapters: { create: selectedChapters },
       },
     });
 
-    // Build the URL from the request origin
+    // Build URL
     const origin = request.headers.get("origin") || request.headers.get("host") || "";
     const protocol = origin.startsWith("http") ? "" : "https://";
     const shareUrl = `${protocol}${origin}/share/${token}`;
+
+    // Send email if recipient provided
+    let emailSent = false;
+    if (recipientEmail?.trim()) {
+      emailSent = await sendShareEmail(
+        recipientEmail.trim().toLowerCase(),
+        shareUrl,
+        expiresAt,
+        selectedChapters.length,
+        novelTitle || novel.title || "Untitled Novel",
+        !!passwordHash,
+      );
+    }
 
     return NextResponse.json({
       token: shareLink.token,
       url: shareUrl,
       expiresAt: shareLink.expiresAt.toISOString(),
+      emailSent,
+      hasPassword: !!passwordHash,
     });
   } catch (error) {
     console.error("Share link creation error:", error);
-    return NextResponse.json(
-      { error: "Failed to create share link." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to create share link." }, { status: 500 });
   }
 }
 
@@ -171,9 +262,6 @@ export async function GET() {
     return NextResponse.json(links);
   } catch (error) {
     console.error("Fetch share links error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch share links." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to fetch share links." }, { status: 500 });
   }
 }

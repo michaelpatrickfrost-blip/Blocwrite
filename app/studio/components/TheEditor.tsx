@@ -350,11 +350,16 @@ export function TheEditor({
           {/* Error */}
           {error && (
             <div style={{
-              padding: "10px 14px", borderRadius: 8, marginBottom: 12,
+              padding: "12px 14px", borderRadius: 8, marginBottom: 12,
               background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
               fontSize: 13, color: "#f87171",
             }}>
-              {error}
+              <p style={{ margin: "0 0 4px" }}>{error}</p>
+              {(error.toLowerCase().includes("timeout") || error.toLowerCase().includes("timed out") || error.toLowerCase().includes("slow")) && (
+                <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
+                  Tip: Slower models can take longer. Try running again, or switch to a faster model in your settings.
+                </p>
+              )}
             </div>
           )}
 
@@ -369,6 +374,9 @@ export function TheEditor({
               <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>{loadingPhase}</p>
               <p style={{ fontSize: 11, opacity: 0.3, marginTop: 4 }}>
                 Analysing against your Canon, adjacent chapters, and style rules
+              </p>
+              <p style={{ fontSize: 11, opacity: 0.25, marginTop: 10, maxWidth: 340, margin: "10px auto 0", lineHeight: 1.5 }}>
+                Slower models may take a few minutes per section. Don&apos;t close this window — the editor will keep working.
               </p>
               <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </div>
@@ -670,6 +678,9 @@ export function TheEditor({
               </svg>
               <p style={{ fontSize: 14, margin: "0 0 4px" }}>Ready to run {currentTabConfig.label}</p>
               <p style={{ fontSize: 12 }}>{currentTabConfig.desc}</p>
+              <p style={{ fontSize: 11, opacity: 0.6, marginTop: 12, maxWidth: 340, margin: "12px auto 0", lineHeight: 1.5 }}>
+                Slower AI models may take longer. The editor will keep working — don&apos;t close this window.
+              </p>
             </div>
           )}
         </div>
