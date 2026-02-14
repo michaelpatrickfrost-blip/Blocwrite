@@ -51,7 +51,7 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
     return { authorized: true, isAdmin: true, email: normalizedEmail, userId: null, subscriptionStatus: "admin" };
   }
 
-  // Look up user and subscription
+  // Look up user, subscription, and guest access
   const user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     select: {
@@ -64,6 +64,9 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
         orderBy: { updatedAt: "desc" },
         take: 1,
         select: { status: true },
+      },
+      guestAccess: {
+        select: { expiresAt: true, duration: true },
       },
     },
   });
@@ -85,6 +88,7 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
     };
   }
 
+  // Check active subscription first
   const activeSub = user.subscriptions[0];
   if (activeSub) {
     return {
@@ -94,6 +98,21 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
       userId: user.id,
       subscriptionStatus: activeSub.status,
     };
+  }
+
+  // Check guest access (admin-granted free access)
+  if (user.guestAccess) {
+    const ga = user.guestAccess;
+    const isValid = ga.duration === "forever" || !ga.expiresAt || new Date(ga.expiresAt) > new Date();
+    if (isValid) {
+      return {
+        authorized: true,
+        isAdmin: false,
+        email: normalizedEmail,
+        userId: user.id,
+        subscriptionStatus: "guest",
+      };
+    }
   }
 
   return {
@@ -118,8 +137,21 @@ export async function hasActiveSubscription(email: string): Promise<boolean> {
         take: 1,
         select: { id: true },
       },
+      guestAccess: {
+        select: { expiresAt: true, duration: true },
+      },
     },
   });
 
-  return Boolean(user?.subscriptions?.length);
+  if (user?.subscriptions?.length) return true;
+
+  // Check guest access
+  if (user?.guestAccess) {
+    const ga = user.guestAccess;
+    if (ga.duration === "forever" || !ga.expiresAt || new Date(ga.expiresAt) > new Date()) {
+      return true;
+    }
+  }
+
+  return false;
 }

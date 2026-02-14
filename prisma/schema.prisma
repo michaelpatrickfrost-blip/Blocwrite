@@ -26,6 +26,7 @@ model User {
   projects       Project[]
   stripeCustomer StripeCustomer?
   subscriptions  Subscription[]
+  guestAccess    GuestAccess?
 }
 
 model Account {
@@ -153,6 +154,17 @@ model StripeWebhookEvent {
 
   @@index([eventType])
   @@index([status])
+}
+
+model GuestAccess {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  grantedBy String
+  duration  String    // "7days" | "1month" | "forever"
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AdminAuditLog {
