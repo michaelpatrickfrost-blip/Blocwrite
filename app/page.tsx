@@ -89,15 +89,13 @@ function Nav() {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: "rgba(255,255,255,0.82)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
+        background: C.bg,
         borderBottom: `1px solid ${C.border}`,
       }}
     >
-      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px" }}>
+      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 44, width: "auto" }} />
+          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 64, width: "auto" }} />
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 32 }}>

@@ -407,6 +407,9 @@ function StudioHomePage() {
                       <div className="pw-novel-detail-header">
                         <div>
                           <h2 className="pw-novel-detail-title">{hoveredNovel.title}</h2>
+                          {hoveredNovel.authorName && (
+                            <p className="pw-novel-detail-date" style={{ fontStyle: "italic" }}>by {hoveredNovel.authorName}</p>
+                          )}
                           {stats.lastEdited && (
                             <p className="pw-novel-detail-date">Last edited {stats.lastEdited}</p>
                           )}
@@ -423,10 +426,6 @@ function StudioHomePage() {
                           Export
                         </button>
                       </div>
-
-                      {hoveredNovel.synopsis && (
-                        <p className="pw-novel-detail-synopsis">{hoveredNovel.synopsis}</p>
-                      )}
 
                       <div className="pw-novel-detail-stats">
                         <div className="pw-novel-detail-stat">
