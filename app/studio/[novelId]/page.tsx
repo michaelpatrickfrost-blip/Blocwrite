@@ -602,6 +602,8 @@ function NovelWorkspacePage() {
   }
   const [planGenerateCustomCount, setPlanGenerateCustomCount] = useState("8");
   const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
+  const [planGenerateProgressIdx, setPlanGenerateProgressIdx] = useState<number | null>(null);
+  const [planGenerateTotal, setPlanGenerateTotal] = useState(0);
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -4498,6 +4500,8 @@ function NovelWorkspacePage() {
     }
     setStoryAiBusyAction("plan-generate");
     setPlanError(null);
+    setPlanGenerateProgressIdx(null);
+    setPlanGenerateTotal(0);
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
       const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
@@ -4594,7 +4598,7 @@ function NovelWorkspacePage() {
         (typeof ch.title === "string" ? ch.title.trim() : "") || `Chapter ${i + 1}`,
       );
 
-      /* ── Show skeleton plan immediately so user sees progress ── */
+      /* ── Show skeleton plan immediately so user sees titles ── */
       type Phase2Result = {
         synopsis?: string;
         characters?: string[];
@@ -4614,6 +4618,7 @@ function NovelWorkspacePage() {
         manuscriptChapterId: "",
       }));
       applyPlanToChapters(skeletonChapters, { activateFirst: true });
+      setPlanGenerateTotal(allTitles.length);
 
       /* ── Resolve entities from batch results ── */
       const characterByName = new Map<string, Novel["storyBible"]["characters"][number]>();
@@ -4734,8 +4739,11 @@ function NovelWorkspacePage() {
       };
 
       // ── Process each batch chapter and resolve entity IDs ──
+      // Stagger visual updates so user sees chapters fill in one-by-one
+      const STAGGER_MS = 350; // delay between each chapter appearing
       const emptyChapterIndices: number[] = [];
       for (let index = 0; index < allTitles.length; index++) {
+        setPlanGenerateProgressIdx(index);
         const batchCh = batchChapters[index];
         const synopsis = (typeof batchCh?.synopsis === "string" ? batchCh.synopsis.trim() : "");
 
@@ -4805,7 +4813,13 @@ function NovelWorkspacePage() {
             },
           };
         }, { skipSync: index < allTitles.length - 1 });
+
+        // Stagger so user sees each chapter fill in
+        if (index < allTitles.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, STAGGER_MS));
+        }
       }
+      setPlanGenerateProgressIdx(null);
 
       /* ── Quick repair pass for any chapters that got truncated/empty ── */
       if (emptyChapterIndices.length > 0 && emptyChapterIndices.length <= 6) {
@@ -4871,6 +4885,8 @@ function NovelWorkspacePage() {
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
     } finally {
       setStoryAiBusyAction(null);
+      setPlanGenerateProgressIdx(null);
+      setPlanGenerateTotal(0);
     }
   }
 
@@ -7666,6 +7682,57 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
+              {/* Plan generation progress bar + slow model warning */}
+              {storyAiBusyAction === "plan-generate" && (
+                <div
+                  style={{
+                    marginBottom: 14,
+                    padding: "12px 16px",
+                    borderRadius: 10,
+                    background: "rgba(var(--pw-accent-rgb, 134,239,172), 0.08)",
+                    border: "1px solid rgba(var(--pw-accent-rgb, 134,239,172), 0.18)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>
+                      {planGenerateProgressIdx === null
+                        ? "Generating chapter plan..."
+                        : `Filling in chapter ${planGenerateProgressIdx + 1} of ${planGenerateTotal}...`}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
+                      {aiBusyDuration}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  {planGenerateTotal > 0 && (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 4,
+                        borderRadius: 2,
+                        background: "rgba(255,255,255,0.06)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          borderRadius: 2,
+                          background: "var(--pw-accent, #86efac)",
+                          width: `${Math.round(((planGenerateProgressIdx ?? 0) + 1) / planGenerateTotal * 100)}%`,
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+                  )}
+                  {storyAiBusyElapsedSec >= 15 && (
+                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
+                      Some models are slower than others — this is normal. The plan is being built in a single request for speed.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {planChapters.length === 0 ? (
                 <div className="pw-plan-empty">
                   <div className="pw-plan-empty-icon">&#128214;</div>
@@ -7679,10 +7746,23 @@ function NovelWorkspacePage() {
                   {planChapters.map((plan, index) => {
                     const charCount = (plan.characterIds ?? []).length;
                     const locCount = (plan.locationIds ?? []).length;
+                    const isGenerating = storyAiBusyAction === "plan-generate";
+                    const isFilled = !isGenerating || (planGenerateProgressIdx !== null && index <= planGenerateProgressIdx);
+                    const isCurrentlyFilling = isGenerating && planGenerateProgressIdx === index;
                     return (
-                      <div key={plan.id} className="pw-plan-chapter">
+                      <div
+                        key={plan.id}
+                        className="pw-plan-chapter"
+                        style={{
+                          opacity: isGenerating && !isFilled ? 0.35 : 1,
+                          transition: "opacity 0.35s ease",
+                        }}
+                      >
                         <div className="pw-plan-connector">
-                          <div className="pw-plan-dot" />
+                          <div
+                            className="pw-plan-dot"
+                            style={isCurrentlyFilling ? { background: "var(--pw-accent, #86efac)", boxShadow: "0 0 6px var(--pw-accent, #86efac)" } : isFilled && isGenerating ? { background: "var(--pw-accent, #86efac)" } : {}}
+                          />
                           {index < planChapters.length - 1 && <div className="pw-plan-line" />}
                         </div>
                         <div className="pw-plan-chapter-body">
