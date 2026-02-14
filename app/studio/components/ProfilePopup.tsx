@@ -49,6 +49,8 @@ const ASSISTANT_PROVIDER_OPTIONS: Array<{
   },
 ];
 
+type SettingsTab = "general" | "ai" | "account";
+
 function getStoredProvider(): AssistantProviderId {
   if (typeof window === "undefined") return "openrouter";
   const stored = window.localStorage.getItem("pilotwriter.assistant.provider");
@@ -77,22 +79,17 @@ function normalizeClientApiKey(raw: string) {
 type ProfilePopupProps = {
   open: boolean;
   onClose: () => void;
-  /** When provided, shows Context Budget and syncs grammar locale */
   novel?: Novel | null;
   onGrammarLocaleChange?: (code: ProfileLanguageCode) => void;
   onUpdateStoryBible?: (patch: { aiContext?: { maxContextTokens?: number } }) => void;
-  /** Called when provider, key, model, or baseUrl change so the parent can sync state */
   onProviderSettingsChange?: (settings: {
     provider: AssistantProviderId;
     key: string;
     model: string;
     baseUrl: string;
   }) => void;
-  /** Called when AI toggle changes */
   onAiToggle?: (off: boolean) => void;
-  /** Called when user clicks Sign out */
   onLogout?: () => void;
-  /** Called when any setting changes (for server sync) */
   onSettingsChange?: () => void;
 };
 
@@ -107,6 +104,7 @@ export function ProfilePopup({
   onLogout,
   onSettingsChange,
 }: ProfilePopupProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [appLanguage, setAppLanguage] = useState<ProfileLanguageCode>(() => getProfileLanguage());
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const [assistantProvider, setAssistantProvider] = useState<AssistantProviderId>(() => getStoredProvider());
@@ -115,7 +113,6 @@ export function ProfilePopup({
   const [openRouterModel, setOpenRouterModel] = useState("");
   const [openRouterStatus, setOpenRouterStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
   const [openRouterError, setOpenRouterError] = useState<string | null>(null);
-  const [showAiSection, setShowAiSection] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -264,12 +261,12 @@ export function ProfilePopup({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showModelDropdown]);
 
-  // Auto-fetch models when AI section is expanded
+  // Auto-fetch models when AI tab is active
   useEffect(() => {
-    if (showAiSection && models.length === 0 && !modelsLoading && !modelsError) {
+    if (activeTab === "ai" && models.length === 0 && !modelsLoading && !modelsError) {
       void fetchModels();
     }
-  }, [showAiSection, models.length, modelsLoading, modelsError, fetchModels]);
+  }, [activeTab, models.length, modelsLoading, modelsError, fetchModels]);
 
   useEffect(() => {
     if (!open) return;
@@ -285,106 +282,197 @@ export function ProfilePopup({
   const contextTokens = novel?.storyBible?.aiContext?.maxContextTokens;
   const contextValue = typeof contextTokens === "number" ? String(contextTokens) : "auto";
 
+  const TABS: Array<{ id: SettingsTab; label: string; icon: React.ReactNode }> = [
+    {
+      id: "general",
+      label: "General",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      id: "ai",
+      label: "AI Provider",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-1v4a4 4 0 0 1-8 0v-4H7a3 3 0 0 1-3-3v-1a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z" />
+          <circle cx="9" cy="13" r="1" />
+          <circle cx="15" cy="13" r="1" />
+        </svg>
+      ),
+    },
+    {
+      id: "account",
+      label: "Account",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+        </svg>
+      ),
+    },
+  ];
+
   return (
     <div className="pw-modal-overlay" onClick={onClose}>
-      <div className="pw-profile-popup" onClick={(e) => e.stopPropagation()}>
-        <div className="pw-profile-popup-head">
-          <h3>Profile</h3>
+      <div className="pw-settings-panel" onClick={(e) => e.stopPropagation()}>
+        {/* ── Header ── */}
+        <div className="pw-settings-head">
+          <h3>Settings</h3>
           <button type="button" className="pw-profile-close" onClick={onClose} aria-label="Close">
-            ×
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
           </button>
         </div>
 
-        <div className="pw-profile-popup-body">
-          <div className="pw-profile-row">
-            <label>Language</label>
-            <select
-              className="pw-profile-input"
-              value={appLanguage}
-              onChange={(e) => handleLanguageChange(e.target.value as ProfileLanguageCode)}
+        {/* ── Tab bar ── */}
+        <div className="pw-settings-tabs">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`pw-settings-tab${activeTab === tab.id ? " active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
             >
-              {PROFILE_LANGUAGE_OPTIONS.map((opt) => (
-                <option key={opt.code} value={opt.code}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
 
-          <div className="pw-profile-row pw-profile-row-inline">
-            <label>AI</label>
-            <label className="pw-profile-toggle">
-              <input
-                type="checkbox"
-                checked={!aiOff}
-                onChange={(e) => {
-                  const on = e.target.checked;
-                  setProfileAiOff(!on);
-                  setAiOff(!on);
-                  onSettingsChange?.();
-                  onAiToggle?.(!on);
-                }}
-              />
-              <span className="pw-profile-toggle-slider" />
-              <span className="pw-profile-toggle-label">{aiOff ? "Off" : "On"}</span>
-            </label>
-          </div>
+        {/* ── Tab content ── */}
+        <div className="pw-settings-body">
 
-          <div className="pw-profile-divider" />
-
-          <button
-            type="button"
-            className="pw-profile-expand"
-            onClick={() => setShowAiSection((s) => !s)}
-            aria-expanded={showAiSection}
-          >
-            <span>AI Provider</span>
-            <span style={{ opacity: 0.6, fontSize: 12 }}>{showAiSection ? "▲" : "▼"}</span>
-          </button>
-
-          {showAiSection && (
-            <>
-              <div className="pw-profile-row">
-                <label>Provider</label>
+          {/* ─── General tab ─── */}
+          {activeTab === "general" && (
+            <div className="pw-settings-section">
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">Language</div>
+                <p className="pw-settings-hint">Sets the grammar checker and UI language.</p>
                 <select
-                  className="pw-profile-input"
-                  value={assistantProvider}
-                  onChange={(e) => handleProviderChange(e.target.value as AssistantProviderId)}
+                  className="pw-settings-select"
+                  value={appLanguage}
+                  onChange={(e) => handleLanguageChange(e.target.value as ProfileLanguageCode)}
                 >
-                  {ASSISTANT_PROVIDER_OPTIONS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
+                  {PROFILE_LANGUAGE_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="pw-profile-row">
-                <label>API Key</label>
-                <div className="pw-profile-input-group">
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">AI Assistant</div>
+                <p className="pw-settings-hint">Toggle the AI features on or off globally.</p>
+                <div className="pw-settings-toggle-row">
+                  <label className="pw-settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={!aiOff}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setProfileAiOff(!on);
+                        setAiOff(!on);
+                        onSettingsChange?.();
+                        onAiToggle?.(!on);
+                      }}
+                    />
+                    <span className="pw-settings-toggle-track" />
+                  </label>
+                  <span className={`pw-settings-toggle-label ${aiOff ? "off" : "on"}`}>
+                    {aiOff ? "Off" : "On"}
+                  </span>
+                </div>
+              </div>
+
+              {novel && onUpdateStoryBible && (
+                <div className="pw-settings-group">
+                  <div className="pw-settings-group-title">Context Budget</div>
+                  <p className="pw-settings-hint">
+                    How much Canon context to send with each AI request. Auto works for most models.
+                  </p>
+                  <select
+                    className="pw-settings-select"
+                    value={contextValue}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const val = raw === "auto" ? undefined : parseInt(raw, 10);
+                      onUpdateStoryBible({
+                        aiContext: {
+                          ...novel.storyBible.aiContext,
+                          maxContextTokens: Number.isFinite(val) ? val : undefined,
+                        },
+                      });
+                    }}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="4096">4K tokens</option>
+                    <option value="8192">8K tokens</option>
+                    <option value="16384">16K tokens</option>
+                    <option value="32768">32K tokens</option>
+                    <option value="65536">64K tokens</option>
+                    <option value="131072">128K tokens</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── AI Provider tab ─── */}
+          {activeTab === "ai" && (
+            <div className="pw-settings-section">
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">Provider</div>
+                <div className="pw-settings-provider-cards">
+                  {ASSISTANT_PROVIDER_OPTIONS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`pw-settings-provider-card${assistantProvider === p.id ? " active" : ""}`}
+                      onClick={() => handleProviderChange(p.id)}
+                    >
+                      <span className="pw-settings-provider-name">{p.label}</span>
+                      {p.id === "openrouter" && <span className="pw-settings-provider-badge">Popular</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">API Key</div>
+                <div className="pw-settings-input-row">
                   <input
-                    className="pw-profile-input"
+                    className="pw-settings-input"
                     type="password"
-                    placeholder={selectedProvider.requiresKey ? "Required" : "Optional"}
+                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Optional for this provider"}
                     value={openRouterKey}
                     onChange={(e) => persistKey(e.target.value)}
                     disabled={!selectedProvider.requiresKey}
                   />
                   <button
                     type="button"
-                    className="pw-profile-btn-sm"
+                    className="pw-settings-btn"
                     onClick={() => void checkConnection()}
                     disabled={openRouterStatus === "checking"}
                   >
-                    {openRouterStatus === "checking" ? "…" : "Test"}
+                    {openRouterStatus === "checking" ? "Testing..." : openRouterStatus === "ok" ? "Connected" : "Test"}
                   </button>
                 </div>
+                {openRouterStatus === "ok" && (
+                  <p className="pw-settings-status ok">Connection successful</p>
+                )}
+                {openRouterStatus === "error" && openRouterError && (
+                  <p className="pw-settings-status error">{openRouterError}</p>
+                )}
               </div>
 
-              <div className="pw-profile-row">
-                <label>Base URL</label>
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">Base URL</div>
                 <input
-                  className="pw-profile-input"
+                  className="pw-settings-input"
                   type="text"
                   placeholder={selectedProvider.defaultBaseUrl}
                   value={assistantBaseUrl}
@@ -392,11 +480,14 @@ export function ProfilePopup({
                 />
               </div>
 
-              <div className="pw-profile-row" ref={modelDropdownRef}>
-                <label>Model {modelsLoading && <span style={{ fontWeight: 400, opacity: 0.6 }}> — loading models…</span>}</label>
-                <div className="pw-profile-input-group">
+              <div className="pw-settings-group" ref={modelDropdownRef}>
+                <div className="pw-settings-group-title">
+                  Model
+                  {modelsLoading && <span className="pw-settings-loading"> loading...</span>}
+                </div>
+                <div className="pw-settings-input-row">
                   <input
-                    className="pw-profile-input"
+                    className="pw-settings-input"
                     type="text"
                     placeholder={selectedProvider.defaultModel}
                     value={openRouterModel}
@@ -407,7 +498,7 @@ export function ProfilePopup({
                   />
                   <button
                     type="button"
-                    className="pw-profile-btn-sm"
+                    className="pw-settings-btn"
                     onClick={() => {
                       if (showModelDropdown) {
                         setShowModelDropdown(false);
@@ -418,33 +509,28 @@ export function ProfilePopup({
                       }
                     }}
                     disabled={modelsLoading}
-                    title="Fetch available models"
+                    title="Browse available models"
                   >
-                    {modelsLoading ? "…" : showModelDropdown ? "▲" : "▼"}
+                    {modelsLoading ? "..." : "Browse"}
                   </button>
                 </div>
                 {modelsError && (
-                  <p className="pw-profile-status pw-profile-status-error" style={{ marginTop: 4 }}>
+                  <p className="pw-settings-status error">
                     {modelsError}{" "}
-                    <button type="button" style={{ color: "var(--pw-accent)", background: "none", border: "none", cursor: "pointer", fontSize: "inherit", textDecoration: "underline" }} onClick={() => void fetchModels()}>Retry</button>
-                  </p>
-                )}
-                {!modelsLoading && !modelsError && models.length > 0 && !showModelDropdown && (
-                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "4px 0 0" }}>
-                    {models.length} models available — click ▼ or focus the input to browse
+                    <button type="button" className="pw-settings-link" onClick={() => void fetchModels()}>Retry</button>
                   </p>
                 )}
                 {showModelDropdown && models.length > 0 && (
-                  <div className="pw-model-dropdown" style={{ marginTop: 6 }}>
+                  <div className="pw-settings-model-dropdown">
                     <input
-                      className="pw-model-dropdown-search"
+                      className="pw-settings-model-search"
                       type="text"
-                      placeholder="Search models…"
+                      placeholder="Search models..."
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}
                       autoFocus
                     />
-                    <div className="pw-model-list">
+                    <div className="pw-settings-model-list">
                       {(() => {
                         const q = modelSearch.toLowerCase().trim();
                         const filtered = q
@@ -455,21 +541,21 @@ export function ProfilePopup({
                             )
                           : models;
                         if (filtered.length === 0) {
-                          return <div className="pw-model-empty">No models match &ldquo;{modelSearch}&rdquo;</div>;
+                          return <div className="pw-settings-model-empty">No models match &ldquo;{modelSearch}&rdquo;</div>;
                         }
                         return filtered.map((m) => (
                           <button
                             key={m.id}
                             type="button"
-                            className={`pw-model-row${m.id === openRouterModel ? " active" : ""}`}
+                            className={`pw-settings-model-row${m.id === openRouterModel ? " active" : ""}`}
                             onClick={() => {
                               persistModel(m.id);
                               setShowModelDropdown(false);
                               setModelSearch("");
                             }}
                           >
-                            <div className="pw-model-name">{m.name}</div>
-                            <div className="pw-model-meta">
+                            <div className="pw-settings-model-name">{m.name}</div>
+                            <div className="pw-settings-model-meta">
                               <code>{m.id}</code>
                               {m.contextLength ? ` · ${Math.round(m.contextLength / 1024)}K ctx` : ""}
                             </div>
@@ -479,81 +565,40 @@ export function ProfilePopup({
                     </div>
                   </div>
                 )}
+                <p className="pw-settings-hint" style={{ marginTop: 6 }}>
+                  Slower models are given extra time. Free models work but may be less reliable.
+                </p>
               </div>
-
-              {openRouterStatus === "ok" && (
-                <p className="pw-profile-status pw-profile-status-ok">Connected</p>
-              )}
-              {openRouterStatus === "error" && openRouterError && (
-                <p className="pw-profile-status pw-profile-status-error">{openRouterError}</p>
-              )}
-              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6 }}>
-                Slower models may take longer. Requests are allowed extended time to finish.
-              </p>
-            </>
+            </div>
           )}
 
-          {novel && onUpdateStoryBible && (
-            <>
-              <div className="pw-profile-divider" />
-              <div className="pw-profile-row">
-                <label>Context</label>
-                <select
-                  className="pw-profile-input"
-                  value={contextValue}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const val = raw === "auto" ? undefined : parseInt(raw, 10);
-                    onUpdateStoryBible({
-                      aiContext: {
-                        ...novel.storyBible.aiContext,
-                        maxContextTokens: Number.isFinite(val) ? val : undefined,
-                      },
-                    });
-                  }}
-                >
-                  <option value="auto">Auto</option>
-                  <option value="4096">4K</option>
-                  <option value="8192">8K</option>
-                  <option value="16384">16K</option>
-                  <option value="32768">32K</option>
-                  <option value="65536">64K</option>
-                  <option value="131072">128K</option>
-                </select>
+          {/* ─── Account tab ─── */}
+          {activeTab === "account" && (
+            <div className="pw-settings-section">
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">Your Account</div>
+                <p className="pw-settings-hint">
+                  Manage your subscription and billing through Stripe.
+                </p>
               </div>
-            </>
-          )}
 
-          {onLogout && (
-            <>
-              <div className="pw-profile-divider" />
-              <button
-                type="button"
-                onClick={onLogout}
-                style={{
-                  width: "100%",
-                  padding: "8px 0",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: "var(--pw-text-muted, #888)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  borderRadius: "var(--pw-radius-sm, 8px)",
-                  transition: "color 0.15s, background 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "var(--pw-coral, #ff6b6b)";
-                  e.currentTarget.style.background = "var(--pw-coral-light, rgba(255,107,107,0.08))";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "var(--pw-text-muted, #888)";
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                Sign out
-              </button>
-            </>
+              {onLogout && (
+                <div className="pw-settings-group">
+                  <button
+                    type="button"
+                    className="pw-settings-signout"
+                    onClick={onLogout}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

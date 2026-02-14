@@ -44,6 +44,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth/",       // login, register, logout, nextauth
   "/api/register",    // legacy registration
   "/api/stripe/webhook", // Stripe webhook (verified by signature)
+  "/api/contact",     // public contact form
 ];
 
 function isPublicApi(pathname: string): boolean {

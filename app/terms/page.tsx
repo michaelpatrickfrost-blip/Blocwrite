@@ -88,6 +88,9 @@ export default function TermsPage() {
             <strong>Cancellation:</strong> You may cancel your subscription at any time. Upon cancellation, you will retain access to the Service until the end of your current billing period. No partial refunds are provided for unused portions of a billing period.
           </p>
           <p style={paraStyle}>
+            <strong>Refund Policy:</strong> For full details on our refund and cancellation policy, please see our <a href="/refunds" style={{ color: "inherit", fontWeight: 600, textDecoration: "underline" }}>Refund Policy</a>.
+          </p>
+          <p style={paraStyle}>
             <strong>Price Changes:</strong> We reserve the right to change subscription prices with 30 days&apos; advance notice. Existing subscribers will be notified by email before any price change takes effect.
           </p>
         </div>
@@ -182,7 +185,7 @@ export default function TermsPage() {
             If you have any questions about these Terms and Conditions, please contact us at:
           </p>
           <p style={{ ...paraStyle, fontWeight: 600 }}>
-            support@blocwrite.com
+            customerservice@blocwrite.com
           </p>
         </div>
 
