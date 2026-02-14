@@ -9946,44 +9946,64 @@ function NovelWorkspacePage() {
           <div
             style={{
               position: "fixed",
-              left: proseCtx.x,
-              top: proseCtx.y,
+              left: Math.min(proseCtx.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
+              top: Math.min(proseCtx.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 320),
               zIndex: 99999,
-              background: "var(--pw-bg, #18181b)",
-              border: "1px solid var(--pw-border, rgba(255,255,255,0.12))",
-              borderRadius: 10,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
-              padding: "6px 0",
-              minWidth: 180,
+              background: "#1c1c20",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 14,
+              boxShadow: "0 12px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
+              padding: 0,
+              width: 220,
               fontFamily: "var(--font-sans), system-ui, sans-serif",
+              overflow: "hidden",
             }}
           >
-            <div style={{ padding: "6px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--pw-text-dim, #888)", userSelect: "none" }}>
-              {proseCtx.selectedText.length > 40 ? proseCtx.selectedText.slice(0, 40) + "…" : proseCtx.selectedText}
+            {/* Selected text preview */}
+            <div style={{
+              padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                &ldquo;{proseCtx.selectedText.length > 30 ? proseCtx.selectedText.slice(0, 30) + "…" : proseCtx.selectedText}&rdquo;
+              </span>
             </div>
-            {([
-              { id: "rewrite" as const, label: "Rewrite", icon: "✦" },
-              { id: "expand" as const, label: "Expand", icon: "↔" },
-              { id: "tighten" as const, label: "Tighten", icon: "⊟" },
-              { id: "natural" as const, label: "Make more natural", icon: "♾" },
-            ]).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                style={{
-                  display: "flex", alignItems: "center", gap: 10, width: "100%",
-                  padding: "8px 14px", background: "none", border: "none",
-                  color: "var(--pw-text, #e4e4e7)", fontSize: 13, fontWeight: 500,
-                  cursor: "pointer", textAlign: "left",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-bg-hover, rgba(255,255,255,0.06))"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                onClick={() => void runProseContextAction(opt.id)}
-              >
-                <span style={{ width: 18, textAlign: "center", fontSize: 14 }}>{opt.icon}</span>
-                {opt.label}
-              </button>
-            ))}
+
+            {/* Actions */}
+            <div style={{ padding: "4px 0" }}>
+              {([
+                { id: "rewrite" as const, label: "Rewrite", desc: "Recraft with same meaning", iconPath: "M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5zM12 20h9" },
+                { id: "expand" as const, label: "Expand", desc: "Add detail and depth", iconPath: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" },
+                { id: "tighten" as const, label: "Tighten", desc: "Cut filler, sharpen", iconPath: "M4 6h16M4 12h10M4 18h6" },
+                { id: "natural" as const, label: "Make natural", desc: "Sound more human", iconPath: "M20.24 12.24a6 6 0 00-8.49-8.49L5 10.5V19h8.5zM16 8L2 22M17.5 15H9" },
+              ]).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                    padding: "8px 14px", background: "none", border: "none",
+                    cursor: "pointer", textAlign: "left", transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                  onClick={() => void runProseContextAction(opt.id)}
+                >
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                    background: "rgba(163,230,53,0.08)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={opt.iconPath}/></svg>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>{opt.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -9992,15 +10012,23 @@ function NovelWorkspacePage() {
       {proseCtxBusy && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 99999,
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "10px 18px", borderRadius: 10,
-          background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
-          color: "var(--pw-accent, #a3e635)", fontSize: 13, fontWeight: 600,
-          animation: "pw-pulse 1.5s ease-in-out infinite",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "12px 20px", borderRadius: 12,
+          background: "#1c1c20", border: "1px solid rgba(163,230,53,0.15)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          Rewriting&hellip;
+          <div style={{
+            width: 28, height: 28, borderRadius: 7,
+            background: "rgba(163,230,53,0.1)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "pw-pulse 1.5s ease-in-out infinite",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>Rewriting&hellip;</div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>AI is editing your selection</div>
+          </div>
         </div>
       )}
     </div>
