@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
+import { getStripeClient } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ function toDate(value: number | null | undefined) {
 }
 
 async function resolveUserByCustomerId(stripeCustomerId: string): Promise<string | null> {
+  const stripe = getStripeClient();
   const existing = await prisma.stripeCustomer.findUnique({
     where: { stripeCustomerId },
     select: { userId: true },
@@ -82,6 +83,7 @@ async function markSubscriptionStatusByInvoice(invoice: Stripe.Invoice, status: 
 }
 
 export async function POST(request: Request) {
+  const stripe = getStripeClient();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "STRIPE_WEBHOOK_SECRET is not configured" }, { status: 500 });

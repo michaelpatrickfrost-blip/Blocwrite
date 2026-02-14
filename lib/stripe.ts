@@ -10,15 +10,16 @@ function getStripeSecretKey() {
   return key;
 }
 
-export const stripe =
-  globalForStripe.stripe ??
-  new Stripe(getStripeSecretKey(), {
+export function getStripeClient() {
+  if (globalForStripe.stripe) return globalForStripe.stripe;
+  const client = new Stripe(getStripeSecretKey(), {
     apiVersion: "2026-01-28.clover",
     typescript: true,
   });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForStripe.stripe = stripe;
+  if (process.env.NODE_ENV !== "production") {
+    globalForStripe.stripe = client;
+  }
+  return client;
 }
 
 export function getStripePriceId() {
