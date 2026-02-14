@@ -3713,6 +3713,51 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   margin: 0;
 }
 
+/* ── Improved bolt-on styling ── */
+.pw-bolton-save-btn {
+  background: var(--pw-accent);
+  color: #000;
+  font-weight: 700;
+}
+.pw-bolton-save-btn:hover { opacity: 0.9; }
+.pw-bolton-quick-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pw-text-dim);
+  padding: 4px 2px;
+}
+.pw-bolton-quick-custom {
+  border-style: dashed;
+}
+.pw-bolton-card-ready {
+  border-color: var(--pw-accent);
+  border-left: 3px solid var(--pw-accent);
+}
+.pw-bolton-step {
+  margin-top: 6px;
+}
+.pw-bolton-step-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pw-text-dim);
+  margin-bottom: 4px;
+}
+.pw-bolton-step-ready {
+  color: var(--pw-accent);
+}
+.pw-bolton-empty {
+  border: 1px dashed var(--pw-border);
+  border-radius: var(--pw-radius-lg);
+  padding: 32px 24px;
+  text-align: center;
+}
+.pw-bolton-empty-icon {
+  margin-bottom: 8px;
+}
+
 /* ═══════════════════════════════════════
    Theme Toggle
    ═══════════════════════════════════════ */

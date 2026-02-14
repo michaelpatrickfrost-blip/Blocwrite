@@ -5696,7 +5696,9 @@ function NovelWorkspacePage() {
       nextPatch.prompt = clampPromptText(nextPatch.prompt, 500);
     }
     if ("description" in nextPatch && typeof nextPatch.description === "string") {
-      nextPatch.description = clampPromptText(nextPatch.description, 500);
+      // Don't clamp while typing — only enforce max length.
+      // clampPromptText trims trailing spaces, which prevents spacebar from working.
+      nextPatch.description = nextPatch.description.slice(0, 500);
     }
     updateStoryBible({
       boltons: (novel.storyBible.boltons ?? []).map((b) =>
@@ -8867,42 +8869,47 @@ function NovelWorkspacePage() {
 
                 {bibleSection === "boltons" && (
                   <div className="pw-bible-section">
+                    {/* ── Top bar: title + actions ── */}
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Bolt-On Plugins</h3>
+                        <h3>Bolt-Ons</h3>
                         <p className="pw-bible-section-note">
-                          Tell AI exactly what to prioritize. Build reusable plugin prompts (max 500 chars) and apply them to a chapter or bloc.
+                          Steer the AI with reusable instructions. Describe what you want in plain English, then build it into a focused prompt.
                         </p>
                       </div>
                       <div className="pw-bible-inline-actions">
-                        {allBoltons.length < 10 && (
-                          <button type="button" className="pw-bolton-add-btn" onClick={() => addBolton()}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                            New plugin
-                          </button>
-                        )}
                         <button
                           type="button"
-                          className="pw-bolton-add-btn"
+                          className="pw-bolton-add-btn pw-bolton-save-btn"
                           disabled={allBoltons.length === 0}
                           onClick={() => void saveBoltonLibrary()}
-                          title="Save all current bolt-ons for new projects"
+                          title="Save all bolt-ons so they're available in new projects"
                         >
-                          Save all
+                          Save All
                         </button>
                         <button
                           type="button"
                           className="pw-bolton-add-btn"
                           disabled={boltonLibraryCount === 0 || allBoltons.length >= 10}
                           onClick={loadBoltonLibrary}
-                          title={boltonLibraryCount > 0 ? "Load saved plugin pack" : "No saved plugin pack yet"}
+                          title={boltonLibraryCount > 0 ? `Load ${boltonLibraryCount} saved bolt-on(s)` : "No saved bolt-ons yet"}
                         >
-                          Load saved {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
+                          Load Saved {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
+                        </button>
+                        <button
+                          type="button"
+                          className="pw-bible-clear-btn"
+                          onClick={() => clearBibleSection("boltons")}
+                          title="Clear all bolt-ons"
+                        >
+                          Clear
                         </button>
                       </div>
                     </div>
 
+                    {/* ── Quick-add by category ── */}
                     <div className="pw-bolton-quick-cats">
+                      <span className="pw-bolton-quick-label">Quick add:</span>
                       {BOLTON_PLUGIN_CATEGORIES.filter((category) => category.id !== "custom").map((category) => (
                         <button
                           key={category.id}
@@ -8915,8 +8922,19 @@ function NovelWorkspacePage() {
                           + {category.label}
                         </button>
                       ))}
+                      {allBoltons.length < 10 && (
+                        <button
+                          type="button"
+                          className="pw-bolton-quick-cat-btn pw-bolton-quick-custom"
+                          onClick={() => addBolton()}
+                        >
+                          + Custom
+                        </button>
+                      )}
                     </div>
 
+                    {/* ── Filter tabs ── */}
+                    {allBoltons.length > 0 && (
                     <div className="pw-bolton-filter-row">
                       <button
                         type="button"
@@ -8927,6 +8945,7 @@ function NovelWorkspacePage() {
                       </button>
                       {BOLTON_PLUGIN_CATEGORIES.map((category) => {
                         const count = allBoltons.filter((bolton) => normalizeBoltonCategory(bolton.category) === category.id).length;
+                        if (count === 0) return null;
                         return (
                           <button
                             key={category.id}
@@ -8940,26 +8959,31 @@ function NovelWorkspacePage() {
                         );
                       })}
                     </div>
+                    )}
 
                     {!aiOff && storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
 
                     {allBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
-                        <p>No plugins yet. Add one, write what you want, then click Build 500-char prompt.</p>
+                        <div className="pw-bolton-empty-icon">
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        </div>
+                        <p style={{ fontWeight: 500, marginBottom: 4 }}>No bolt-ons yet</p>
+                        <p style={{ fontSize: 12, opacity: 0.6 }}>Click a category above to add your first bolt-on. Describe what you want in plain English and the AI will build a focused prompt.</p>
                       </div>
                     ) : visibleBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
-                        <p>No plugins in this category yet.</p>
+                        <p>No bolt-ons in this category.</p>
                       </div>
                     ) : (
                       <div className="pw-bolton-grid">
                         {visibleBoltons.map((bolton, idx) => (
-                          <div key={bolton.id} className="pw-bolton-card">
+                          <div key={bolton.id} className={`pw-bolton-card ${bolton.prompt ? "pw-bolton-card-ready" : ""}`}>
                             <div className="pw-bolton-card-head">
                               <div className="pw-bolton-card-num">{idx + 1}</div>
                               <input
                                 className="pw-bolton-card-title"
-                                placeholder="Bolt-On name..."
+                                placeholder="Name this bolt-on..."
                                 maxLength={40}
                                 value={bolton.title}
                                 onChange={(e) => updateBolton(bolton.id, { title: e.target.value })}
@@ -8977,32 +9001,40 @@ function NovelWorkspacePage() {
                                   </option>
                                 ))}
                               </select>
-                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete Bolt-On">×</button>
+                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete bolt-on">×</button>
                             </div>
-                            <textarea
-                              className="pw-bolton-desc"
-                              rows={3}
-                              maxLength={500}
-                              placeholder="Tell AI what you want in this chapter/bloc (example: push subtext in dialogue and end with unresolved tension)."
-                              value={bolton.description}
-                              onChange={(e) => updateBolton(bolton.id, { description: e.target.value })}
-                            />
-                            <div className="pw-bolton-card-foot">
-                              <span className="pw-bolton-char-count">Instruction {bolton.description.length}/500</span>
-                              {!aiOff && (
-                              <button
-                                type="button"
-                                className="pw-bolton-sharpen-btn"
-                                disabled={storyAiBusyAction !== null || !bolton.description.trim()}
-                                onClick={() => void sharpenBolton(bolton.id)}
-                              >
-                                {storyAiBusyAction === `bolton-${bolton.id}` ? "Building..." : "⚡ Build 500-char prompt"}
-                              </button>
-                              )}
+
+                            {/* Step 1: User describes what they want */}
+                            <div className="pw-bolton-step">
+                              <span className="pw-bolton-step-label">{bolton.prompt ? "Your instruction" : "Step 1 — Describe what you want"}</span>
+                              <textarea
+                                className="pw-bolton-desc"
+                                rows={3}
+                                maxLength={500}
+                                placeholder="Example: Push subtext in dialogue, end scenes with unresolved tension, and keep descriptions sparse and atmospheric."
+                                value={bolton.description}
+                                onChange={(e) => updateBolton(bolton.id, { description: e.target.value })}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              />
+                              <div className="pw-bolton-card-foot">
+                                <span className="pw-bolton-char-count">{bolton.description.length}/500</span>
+                                {!aiOff && (
+                                <button
+                                  type="button"
+                                  className="pw-bolton-sharpen-btn"
+                                  disabled={storyAiBusyAction !== null || !bolton.description.trim()}
+                                  onClick={() => void sharpenBolton(bolton.id)}
+                                >
+                                  {storyAiBusyAction === `bolton-${bolton.id}` ? "Building prompt..." : bolton.prompt ? "Rebuild prompt" : "Build AI prompt"}
+                                </button>
+                                )}
+                              </div>
                             </div>
+
+                            {/* Step 2: AI-built prompt preview */}
                             {bolton.prompt && (
-                              <div className="pw-bolton-prompt-preview">
-                                <span className="pw-bolton-prompt-label">AI directive ({getBoltonDirectiveText(bolton).length}/500)</span>
+                              <div className="pw-bolton-step pw-bolton-prompt-preview">
+                                <span className="pw-bolton-step-label pw-bolton-step-ready">AI prompt ready ({getBoltonDirectiveText(bolton).length}/500)</span>
                                 <p className="pw-bolton-prompt-text">{getBoltonDirectiveText(bolton)}</p>
                               </div>
                             )}
