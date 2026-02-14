@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
-import { createSessionToken, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
+import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 import { hasActiveSubscription } from "@/lib/subscription-gate";
 
 // Admin credentials (preserved — admin always logs in with this password)
@@ -26,7 +26,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
       }
 
-      const token = createSessionToken(normalizedEmail);
+      // Generate nonce and store it (upsert admin user)
+      const nonce = generateSessionNonce();
+      await prisma.user.upsert({
+        where: { email: normalizedEmail },
+        update: { sessionNonce: nonce },
+        create: { email: normalizedEmail, name: "Admin", isAdmin: true, sessionNonce: nonce },
+      });
+
+      const token = createSessionToken(normalizedEmail, nonce);
       const response = NextResponse.json({ ok: true, redirectTo: "/studio" });
       response.cookies.set(COOKIE_NAME, token, {
         httpOnly: true,
@@ -53,8 +61,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    // Create session
-    const token = createSessionToken(normalizedEmail);
+    // Generate nonce — invalidates any previous session
+    const nonce = generateSessionNonce();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { sessionNonce: nonce },
+    });
+
+    // Create session with nonce
+    const token = createSessionToken(normalizedEmail, nonce);
 
     // Check subscription to determine redirect
     const hasSub = await hasActiveSubscription(normalizedEmail);

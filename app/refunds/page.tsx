@@ -19,7 +19,9 @@ export default function RefundPolicyPage() {
       <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "16px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 48, width: "auto", display: "block" }} />
+            <span style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
+              <span style={{ color: "#4d6a00", fontWeight: 900 }}>/</span>Blocwrite
+            </span>
           </Link>
           <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
             &larr; Back to Home

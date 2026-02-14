@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { COOKIE_NAME, verifySessionToken } from "@/lib/bw-auth";
+import { COOKIE_NAME, verifySessionToken, extractSessionPayload } from "@/lib/bw-auth";
 
 const ADMIN_EMAIL = "kickablur@icloud.com";
 
@@ -13,6 +13,14 @@ export async function getSessionEmailFromCookies() {
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
   return verifySessionToken(token);
+}
+
+/** Get both email and nonce from the session cookie. */
+export async function getSessionPayloadFromCookies() {
+  const store = await cookies();
+  const token = store.get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  return extractSessionPayload(token);
 }
 
 export async function requireAdminPageAccess() {

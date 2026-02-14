@@ -4,10 +4,11 @@ import { checkSubscriptionGate } from "@/lib/subscription-gate";
 /**
  * Server component layout that wraps all /studio/* pages.
  * Enforces subscription — only admin or users with active/trialing subscriptions get through.
+ * Also enforces single-session — if the user logged in elsewhere, kick them out.
  * Users without a subscription are redirected to /subscribe.
  *
  * Basic auth (valid bw-session cookie) is already checked by middleware.ts.
- * This layout adds the subscription authorization layer on top.
+ * This layout adds subscription + single-session authorization on top.
  */
 export default async function StudioLayout({
   children,
@@ -16,8 +17,12 @@ export default async function StudioLayout({
 }) {
   const gate = await checkSubscriptionGate();
 
+  if (gate.sessionStale) {
+    // User logged in on another device/browser — kick this session out
+    redirect("/login?reason=session-expired");
+  }
+
   if (!gate.authorized) {
-    // No active subscription — send them to the subscribe page
     redirect("/subscribe");
   }
 

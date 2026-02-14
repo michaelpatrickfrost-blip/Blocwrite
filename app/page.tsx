@@ -101,7 +101,9 @@ function Nav() {
     >
       <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 48, width: "auto", display: "block" }} />
+          <span style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
+            <span style={{ color: C.accentText, fontWeight: 900 }}>/</span>Blocwrite
+          </span>
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
@@ -319,10 +321,24 @@ function AiBanner() {
   );
 }
 
-/* ── How It Works — 5 stages ─────────────────────────── */
+/* ── How It Works — 7 stages ─────────────────────────── */
 const STAGES = [
   {
     step: "01",
+    title: "Your writing studio",
+    subtitle: "All your novels in one place.",
+    desc: "Your home screen shows every novel at a glance — word counts, chapter progress, characters, and reading time. Create a new project in one click and dive straight in. Everything autosaves.",
+    details: [
+      "Novel dashboard with live word stats",
+      "One-click project creation",
+      "Track chapters, characters, locations, and lore",
+      "Goal progress bar keeps you motivated",
+    ],
+    color: "#6366f1",
+    screenshot: "/screenshots/studio.png",
+  },
+  {
+    step: "02",
     title: "Build your Canon",
     subtitle: "Set the rules before you write a word.",
     desc: "The Canon is your story bible — every character, location, piece of lore, and voice rule you define lives here. When you later ask the AI to draft prose, it reads your entire Canon first. That means characters stay in voice, your world stays consistent, and the AI never invents details that contradict your story.",
@@ -330,66 +346,80 @@ const STAGES = [
       "Characters: name, personality, secrets, speech patterns",
       "Locations: physical details, mood, sensory notes",
       "Lore: world rules, magic systems, factions, timelines",
-      "Bolt-ons: reusable AI directives like 'first person'",
+      "Synopsis with AI-powered clarity tools",
     ],
-    color: "#6366f1",
-    screenshot: "/screenshots/canon.png",
+    color: "#f59e0b",
+    screenshot: "/screenshots/overview.png",
   },
   {
-    step: "02",
+    step: "03",
+    title: "Steer the AI with Bolt-Ons",
+    subtitle: "Reusable plugins that shape every generation.",
+    desc: "Bolt-ons are short directives you write in plain English — 'keep it gritty', 'more dialogue', 'Yorkshire dialect'. Blocwrite turns them into focused AI prompts. Attach a bolt-on to a chapter or individual bloc and every generation respects your instruction.",
+    details: [
+      "Quick-add categories: voice, pacing, emotion, plot",
+      "AI builds a focused prompt from your instruction",
+      "Attach per-chapter or per-bloc",
+      "Save and reuse across your novel",
+    ],
+    color: "#10b981",
+    screenshot: "/screenshots/boltons.png",
+  },
+  {
+    step: "04",
     title: "Plan your chapters",
     subtitle: "One-click outline, then refine.",
-    desc: "Hit Generate and Blocwrite builds a structured chapter plan from your synopsis and Canon. Each chapter gets a title, a detailed synopsis with real plot beats, named characters, and specific locations. You can regenerate any chapter, adjust pacing, and sync the plan to your manuscript.",
+    desc: "Hit Generate and Blocwrite builds a structured chapter plan from your synopsis and Canon. Each chapter gets a title, a detailed synopsis with real plot beats, named characters, and specific locations. Sync the plan to your manuscript when you are ready.",
     details: [
-      "AI generates all chapters in one batch — fast",
+      "AI generates all chapters in one batch",
       "Each synopsis names characters and locations",
       "Pacing control: slow-burn, balanced, or fast",
       "Chapters know what comes before and after",
     ],
-    color: "#f59e0b",
+    color: "#8b5cf6",
     screenshot: "/screenshots/plan.png",
   },
   {
-    step: "03",
+    step: "05",
     title: "Draft in focused blocs",
     subtitle: "Small chunks. No drift.",
     desc: "Each chapter splits into 3-4 scene blocs, each targeting 400-1000 words. The AI gets the chapter synopsis, the Canon, and any bolt-on directives. Because each chunk is small and tightly scoped, the AI produces coherent prose that follows your plan instead of going off on tangents.",
     details: [
       "3-4 blocs per chapter with synopses",
-      "Word targets keep scenes the right length",
+      "Word targets: 400, 600, 800, 1000 or best-fit",
       "Bolt-ons for precise AI control",
       "Canon + context fed into every generation",
     ],
-    color: "#10b981",
+    color: "#ec4899",
     screenshot: "/screenshots/blocs.png",
   },
   {
-    step: "04",
+    step: "06",
+    title: "Canon-aware synopsis",
+    subtitle: "AI that reads your entire story.",
+    desc: "Every AI action in Blocwrite reads your full Canon first. Your synopsis, characters, locations, and lore all feed into every generation. Use tools like 'Improve clarity', 'Tighten and trim', or 'Back-cover blurb' to refine your synopsis while the AI respects everything you have already built.",
+    details: [
+      "AI reads your full Canon for every action",
+      "Multiple synopsis tools: clarity, trim, blurb, arc",
+      "Themes and core conflict always accessible",
+      "Run Assistant to expand any field",
+    ],
+    color: "#f59e0b",
+    screenshot: "/screenshots/canon.png",
+  },
+  {
+    step: "07",
     title: "Polish with The Editor",
     subtitle: "Professional chapter-level editing.",
     desc: "When your draft is written, run The Editor over any chapter. It enhances prose quality, catches inconsistencies with your Canon, and checks continuity across scenes — all while respecting your voice. Only changed paragraphs are returned, so it is fast and safe.",
     details: [
       "Prose quality check and enhancement",
       "Scene and place consistency verification",
-      "Respects your voice — only touches what needs fixing",
-      "Returns only changed paragraphs for speed",
+      "Before/after comparison for every edit",
+      "Accept or reject each change individually",
     ],
-    color: "#8b5cf6",
+    color: "#6366f1",
     screenshot: "/screenshots/editor.png",
-  },
-  {
-    step: "05",
-    title: "Export your manuscript",
-    subtitle: "Prose only. Your words, your file.",
-    desc: "Export your novel as a professionally formatted EPUB or DOCX. The export strips out all planning notes, synopses, and AI metadata. Clean, chaptered prose — ready for agents, beta readers, or self-publishing.",
-    details: [
-      "EPUB for e-readers and digital distribution",
-      "DOCX for agents and traditional submission",
-      "Select which chapters to include",
-      "Zero metadata clutter in the output",
-    ],
-    color: "#ec4899",
-    screenshot: "/screenshots/export.png",
   },
 ];
 
@@ -480,22 +510,19 @@ function HowItWorks() {
               {/* Screenshot side */}
               <div style={{ order: i % 2 === 0 ? 2 : 1 }}>
                 <div style={{
-                  borderRadius: 20,
+                  borderRadius: 16,
                   overflow: "hidden",
                   border: `1px solid ${C.border}`,
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04)",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.10), 0 4px 16px rgba(0,0,0,0.04)",
                   background: "#ffffff",
                 }}>
                   <img
                     src={s.screenshot}
                     alt={`${s.title} screenshot`}
                     style={{
-                      width: "112%",
+                      width: "100%",
                       height: "auto",
                       display: "block",
-                      marginLeft: "-6%",
-                      marginTop: "-4%",
-                      marginBottom: "-4%",
                     }}
                   />
                 </div>

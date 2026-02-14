@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
-import { createSessionToken, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
+import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 
 export async function POST(request: Request) {
   try {
@@ -42,18 +42,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create user
+    // Create user with session nonce
     const passwordHash = await bcrypt.hash(password, 10);
+    const nonce = generateSessionNonce();
     await prisma.user.create({
       data: {
         email: normalizedEmail,
         name: name?.trim() || normalizedEmail.split("@")[0],
         passwordHash,
+        sessionNonce: nonce,
       },
     });
 
-    // Create bw-session token and set cookie (auto-login after registration)
-    const token = createSessionToken(normalizedEmail);
+    // Create bw-session token with nonce (auto-login after registration)
+    const token = createSessionToken(normalizedEmail, nonce);
     const response = NextResponse.json({
       ok: true,
       redirectTo: "/subscribe",

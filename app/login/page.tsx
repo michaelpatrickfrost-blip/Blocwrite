@@ -19,6 +19,35 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotStatus, setForgotStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [forgotMsg, setForgotMsg] = useState("");
+  const reason = searchParams.get("reason");
+
+  async function handleForgotPassword(e: FormEvent) {
+    e.preventDefault();
+    setForgotStatus("sending");
+    setForgotMsg("");
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string } | null;
+      if (res.ok && data?.ok) {
+        setForgotStatus("sent");
+        setForgotMsg(data?.message || "If an account exists with this email, a reset link has been sent.");
+      } else {
+        setForgotStatus("error");
+        setForgotMsg(data?.error || "Something went wrong. Please try again.");
+      }
+    } catch {
+      setForgotStatus("error");
+      setForgotMsg("Connection failed. Please try again.");
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -131,6 +160,18 @@ function LoginForm() {
             padding: "32px 28px",
           }}
         >
+          {/* Session-expired / password-reset banners */}
+          {reason === "session-expired" && !error && (
+            <p style={{ fontSize: 13, color: "#ffa94d", margin: "0 0 16px", textAlign: "center", padding: "10px 14px", borderRadius: 8, background: "rgba(255,169,77,0.08)", border: "1px solid rgba(255,169,77,0.18)" }}>
+              You were signed out because your account was logged in elsewhere. Only one session is allowed at a time.
+            </p>
+          )}
+          {reason === "password-reset" && !error && (
+            <p style={{ fontSize: 13, color: "#69db7c", margin: "0 0 16px", textAlign: "center", padding: "10px 14px", borderRadius: 8, background: "rgba(105,219,124,0.08)", border: "1px solid rgba(105,219,124,0.18)" }}>
+              Password reset successful. Sign in with your new password.
+            </p>
+          )}
+
           <h1
             style={{
               fontSize: 22,
@@ -139,7 +180,7 @@ function LoginForm() {
               marginBottom: 4,
             }}
           >
-            {mode === "login" ? "Welcome back" : "Create your account"}
+            {forgotMode ? "Reset password" : mode === "login" ? "Welcome back" : "Create your account"}
           </h1>
           <p
             style={{
@@ -149,11 +190,73 @@ function LoginForm() {
               marginBottom: 24,
             }}
           >
-            {mode === "login"
-              ? "Sign in to continue writing"
-              : "Start your 7-day free trial"}
+            {forgotMode
+              ? "Enter your email and we\u2019ll send a reset link"
+              : mode === "login"
+                ? "Sign in to continue writing"
+                : "Start your 7-day free trial"}
           </p>
 
+          {/* ── Forgot password form ── */}
+          {forgotMode ? (
+            <form onSubmit={handleForgotPassword} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label htmlFor="forgot-email" style={{ display: "block", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.4)", marginBottom: 6 }}>Email</label>
+                <input
+                  id="forgot-email"
+                  type="email"
+                  required
+                  autoFocus
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="you@email.com"
+                  style={inputStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                />
+              </div>
+
+              {forgotMsg && (
+                <p style={{
+                  fontSize: 13,
+                  color: forgotStatus === "sent" ? "#69db7c" : "#ff6b6b",
+                  margin: 0,
+                  textAlign: "center",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: forgotStatus === "sent" ? "rgba(105,219,124,0.08)" : "rgba(255,107,107,0.08)",
+                  border: `1px solid ${forgotStatus === "sent" ? "rgba(105,219,124,0.15)" : "rgba(255,107,107,0.15)"}`,
+                }}>
+                  {forgotMsg}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={forgotStatus === "sending"}
+                style={{
+                  marginTop: 4, width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
+                  borderRadius: 10, border: "none", background: "#e6ff4b", color: "#1e1c1c",
+                  cursor: forgotStatus === "sending" ? "wait" : "pointer",
+                  opacity: forgotStatus === "sending" ? 0.6 : 1, transition: "opacity 0.15s", letterSpacing: "0.02em",
+                }}
+              >
+                {forgotStatus === "sending" ? "Sending..." : "Send Reset Link"}
+              </button>
+
+              <div style={{ textAlign: "center", marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => { setForgotMode(false); setForgotMsg(""); setForgotStatus("idle"); }}
+                  style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            </form>
+          ) : (
+          /* ── Normal login / register form ── */
+          <>
           <form
             onSubmit={handleSubmit}
             style={{ display: "flex", flexDirection: "column", gap: 14 }}
@@ -304,7 +407,16 @@ function LoginForm() {
             </button>
           </form>
 
-          <div style={{ textAlign: "center", marginTop: 18 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 18 }}>
+            {mode === "login" && (
+              <button
+                type="button"
+                onClick={() => { setForgotMode(true); setForgotEmail(email); setError(""); }}
+                style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
+              >
+                Forgot your password?
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -326,6 +438,8 @@ function LoginForm() {
                 : "Already have an account? Sign in"}
             </button>
           </div>
+          </>
+          )}
         </div>
 
         <Link
