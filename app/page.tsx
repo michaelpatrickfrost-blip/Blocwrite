@@ -333,7 +333,7 @@ const STAGES = [
       "Goal progress bar keeps you motivated",
     ],
     color: "#6366f1",
-    screenshot: "/screenshots/studio.png",
+    screenshot: "/screenshots/studio.png?v=2",
   },
   {
     step: "02",
@@ -347,7 +347,7 @@ const STAGES = [
       "Synopsis with AI-powered clarity tools",
     ],
     color: "#f59e0b",
-    screenshot: "/screenshots/overview.png",
+    screenshot: "/screenshots/overview.png?v=2",
   },
   {
     step: "03",
@@ -361,7 +361,7 @@ const STAGES = [
       "Save and reuse across your novel",
     ],
     color: "#10b981",
-    screenshot: "/screenshots/boltons.png",
+    screenshot: "/screenshots/boltons.png?v=2",
   },
   {
     step: "04",
@@ -375,7 +375,7 @@ const STAGES = [
       "Chapters know what comes before and after",
     ],
     color: "#8b5cf6",
-    screenshot: "/screenshots/plan.png",
+    screenshot: "/screenshots/plan.png?v=2",
   },
   {
     step: "05",
@@ -389,7 +389,7 @@ const STAGES = [
       "Canon + context fed into every generation",
     ],
     color: "#ec4899",
-    screenshot: "/screenshots/blocs.png",
+    screenshot: "/screenshots/blocs.png?v=2",
   },
   {
     step: "06",
@@ -403,7 +403,7 @@ const STAGES = [
       "Run Assistant to expand any field",
     ],
     color: "#f59e0b",
-    screenshot: "/screenshots/canon.png",
+    screenshot: "/screenshots/canon.png?v=2",
   },
   {
     step: "07",
@@ -417,7 +417,7 @@ const STAGES = [
       "Accept or reject each change individually",
     ],
     color: "#6366f1",
-    screenshot: "/screenshots/editor.png",
+    screenshot: "/screenshots/editor.png?v=2",
   },
 ];
 
