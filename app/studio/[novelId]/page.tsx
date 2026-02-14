@@ -171,8 +171,8 @@ const GENRE_OPTIONS = [
   "Satire",
   "Western",
 ] as const;
-const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15, 20, 24] as const;
-const PLAN_CHAPTER_MAX = 60;
+const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
+const PLAN_CHAPTER_MAX = 40;
 const BOLTON_LIBRARY_KEY = "pilotwriter.boltons.library.v1";
 const BOLTON_PLUGIN_CATEGORIES: Array<{ id: BoltonCategory; label: string; hint: string }> = [
   { id: "voice-style", label: "Voice & Style", hint: "Diction, rhythm, sentence style." },
@@ -4484,24 +4484,98 @@ function NovelWorkspacePage() {
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
       const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
+      const context = buildPhase1OutlineContext();
+      const pacingMode = novel.storyBible.bookPlan?.pacingMode ?? "balanced";
+      const pacingHint =
+        pacingMode === "slow-burn"
+          ? "Pacing: slow-burn. Let early chapters build character depth, atmosphere, and stakes gradually."
+          : pacingMode === "fast"
+            ? "Pacing: fast. Start with a strong hook and keep momentum high."
+            : "Pacing: balanced. Grounded setup with steady escalation.";
 
-      /* ── Phase 0: Generate chapter titles only (minimal tokens) ── */
-      type TitlesResult = { titles?: string[] };
-      const titlesResponse = await requestOpenRouterJson<TitlesResult>(
-        buildPhase1TitlesPrompt(planTarget),
-        400,
-        { timeoutMs: 180000, systemMessage: systemMsg },
-      );
-      let allTitles = Array.isArray(titlesResponse.titles) ? titlesResponse.titles : [];
-      if (!allTitles.length) {
-        throw new Error("Assistant did not return chapter titles. Try again or use a different model.");
+      // Collect all existing Canon names for the prompt
+      const existingCharNames = (novel.storyBible.characters ?? []).map((c) => c.name).filter(Boolean);
+      const existingLocNames = (novel.storyBible.locations ?? []).map((l) => l.name).filter(Boolean);
+      const canonNames = [...existingCharNames, ...existingLocNames].join(", ");
+
+      /* ══════════════════════════════════════════════════════════════
+       * SINGLE BATCH CALL — generate titles + full details at once.
+       * This replaces the old N+1 sequential calls (1 for titles, then
+       * 1 per chapter) with ONE call. Massively faster.
+       * ══════════════════════════════════════════════════════════════ */
+
+      type BatchChapter = {
+        title?: string;
+        synopsis?: string;
+        characters?: string[];
+        locations?: string[];
+        events?: string[];
+      };
+      type BatchResult = { chapters?: BatchChapter[] };
+
+      const batchPrompt = [
+        `Create a detailed ${planTarget}-chapter outline for this novel.`,
+        `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }] }`,
+        "",
+        "RULES:",
+        `- Return EXACTLY ${planTarget} chapters.`,
+        "- Each synopsis must be 5-8 detailed sentences describing WHAT HAPPENS in order.",
+        "- Synopses are internal drafting notes for AI, NOT reader-facing blurbs.",
+        "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
+        "- Name specific characters (First Last) who appear in each chapter.",
+        "- Name the specific location where each chapter takes place.",
+        "- Each chapter should primarily use ONE location.",
+        "- Include at least 1-2 key events per chapter.",
+        "- Maintain strict cause-and-effect between chapters.",
+        "- Use Canon character and location names EXACTLY as given.",
+        canonNames ? `- Canon names to use: ${canonNames}` : "",
+        pacingHint,
+        "- Early chapters must build naturally, not rush to payoffs.",
+        "- The final chapter must resolve the central conflict.",
+        "- Do NOT use vague language. Be specific about what happens.",
+        "",
+        `Canon:\n${context}`,
+      ].filter(Boolean).join("\n");
+
+      // Token budget scales with chapter count (more chapters = more tokens needed)
+      const tokenBudget = Math.min(4000, Math.max(1200, planTarget * 180));
+
+      let batchChapters: BatchChapter[] = [];
+      try {
+        const raw = await requestOpenRouterText(batchPrompt, tokenBudget, 300000, systemMsg, false, 0.3);
+        let parsed = parseJsonFromAi<BatchResult | BatchChapter[]>(raw);
+        if (!parsed) {
+          const repaired = attemptCloseTruncatedJson(raw.trim());
+          if (repaired) try { parsed = JSON.parse(repaired) as BatchResult | BatchChapter[]; } catch { /* ignore */ }
+        }
+        if (Array.isArray(parsed)) {
+          batchChapters = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          // Accept { chapters: [...] } or any key that holds an array
+          const obj = parsed as Record<string, unknown>;
+          if (Array.isArray(obj.chapters)) {
+            batchChapters = obj.chapters as BatchChapter[];
+          } else {
+            for (const key of Object.keys(obj)) {
+              if (Array.isArray(obj[key])) { batchChapters = obj[key] as BatchChapter[]; break; }
+            }
+          }
+        }
+      } catch { /* will fall back */ }
+
+      // Validate and clean up batch results
+      batchChapters = batchChapters
+        .filter((ch) => ch && typeof ch === "object")
+        .slice(0, planTarget);
+
+      // If batch returned too few chapters, pad with defaults
+      while (batchChapters.length < planTarget) {
+        batchChapters.push({ title: `Chapter ${batchChapters.length + 1}`, synopsis: "", characters: [], locations: [], events: [] });
       }
-      allTitles = allTitles.slice(0, planTarget).map((t, i) =>
-        (typeof t === "string" ? t.trim() : "") || `Chapter ${i + 1}`,
+
+      const allTitles = batchChapters.map((ch, i) =>
+        (typeof ch.title === "string" ? ch.title.trim() : "") || `Chapter ${i + 1}`,
       );
-      while (allTitles.length < planTarget) {
-        allTitles.push(`Chapter ${allTitles.length + 1}`);
-      }
 
       /* ── Show skeleton plan immediately so user sees progress ── */
       type Phase2Result = {
@@ -4524,7 +4598,7 @@ function NovelWorkspacePage() {
       }));
       applyPlanToChapters(skeletonChapters, { activateFirst: true });
 
-      /* ── Phase 2: Generate each chapter's detail sequentially, updating UI live ── */
+      /* ── Resolve entities from batch results ── */
       const characterByName = new Map<string, Novel["storyBible"]["characters"][number]>();
       const mergedCharacters = [...(novel.storyBible.characters ?? [])];
       mergedCharacters.forEach((character) => {
@@ -4536,68 +4610,6 @@ function NovelWorkspacePage() {
           .filter(Boolean)
           .forEach((aliasKey) => characterByName.set(aliasKey, character));
       });
-      const appendAliasToCharacter = (characterId: string, alias: string) => {
-        const cleanAlias = alias.trim();
-        if (!cleanAlias) return;
-        const idx = mergedCharacters.findIndex((c) => c.id === characterId);
-        if (idx === -1) return;
-        const current = mergedCharacters[idx];
-        const aliasList = (current.otherNames || "")
-          .split(/[;,]/)
-          .map((v) => v.trim())
-          .filter(Boolean);
-        if (!aliasList.some((existingAlias) => normalizeLookup(existingAlias) === normalizeLookup(cleanAlias))) {
-          aliasList.push(cleanAlias);
-        }
-        const secretNote = `Known alias: ${cleanAlias}`;
-        const readerNote = `May be referred to as "${cleanAlias}" before identity is confirmed.`;
-        mergedCharacters[idx] = {
-          ...current,
-          otherNames: aliasList.join(", "),
-          secrets: current.secrets?.includes(secretNote) ? current.secrets : [current.secrets, secretNote].filter(Boolean).join(" | "),
-          readerSecretHint: current.readerSecretHint?.includes(cleanAlias)
-            ? current.readerSecretHint
-            : [current.readerSecretHint, readerNote].filter(Boolean).join(" "),
-        };
-        characterByName.set(normalizeLookup(mergedCharacters[idx].name || ""), mergedCharacters[idx]);
-        aliasList.forEach((aliasVal) => characterByName.set(normalizeLookup(aliasVal), mergedCharacters[idx]));
-
-        // If a legacy role-like character already exists as a separate entry, merge it into this real character.
-        const roleLikeIdx = mergedCharacters.findIndex((c, i) => i !== idx && normalizeLookup(c.name || "") === normalizeLookup(cleanAlias));
-        if (roleLikeIdx >= 0 && isRoleLikeCharacterLabel(mergedCharacters[roleLikeIdx].name || "")) {
-          const roleLike = mergedCharacters[roleLikeIdx];
-          const mergedSecret = [mergedCharacters[idx].secrets, roleLike.secrets].filter(Boolean).join(" | ");
-          const mergedHint = [mergedCharacters[idx].readerSecretHint, roleLike.readerSecretHint].filter(Boolean).join(" ");
-          mergedCharacters[idx] = {
-            ...mergedCharacters[idx],
-            secrets: mergedSecret,
-            readerSecretHint: mergedHint,
-          };
-          mergedCharacters.splice(roleLikeIdx, 1);
-        }
-      };
-      const extractAliasRevealLinks = (text: string): Array<{ alias: string; realName: string }> => {
-        const links: Array<{ alias: string; realName: string }> = [];
-        const t = text || "";
-        const revealPatterns = [
-          /(?:the\s+)?(anonymous\s+[a-z]+|[a-z]+)\s+(?:is|was|revealed as|revealed to be|turns out to be)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi,
-          /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+),\s*the\s+([a-z]+(?:\s+[a-z]+)?)/gi,
-        ];
-        for (const pattern of revealPatterns) {
-          let match: RegExpExecArray | null = null;
-          while ((match = pattern.exec(t)) !== null) {
-            const first = (match[1] || "").trim();
-            const second = (match[2] || "").trim();
-            const [alias, realName] = isLikelyHumanName(first)
-              ? [second, first]
-              : [first, second];
-            if (!alias || !realName) continue;
-            if (!isRoleLikeCharacterLabel(alias) || !isLikelyHumanName(realName)) continue;
-            links.push({ alias, realName });
-          }
-        }
-        return links;
-      };
       const findExistingCharacterIdByName = (rawName: string) => {
         const key = normalizeLookup(rawName);
         if (!key) return "";
@@ -4672,8 +4684,8 @@ function NovelWorkspacePage() {
         return created.id;
       };
 
-      const eventByName = new Map<string, Novel["storyBible"]["timeline"][number]>();
       const mergedEvents = [...(novel.storyBible.timeline ?? [])];
+      const eventByName = new Map<string, Novel["storyBible"]["timeline"][number]>();
       mergedEvents.forEach((event) => {
         const key = normalizeLookup(event.name || "");
         if (key) eventByName.set(key, event);
@@ -4704,77 +4716,20 @@ function NovelWorkspacePage() {
         return key ? (loreByTitle.get(key)?.id ?? "") : "";
       };
 
-      let prevSummary = "";
+      // ── Process each batch chapter and resolve entity IDs ──
+      const emptyChapterIndices: number[] = [];
       for (let index = 0; index < allTitles.length; index++) {
-        const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
-        const chapterContext = buildPhase2ChapterContext(
-          allTitles[index],
-          "",
-          index,
-          allTitles,
-          prevSummary,
-          nextTitle,
-        );
-        const prompt = buildPhase2Prompt(chapterContext, index, allTitles.length);
+        const batchCh = batchChapters[index];
+        const synopsis = (typeof batchCh?.synopsis === "string" ? batchCh.synopsis.trim() : "");
 
-        let result: Phase2Result | null = null;
-        for (let attempt = 0; attempt < 4 && !result; attempt++) {
-          try {
-            const raw = await requestOpenRouterText(prompt, 500, 240000, systemMsg, false, 0.25);
-            let parsed = parseJsonFromAi<Phase2Result>(raw);
-            if (!parsed) {
-              const repaired = attemptCloseTruncatedJson(raw.trim());
-              if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
-            }
-            const quality = evaluateOperationalPlanResult(parsed ?? null);
-            if (quality.ok) {
-              result = parsed;
-            } else if (parsed?.synopsis) {
-              try {
-                const repaired = await repairPhase2ChapterResult(
-                  chapterContext,
-                  index,
-                  allTitles.length,
-                  parsed,
-                  systemMsg,
-                );
-                if (evaluateOperationalPlanResult(repaired).ok) {
-                  result = repaired;
-                }
-              } catch {
-                // keep retry loop alive
-              }
-            }
-          } catch { /* retry */ }
-        }
-        if (!result) {
-          result = {
-            synopsis: `In this chapter, the central viewpoint character pursues a clear goal, encounters escalating opposition, and is forced into a meaningful turn that changes the direction of the story into the next chapter.`,
-            characters: [],
-            locations: [],
-            events: [`${allTitles[index]} key event`],
-            lore: [],
-          };
+        // Track chapters with empty/too-short synopses for a quick repair pass
+        if (!synopsis || synopsis.length < 80) {
+          emptyChapterIndices.push(index);
         }
 
         const chapterTitle = allTitles[index];
-        const synopsis =
-          (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${chapterTitle}.`;
-        prevSummary = synopsis;
-
-        const rawCharacterNames = parseStringList(result.characters);
+        const rawCharacterNames = parseStringList(batchCh?.characters);
         const resolvedCharacterIds = rawCharacterNames.map(ensureCharacterId).filter(Boolean);
-        const roleAliasesFromSynopsis = ROLE_ALIAS_TOKENS
-          .filter((token) => synopsis.toLowerCase().includes(token))
-          .map((token) => (synopsis.toLowerCase().includes(`anonymous ${token}`) ? `anonymous ${token}` : token));
-        const roleAliases = [...rawCharacterNames.filter(isRoleLikeCharacterLabel), ...roleAliasesFromSynopsis];
-        if (roleAliases.length > 0 && resolvedCharacterIds.length === 1) {
-          roleAliases.forEach((alias) => appendAliasToCharacter(resolvedCharacterIds[0], alias));
-        }
-        extractAliasRevealLinks(synopsis).forEach(({ alias, realName }) => {
-          const id = ensureCharacterId(realName);
-          if (id) appendAliasToCharacter(id, alias);
-        });
 
         const chapterCharacterIds = mergeUniqueIds(
           resolvedCharacterIds,
@@ -4785,22 +4740,20 @@ function NovelWorkspacePage() {
           }))),
         );
         const chapterLocationIds = mergeUniqueIds(
-          parseStringList(result.locations).map(ensureLocationId).filter(Boolean),
+          parseStringList(batchCh?.locations).map(ensureLocationId).filter(Boolean),
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
             id: l.id, name: l.name || "",
           }))),
         );
         const chapterLoreIds = mergeUniqueIds(
-          parseStringList(result.lore).map(resolveLoreId).filter(Boolean),
+          parseStringList(batchCh?.events).map(resolveLoreId).filter(Boolean),
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
             id: e.id, name: e.title || "",
           }))),
         );
-        // Resolve events
-        parseStringList(result.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
+        parseStringList(batchCh?.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
 
-        // ── Live UI update: fill in this chapter's detail immediately ──
-        const shouldSyncNow = index === allTitles.length - 1 || index % 3 === 2;
+        // Live UI update
         mutateNovel((current) => {
           const plan = current.storyBible.bookPlan;
           if (!plan) return current;
@@ -4808,18 +4761,17 @@ function NovelWorkspacePage() {
           if (updatedPlanChapters[index]) {
             updatedPlanChapters[index] = {
               ...updatedPlanChapters[index],
-              synopsis,
+              synopsis: synopsis || `Outline for ${chapterTitle}.`,
               characterIds: chapterCharacterIds,
               locationIds: chapterLocationIds,
               loreIds: chapterLoreIds,
             };
           }
-          // Also update subtitle on the manuscript chapter
           const updatedChapters = [...current.chapters];
           if (updatedChapters[index]) {
             updatedChapters[index] = {
               ...updatedChapters[index],
-              subtitle: synopsis.slice(0, 140),
+              subtitle: (synopsis || `Outline for ${chapterTitle}.`).slice(0, 140),
               updatedAt: new Date().toISOString(),
             };
           }
@@ -4835,7 +4787,68 @@ function NovelWorkspacePage() {
               bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
             },
           };
-        }, { skipSync: !shouldSyncNow });
+        }, { skipSync: index < allTitles.length - 1 });
+      }
+
+      /* ── Quick repair pass for any chapters that got truncated/empty ── */
+      if (emptyChapterIndices.length > 0 && emptyChapterIndices.length <= 6) {
+        for (const idx of emptyChapterIndices) {
+          try {
+            const prevSyn = idx > 0 ? (batchChapters[idx - 1]?.synopsis || "") : "";
+            const nextTitle = idx < allTitles.length - 1 ? allTitles[idx + 1] : "";
+            const repairPrompt = [
+              `Write a detailed 5-8 sentence synopsis for Chapter ${idx + 1}: "${allTitles[idx]}" of this novel.`,
+              `Return JSON: { "synopsis": "...", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }`,
+              `This is an internal writer plan, not reader copy. Be specific about what happens.`,
+              canonNames ? `Canon names: ${canonNames}` : "",
+              prevSyn ? `Previous chapter: ${clampPromptText(prevSyn, 200)}` : "",
+              nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
+              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 200)}`,
+            ].filter(Boolean).join("\n");
+
+            const raw = await requestOpenRouterText(repairPrompt, 400, 120000, systemMsg, false, 0.3);
+            let parsed = parseJsonFromAi<Phase2Result>(raw);
+            if (!parsed) {
+              const repaired = attemptCloseTruncatedJson(raw.trim());
+              if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* skip */ }
+            }
+            if (parsed?.synopsis && parsed.synopsis.trim().length > 60) {
+              const synopsis = parsed.synopsis.trim();
+              const charIds = parseStringList(parsed.characters).map(ensureCharacterId).filter(Boolean);
+              const locIds = parseStringList(parsed.locations).map(ensureLocationId).filter(Boolean);
+              parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, allTitles[idx], synopsis, idx));
+
+              mutateNovel((current) => {
+                const plan = current.storyBible.bookPlan;
+                if (!plan) return current;
+                const updatedPlanChapters = [...plan.chapters];
+                if (updatedPlanChapters[idx]) {
+                  updatedPlanChapters[idx] = {
+                    ...updatedPlanChapters[idx],
+                    synopsis,
+                    characterIds: mergeUniqueIds(charIds, updatedPlanChapters[idx].characterIds ?? []),
+                    locationIds: mergeUniqueIds(locIds, updatedPlanChapters[idx].locationIds ?? []),
+                  };
+                }
+                const updatedChapters = [...current.chapters];
+                if (updatedChapters[idx]) {
+                  updatedChapters[idx] = { ...updatedChapters[idx], subtitle: synopsis.slice(0, 140), updatedAt: new Date().toISOString() };
+                }
+                return {
+                  ...current,
+                  chapters: updatedChapters,
+                  storyBible: {
+                    ...current.storyBible,
+                    characters: [...mergedCharacters],
+                    locations: [...mergedLocations],
+                    timeline: [...mergedEvents],
+                    bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+                  },
+                };
+              });
+            }
+          } catch { /* skip repair for this chapter */ }
+        }
       }
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
@@ -9310,8 +9323,11 @@ function NovelWorkspacePage() {
 
             <div className="pw-plan-gen-custom">
               <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--pw-text-dim)", marginBottom: "6px", display: "block" }}>
-                Number of chapters (1–{PLAN_CHAPTER_MAX})
+                Number of chapters
               </label>
+              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 6px" }}>
+                Pick a preset or type any number up to {PLAN_CHAPTER_MAX}.
+              </p>
               <input
                 className="pw-plan-gen-number-input"
                 type="number"
