@@ -93,17 +93,15 @@ function Nav() {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: "rgba(255,255,255,0.92)",
+        background: "rgba(20,20,24,0.95)",
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
-        borderBottom: `1px solid ${C.borderSoft}`,
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}
     >
-      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 28px" }}>
+      <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <span style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.04em", lineHeight: 1 }}>
-            <span style={{ color: C.accentText, fontWeight: 900 }}>/</span>Blocwrite
-          </span>
+          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
@@ -117,9 +115,9 @@ function Nav() {
               <a
                 key={l.href}
                 href={l.href}
-                style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none", transition: "color 0.15s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = C.text; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = C.textSoft; }}
+                style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none", transition: "color 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
               >
                 {l.label}
               </a>
@@ -127,10 +125,10 @@ function Nav() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <Link href="/login" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
+            <Link href="/login" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
               Log in
             </Link>
-            <Link href="/subscribe" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 13, borderRadius: 12, boxShadow: "0 1px 6px rgba(0,0,0,0.08)" }}>
+            <Link href="/subscribe" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 13, borderRadius: 12, background: C.accent, color: C.text, boxShadow: "none" }}>
               Start Free Trial
               <ArrowIcon />
             </Link>
