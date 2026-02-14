@@ -39,10 +39,27 @@ async function verifyToken(token: string, secret: string): Promise<string | null
   }
 }
 
+/** API routes that must remain public (no session required). */
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/",       // login, register, logout, nextauth
+  "/api/register",    // legacy registration
+  "/api/stripe/webhook", // Stripe webhook (verified by signature)
+];
+
+function isPublicApi(pathname: string): boolean {
+  return PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApiRoute = pathname.startsWith("/api/");
 
-  // ── Protected routes: /studio, /admin, /subscribe ──
+  // ── Public API routes pass through ──
+  if (isApiRoute && isPublicApi(pathname)) {
+    return NextResponse.next();
+  }
+
+  // ── Protected routes: /studio, /admin, /subscribe, AND all non-public /api/* ──
   // All require a valid bw-session. /admin additionally requires admin email.
   // Subscription enforcement for /studio is handled by app/studio/layout.tsx
   // (because Prisma can't run in Edge middleware).
@@ -50,20 +67,28 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/studio") ||
     pathname.startsWith("/admin") ||
-    pathname.startsWith("/subscribe")
+    pathname.startsWith("/subscribe") ||
+    isApiRoute
   ) {
     const secret = process.env.BW_SESSION_SECRET;
     if (!secret) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return isApiRoute
+        ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        : NextResponse.redirect(new URL("/login", request.url));
     }
 
     const token = request.cookies.get(COOKIE_NAME)?.value;
     if (!token) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return isApiRoute
+        ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        : NextResponse.redirect(new URL("/login", request.url));
     }
 
     const email = await verifyToken(token, secret);
     if (!email) {
+      if (isApiRoute) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
       // Invalid or expired token — clear cookie and redirect to login
       const response = NextResponse.redirect(new URL("/login", request.url));
       response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
@@ -72,18 +97,22 @@ export async function middleware(request: NextRequest) {
 
     // Admin-only routes
     if (pathname.startsWith("/admin") && email.toLowerCase() !== ADMIN_EMAIL) {
-      return NextResponse.redirect(new URL("/studio", request.url));
+      return isApiRoute
+        ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        : NextResponse.redirect(new URL("/studio", request.url));
     }
 
-    // Refresh cookie on every visit
+    // Refresh cookie on every visit (pages only, not API)
     const response = NextResponse.next();
-    response.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
+    if (!isApiRoute) {
+      response.cookies.set(COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+    }
     return response;
   }
 
@@ -106,5 +135,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/studio/:path*", "/admin/:path*", "/subscribe/:path*", "/login"],
+  matcher: ["/studio/:path*", "/admin/:path*", "/subscribe/:path*", "/api/:path*", "/login"],
 };
