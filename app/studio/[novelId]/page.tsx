@@ -493,6 +493,7 @@ function NovelWorkspacePage() {
     "summary",
   );
   const [selectedV2CharacterId, setSelectedV2CharacterId] = useState<string | null>(null);
+  const [nameConfirmPopup, setNameConfirmPopup] = useState<{ detected: string[]; selected: Set<string> } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
@@ -3418,7 +3419,8 @@ function NovelWorkspacePage() {
 
       const prompt = [
         `Story idea: ${userPrompt}`,
-        `Create a novel summary. Return JSON:`,
+        `Create a novel summary. Do NOT use specific character names — refer to characters by role or description only (e.g. "a young detective", "her abusive partner"). Character names will be created separately in the Characters section.`,
+        `Return JSON:`,
         `{"synopsis":"140-260 word synopsis","themes":["2-5 themes"],"genre":["2-4 genres"],"tone":["2-4 tones"],"coreConflict":"1-3 sentences of central tension"}`,
       ].join("\n\n");
 
@@ -3582,7 +3584,10 @@ function NovelWorkspacePage() {
     }
   }
 
-  async function runGenerateCharactersFromSummary() {
+  /* ── Character generation: entry point ──
+     Scans synopsis for name-like words. If found, shows a confirmation popup.
+     If not found, goes straight to AI generation. */
+  function handleGenerateCharacters() {
     if (!novel || !ensureStoryAiReady()) return;
     const hasSummaryInput =
       Boolean(novel.storyBible.summary.synopsisShort.trim()) || Boolean(novel.storyBible.summary.stakes.trim());
@@ -3592,93 +3597,62 @@ function NovelWorkspacePage() {
       );
       return;
     }
+    // Scan for names the user may have written
+    const detected = extractSummaryNameHints();
+    if (detected.length > 0) {
+      // Show the confirmation popup — user picks which names to include
+      setNameConfirmPopup({ detected, selected: new Set(detected) });
+    } else {
+      // No names found — go straight to AI generation
+      void runGenerateCharactersFromSummary([]);
+    }
+  }
+
+  async function runGenerateCharactersFromSummary(confirmedNames: string[]) {
+    if (!novel || !ensureStoryAiReady()) return;
 
     setStoryAiBusyAction("characters-generate");
     setStoryAiError(null);
     try {
-      const summaryNameHints = extractSummaryNameHints();
-      if (summaryNameHints.length === 0) {
-        throw new Error("No clear person names were found in the synopsis. Add real character names first.");
-      }
       const existingNames = storyCharacters.map((c) => c.name).filter(Boolean).join(", ") || "none";
-      const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "";
       const sb = novel.storyBible;
       const genre = (sb.summary.genre ?? []).slice(0, 4).join(", ") || "fiction";
+      const tone = (sb.summary.tone ?? []).slice(0, 3).join(", ") || "";
       const synopsis = sb.summary.synopsisShort?.trim() || "";
-      const requestedCount = Math.min(6, Math.max(2, summaryNameHints.length));
-
-      // ── Name validation ──
-      const allKnownLocations = new Set<string>(
-        (novel.storyBible.locations ?? []).map((l) => l.name?.trim().toLowerCase()).filter(Boolean),
-      );
-      const allKnownLore = new Set<string>(
-        (novel.storyBible.lore ?? []).map((l) => l.title?.trim().toLowerCase()).filter(Boolean),
-      );
-      const NEVER_A_NAME = new Set([
-        "despite","although","because","before","after","during","against","between","through",
-        "without","within","around","among","behind","beneath","beside","beyond","another",
-        "either","neither","every","several","already","always","perhaps","whether","however",
-        "moreover","therefore","otherwise","meanwhile","together","toward","towards",
-        "about","above","across","along","below","under","until","upon","while","since","often",
-        "never","still","almost","rather","quite","further","where","there","whose","which",
-        "other","these","those","their","would","could","should","might","being","having",
-        "broken","forgotten","hidden","golden","wooden","fallen","chosen","frozen","spoken",
-        "stolen","woven","driven","risen","taken","shaken","forsaken","molten","rotten","sunken",
-        "written","sacred","cursed","blessed","damned","haunted","ruined","twisted","scarred",
-        "lost","found","silent","gentle","bitter","wicked","lonely","savage","hollow","ancient",
-        "eternal","divine","mortal","phantom","shadow","spectral","mystic","arcane","celestial",
-        "crimson","scarlet","midnight","obsidian","emerald","azure","amber","onyx","ivory",
-      ]);
-      const NAME_OK = new Set(["ashley","beverly","courtney","emily","holly","kelly","lily","molly","sally","shelley","shirley","stanley","timothy","anthony","brittany","destiny","harmony","melody","charity","trinity","felicity","dorothy","kimberly","audrey","avery","henry","harry","perry","terry","jerry","barry","gary","danny","jimmy","kenny","billy","bobby","tommy","jenny","penny","mary","betty","jeffrey","geoffrey","gregory","zachary","hillary","mallory","rory","ivory","emery","valery","rosemary","florence","grace","pierce","lance","chance","vince","bruce","joyce","wayne","shane","blaine","claire","blake","drake","luke","june","rose","hope","jade","eve","skye","brooke","paige"]);
-      const PLACE_WORDS = new Set(["city","town","village","kingdom","castle","forest","mountain","river","lake","temple","palace","tower","tavern","inn","market","arena","ruins","island","realm","empire","port","harbor","bridge","gate","academy","school","library","cathedral","church","guild","order","council","faction","manor","estate","dungeon","fortress","citadel","desert","oasis","coast","canyon","continent","province","district","sea","ocean","bay","peninsula","valley","monastery","abbey","chapel","shrine","museum","theatre","theater","stadium","settlement","colony","garrison","abyss","wilderness","house"]);
-
-      function looksLikeRealName(word: string): boolean {
-        if (!word || word.length < 2 || word.length > 20) return false;
-        if (!/^[A-Z]/.test(word)) return false;
-        if (!/[aeiouAEIOU]/.test(word)) return false;
-        const lw = word.toLowerCase();
-        if (NEVER_A_NAME.has(lw)) return false;
-        if (!NAME_OK.has(lw)) {
-          if (/(?:ly|ness|ment|tion|sion|ful|less|ous|ive|able|ible|ally|erly|ward|wise|ght|ism|ist|ity|ety|ance|ence|dom|ship|ened|ated|ized|ised|eous|ious|ical|shire|holm|burg|berg|wich|wick|ford|land|dale|wood|field|pool|port|mouth|town|stead|bury|polis|grad|stan)$/.test(lw)) return false;
-          if (/(?:ing|ful|less|ness|ment|tion|sion|ous|ive|ble|ish|ise|ize|ude|ade|ite|ete|ose|ure|age|ual|ial|ght|nce|tch|dge)$/.test(lw) && lw.length > 5) return false;
-        }
-        if (/^(un|dis|over|under|out|mis|pre|non|anti|counter|super|semi|sub|trans|inter|multi|ultra|extra|mega|auto|self|home|some|any|every|no)/.test(lw) && lw.length > 6) return false;
-        return true;
-      }
-
-      function isValidName(name: string): boolean {
-        if (!name || name.length < 3) return false;
-        const words = name.split(/\s+/).filter(Boolean);
-        if (words.length < 2) return false;
-        for (const w of words) {
-          if (!looksLikeRealName(w)) return false;
-          const wl = w.toLowerCase();
-          if (allKnownLocations.has(wl) || allKnownLore.has(wl) || PLACE_WORDS.has(wl)) return false;
-        }
-        if (/^(new character|character \d|unknown|unnamed|n\/a|the )/i.test(name)) return false;
-        if (/\bof the\b/i.test(name)) return false;
-        return true;
-      }
+      const stakes = sb.summary.stakes?.trim() || "";
+      const requestedCount = Math.max(3, Math.min(6, confirmedNames.length + 2));
 
       // ═══════════════════════════════════════════════════════════════
-      // FAST — names + roles only. User clicks "Run: Full Profile" per character.
+      // AI creates characters from story context — not from name hints
       // ═══════════════════════════════════════════════════════════════
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
-      const prompt = [
-        `${genre} novel synopsis: ${clampPromptText(synopsis, 400)}`,
-        summaryNamesText ? `Person names identified in the synopsis: ${summaryNamesText}` : "",
+      const promptParts = [
+        `You are creating characters for a ${genre} novel.`,
+        `Synopsis: ${clampPromptText(synopsis, 500)}`,
+        stakes ? `Core conflict: ${clampPromptText(stakes, 200)}` : "",
+        tone ? `Tone: ${tone}` : "",
         existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
-        "IMPORTANT: Only create characters for ACTUAL PERSON NAMES from the synopsis above. Ignore any common English words that are not real person names.",
-        "For each real person name, generate a full name (first + last). Choose a surname that fits the story's setting, era, and culture.",
+      ];
+
+      if (confirmedNames.length > 0) {
+        promptParts.push(
+          `The user wants these specific names included: ${confirmedNames.join(", ")}. You MUST use these names (add a fitting surname if only a first name is given).`,
+        );
+      }
+
+      promptParts.push(
+        `Create ${requestedCount} characters with full names (first + last) that fit the story's setting, culture, and era.`,
         "Give each character a role (Protagonist, Antagonist, Supporting, or Minor) and a one-sentence hook that fits the synopsis.",
-        `Return up to ${requestedCount} characters as JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
-      ].filter(Boolean).join("\n");
+        `Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
+      );
+
+      const prompt = promptParts.filter(Boolean).join("\n");
 
       let roster: RosterEntry[] = [];
 
       try {
-        const raw = await requestOpenRouterText(prompt, 300, 180000, "Return JSON array only.", false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 400, 180000, "Return JSON array only.", false, 0.7);
         const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
         if (Array.isArray(parsed)) {
           roster = parsed;
@@ -3694,8 +3668,8 @@ function NovelWorkspacePage() {
       if (roster.length === 0) {
         try {
           const raw2 = await requestOpenRouterText(
-            `List 4 characters for a ${genre} novel: ${clampPromptText(synopsis, 300)}\nJSON array: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
-            300, 60000, "Return JSON array only.", false, 0.5,
+            `Create 4 characters for a ${genre} novel with this synopsis: ${clampPromptText(synopsis, 300)}\nEach needs a full name (first + last) fitting the story setting, a role, and a one-sentence hook.\nJSON array: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
+            400, 60000, "Return JSON array only.", false, 0.5,
           );
           const parsed2 = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw2);
           if (Array.isArray(parsed2)) roster = parsed2;
@@ -3708,61 +3682,17 @@ function NovelWorkspacePage() {
         } catch { /* continue */ }
       }
 
-      // Build a set of first-name tokens from summary hints for flexible matching.
-      // This allows "Sarah" (hint) to match "Sarah Thompson" (AI-generated full name).
-      const hintFirstNames = new Set(
-        summaryNameHints.map((h) => h.trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
-      );
-      const hintFullNames = new Set(
-        summaryNameHints.map((h) => h.trim().toLowerCase()),
-      );
-
-      // Filter roster: reject nonsense, accept real names
+      // Light validation — reject obvious garbage
       roster = roster.filter((r) => {
         if (typeof r.name !== "string" || !r.name.trim()) return false;
         const name = r.name.trim();
         const words = name.split(/\s+/).filter(Boolean);
         if (words.length === 0) return false;
-        // Safety: reject any character whose first name is a common English word
         const firstLower = words[0].toLowerCase();
         if (SUMMARY_NAME_BLOCKLIST.has(firstLower)) return false;
-        if (NEVER_A_NAME.has(firstLower)) return false;
-        // Single-word name: accept if it matches a summary hint
-        if (words.length === 1) {
-          return hintFirstNames.has(name.toLowerCase());
-        }
-        // Multi-word name: accept if valid OR first name matches a hint
-        return isValidName(name) || hintFirstNames.has(firstLower);
-      });
-
-      // Keep only characters whose name overlaps with summary hints (by first name)
-      roster = roster.filter((r) => {
-        const firstName = (r.name || "").trim().toLowerCase().split(/\s+/)[0] || "";
-        const fullName = (r.name || "").trim().toLowerCase();
-        return hintFirstNames.has(firstName) || hintFullNames.has(fullName);
-      });
-
-      // Add any summary name hints not yet in roster
-      const rosterFirstNames = new Set(
-        roster.map((r) => (r.name ?? "").trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
-      );
-      const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
-      const existingFirstNames = new Set(
-        storyCharacters.map((c) => c.name.trim().toLowerCase().split(/\s+/)[0]).filter(Boolean),
-      );
-
-      summaryNameHints.forEach((hint) => {
-        const firstName = hint.trim().toLowerCase().split(/\s+/)[0] || "";
-        if (
-          firstName &&
-          !rosterFirstNames.has(firstName) &&
-          !existingFirstNames.has(firstName) &&
-          !existingNamesSet.has(hint.trim().toLowerCase())
-        ) {
-          // Accept single first names from the synopsis — they're real character names
-          roster.push({ name: hint.trim(), role: roster.length === 0 ? "Protagonist" : "Supporting" });
-          rosterFirstNames.add(firstName);
-        }
+        // Reject names that look like placeholders
+        if (/^(new character|character \d|unknown|unnamed|n\/a|the )/i.test(name)) return false;
+        return true;
       });
 
       if (roster.length === 0) {
@@ -3773,6 +3703,7 @@ function NovelWorkspacePage() {
       const nextCharacters = [...storyCharacters];
       const nameIndex = new Map<string, number>();
       const firstNameIndex = new Set<string>();
+      const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
       nextCharacters.forEach((c, i) => {
         const k = c.name.trim().toLowerCase();
         if (k) {
@@ -3784,15 +3715,13 @@ function NovelWorkspacePage() {
 
       let addedCount = 0;
       roster.forEach((entry) => {
-        const name = (entry.name ?? "").trim();
-        if (!name) return;
-        const fullName = name;
+        const fullName = (entry.name ?? "").trim();
         if (!fullName) return;
-        const k = fullName.trim().toLowerCase();
+        const k = fullName.toLowerCase();
         const firstName = k.split(/\s+/)[0] ?? "";
         // Skip if exact full name already exists
         if (nameIndex.has(k) || existingNamesSet.has(k)) return;
-        // Skip if first name already used (prevents "Liam Fletcher" + "Liam Thompson" dupes)
+        // Skip if first name already used (prevents dupes)
         if (firstName && firstNameIndex.has(firstName)) return;
 
         nextCharacters.push({
@@ -4012,6 +3941,7 @@ function NovelWorkspacePage() {
                 : mode === "beats"
                   ? "Rewrite this synopsis as a chapter-ready arc summary with clear progression."
                   : "Improve clarity, pacing, tension, and emotional pull while preserving canon.",
+          "Preserve any character names the user already wrote, but do NOT invent new character names. Refer to unnamed characters by role or description.",
           "Return JSON only: {\"synopsis\":\"string\"}",
           `Current synopsis:\n${currentSynopsis}`,
           `Core conflict:\n${novel.storyBible.summary.stakes || "(not set yet)"}`,
@@ -8297,7 +8227,7 @@ function NovelWorkspacePage() {
                         <button
                           type="button"
                           className="pw-ai-mini-btn"
-                          onClick={() => void runGenerateCharactersFromSummary()}
+                          onClick={() => handleGenerateCharacters()}
                           disabled={storyAiBusyAction !== null}
                         >
                           {storyAiBusyAction === "characters-generate"
@@ -9384,6 +9314,80 @@ function NovelWorkspacePage() {
                 )}
 
               </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Name confirmation popup ── */}
+      {nameConfirmPopup && (
+        <div className="pw-modal-overlay" onClick={() => setNameConfirmPopup(null)}>
+          <div className="pw-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>👤</div>
+              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
+                We noticed character names
+              </div>
+              <p className="pw-delete-modal-copy" style={{ marginTop: 8 }}>
+                These names were found in your synopsis. Select which ones to include — the AI will build characters around them. Unselected slots will get AI-generated names that fit your story.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", margin: "20px 0" }}>
+              {nameConfirmPopup.detected.map((name) => {
+                const isSelected = nameConfirmPopup.selected.has(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      setNameConfirmPopup((prev) => {
+                        if (!prev) return prev;
+                        const next = new Set(prev.selected);
+                        if (next.has(name)) next.delete(name); else next.add(name);
+                        return { ...prev, selected: next };
+                      });
+                    }}
+                    style={{
+                      padding: "8px 18px",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      borderRadius: 12,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                      border: isSelected ? "2px solid var(--pw-accent, #556b2f)" : "1.5px solid var(--pw-border, #e5e6ea)",
+                      background: isSelected ? "var(--pw-accent-light, rgba(85,107,47,0.1))" : "var(--pw-bg-soft, #f6f6f8)",
+                      color: isSelected ? "var(--pw-accent, #556b2f)" : "var(--pw-text-dim, #999)",
+                    }}
+                  >
+                    {isSelected ? "✓ " : ""}{name}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pw-delete-modal-actions" style={{ marginTop: 20 }}>
+              <button
+                type="button"
+                className="btn pw-cancel-btn"
+                onClick={() => {
+                  setNameConfirmPopup(null);
+                  void runGenerateCharactersFromSummary([]);
+                }}
+              >
+                Skip — let AI choose all names
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const confirmed = [...nameConfirmPopup.selected];
+                  setNameConfirmPopup(null);
+                  void runGenerateCharactersFromSummary(confirmed);
+                }}
+              >
+                Continue with {nameConfirmPopup.selected.size} name{nameConfirmPopup.selected.size !== 1 ? "s" : ""}
+              </button>
             </div>
           </div>
         </div>
