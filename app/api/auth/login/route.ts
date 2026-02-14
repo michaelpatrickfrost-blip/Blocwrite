@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
+import { prisma } from "@/lib/prisma";
 import { createSessionToken, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
+import { hasActiveSubscription } from "@/lib/subscription-gate";
 
-// Single-user credentials — hash generated from bcrypt.hash("Norman1981!", 12)
+// Admin credentials (preserved — admin always logs in with this password)
 const ADMIN_EMAIL = "kickablur@icloud.com";
 const ADMIN_HASH = "$2b$12$FEpsrmuLlPRCayHGoamab.ERBf4ZWM6xHzfz3t/OrOFtSV5inqije";
 
@@ -15,25 +17,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
-    // Check email (case-insensitive)
-    if (email.toLowerCase().trim() !== ADMIN_EMAIL) {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // ── 1. Admin login (hardcoded credentials) ──
+    if (normalizedEmail === ADMIN_EMAIL) {
+      const match = await bcrypt.compare(password, ADMIN_HASH);
+      if (!match) {
+        return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+      }
+
+      const token = createSessionToken(normalizedEmail);
+      const response = NextResponse.json({ ok: true, redirectTo: "/studio" });
+      response.cookies.set(COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: COOKIE_MAX_AGE,
+      });
+      return response;
+    }
+
+    // ── 2. Regular user login (Prisma lookup) ──
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, passwordHash: true },
+    });
+
+    if (!user || !user.passwordHash) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    // Check password
-    const match = await bcrypt.compare(password, ADMIN_HASH);
+    const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    // Create signed token and set cookie
-    const token = createSessionToken(email.toLowerCase().trim());
-    const normalizedEmail = email.toLowerCase().trim();
-    const response = NextResponse.json({
-      ok: true,
-      redirectTo: "/studio",
-    });
+    // Create session
+    const token = createSessionToken(normalizedEmail);
 
+    // Check subscription to determine redirect
+    const hasSub = await hasActiveSubscription(normalizedEmail);
+    const redirectTo = hasSub ? "/studio" : "/subscribe";
+
+    const response = NextResponse.json({ ok: true, redirectTo });
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

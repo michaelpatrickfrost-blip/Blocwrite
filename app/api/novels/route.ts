@@ -2,33 +2,50 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { createHash } from "crypto";
 import { verifySessionToken, COOKIE_NAME } from "@/lib/bw-auth";
 
 export const runtime = "nodejs";
 
 const DATA_DIR = join(process.cwd(), "data");
-const NOVELS_FILE = join(DATA_DIR, "novels.json");
+const ADMIN_EMAIL = "kickablur@icloud.com";
 
-async function isAuthenticated(): Promise<boolean> {
+/** Get the authenticated user's email, or null. */
+async function getAuthEmail(): Promise<string | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
-  if (!token) return false;
+  if (!token) return null;
   const email = verifySessionToken(token);
-  return email !== null;
+  return email ? email.trim().toLowerCase() : null;
 }
 
-async function ensureDataDir() {
-  await mkdir(DATA_DIR, { recursive: true });
+/**
+ * Get the user-specific data directory.
+ * Admin uses the root data/ dir (preserves existing data).
+ * Other users get data/{emailHash}/ for isolation.
+ */
+function getUserDataDir(email: string): string {
+  if (email === ADMIN_EMAIL) {
+    return DATA_DIR;
+  }
+  const hash = createHash("sha256").update(email).digest("hex").slice(0, 16);
+  return join(DATA_DIR, "users", hash);
+}
+
+async function ensureDir(dir: string) {
+  await mkdir(dir, { recursive: true });
 }
 
 export async function GET() {
-  if (!(await isAuthenticated())) {
+  const email = await getAuthEmail();
+  if (!email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    await ensureDataDir();
-    const raw = await readFile(NOVELS_FILE, "utf-8").catch(() => "[]");
+    const dir = getUserDataDir(email);
+    await ensureDir(dir);
+    const raw = await readFile(join(dir, "novels.json"), "utf-8").catch(() => "[]");
     const novels = JSON.parse(raw);
     return NextResponse.json(novels);
   } catch {
@@ -37,26 +54,26 @@ export async function GET() {
 }
 
 async function saveNovelsHandler(request: Request) {
-  if (!(await isAuthenticated())) {
+  const email = await getAuthEmail();
+  if (!email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    // sendBeacon sends text/plain, normal fetch sends application/json — handle both
     const text = await request.text();
     const body = JSON.parse(text);
     if (!Array.isArray(body)) {
       return NextResponse.json({ error: "Expected an array of novels." }, { status: 400 });
     }
 
-    await ensureDataDir();
-    await writeFile(NOVELS_FILE, JSON.stringify(body), "utf-8");
+    const dir = getUserDataDir(email);
+    await ensureDir(dir);
+    await writeFile(join(dir, "novels.json"), JSON.stringify(body), "utf-8");
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Failed to save novels." }, { status: 500 });
   }
 }
 
-// Support both PUT (normal saves) and POST (sendBeacon on page close)
 export const PUT = saveNovelsHandler;
 export const POST = saveNovelsHandler;

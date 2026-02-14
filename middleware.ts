@@ -27,7 +27,6 @@ async function verifyToken(token: string, secret: string): Promise<string | null
     if (dotIdx === -1) return null;
     const payloadB64 = token.slice(0, dotIdx);
     const sig = token.slice(dotIdx + 1);
-    // Decode base64url
     const payload = atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"));
     const expected = await hmacSign(payload, secret);
     if (sig !== expected) return null;
@@ -43,46 +42,69 @@ async function verifyToken(token: string, secret: string): Promise<string | null
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Protect /studio and /admin routes.
-  if (pathname.startsWith("/studio") || pathname.startsWith("/admin")) {
+  // ── Protected routes: /studio, /admin, /subscribe ──
+  // All require a valid bw-session. /admin additionally requires admin email.
+  // Subscription enforcement for /studio is handled by app/studio/layout.tsx
+  // (because Prisma can't run in Edge middleware).
+
+  if (
+    pathname.startsWith("/studio") ||
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/subscribe")
+  ) {
     const secret = process.env.BW_SESSION_SECRET;
     if (!secret) {
-      // No secret configured — block access
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/login", request.url));
     }
 
     const token = request.cookies.get(COOKIE_NAME)?.value;
     if (!token) {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/login", request.url));
     }
 
     const email = await verifyToken(token, secret);
     if (!email) {
-      // Invalid or expired token — clear cookie and redirect
-      const response = NextResponse.redirect(new URL("/", request.url));
+      // Invalid or expired token — clear cookie and redirect to login
+      const response = NextResponse.redirect(new URL("/login", request.url));
       response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
       return response;
     }
 
+    // Admin-only routes
     if (pathname.startsWith("/admin") && email.toLowerCase() !== ADMIN_EMAIL) {
       return NextResponse.redirect(new URL("/studio", request.url));
     }
 
-    // Refresh the cookie on every visit so it never expires while you're active
+    // Refresh cookie on every visit
     const response = NextResponse.next();
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
+      maxAge: 60 * 60 * 24 * 365,
     });
     return response;
+  }
+
+  // ── Redirect logged-in users away from login page ──
+  if (pathname === "/login") {
+    const secret = process.env.BW_SESSION_SECRET;
+    if (secret) {
+      const token = request.cookies.get(COOKIE_NAME)?.value;
+      if (token) {
+        const email = await verifyToken(token, secret);
+        if (email) {
+          // Already logged in — send to studio
+          return NextResponse.redirect(new URL("/studio", request.url));
+        }
+      }
+    }
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/studio/:path*", "/admin/:path*"],
+  matcher: ["/studio/:path*", "/admin/:path*", "/subscribe/:path*", "/login"],
 };
