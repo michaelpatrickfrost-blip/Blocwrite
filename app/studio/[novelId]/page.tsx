@@ -6009,13 +6009,18 @@ function NovelWorkspacePage() {
       const styleRules = novel.storyBible.styleVoice?.voiceRules?.slice(0, 300) || "";
       const pov = novel.storyBible.styleVoice?.pov || "";
       const categoryMeta = getBoltonCategoryMeta(bolton.category);
-      const systemMsg = "You are a creative writing AI director. You convert author instructions into sharp prose directives that a text-generation AI can follow precisely. Return only valid JSON.";
+      const systemMsg = "You are a prose direction specialist. You convert vague author wishes into precise, actionable prose-writing instructions. Your output will be injected directly into an AI prose generator's prompt. Return only valid JSON.";
       const prompt = [
-        "Turn this user instruction into a short directive that will be injected into chapter/bloc generation.",
-        "Output must be a single actionable instruction under 500 characters.",
-        "Prioritize clear verbs, explicit constraints, and the highest-impact writing behavior.",
-        "The directive must help the AI prioritize this plugin while still respecting canon and scene continuity.",
-        "Return JSON only: { \"prompt\": \"the sharpened directive\" }",
+        "Convert the user's instruction into a specific, actionable directive for an AI prose writer.",
+        "",
+        "RULES:",
+        "- The directive MUST be a concrete instruction telling the AI HOW to write, not WHAT to write about.",
+        "- Use specific craft techniques: e.g. 'Use short, fragmented sentences during tense moments. Layer sensory details — sounds, smells, textures — to build atmosphere. Cut dialogue tags and let action beats carry speech.'",
+        "- NEVER produce vague instructions like 'focus on horror' or 'make it scary'. Instead describe the exact writing techniques: sentence rhythm, word choice, sensory emphasis, pacing, dialogue style, metaphor use.",
+        "- Keep it under 500 characters. Every word must earn its place.",
+        "- Write as direct imperatives: 'Use...', 'Cut...', 'Layer...', 'Slow the pacing by...', 'Build tension through...'",
+        "",
+        "Return JSON only: { \"prompt\": \"the actionable directive\" }",
         "",
         `User instruction: ${bolton.description}`,
         bolton.title ? `Context label: ${bolton.title}` : "",
