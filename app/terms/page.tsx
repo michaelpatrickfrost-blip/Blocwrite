@@ -3,11 +3,10 @@ import Link from "next/link";
 export default function TermsPage() {
   const C = {
     bg: "#ffffff",
-    text: "#111116",
-    textSoft: "#5a5e6b",
-    textMuted: "#9ca0ab",
-    accentDark: "#c8e030",
-    border: "#e8e9ed",
+    text: "#1a1a1f",
+    textSoft: "#5a5d66",
+    textMuted: "#9ea0a8",
+    border: "#e5e6ea",
   };
 
   const sectionStyle: React.CSSProperties = {
@@ -33,15 +32,18 @@ export default function TermsPage() {
       {/* Nav */}
       <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 28px" }}>
         <div style={{ maxWidth: 800, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Link href="/" style={{ textDecoration: "none", fontSize: 20, fontWeight: 800, letterSpacing: "-0.04em", color: C.text }}>
-            Bloc<span style={{ color: C.accentDark }}>write</span>
+          <Link href="/" style={{ textDecoration: "none" }}>
+            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 40, width: "auto" }} />
           </Link>
-          <Link href="/" style={{ fontSize: 13, color: C.textSoft, textDecoration: "none" }}>&larr; Back to Home</Link>
+          <Link href="/" style={{ fontSize: 13, color: C.textSoft, textDecoration: "none", fontWeight: 500 }}>&larr; Back to Home</Link>
         </div>
       </nav>
 
       {/* Content */}
       <article style={{ maxWidth: 800, margin: "0 auto", padding: "48px 28px 80px" }}>
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textMuted, marginBottom: 12 }}>
+          LEGAL
+        </p>
         <h1 style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, letterSpacing: "-0.025em", marginBottom: 8 }}>
           Terms &amp; Conditions
         </h1>
@@ -88,7 +90,7 @@ export default function TermsPage() {
             <strong>Cancellation:</strong> You may cancel your subscription at any time. Upon cancellation, you will retain access to the Service until the end of your current billing period. No partial refunds are provided for unused portions of a billing period.
           </p>
           <p style={paraStyle}>
-            <strong>Refund Policy:</strong> For full details on our refund and cancellation policy, please see our <a href="/refunds" style={{ color: "inherit", fontWeight: 600, textDecoration: "underline" }}>Refund Policy</a>.
+            <strong>Refund Policy:</strong> For full details on our refund and cancellation policy, please see our <a href="/refunds" style={{ color: C.text, fontWeight: 600, textDecoration: "underline" }}>Refund Policy</a>.
           </p>
           <p style={paraStyle}>
             <strong>Price Changes:</strong> We reserve the right to change subscription prices with 30 days&apos; advance notice. Existing subscribers will be notified by email before any price change takes effect.
@@ -190,7 +192,7 @@ export default function TermsPage() {
         </div>
 
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 24, marginTop: 48 }}>
-          <Link href="/" style={{ fontSize: 13, color: C.accentDark, textDecoration: "none", fontWeight: 600 }}>
+          <Link href="/" style={{ fontSize: 13, color: C.text, textDecoration: "none", fontWeight: 600 }}>
             &larr; Back to Blocwrite
           </Link>
         </div>

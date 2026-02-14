@@ -68,7 +68,7 @@ export default function ContactPage() {
       <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none" }}>
-            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 30, width: "auto" }} />
+            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 40, width: "auto" }} />
           </Link>
           <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
             Back to home
