@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { checkSubscriptionGate } from "@/lib/subscription-gate";
 import MobileGate from "./components/MobileGate";
-
-const COOKIE_NAME = "bw-session";
 
 /**
  * Server component layout that wraps all /studio/* pages.
@@ -13,6 +10,10 @@ const COOKIE_NAME = "bw-session";
  *
  * Basic auth (valid bw-session cookie) is already checked by middleware.ts.
  * This layout adds subscription + single-session authorization on top.
+ *
+ * Note: Cookie clearing for stale sessions is handled by middleware.ts when the
+ * user arrives at /login?reason=session-expired, since Server Components cannot
+ * modify cookies.
  */
 export default async function StudioLayout({
   children,
@@ -22,9 +23,7 @@ export default async function StudioLayout({
   const gate = await checkSubscriptionGate();
 
   if (gate.sessionStale) {
-    // Clear the stale cookie so the login page doesn't redirect back here
-    const store = await cookies();
-    store.delete(COOKIE_NAME);
+    // Middleware will clear the stale cookie when user hits /login?reason=...
     redirect("/login?reason=session-expired");
   }
 
