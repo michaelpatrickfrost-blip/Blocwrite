@@ -6762,15 +6762,17 @@ function NovelWorkspacePage() {
                       </div>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                      <label className="pw-profile-toggle">
-                        <input
-                          type="checkbox"
-                          checked={!hideBlocks}
-                          onChange={() => setHideBlocks((v) => !v)}
-                        />
-                        <span className="pw-profile-toggle-slider" />
-                        <span className="pw-profile-toggle-label">{hideBlocks ? "Blocs hidden" : "Blocs"}</span>
-                      </label>
+                      <div className="pw-settings-toggle-row">
+                        <span className={`pw-settings-toggle-label ${hideBlocks ? "off" : "on"}`}>{hideBlocks ? "Blocs hidden" : "Blocs"}</span>
+                        <label className="pw-settings-toggle">
+                          <input
+                            type="checkbox"
+                            checked={!hideBlocks}
+                            onChange={() => setHideBlocks((v) => !v)}
+                          />
+                          <span className="pw-settings-toggle-track" />
+                        </label>
+                      </div>
                       {hideBlocks && (
                         <span style={{ fontSize: 10, color: "var(--pw-text-dim)", maxWidth: 180, textAlign: "right", lineHeight: 1.3 }}>
                           Editing prose or running the editor will replace bloc structure
