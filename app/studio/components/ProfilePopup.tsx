@@ -120,6 +120,23 @@ export function ProfilePopup({
   const [modelSearch, setModelSearch] = useState("");
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Subscription state
+  type SubInfo = {
+    plan: string | null;
+    status: string | null;
+    isAdmin: boolean;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    trialEnd: string | null;
+    daysRemaining: number | null;
+  };
+  const [subInfo, setSubInfo] = useState<SubInfo | null>(null);
+  const [subLoading, setSubLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSuccess, setCancelSuccess] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     setAppLanguage(getProfileLanguage());
@@ -267,6 +284,20 @@ export function ProfilePopup({
       void fetchModels();
     }
   }, [activeTab, models.length, modelsLoading, modelsError, fetchModels]);
+
+  // Fetch subscription info when account tab is opened
+  useEffect(() => {
+    if (activeTab !== "account" || !open) return;
+    setSubLoading(true);
+    setCancelConfirm(false);
+    setCancelError(null);
+    setCancelSuccess(false);
+    fetch("/api/billing/subscription")
+      .then((r) => r.json())
+      .then((data: SubInfo) => setSubInfo(data))
+      .catch(() => setSubInfo(null))
+      .finally(() => setSubLoading(false));
+  }, [activeTab, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -575,15 +606,223 @@ export function ProfilePopup({
           {/* ─── Account tab ─── */}
           {activeTab === "account" && (
             <div className="pw-settings-section">
+              {/* Subscription details */}
               <div className="pw-settings-group">
-                <div className="pw-settings-group-title">Your Account</div>
-                <p className="pw-settings-hint">
-                  Manage your subscription and billing through Stripe.
-                </p>
+                <div className="pw-settings-group-title">Subscription</div>
+
+                {subLoading ? (
+                  <p className="pw-settings-hint" style={{ padding: "12px 0" }}>Loading subscription details...</p>
+                ) : subInfo?.isAdmin ? (
+                  <div style={{
+                    padding: "16px",
+                    borderRadius: 12,
+                    background: "rgba(var(--pw-accent-rgb, 134,239,172), 0.08)",
+                    border: "1px solid rgba(var(--pw-accent-rgb, 134,239,172), 0.18)",
+                    marginTop: 8,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{
+                        display: "inline-block",
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--pw-accent, #86efac)",
+                      }} />
+                      <span style={{ fontSize: 14, fontWeight: 700 }}>Admin Account</span>
+                    </div>
+                    <p className="pw-settings-hint" style={{ margin: 0 }}>
+                      Full access. No subscription required.
+                    </p>
+                  </div>
+                ) : subInfo?.status ? (
+                  <div style={{ marginTop: 8 }}>
+                    {/* Status card */}
+                    <div style={{
+                      padding: "16px",
+                      borderRadius: 12,
+                      background: "var(--pw-bg-hover, rgba(255,255,255,0.04))",
+                      border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                    }}>
+                      {/* Status row */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: subInfo.cancelAtPeriodEnd
+                              ? "#f59e0b"
+                              : subInfo.status === "trialing"
+                                ? "#8b5cf6"
+                                : "#10b981",
+                          }} />
+                          <span style={{ fontSize: 14, fontWeight: 700 }}>
+                            {subInfo.status === "trialing"
+                              ? "Free Trial"
+                              : subInfo.cancelAtPeriodEnd
+                                ? "Cancelling"
+                                : "Active"}
+                          </span>
+                        </div>
+                        {subInfo.plan && (
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "3px 10px",
+                            borderRadius: 8,
+                            background: "var(--pw-bg-card, rgba(255,255,255,0.06))",
+                            border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                          }}>
+                            {subInfo.plan}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Details */}
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {subInfo.status === "trialing" && subInfo.trialEnd && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                            <span style={{ color: "var(--pw-text-dim)" }}>Trial ends</span>
+                            <span style={{ fontWeight: 600 }}>
+                              {new Date(subInfo.trialEnd).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                            </span>
+                          </div>
+                        )}
+
+                        {subInfo.currentPeriodEnd && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                            <span style={{ color: "var(--pw-text-dim)" }}>
+                              {subInfo.cancelAtPeriodEnd ? "Access until" : "Next billing date"}
+                            </span>
+                            <span style={{ fontWeight: 600 }}>
+                              {new Date(subInfo.currentPeriodEnd).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                            </span>
+                          </div>
+                        )}
+
+                        {subInfo.daysRemaining !== null && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                            <span style={{ color: "var(--pw-text-dim)" }}>Time remaining</span>
+                            <span style={{ fontWeight: 600 }}>
+                              {subInfo.daysRemaining === 0
+                                ? "Less than a day"
+                                : subInfo.daysRemaining === 1
+                                  ? "1 day"
+                                  : `${subInfo.daysRemaining} days`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Cancel section */}
+                    {!subInfo.cancelAtPeriodEnd && (
+                      <div style={{ marginTop: 16 }}>
+                        {!cancelConfirm ? (
+                          <button
+                            type="button"
+                            className="pw-settings-btn"
+                            onClick={() => setCancelConfirm(true)}
+                            style={{ color: "var(--pw-text-dim)", fontSize: 13 }}
+                          >
+                            Cancel subscription
+                          </button>
+                        ) : (
+                          <div style={{
+                            padding: "14px 16px",
+                            borderRadius: 12,
+                            background: "rgba(239,68,68,0.06)",
+                            border: "1px solid rgba(239,68,68,0.15)",
+                          }}>
+                            <p style={{ fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>
+                              Are you sure? Your access will continue until the end of the current billing period. No refund will be issued.
+                            </p>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button
+                                type="button"
+                                className="pw-settings-btn"
+                                disabled={cancelLoading}
+                                onClick={async () => {
+                                  setCancelLoading(true);
+                                  setCancelError(null);
+                                  try {
+                                    const res = await fetch("/api/billing/cancel-subscription", { method: "POST" });
+                                    const data = await res.json() as { ok?: boolean; error?: string };
+                                    if (res.ok && data.ok) {
+                                      setCancelSuccess(true);
+                                      setCancelConfirm(false);
+                                      // Refresh subscription info
+                                      const r2 = await fetch("/api/billing/subscription");
+                                      const updated = await r2.json() as SubInfo;
+                                      setSubInfo(updated);
+                                    } else {
+                                      setCancelError(data.error || "Failed to cancel.");
+                                    }
+                                  } catch {
+                                    setCancelError("Network error. Please try again.");
+                                  } finally {
+                                    setCancelLoading(false);
+                                  }
+                                }}
+                                style={{
+                                  background: "rgba(239,68,68,0.15)",
+                                  color: "#ef4444",
+                                  fontWeight: 600,
+                                  fontSize: 13,
+                                }}
+                              >
+                                {cancelLoading ? "Cancelling..." : "Yes, cancel"}
+                              </button>
+                              <button
+                                type="button"
+                                className="pw-settings-btn"
+                                onClick={() => { setCancelConfirm(false); setCancelError(null); }}
+                                style={{ fontSize: 13 }}
+                              >
+                                Keep subscription
+                              </button>
+                            </div>
+                            {cancelError && (
+                              <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8, marginBottom: 0 }}>{cancelError}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Already cancelling message */}
+                    {subInfo.cancelAtPeriodEnd && !cancelSuccess && (
+                      <p className="pw-settings-hint" style={{ marginTop: 12, color: "#f59e0b" }}>
+                        Your subscription is set to cancel. You have full access until the end of your billing period.
+                      </p>
+                    )}
+
+                    {/* Cancel success message */}
+                    {cancelSuccess && (
+                      <p className="pw-settings-hint" style={{ marginTop: 12, color: "#10b981" }}>
+                        Subscription cancelled. You can continue using Blocwrite until the end of your billing period.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 8 }}>
+                    <p className="pw-settings-hint">No active subscription.</p>
+                    <a
+                      href="/subscribe"
+                      className="pw-settings-btn"
+                      style={{ display: "inline-block", marginTop: 8, textDecoration: "none", fontWeight: 600 }}
+                    >
+                      Subscribe
+                    </a>
+                  </div>
+                )}
               </div>
 
               {onLogout && (
-                <div className="pw-settings-group">
+                <div className="pw-settings-group" style={{ borderTop: "1px solid var(--pw-border, rgba(255,255,255,0.08))", paddingTop: 16 }}>
                   <button
                     type="button"
                     className="pw-settings-signout"
