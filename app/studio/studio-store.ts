@@ -857,6 +857,149 @@ export function createChapter(index: number): Chapter {
   };
 }
 
+// ─── Server sync ──────────────────────────────────────────────────────────────
+
+/** Load novels from the server API. Returns null if the request fails. */
+export async function loadNovelsFromServer(): Promise<Novel[] | null> {
+  try {
+    const res = await fetch("/api/novels", { credentials: "include" });
+    if (!res.ok) return null;
+    const raw = await res.json();
+    if (!Array.isArray(raw)) return null;
+    const novels = raw
+      .map((item: unknown) => normalizeNovel(item))
+      .filter((item: Novel | null): item is Novel => item !== null)
+      .map(restoreChapterBlocks);
+    return novels;
+  } catch {
+    return null;
+  }
+}
+
+/** Save novels to the server API. Returns true on success. */
+export async function saveNovelsToServer(novels: Novel[]): Promise<boolean> {
+  try {
+    const res = await fetch("/api/novels", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(novels),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Load settings from the server API. */
+export async function loadSettingsFromServer(): Promise<Record<string, string> | null> {
+  try {
+    const res = await fetch("/api/novels/settings", { credentials: "include" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, string> : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Save settings to the server API. */
+export async function saveSettingsToServer(settings: Record<string, string>): Promise<boolean> {
+  try {
+    const res = await fetch("/api/novels/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(settings),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Collect all profile/assistant settings from localStorage into one object. */
+export function gatherSettings(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const keys = [
+    "pilotwriter.profile.language",
+    "pilotwriter.profile.aiOff",
+    "pilotwriter.assistant.provider",
+    "bw-theme",
+  ];
+  // Also grab per-provider settings
+  const provider = window.localStorage.getItem("pilotwriter.assistant.provider") || "openrouter";
+  for (const field of ["key", "model", "baseUrl"]) {
+    keys.push(`pilotwriter.assistant.${provider}.${field}`);
+  }
+  // Grab other providers too
+  for (const p of ["openrouter", "infermatic", "lmstudio"]) {
+    for (const field of ["key", "model", "baseUrl"]) {
+      const k = `pilotwriter.assistant.${p}.${field}`;
+      if (!keys.includes(k)) keys.push(k);
+    }
+  }
+  // Legacy keys
+  keys.push("pilotwriter.openrouter.key", "pilotwriter.openrouter.model");
+
+  const settings: Record<string, string> = {};
+  for (const key of keys) {
+    const val = window.localStorage.getItem(key);
+    if (val !== null) settings[key] = val;
+  }
+  return settings;
+}
+
+/** Apply settings from server into localStorage. */
+export function applySettings(settings: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  for (const [key, value] of Object.entries(settings)) {
+    if (typeof value === "string") {
+      window.localStorage.setItem(key, value);
+    }
+  }
+}
+
+// ─── Debounced server save helper ─────────────────────────────────────────────
+
+let _serverSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingNovels: Novel[] | null = null;
+
+/** Save novels locally (instant) and queue a debounced server save. */
+export function saveNovelsWithSync(novels: Novel[]): boolean {
+  const localOk = saveNovels(novels);
+
+  // Queue debounced server save (2 seconds)
+  _pendingNovels = novels;
+  if (_serverSaveTimer) clearTimeout(_serverSaveTimer);
+  _serverSaveTimer = setTimeout(() => {
+    if (_pendingNovels) {
+      void saveNovelsToServer(_pendingNovels);
+      _pendingNovels = null;
+    }
+  }, 2000);
+
+  return localOk;
+}
+
+/** Flush any pending server save immediately (call on beforeunload / visibilitychange). */
+export function flushServerSave() {
+  if (_serverSaveTimer) {
+    clearTimeout(_serverSaveTimer);
+    _serverSaveTimer = null;
+  }
+  if (_pendingNovels) {
+    // Use sendBeacon for reliability on page close
+    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+      const blob = new Blob([JSON.stringify(_pendingNovels)], { type: "application/json" });
+      navigator.sendBeacon("/api/novels", blob);
+    } else {
+      void saveNovelsToServer(_pendingNovels);
+    }
+    _pendingNovels = null;
+  }
+}
+
 export function countWords(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return 0;

@@ -3,7 +3,22 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { countChapterWords, countNovelWords, createNovel, loadNovels, saveNovels, type Novel } from "./studio-store";
+import {
+  countChapterWords,
+  countNovelWords,
+  createNovel,
+  loadNovels,
+  saveNovels,
+  loadNovelsFromServer,
+  saveNovelsWithSync,
+  flushServerSave,
+  saveNovelsToServer,
+  loadSettingsFromServer,
+  applySettings,
+  gatherSettings,
+  saveSettingsToServer,
+  type Novel,
+} from "./studio-store";
 import { ProfileButton } from "./components/ProfileButton";
 import { ProfilePopup } from "./components/ProfilePopup";
 
@@ -43,6 +58,7 @@ function contentForExport(content: string): string {
 function StudioHomePage() {
   const router = useRouter();
   const [novels, setNovels] = useState<Novel[]>(() => loadNovels());
+  const [serverLoaded, setServerLoaded] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -55,11 +71,53 @@ function StudioHomePage() {
     if (stored) setCurrentTheme(stored);
   }, []);
 
+  // Load novels from server on mount — server is the source of truth
+  useEffect(() => {
+    void (async () => {
+      // Load settings from server first
+      const serverSettings = await loadSettingsFromServer();
+      if (serverSettings && Object.keys(serverSettings).length > 0) {
+        applySettings(serverSettings);
+        // Re-apply theme if it came from server
+        const theme = serverSettings["bw-theme"] as "dark" | "light" | undefined;
+        if (theme) {
+          setCurrentTheme(theme);
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } else {
+        // First time: push local settings to server
+        const local = gatherSettings();
+        if (Object.keys(local).length > 0) {
+          void saveSettingsToServer(local);
+        }
+      }
+
+      // Load novels from server
+      const serverNovels = await loadNovelsFromServer();
+      if (serverNovels !== null) {
+        if (serverNovels.length > 0) {
+          // Server has data — use it as truth
+          setNovels(serverNovels);
+          saveNovels(serverNovels); // cache locally
+        } else {
+          // Server is empty — upload local data if we have any
+          const localNovels = loadNovels();
+          if (localNovels.length > 0) {
+            void saveNovelsToServer(localNovels);
+          }
+        }
+      }
+      setServerLoaded(true);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function toggleTheme() {
     const next = currentTheme === "dark" ? "light" : "dark";
     setCurrentTheme(next);
     localStorage.setItem("bw-theme", next);
     document.documentElement.setAttribute("data-theme", next);
+    void saveSettingsToServer(gatherSettings());
   }
 
   // Export state
@@ -92,7 +150,7 @@ function StudioHomePage() {
 
   function writeNovels(next: Novel[]) {
     setNovels(next);
-    saveNovels(next);
+    saveNovelsWithSync(next);
   }
 
   function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -556,6 +614,7 @@ function StudioHomePage() {
           } catch { /* ignore */ }
           window.location.href = "/";
         }}
+        onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
     </div>
   );

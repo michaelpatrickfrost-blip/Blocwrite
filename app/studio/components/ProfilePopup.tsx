@@ -92,6 +92,8 @@ type ProfilePopupProps = {
   onAiToggle?: (off: boolean) => void;
   /** Called when user clicks Sign out */
   onLogout?: () => void;
+  /** Called when any setting changes (for server sync) */
+  onSettingsChange?: () => void;
 };
 
 export function ProfilePopup({
@@ -103,6 +105,7 @@ export function ProfilePopup({
   onProviderSettingsChange,
   onAiToggle,
   onLogout,
+  onSettingsChange,
 }: ProfilePopupProps) {
   const [appLanguage, setAppLanguage] = useState<ProfileLanguageCode>(() => getProfileLanguage());
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
@@ -137,8 +140,9 @@ export function ProfilePopup({
       setProfileLanguage(code);
       setAppLanguage(code);
       onGrammarLocaleChange?.(code);
+      onSettingsChange?.();
     },
-    [onGrammarLocaleChange],
+    [onGrammarLocaleChange, onSettingsChange],
   );
 
   const handleProviderChange = useCallback((id: AssistantProviderId) => {
@@ -301,6 +305,7 @@ export function ProfilePopup({
                   const on = e.target.checked;
                   setProfileAiOff(!on);
                   setAiOff(!on);
+                  onSettingsChange?.();
                   onAiToggle?.(!on);
                 }}
               />

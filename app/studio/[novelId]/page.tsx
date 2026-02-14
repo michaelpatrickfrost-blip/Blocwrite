@@ -11,6 +11,14 @@ import {
   createChapter,
   loadNovels,
   saveNovels,
+  saveNovelsWithSync,
+  flushServerSave,
+  loadNovelsFromServer,
+  saveNovelsToServer,
+  loadSettingsFromServer,
+  applySettings,
+  gatherSettings,
+  saveSettingsToServer,
   type Novel,
   type Relationship,
   type Bolton,
@@ -716,6 +724,7 @@ function NovelWorkspacePage() {
     setShowModelDropdown(false);
     setOpenRouterStatus("idle");
     setOpenRouterError(null);
+    void saveSettingsToServer(gatherSettings());
   }, [assistantProvider]);
 
 
@@ -724,6 +733,7 @@ function NovelWorkspacePage() {
     setOpenRouterKey(normalized);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.key`, normalized);
+      void saveSettingsToServer(gatherSettings());
     }
   }
 
@@ -731,6 +741,7 @@ function NovelWorkspacePage() {
     setOpenRouterModel(model);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.model`, model);
+      void saveSettingsToServer(gatherSettings());
     }
   }
 
@@ -738,6 +749,7 @@ function NovelWorkspacePage() {
     setAssistantBaseUrl(baseUrl);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, baseUrl);
+      void saveSettingsToServer(gatherSettings());
     }
   }
 
@@ -784,9 +796,33 @@ function NovelWorkspacePage() {
     setOpenRouterModelSearch("");
   }, [profileOpen]);
 
+  // Load novels from server on mount — server is the source of truth
+  useEffect(() => {
+    void (async () => {
+      const serverNovels = await loadNovelsFromServer();
+      if (serverNovels !== null && serverNovels.length > 0) {
+        setNovels(serverNovels);
+        saveNovels(serverNovels); // cache locally
+      } else if (serverNovels !== null && serverNovels.length === 0) {
+        // Server empty — push local data up
+        const localNovels = loadNovels();
+        if (localNovels.length > 0) {
+          void saveNovelsToServer(localNovels);
+        }
+      }
+      // Also sync settings
+      const serverSettings = await loadSettingsFromServer();
+      if (serverSettings && Object.keys(serverSettings).length > 0) {
+        applySettings(serverSettings);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const flushNow = () => {
-      void saveNovels(novels);
+      saveNovels(novels);
+      flushServerSave();
     };
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") flushNow();
@@ -818,7 +854,7 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     if (showStoryBibleModal && novelId && novels.length > 0) {
-      const ok = saveNovels(novels);
+      const ok = saveNovelsWithSync(novels);
       setAutosaveStatus((prev) =>
         ok
           ? { ...prev, status: "ok", message: "Saved", at: new Date().toISOString() }
@@ -4032,7 +4068,7 @@ function NovelWorkspacePage() {
 
       if (changed) {
         const savedAt = new Date().toISOString();
-        const ok = saveNovels(next);
+        const ok = saveNovelsWithSync(next);
         setAutosaveStatus(
           ok
             ? { status: "ok", message: "Saved", at: savedAt }
@@ -8164,6 +8200,7 @@ function NovelWorkspacePage() {
           } catch { /* ignore */ }
           window.location.href = "/";
         }}
+        onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
     </div>
   );
