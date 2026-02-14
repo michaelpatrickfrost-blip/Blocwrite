@@ -2130,11 +2130,31 @@ function NovelWorkspacePage() {
           const name = (c.name || "").toLowerCase();
           return name.length > 1 && searchText.includes(name);
         });
-    const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 3))
-      .slice(0, 5)
+    // Prioritise: protagonist first, then antagonist, then others — always include protagonist
+    const protagonist = characters.find((c) => c.role === "Protagonist");
+    const sortedChars = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 3))
+      .slice(0, 6)
+      .sort((a, b) => {
+        if (a.role === "Protagonist") return -1;
+        if (b.role === "Protagonist") return 1;
+        if (a.role === "Antagonist") return -1;
+        if (b.role === "Antagonist") return 1;
+        return 0;
+      });
+    // Ensure protagonist is always included even if not in planCharIds
+    if (protagonist && !sortedChars.find((c) => c.id === protagonist.id)) {
+      sortedChars.unshift(protagonist);
+    }
+    const charList = sortedChars
+      .slice(0, 6)
       .map((c) => {
         const alias = c.otherNames?.trim() ? ` | aliases: ${clampPromptText(c.otherNames, 40)}` : "";
-        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}${alias}`;
+        const speechParts: string[] = [];
+        if ((c as Record<string, unknown>).accent) speechParts.push(`accent: ${clampPromptText(String((c as Record<string, unknown>).accent), 40)}`);
+        if ((c as Record<string, unknown>).speakingStyle) speechParts.push(`speech: ${clampPromptText(String((c as Record<string, unknown>).speakingStyle), 40)}`);
+        if ((c as Record<string, unknown>).voiceNotes) speechParts.push(`voice: ${clampPromptText(String((c as Record<string, unknown>).voiceNotes), 40)}`);
+        const speechInfo = speechParts.length > 0 ? ` [${speechParts.join(", ")}]` : "";
+        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 50)}` : ""}${alias}${speechInfo}`;
       })
       .join("\n  ");
 
@@ -2182,7 +2202,7 @@ function NovelWorkspacePage() {
       loreRules ? `Rules:\n  ${loreRules}` : "",
     ].filter(Boolean).join("\n");
 
-    return parts.length > 1800 ? `${parts.slice(0, 1700).trimEnd()}\n[condensed]` : parts;
+    return parts.length > 2200 ? `${parts.slice(0, 2100).trimEnd()}\n[condensed]` : parts;
   }
 
   function inferCanonIdsFromText(text: string) {
@@ -2362,10 +2382,12 @@ function NovelWorkspacePage() {
     prose: string,
     args: { targetWords: number; minAcceptable: number; useBestFit: boolean; previousProse: string },
   ) {
-    const text = prose.trim();
+    let text = prose.trim();
+    // Strip metadata lines at start of lines (not mid-sentence) instead of rejecting
+    const metaLinePattern = /^(word count\s*:.*|scene\s*\d+\s*:.*|chapter\s*\d+\s*:.*|---+\s*|[\*]{3,}\s*|\[.*?\]\s*)$/gim;
+    text = text.replace(metaLinePattern, "").replace(/\n{3,}/g, "\n\n").trim();
     const wc = countWords(text);
     const paragraphCount = text ? text.split(/\n{2,}/).filter(Boolean).length : 0;
-    const hasForbiddenMeta = /\b(word count\s*:|scene\s*\d+\s*:|chapter\s*\d+\s*:)\b/i.test(text);
     const prevTail = args.previousProse.trim().slice(-220);
     const appearsDuplicatedTail = Boolean(prevTail) && text.startsWith(prevTail);
     const minByMode = args.useBestFit ? Math.max(220, Math.round(args.targetWords * 0.62)) : args.minAcceptable;
@@ -2374,7 +2396,6 @@ function NovelWorkspacePage() {
       wc >= minByMode &&
       wc <= maxByMode &&
       paragraphCount >= 1 &&
-      !hasForbiddenMeta &&
       !appearsDuplicatedTail;
     return { ok, wc, text };
   }
@@ -2516,7 +2537,7 @@ function NovelWorkspacePage() {
     preset: "default",
     notes: "",
     regenConstraint: "",
-    lengthMode: "strict",
+    lengthMode: "best-fit",
   };
 
   function parseChapterBlocks(content: string): { blocks: ChapterBlock[]; hasBlocks: boolean } {
@@ -2685,17 +2706,22 @@ function NovelWorkspacePage() {
       type BatchBlocResult = { blocs?: Array<{ synopsis?: string }> };
 
       const batchPrompt = [
-        `Split this chapter into exactly ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into prose.`,
-        `Return JSON: { "blocs": [{ "synopsis": "1-3 sentences" }, { "synopsis": "1-3 sentences" }, ...] }`,
+        `Split this chapter into EXACTLY ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into prose.`,
+        ``,
+        `CRITICAL: You MUST return EXACTLY ${BLOC_COUNT} blocs — not 1, not 2, not 3 — EXACTLY ${BLOC_COUNT}.`,
+        ``,
+        `Return ONLY this JSON structure:`,
+        `{ "blocs": [{ "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }] }`,
         "",
         "RULES:",
-        `- Return EXACTLY ${BLOC_COUNT} blocs.`,
-        "- Each synopsis must be 1-3 concrete sentences describing what HAPPENS in the scene.",
+        `- Return EXACTLY ${BLOC_COUNT} blocs in the array. This is mandatory.`,
+        "- Each synopsis must be 1-3 concrete sentences (at least 15 words) describing what HAPPENS — actions, dialogue beats, emotional shifts.",
         "- Use character names from the Canon below. Do not invent new characters.",
         "- All blocs share ONE primary location unless a transition is essential for the plot.",
         "- Bloc 1 opens the chapter. The final bloc resolves or closes the chapter.",
         "- Each bloc flows naturally into the next — no jumps.",
         "- Be specific: name characters, describe actions, state emotional shifts and consequences.",
+        "- Do NOT write generic synopses like 'continuation of the scene' or 'the story continues'. Each must describe a distinct beat.",
         "- This is an internal drafting plan, NOT reader-facing copy.",
         "",
         storyPosition.chapterNumber > 0
@@ -2708,6 +2734,8 @@ function NovelWorkspacePage() {
         nextChapterSynopsis ? `Next chapter: ${clampPromptText(nextChapterSynopsis, 200)}` : "",
         "",
         context,
+        "",
+        `REMINDER: Return EXACTLY ${BLOC_COUNT} blocs in your JSON response.`,
       ].filter(Boolean).join("\n");
 
       let batchBlocs: Array<{ synopsis?: string }> = [];
@@ -2745,10 +2773,14 @@ function NovelWorkspacePage() {
               }
             }
           }
-          // Validate entries
+          // Validate entries — must be a real synopsis, not a stub
           batchBlocs = batchBlocs.filter((b) => {
             const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
-            return syn.length >= 10;
+            if (syn.length < 15) return false;
+            // Reject generic stubs
+            const lower = syn.toLowerCase();
+            if (/^(continuation|the (story|scene|chapter) continues)/.test(lower)) return false;
+            return true;
           });
           if (batchBlocs.length >= BLOC_COUNT) break;
         } catch {
@@ -2760,23 +2792,69 @@ function NovelWorkspacePage() {
       const blocks: ChapterBlock[] = [];
       for (let i = 0; i < Math.min(BLOC_COUNT, batchBlocs.length); i++) {
         const synopsis = (typeof batchBlocs[i]?.synopsis === "string" ? batchBlocs[i].synopsis!.trim() : "");
-        if (synopsis.length >= 10) {
+        if (synopsis.length >= 15) {
           blocks.push({ ...DEFAULT_BLOCK, synopsis, notes: chapterLevelBolton });
         }
       }
 
-      // ── Quick repair: fill any missing blocs individually ──
+      // ── Full-batch retry if we got fewer than 3 blocs ──
+      if (blocks.length < 3) {
+        try {
+          const retryPrompt = [
+            `IMPORTANT: Your previous response did not return ${BLOC_COUNT} blocs. Try again.`,
+            batchPrompt,
+          ].join("\n\n");
+          const retryRaw = await requestOpenRouterText(retryPrompt, 800, 240000, systemMsg, false, 0.3);
+          let retryParsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string }>>(retryRaw);
+          if (!retryParsed) {
+            const repaired = attemptCloseTruncatedJson(retryRaw.trim());
+            if (repaired) try { retryParsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
+          }
+          let retryBlocs: Array<{ synopsis?: string }> = [];
+          if (Array.isArray(retryParsed)) {
+            retryBlocs = retryParsed;
+          } else if (retryParsed && typeof retryParsed === "object") {
+            const obj = retryParsed as Record<string, unknown>;
+            for (const key of ["blocs", "blocks", "scenes"]) {
+              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
+            }
+            if (!retryBlocs.length) {
+              for (const key of Object.keys(obj)) {
+                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
+              }
+            }
+          }
+          retryBlocs = retryBlocs.filter((b) => {
+            const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
+            return syn.length >= 15 && !/^(continuation|the (story|scene|chapter) continues)/i.test(syn);
+          });
+          if (retryBlocs.length > blocks.length) {
+            blocks.length = 0;
+            for (let i = 0; i < Math.min(BLOC_COUNT, retryBlocs.length); i++) {
+              const synopsis = retryBlocs[i]?.synopsis?.trim() ?? "";
+              if (synopsis.length >= 15) {
+                blocks.push({ ...DEFAULT_BLOCK, synopsis, notes: chapterLevelBolton });
+              }
+            }
+          }
+        } catch { /* fall through to individual repairs */ }
+      }
+
+      // ── Individual repair: fill any remaining missing blocs ──
       if (blocks.length < BLOC_COUNT && blocks.length > 0) {
         for (let i = blocks.length; i < BLOC_COUNT; i++) {
           const isLast = i === BLOC_COUNT - 1;
           const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
           const repairPrompt = [
             `Write a 1-3 sentence synopsis for scene bloc ${i + 1} of ${BLOC_COUNT} in this chapter.`,
+            `The synopsis must describe specific actions, name characters, and show what HAPPENS.`,
             `Return JSON: { "synopsis": "your synopsis" }`,
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
-            previousSynopses ? `Previous blocs:\n${previousSynopses}` : "",
-            isLast ? "This is the FINAL bloc — close the chapter." : "",
+            previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
+            previousChapterSynopsis ? `Previous chapter: ${clampPromptText(previousChapterSynopsis, 150)}` : "",
+            isLast ? "This is the FINAL bloc — wrap up and close the chapter." : `This bloc must advance the story beyond where Bloc ${i} left off.`,
+            context,
           ].filter(Boolean).join("\n");
           try {
             const data = await requestOpenRouterJson<{ synopsis?: string }>(
@@ -2785,7 +2863,7 @@ function NovelWorkspacePage() {
               { timeoutMs: 120000, systemMessage: "Return ONLY valid JSON." },
             );
             const syn = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
-            if (syn.length >= 10) {
+            if (syn.length >= 15) {
               blocks.push({ ...DEFAULT_BLOCK, synopsis: syn, notes: chapterLevelBolton });
             }
           } catch { /* skip */ }
@@ -2793,7 +2871,7 @@ function NovelWorkspacePage() {
       }
 
       if (blocks.length === 0) {
-        throw new Error("Could not generate blocs. Try again or use a different model.");
+        throw new Error("AI returned invalid data — no usable blocs were found. Try again or switch to a different model.");
       }
 
       // Update the chapter with all blocs at once
@@ -2826,7 +2904,18 @@ function NovelWorkspacePage() {
         });
       }
     } catch (error) {
-      setStoryAiError(error instanceof Error ? error.message : "Block generation failed.");
+      let msg = "Block generation failed.";
+      if (error instanceof Error) {
+        const m = error.message.toLowerCase();
+        if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
+          msg = "Bloc generation timed out. Your model may be slow — try a faster one or a shorter chapter synopsis.";
+        } else if (m.includes("json") || m.includes("parse") || m.includes("invalid")) {
+          msg = error.message; // already specific from our throw above
+        } else {
+          msg = error.message;
+        }
+      }
+      setStoryAiError(msg);
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -2869,7 +2958,7 @@ function NovelWorkspacePage() {
     try {
       const wt = block.wordTarget;
       const useBestFit = block.lengthMode === "best-fit";
-      const minAcceptable = useBestFit ? Math.round(wt * 0.72) : Math.round(wt * 0.95);
+      const minAcceptable = useBestFit ? Math.round(wt * 0.72) : Math.round(wt * 0.85);
 
       // Build lean canon context — keep it short for speed
       const canon = buildProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
@@ -2903,18 +2992,18 @@ function NovelWorkspacePage() {
         : "";
       const lengthRule = useBestFit
         ? `Write the best-fit scene length around ${wt} words. You may choose the most natural length between ${Math.round(wt * 0.75)} and ${Math.round(wt * 1.15)} words.`
-        : `YOU MUST WRITE ${wt} WORDS — NOT 200, NOT 300, EXACTLY ${wt}. If you finish the scene early, expand with dialogue, action, interiority, and sensory detail until you reach ${wt} words.`;
+        : `Write at least ${Math.round(wt * 0.85)} words, aiming for ${wt}. If the scene finishes early, expand with dialogue, action, interiority, and sensory detail until you reach the target.`;
       const systemMsg = `Write prose in ${profileLangLabel}. ${lengthRule}${styleDirective} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Keep one continuous chapter voice and POV, and never break story continuity.`;
       const novelistQualityRule = `Grammar and prose quality are non-negotiable: use correct ${profileLangLabel} spelling, punctuation, paragraphing, and sentence structure like a published novelist.`;
 
       // Build concise prompt — word count hammered at top, middle, and bottom
       const wcReminder = useBestFit
         ? `[TARGET LENGTH: Best fit around ${wt} words, allowed range ${Math.round(wt * 0.75)}-${Math.round(wt * 1.15)}.]`
-        : `[MANDATORY: Your response MUST be ${wt} words long. Do NOT stop at 200 words. Keep writing until you reach ${wt} words.]`;
+        : `[TARGET LENGTH: At least ${Math.round(wt * 0.85)} words, aim for ${wt}. Keep writing until you reach the target.]`;
       const prompt = isRegenerate
         ? [
             wcReminder,
-            `Rewrite this scene. Same story beats, fresh prose. ${useBestFit ? `Best-fit target: around ${wt} words.` : `TARGET: ${wt} words.`}`,
+            `Rewrite this scene. Same story beats, fresh prose. ${useBestFit ? `Best-fit target: around ${wt} words.` : `Aim for ${wt} words (at least ${Math.round(wt * 0.85)}).`}`,
             novelistQualityRule,
             boltonLine,
             constraint ? `Change: ${constraint}` : "",
@@ -2935,7 +3024,7 @@ function NovelWorkspacePage() {
             wcReminder,
             useBestFit
               ? `Write this scene with best-fit length around ${wt} words. Prioritize narrative fit and continuity over exact count.`
-              : `Write ${wt} words of prose for this scene. If you finish the scene, add more detail — describe the setting, deepen character thoughts, extend dialogue — until you have ${wt} words.`,
+              : `Write at least ${Math.round(wt * 0.85)} words of prose for this scene, aiming for ${wt}. If you finish early, expand with setting detail, character thoughts, and dialogue.`,
             novelistQualityRule,
             boltonLine,
             storyPosition.chapterNumber > 0
@@ -2946,8 +3035,9 @@ function NovelWorkspacePage() {
             planChapterSynopsis ? `Chapter: ${clampPromptText(planChapterSynopsis, 150)}` : "",
             previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
             nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
-            prevProse ? `Previous scene ended: "${prevProse.slice(-150)}"` : "",
-            blocks[blockIndex - 1]?.synopsis ? `Previous bloc summary: ${clampPromptText(blocks[blockIndex - 1].synopsis, 120)}` : "",
+            prevProse ? `Previous scene ended: "${prevProse.slice(-350)}"` : "",
+            blocks[blockIndex - 1]?.synopsis ? `Previous bloc synopsis: ${clampPromptText(blocks[blockIndex - 1].synopsis, 200)}` : "",
+            blockIndex > 1 && blocks[blockIndex - 2]?.synopsis ? `Bloc before that: ${clampPromptText(blocks[blockIndex - 2].synopsis, 100)}` : "",
             nextBlockSynopses.length > 0 ? `Next scenes: ${nextBlockSynopses.slice(0, 2).join("; ")}` : "",
             "Continuity rule: keep character placement, POV, and location continuity coherent with the previous bloc unless a clear transition is written.",
             "Do not force a new location just because this is a new bloc.",
@@ -2980,11 +3070,11 @@ function NovelWorkspacePage() {
       // ── Attempt 2: simplified prompt if first failed or empty ──
       if (!prose) {
         const simplePrompt = [
-          `[MANDATORY: Write exactly ${wt} words. Do NOT stop early.]`,
-          `Write ${wt} words of prose for this scene. Keep writing until you reach ${wt} words.`,
+          `[TARGET LENGTH: At least ${Math.round(wt * 0.85)} words, aim for ${wt}.]`,
+          `Write prose for this scene aiming for ${wt} words. If the scene finishes naturally, expand with detail and dialogue.`,
           `Scene: ${block.synopsis}`,
-          prevProse ? `Continue from: "${prevProse.slice(-100)}"` : "",
-          `You MUST write ${wt} words of prose. If you finish the scene, add detail, description, and dialogue to reach ${wt} words.`,
+          prevProse ? `Continue from: "${prevProse.slice(-150)}"` : "",
+          `Aim for ${wt} words. Return ONLY prose paragraphs — no metadata, labels, or notes.`,
         ].filter(Boolean).join("\n\n");
         try {
           const raw2 = await requestOpenRouterText(simplePrompt, scaledMaxTokens, scaledTimeoutMs, systemMsg, false);
@@ -2995,7 +3085,7 @@ function NovelWorkspacePage() {
       }
 
       if (!prose) {
-        throw new Error("No prose returned. Try again or use a different model.");
+        throw new Error("No prose returned — the AI may have timed out or returned an empty response. Try again or switch to a faster model.");
       }
 
       // Show prose to the user immediately after initial generation
@@ -3003,7 +3093,7 @@ function NovelWorkspacePage() {
 
       // ── Word count enforcement: auto-continue only when strict mode needs more coverage ──
       let wc = countWords(prose);
-      const MAX_CONTINUES = 8; // More continuation attempts for slower/shorter models
+      const MAX_CONTINUES = 3; // Reduced: fewer continuations = less fragmentation
       let continues = 0;
       while (!useBestFit && wc < minAcceptable && continues < MAX_CONTINUES) {
         continues++;
@@ -3071,7 +3161,7 @@ function NovelWorkspacePage() {
       }
 
       if (!quality.ok && quality.wc < Math.max(160, Math.round(wt * 0.5))) {
-        throw new Error("Generated prose was too short for a reliable scene. Try again or switch model.");
+        throw new Error(`Prose was too short (${quality.wc} words) after ${continues > 0 ? continues + " continuation attempts" : "generation"}. Try best-fit mode or a larger model.`);
       }
 
       const trimmed = quality.text;
@@ -3080,7 +3170,16 @@ function NovelWorkspacePage() {
       nextBlocks[blockIndex] = { ...block, prose: trimmed };
       updateChapter(targetChapterId, { content: serializeChapterBlocks(nextBlocks) });
     } catch (error) {
-      setStoryAiError(error instanceof Error ? error.message : "Bloc prose generation failed.");
+      let msg = "Bloc prose generation failed.";
+      if (error instanceof Error) {
+        const m = error.message.toLowerCase();
+        if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
+          msg = "Prose generation timed out. Your model may be too slow — try a faster one or reduce the word target.";
+        } else {
+          msg = error.message;
+        }
+      }
+      setStoryAiError(msg);
     } finally {
       setStoryAiBusyAction(null);
     }
