@@ -6013,6 +6013,7 @@ function NovelWorkspacePage() {
       const styleRules = novel.storyBible.styleVoice?.voiceRules?.slice(0, 300) || "";
       const pov = novel.storyBible.styleVoice?.pov || "";
       const categoryMeta = getBoltonCategoryMeta(bolton.category);
+      const needsTitle = !bolton.title.trim();
       const systemMsg = "You are a prose direction specialist. You convert vague author wishes into precise, actionable prose-writing instructions. Your output will be injected directly into an AI prose generator's prompt. Return only valid JSON.";
       const prompt = [
         "Convert the user's instruction into a specific, actionable directive for an AI prose writer.",
@@ -6021,10 +6022,13 @@ function NovelWorkspacePage() {
         "- The directive MUST be a concrete instruction telling the AI HOW to write, not WHAT to write about.",
         "- Use specific craft techniques: e.g. 'Use short, fragmented sentences during tense moments. Layer sensory details — sounds, smells, textures — to build atmosphere. Cut dialogue tags and let action beats carry speech.'",
         "- NEVER produce vague instructions like 'focus on horror' or 'make it scary'. Instead describe the exact writing techniques: sentence rhythm, word choice, sensory emphasis, pacing, dialogue style, metaphor use.",
-        "- Keep it under 500 characters. Every word must earn its place.",
+        "- Keep the prompt under 500 characters. Every word must earn its place.",
         "- Write as direct imperatives: 'Use...', 'Cut...', 'Layer...', 'Slow the pacing by...', 'Build tension through...'",
+        needsTitle ? "- Also generate a short title (2-4 words) that summarises this bolt-on." : "",
         "",
-        "Return JSON only: { \"prompt\": \"the actionable directive\" }",
+        needsTitle
+          ? "Return JSON only: { \"prompt\": \"the actionable directive\", \"title\": \"Short Title\" }"
+          : "Return JSON only: { \"prompt\": \"the actionable directive\" }",
         "",
         `User instruction: ${bolton.description}`,
         bolton.title ? `Context label: ${bolton.title}` : "",
@@ -6035,9 +6039,19 @@ function NovelWorkspacePage() {
         pov ? `POV: ${pov}` : "",
         styleRules ? `Style rules: ${styleRules}` : "",
       ].filter(Boolean).join("\n");
-      const data = await requestOpenRouterJson<{ prompt?: string }>(prompt, 300, { systemMessage: systemMsg });
+      const data = await requestOpenRouterJson<{ prompt?: string; title?: string }>(prompt, 350, { systemMessage: systemMsg });
+      const updates: Partial<Bolton> = {};
       if (typeof data.prompt === "string" && data.prompt.trim()) {
-        updateBolton(boltonId, { prompt: clampPromptText(data.prompt, 500) });
+        updates.prompt = clampPromptText(data.prompt, 500);
+      }
+      if (needsTitle && typeof data.title === "string" && data.title.trim()) {
+        updates.title = clampText(data.title, 40);
+      }
+      if (Object.keys(updates).length > 0) {
+        updateBolton(boltonId, updates);
+        // Auto-save to library
+        const updatedBolton = { ...bolton, ...updates };
+        void saveSingleBoltonToLibrary(updatedBolton);
       }
     } catch (error) {
       setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen Bolt-On.");
@@ -9181,7 +9195,7 @@ function NovelWorkspacePage() {
                       <div>
                         <h3>Bolt-Ons</h3>
                         <p className="pw-bible-section-note">
-                          Steer the AI with reusable instructions. Saved bolt-ons persist across all your novels.
+                          Tell the AI how to write. Type an instruction, hit Build, and the AI turns it into a craft directive. Bolt-ons auto-save to your library.
                         </p>
                       </div>
                       <div className="pw-bible-inline-actions">
@@ -9193,15 +9207,6 @@ function NovelWorkspacePage() {
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                           Library {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
-                        </button>
-                        <button
-                          type="button"
-                          className="pw-bible-clear-btn"
-                          onClick={() => clearBibleSection("boltons")}
-                          title="Clear all bolt-ons from this novel"
-                          disabled={allBoltons.length === 0}
-                        >
-                          Clear
                         </button>
                       </div>
                     </div>
@@ -9348,7 +9353,7 @@ function NovelWorkspacePage() {
                           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                         </div>
                         <p style={{ fontWeight: 500, marginBottom: 4 }}>No bolt-ons yet</p>
-                        <p style={{ fontSize: 12, opacity: 0.6 }}>Click a category above to add your first bolt-on. Describe what you want in plain English and the AI will build a focused prompt.</p>
+                        <p style={{ fontSize: 12, opacity: 0.6 }}>Pick a category above to create one, or load from your library. Just describe what you want and hit Build.</p>
                       </div>
                     ) : visibleBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
@@ -9356,13 +9361,13 @@ function NovelWorkspacePage() {
                       </div>
                     ) : (
                       <div className="pw-bolton-grid">
-                        {visibleBoltons.map((bolton, idx) => (
+                        {visibleBoltons.map((bolton) => (
                           <div key={bolton.id} className={`pw-bolton-card ${bolton.prompt ? "pw-bolton-card-ready" : ""}`}>
+                            {/* Header: title + category + delete */}
                             <div className="pw-bolton-card-head">
-                              <div className="pw-bolton-card-num">{idx + 1}</div>
                               <input
                                 className="pw-bolton-card-title"
-                                placeholder="Name this bolt-on..."
+                                placeholder={bolton.prompt ? "Untitled bolt-on" : "Title (auto-generated on build)"}
                                 maxLength={40}
                                 value={bolton.title}
                                 onChange={(e) => updateBolton(bolton.id, { title: e.target.value })}
@@ -9380,50 +9385,42 @@ function NovelWorkspacePage() {
                                   </option>
                                 ))}
                               </select>
+                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete bolt-on">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                              </button>
+                            </div>
+
+                            {/* Instruction area */}
+                            <textarea
+                              className="pw-bolton-desc"
+                              rows={2}
+                              maxLength={500}
+                              placeholder="Tell the AI how to write — e.g. 'make it feel tense and claustrophobic' or 'more dialogue, less description'"
+                              value={bolton.description}
+                              onChange={(e) => updateBolton(bolton.id, { description: e.target.value })}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            />
+                            <div className="pw-bolton-card-foot">
+                              {!aiOff && (
                               <button
                                 type="button"
-                                className="pw-bolton-add-btn"
-                                style={{ padding: "2px 8px", fontSize: 11, lineHeight: 1.4 }}
-                                disabled={!bolton.title.trim() && !bolton.description.trim()}
-                                onClick={() => void saveSingleBoltonToLibrary(bolton)}
-                                title="Save to library (available across all novels)"
+                                className="pw-bolton-sharpen-btn"
+                                disabled={storyAiBusyAction !== null || !bolton.description.trim()}
+                                onClick={() => void sharpenBolton(bolton.id)}
                               >
-                                Save
+                                {storyAiBusyAction === `bolton-${bolton.id}` ? "Building..." : bolton.prompt ? "↻ Rebuild" : "⚡ Build"}
                               </button>
-                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete bolt-on">×</button>
+                              )}
+                              <span className="pw-bolton-char-count">{bolton.description.length}/500</span>
                             </div>
 
-                            {/* Step 1: User describes what they want */}
-                            <div className="pw-bolton-step">
-                              <span className="pw-bolton-step-label">{bolton.prompt ? "Your instruction" : "Step 1 — Describe what you want"}</span>
-                              <textarea
-                                className="pw-bolton-desc"
-                                rows={3}
-                                maxLength={500}
-                                placeholder="Example: Push subtext in dialogue, end scenes with unresolved tension, and keep descriptions sparse and atmospheric."
-                                value={bolton.description}
-                                onChange={(e) => updateBolton(bolton.id, { description: e.target.value })}
-                                onKeyDown={(e) => e.stopPropagation()}
-                              />
-                              <div className="pw-bolton-card-foot">
-                                <span className="pw-bolton-char-count">{bolton.description.length}/500</span>
-                                {!aiOff && (
-                                <button
-                                  type="button"
-                                  className="pw-bolton-sharpen-btn"
-                                  disabled={storyAiBusyAction !== null || !bolton.description.trim()}
-                                  onClick={() => void sharpenBolton(bolton.id)}
-                                >
-                                  {storyAiBusyAction === `bolton-${bolton.id}` ? "Building prompt..." : bolton.prompt ? "Rebuild prompt" : "Build AI prompt"}
-                                </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Step 2: AI-built prompt preview */}
+                            {/* AI directive preview */}
                             {bolton.prompt && (
                               <div className="pw-bolton-step pw-bolton-prompt-preview">
-                                <span className="pw-bolton-step-label pw-bolton-step-ready">AI prompt ready ({getBoltonDirectiveText(bolton).length}/500)</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-accent, #a3e635)", display: "inline-block" }} />
+                                  <span className="pw-bolton-step-label pw-bolton-step-ready" style={{ margin: 0 }}>Active directive</span>
+                                </div>
                                 <p className="pw-bolton-prompt-text">{getBoltonDirectiveText(bolton)}</p>
                               </div>
                             )}
