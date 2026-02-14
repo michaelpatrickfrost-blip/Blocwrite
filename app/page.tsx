@@ -249,18 +249,34 @@ function Hero() {
 
 /* ── Trust bar — social proof strip ───────────────────── */
 function TrustBar() {
-  const items = [
-    { icon: "⚡", headline: "Try free for 7 days", sub: "Full studio access from day one" },
-    { icon: "🔑", headline: "You own your AI key", sub: "Connect OpenRouter — we never charge for AI" },
-    { icon: "🔒", headline: "Your work stays yours", sub: "Private projects, no training on your data" },
-    { icon: "📦", headline: "Publish-ready export", sub: "EPUB & DOCX — clean prose, no AI metadata" },
+  const items: { icon: React.ReactNode; headline: string; sub: string }[] = [
+    {
+      icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+      headline: "Try free for 7 days",
+      sub: "Full studio access from day one",
+    },
+    {
+      icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>,
+      headline: "You own your AI key",
+      sub: "Connect OpenRouter — we never charge for AI",
+    },
+    {
+      icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>,
+      headline: "Your work stays yours",
+      sub: "Private projects, no training on your data",
+    },
+    {
+      icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
+      headline: "Publish-ready export",
+      sub: "EPUB & DOCX — clean prose, no AI metadata",
+    },
   ];
   return (
     <div style={{ background: C.bg, padding: "36px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
       <div style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 24 }}>
         {items.map((s) => (
           <div key={s.headline} style={{ textAlign: "center", padding: "0 8px" }}>
-            <span style={{ fontSize: 28, display: "block", marginBottom: 8 }}>{s.icon}</span>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>{s.icon}</div>
             <p style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em", margin: 0, color: C.text }}>{s.headline}</p>
             <p style={{ fontSize: 13, fontWeight: 400, color: C.textMuted, margin: "6px 0 0", lineHeight: 1.5 }}>{s.sub}</p>
           </div>
