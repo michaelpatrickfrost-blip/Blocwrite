@@ -6013,7 +6013,6 @@ function NovelWorkspacePage() {
       const styleRules = novel.storyBible.styleVoice?.voiceRules?.slice(0, 300) || "";
       const pov = novel.storyBible.styleVoice?.pov || "";
       const categoryMeta = getBoltonCategoryMeta(bolton.category);
-      const needsTitle = !bolton.title.trim();
       const systemMsg = "You are a prose direction specialist. You convert vague author wishes into precise, actionable prose-writing instructions. Your output will be injected directly into an AI prose generator's prompt. Return only valid JSON.";
       const prompt = [
         "Convert the user's instruction into a specific, actionable directive for an AI prose writer.",
@@ -6024,14 +6023,11 @@ function NovelWorkspacePage() {
         "- NEVER produce vague instructions like 'focus on horror' or 'make it scary'. Instead describe the exact writing techniques: sentence rhythm, word choice, sensory emphasis, pacing, dialogue style, metaphor use.",
         "- Keep the prompt under 500 characters. Every word must earn its place.",
         "- Write as direct imperatives: 'Use...', 'Cut...', 'Layer...', 'Slow the pacing by...', 'Build tension through...'",
-        needsTitle ? "- Also generate a short title (2-4 words) that summarises this bolt-on." : "",
+        "- Also generate a short, relevant title (2-4 words) that captures what this bolt-on does, e.g. 'Dark Atmosphere', 'Punchy Dialogue', 'Slow Burn Tension'.",
         "",
-        needsTitle
-          ? "Return JSON only: { \"prompt\": \"the actionable directive\", \"title\": \"Short Title\" }"
-          : "Return JSON only: { \"prompt\": \"the actionable directive\" }",
+        "Return JSON only: { \"prompt\": \"the actionable directive\", \"title\": \"Short Relevant Title\" }",
         "",
         `User instruction: ${bolton.description}`,
-        bolton.title ? `Context label: ${bolton.title}` : "",
         `Plugin category: ${categoryMeta.label}`,
         "",
         `Novel genre: ${genre}`,
@@ -6044,7 +6040,7 @@ function NovelWorkspacePage() {
       if (typeof data.prompt === "string" && data.prompt.trim()) {
         updates.prompt = clampPromptText(data.prompt, 500);
       }
-      if (needsTitle && typeof data.title === "string" && data.title.trim()) {
+      if (typeof data.title === "string" && data.title.trim()) {
         updates.title = clampText(data.title, 40);
       }
       if (Object.keys(updates).length > 0) {
