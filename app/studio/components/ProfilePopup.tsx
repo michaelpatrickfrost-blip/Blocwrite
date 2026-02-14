@@ -181,6 +181,8 @@ export function ProfilePopup({
     setOpenRouterStatus("checking");
     setOpenRouterError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 10000);
       const res = await fetch("/api/openrouter/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,7 +194,9 @@ export function ProfilePopup({
           prompt: "hi",
           maxTokens: 2,
         }),
+        signal: controller.signal,
       });
+      window.clearTimeout(timeoutId);
       if (res.ok) {
         setOpenRouterStatus("ok");
       } else {
@@ -201,7 +205,11 @@ export function ProfilePopup({
         setOpenRouterStatus("error");
       }
     } catch (e) {
-      setOpenRouterError(e instanceof Error ? e.message : "Connection failed");
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setOpenRouterError("Connection check timed out. Try again.");
+      } else {
+        setOpenRouterError(e instanceof Error ? e.message : "Connection failed");
+      }
       setOpenRouterStatus("error");
     }
   }, [assistantProvider, openRouterKey, assistantBaseUrl, openRouterModel, selectedProvider.defaultModel]);
@@ -210,6 +218,8 @@ export function ProfilePopup({
     setModelsLoading(true);
     setModelsError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
         headers: {
@@ -217,7 +227,9 @@ export function ProfilePopup({
           "x-provider-key": normalizeClientApiKey(openRouterKey),
           "x-provider-base-url": assistantBaseUrl.trim(),
         },
+        signal: controller.signal,
       });
+      window.clearTimeout(timeoutId);
       const payload = (await res.json().catch(() => ({}))) as {
         models?: ModelOption[];
         error?: string;
@@ -230,7 +242,11 @@ export function ProfilePopup({
       setModels(list);
       if (list.length > 0) setShowModelDropdown(true);
     } catch (e) {
-      setModelsError(e instanceof Error ? e.message : "Unable to load models.");
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setModelsError("Model list request timed out. Try again.");
+      } else {
+        setModelsError(e instanceof Error ? e.message : "Unable to load models.");
+      }
     } finally {
       setModelsLoading(false);
     }
@@ -471,6 +487,9 @@ export function ProfilePopup({
               {openRouterStatus === "error" && openRouterError && (
                 <p className="pw-profile-status pw-profile-status-error">{openRouterError}</p>
               )}
+              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6 }}>
+                Slower models may take longer. Requests are allowed extended time to finish.
+              </p>
             </>
           )}
 

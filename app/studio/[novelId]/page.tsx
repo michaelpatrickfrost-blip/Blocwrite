@@ -19,9 +19,11 @@ import {
   applySettings,
   gatherSettings,
   saveSettingsToServer,
+  enforceNovelIntegrity,
   type Novel,
   type Relationship,
   type Bolton,
+  type BoltonCategory,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -169,8 +171,19 @@ const GENRE_OPTIONS = [
   "Satire",
   "Western",
 ] as const;
-const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
-const PLAN_CHAPTER_MAX = 15;
+const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15, 20, 24] as const;
+const PLAN_CHAPTER_MAX = 60;
+const BOLTON_LIBRARY_KEY = "pilotwriter.boltons.library.v1";
+const BOLTON_PLUGIN_CATEGORIES: Array<{ id: BoltonCategory; label: string; hint: string }> = [
+  { id: "voice-style", label: "Voice & Style", hint: "Diction, rhythm, sentence style." },
+  { id: "pacing-tension", label: "Pacing & Tension", hint: "Scene speed, suspense, urgency." },
+  { id: "dialogue-subtext", label: "Dialogue & Subtext", hint: "Dialogue goals and hidden meaning." },
+  { id: "description-sensory", label: "Description", hint: "Sensory detail and visual clarity." },
+  { id: "emotion-psychology", label: "Emotion", hint: "Interiority and emotional beats." },
+  { id: "plot-structure", label: "Plot & Structure", hint: "Cause-effect, escalation, outcomes." },
+  { id: "world-atmosphere", label: "World & Atmosphere", hint: "Setting mood, cultural detail." },
+  { id: "custom", label: "Custom", hint: "Any custom creative constraint." },
+];
 const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
   {
     id: "openrouter",
@@ -262,6 +275,11 @@ const SUMMARY_NAME_BLOCKLIST = new Set([
   "Week",
   "Month",
   "Year",
+  "Love",
+  "Sex",
+  "Anonymous",
+  "Stranger",
+  "Blackmailer",
 ]);
 const CHARACTER_SURNAME_FALLBACKS = [
   "Hale",
@@ -277,6 +295,35 @@ const CHARACTER_SURNAME_FALLBACKS = [
   "Keating",
   "West",
 ] as const;
+
+const ROLE_ALIAS_TOKENS = [
+  "anonymous",
+  "stranger",
+  "blackmailer",
+  "killer",
+  "informant",
+  "witness",
+  "caller",
+  "sender",
+  "hacker",
+  "stalker",
+] as const;
+
+function isRoleLikeCharacterLabel(value: string) {
+  const lower = value.trim().toLowerCase();
+  if (!lower) return false;
+  return ROLE_ALIAS_TOKENS.some((token) => lower.includes(token));
+}
+
+function isLikelyHumanName(name: string) {
+  const cleaned = name.trim();
+  if (!cleaned) return false;
+  if (isRoleLikeCharacterLabel(cleaned)) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 3) return false;
+  if (/^(new character|character \d+|unknown|unnamed|n\/a|the )/i.test(cleaned)) return false;
+  return words.every((word) => /^[A-Z][a-zA-Z'-]{1,24}$/.test(word));
+}
 
 const PROOFREAD_CATEGORIES: ProofreadCategory[] = [
   {
@@ -432,6 +479,9 @@ function NovelWorkspacePage() {
   );
   const [selectedV2CharacterId, setSelectedV2CharacterId] = useState<string | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
+  const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
+  const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
+  const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
@@ -452,6 +502,7 @@ function NovelWorkspacePage() {
   });
   const [eventsAiCount, setEventsAiCount] = useState<6 | 8 | 10 | 12>(8);
   const [focusBlockIndex, setFocusBlockIndex] = useState<number | null>(null);
+  const [blockProseDrafts, setBlockProseDrafts] = useState<Record<string, string>>({});
   const [collapsedBeats, setCollapsedBeats] = useState<Set<number>>(new Set());
   const [editorFontFamily, setEditorFontFamily] = useState<string>("serif");
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
@@ -475,7 +526,7 @@ function NovelWorkspacePage() {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingGoalWords, setEditingGoalWords] = useState<string | null>(null);
   const [hideBlocks, setHideBlocks] = useState(false);
-  const [chapterBoltonId, setChapterBoltonId] = useState<string>("");
+  const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
@@ -493,6 +544,28 @@ function NovelWorkspacePage() {
     localStorage.setItem("bw-theme", next);
     document.documentElement.setAttribute("data-theme", next);
   }
+
+  useEffect(() => {
+    if (!storyAiBusyAction) {
+      setStoryAiBusyElapsedSec(0);
+      return;
+    }
+    const started = Date.now();
+    setStoryAiBusyElapsedSec(0);
+    const timerId = window.setInterval(() => {
+      setStoryAiBusyElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timerId);
+  }, [storyAiBusyAction]);
+
+  useEffect(() => {
+    if (!showStoryBibleModal || bibleSection !== "boltons") return;
+    setBoltonLibraryCount(readBoltonLibrary().length);
+  }, [showStoryBibleModal, bibleSection]);
+
+  useEffect(() => {
+    setBlockProseDrafts({});
+  }, [activeChapterId]);
 
   function handleSidebarEnter() {
     if (sidebarPinned) return;
@@ -513,6 +586,7 @@ function NovelWorkspacePage() {
     });
   }
   const [planGenerateCustomCount, setPlanGenerateCustomCount] = useState("8");
+  const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -536,6 +610,24 @@ function NovelWorkspacePage() {
   const storyLocations = useMemo(() => novel?.storyBible.locations ?? [], [novel]);
   const storyTimelineEvents = useMemo(() => novel?.storyBible.timeline ?? [], [novel]);
   const planChapters = useMemo(() => novel?.storyBible.bookPlan?.chapters ?? [], [novel]);
+  const chapterBoltonId = activeChapter ? (chapterBoltonByChapterId[activeChapter.id] ?? "") : "";
+  useEffect(() => {
+    if (!activeChapter) return;
+    const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+    if (!hasBlocks || blocks.length === 0) return;
+    const normalizedNotes = blocks.map((block) => block.notes.trim());
+    const unique = new Set(normalizedNotes);
+    if (unique.size !== 1) return;
+    const only = normalizedNotes[0] || "";
+    setChapterBoltonByChapterId((current) => {
+      const existing = current[activeChapter.id] ?? "";
+      if (existing === only) return current;
+      const next = { ...current };
+      if (only) next[activeChapter.id] = only;
+      else delete next[activeChapter.id];
+      return next;
+    });
+  }, [activeChapter?.id, activeChapter?.content]);
   const hasSummaryForCharacterAi = useMemo(() => {
     if (!novel) return false;
     const summary = novel.storyBible.summary;
@@ -590,6 +682,7 @@ function NovelWorkspacePage() {
     setPlanError(null);
     setShowPlanGenerateModal(false);
     setPlanGenerateCustomCount("8");
+    setPlanGeneratePacingMode("balanced");
   }, [novelId]);
 
   useEffect(() => {
@@ -849,6 +942,54 @@ function NovelWorkspacePage() {
   }, [profileOpen]);
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (pendingChapterDelete) {
+        setPendingChapterDelete(null);
+        return;
+      }
+      if (showPlanGenerateModal) {
+        setShowPlanGenerateModal(false);
+        return;
+      }
+      if (showExportModal) {
+        setShowExportModal(false);
+        return;
+      }
+      if (showPlanModal) {
+        setShowPlanModal(false);
+        return;
+      }
+      if (showEditorModal) {
+        setShowEditorModal(false);
+        return;
+      }
+      if (showStoryBibleModal) {
+        setShowStoryBibleModal(false);
+        return;
+      }
+      if (profileOpen) {
+        setProfileOpen(false);
+        return;
+      }
+      if (focusBlockIndex !== null) {
+        setFocusBlockIndex(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    pendingChapterDelete,
+    showPlanGenerateModal,
+    showExportModal,
+    showPlanModal,
+    showEditorModal,
+    showStoryBibleModal,
+    profileOpen,
+    focusBlockIndex,
+  ]);
+
+  useEffect(() => {
     setOpenSummaryAiMenu(null);
   }, [bibleSection]);
 
@@ -947,7 +1088,7 @@ function NovelWorkspacePage() {
         goals: parts[6] ?? "",
         fears: parts[7] ?? "",
       }))
-      .filter((character) => character.name.trim().length > 0);
+      .filter((character) => isLikelyHumanName(character.name.trim()));
   }
 
   function clampText(value: unknown, maxLength: number) {
@@ -1235,6 +1376,7 @@ function NovelWorkspacePage() {
       const parts = candidate.split(" ");
       const hasBlockedToken = parts.some((part) => SUMMARY_NAME_BLOCKLIST.has(part));
       if (hasBlockedToken) continue;
+      if (isRoleLikeCharacterLabel(candidate)) continue;
       if (candidate.length > 34) continue;
       const key = candidate.toLowerCase();
       if (seen.has(key)) continue;
@@ -1250,6 +1392,49 @@ function NovelWorkspacePage() {
     if (!clean) return "";
     if (clean.length <= maxChars) return clean;
     return `${clean.slice(0, Math.max(0, maxChars - 1)).trimEnd()}...`;
+  }
+
+  function normalizeBoltonCategory(value: unknown): BoltonCategory {
+    const valid = new Set<string>(BOLTON_PLUGIN_CATEGORIES.map((category) => category.id));
+    if (typeof value !== "string" || !valid.has(value)) return "custom";
+    return value as BoltonCategory;
+  }
+
+  function getBoltonCategoryMeta(category?: string) {
+    return BOLTON_PLUGIN_CATEGORIES.find((item) => item.id === category) ?? BOLTON_PLUGIN_CATEGORIES[BOLTON_PLUGIN_CATEGORIES.length - 1];
+  }
+
+  function getBoltonDirectiveText(bolton: Bolton) {
+    const raw = bolton.prompt?.trim() || bolton.description?.trim() || "";
+    return clampPromptText(raw, 500);
+  }
+
+  function readBoltonLibrary(): Array<Pick<Bolton, "title" | "description" | "prompt" | "category">> {
+    if (typeof window === "undefined") return [];
+    const raw = window.localStorage.getItem(BOLTON_LIBRARY_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          const title = typeof record.title === "string" ? record.title.trim().slice(0, 40) : "";
+          const description = typeof record.description === "string" ? record.description.trim().slice(0, 500) : "";
+          const prompt = typeof record.prompt === "string" ? record.prompt.trim().slice(0, 500) : "";
+          if (!title && !description && !prompt) return null;
+          return {
+            title,
+            description,
+            prompt,
+            category: normalizeBoltonCategory(record.category),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+    } catch {
+      return [];
+    }
   }
 
   /** Strips thinking/reasoning blocks from model output (o1, o3, Claude thinking, etc.). Returns only book text. */
@@ -1311,13 +1496,13 @@ function NovelWorkspacePage() {
 
   function getContextModeForTask(task: StoryBibleContextTask): StoryBibleContextMode {
     const effectiveTokens = getEffectiveContextTokens();
-    if (effectiveTokens == null) return "planCompact";
+    if (effectiveTokens == null) return "plan";
     if (effectiveTokens <= MICRO_CONTEXT_THRESHOLD) return "micro";
     if (effectiveTokens <= SMALL_CONTEXT_THRESHOLD) {
       const compactTasks = ["characters", "summary", "events", "lore", "locations"];
       return compactTasks.includes(task) ? "characterCompact" : "planCompact";
     }
-    if (effectiveTokens <= 64000) return "planCompact";
+    if (effectiveTokens <= 64000) return "plan";
     if (effectiveTokens <= 128000) return "plan";
     return "default";
   }
@@ -1421,7 +1606,7 @@ function NovelWorkspacePage() {
             };
 
     const modelContext = selectedOpenRouterModel?.contextLength ?? null;
-    const modelCharBudget = modelContext ? Math.max(3600, Math.floor(modelContext * 2.7)) : null;
+    const modelCharBudget = modelContext ? Math.max(3600, Math.floor(modelContext * 3.4)) : null;
     const aiContextTokenBudget = novel.storyBible.aiContext?.maxContextTokens;
     const configuredCharBudget =
       typeof aiContextTokenBudget === "number" && Number.isFinite(aiContextTokenBudget)
@@ -1655,26 +1840,45 @@ function NovelWorkspacePage() {
 
   function buildPhase1TitlesPrompt(count: number): string {
     const context = buildPhase1OutlineContext();
+    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const pacingHint =
+      pacingMode === "slow-burn"
+        ? "Pacing is slow-burn: early titles should signal gradual escalation, character depth, and atmosphere."
+        : pacingMode === "fast"
+          ? "Pacing is fast: titles should signal momentum and high story progression."
+          : "Pacing is balanced: titles should imply measured progression with steady escalation.";
     return [
       `Create ${count} chapter titles for this novel. Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
       `Exactly ${count} unique titles reflecting the story arc. Use Canon names.`,
+      pacingHint,
       `\nCanon:\n${context}`,
     ].join("\n");
   }
 
   function buildPhase1Prompt(planTarget: PlanAiChapterTarget): string {
     const context = buildPhase1OutlineContext();
+    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const pacingRule =
+      pacingMode === "slow-burn"
+        ? "- Pacing: slow-burn. Let early chapters build character, atmosphere, and stakes gradually before major escalations."
+        : pacingMode === "fast"
+          ? "- Pacing: fast. Start with a strong hook and keep momentum high while preserving clarity."
+          : "- Pacing: balanced. Begin with grounded setup and tension-building before larger turns.";
     return [
-      "Using the Canon below, create a chapter-by-chapter outline for this novel.",
+      "Using the Canon below, create a chapter-by-chapter INTERNAL drafting outline for this novel.",
+      "This outline is used by AI to generate blocs/prose, so be explicit about what happens in each chapter.",
       "Return JSON only in this exact shape:",
-      `{ "chapters": [{ "title": "string", "summary": "1-2 sentence chapter summary" }] }`,
+      `{ "chapters": [{ "title": "string", "summary": "3-5 sentence concrete chapter plan" }] }`,
       "",
       "Rules:",
       `- Return exactly ${planTarget} chapters.`,
       "- Each chapter must advance the plot. No filler.",
       "- Titles must be unique.",
-      "- Summaries should mention character names, locations, and key events by name so they can be cross-referenced.",
+      "- Summaries must mention character names, locations, and key events by name so they can be cross-referenced.",
+      "- Do NOT write teaser blurbs. State concrete story actions and outcomes clearly.",
       "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot. Keeping chapters grounded in a single place prevents the story feeling scattered.",
+      pacingRule,
+      "- Early chapters must not rush to major payoffs. Build progression naturally like a published novel.",
       "- Weave in worldbuilding/lore naturally — if the Canon has magic systems, cultures, technology, etc., integrate them into the chapter flow.",
       "- Maintain cause-and-effect between chapters.",
       "- Respect all Canon — do not contradict characters, locations, lore, worldbuilding constraints, or timeline.",
@@ -1796,7 +2000,10 @@ function NovelWorkspacePage() {
       ? [...new Map([...planLinkedChars, ...textMatchedChars].map((c) => [c.id, c])).values()]
       : textMatchedChars;
     const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 4))
-      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}`)
+      .map((c) => {
+        const alias = c.otherNames?.trim() ? ` | aliases: ${clampPromptText(c.otherNames, 40)}` : "";
+        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}${alias}`;
+      })
       .join("\n  ");
 
     const planLinkedLocs = (planLocIds ?? []).length > 0
@@ -1857,7 +2064,10 @@ function NovelWorkspacePage() {
         });
     const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 3))
       .slice(0, 5)
-      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}`)
+      .map((c) => {
+        const alias = c.otherNames?.trim() ? ` | aliases: ${clampPromptText(c.otherNames, 40)}` : "";
+        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}${alias}`;
+      })
       .join("\n  ");
 
     const relevantLocs = planLocIds.length > 0
@@ -1907,19 +2117,263 @@ function NovelWorkspacePage() {
     return parts.length > 1800 ? `${parts.slice(0, 1700).trimEnd()}\n[condensed]` : parts;
   }
 
+  function inferCanonIdsFromText(text: string) {
+    if (!novel) return { characterIds: [] as string[], locationIds: [] as string[], loreIds: [] as string[] };
+    const haystack = text.toLowerCase();
+    const characterIds = (novel.storyBible.characters ?? [])
+      .filter((character) => {
+        const name = character.name.trim().toLowerCase();
+        return name.length > 1 && haystack.includes(name);
+      })
+      .map((character) => character.id);
+    const locationIds = (novel.storyBible.locations ?? [])
+      .filter((location) => {
+        const name = location.name.trim().toLowerCase();
+        return name.length > 1 && haystack.includes(name);
+      })
+      .map((location) => location.id);
+    const loreIds = (novel.storyBible.lore ?? [])
+      .filter((entry) => {
+        const title = entry.title.trim().toLowerCase();
+        return title.length > 1 && haystack.includes(title);
+      })
+      .map((entry) => entry.id);
+    return { characterIds, locationIds, loreIds };
+  }
 
-  function buildPhase2Prompt(chapterContext: string): string {
+  function getAdjacentChapterSynopses(chapterId: string) {
+    if (!novel) return { previousChapterSynopsis: "", nextChapterSynopsis: "" };
+    const chapterIndex = novel.chapters.findIndex((chapter) => chapter.id === chapterId);
+    if (chapterIndex < 0) return { previousChapterSynopsis: "", nextChapterSynopsis: "" };
+    const previousChapter = chapterIndex > 0 ? novel.chapters[chapterIndex - 1] : null;
+    const nextChapter = chapterIndex + 1 < novel.chapters.length ? novel.chapters[chapterIndex + 1] : null;
+    const previousPlan = previousChapter
+      ? planChapters.find((chapter) => chapter.manuscriptChapterId === previousChapter.id)
+      : null;
+    const nextPlan = nextChapter
+      ? planChapters.find((chapter) => chapter.manuscriptChapterId === nextChapter.id)
+      : null;
+    return {
+      previousChapterSynopsis: previousPlan?.synopsis?.trim() || previousChapter?.subtitle?.trim() || "",
+      nextChapterSynopsis: nextPlan?.synopsis?.trim() || nextChapter?.subtitle?.trim() || "",
+    };
+  }
+
+  function getChapterStoryPosition(chapterId: string) {
+    if (!novel) return { chapterIndex: -1, chapterNumber: 0, totalChapters: 0, arcGuidance: "" };
+    const chapterIndex = novel.chapters.findIndex((chapter) => chapter.id === chapterId);
+    const totalChapters = novel.chapters.length;
+    if (chapterIndex < 0 || totalChapters <= 0) {
+      return { chapterIndex: -1, chapterNumber: 0, totalChapters, arcGuidance: "" };
+    }
+    return {
+      chapterIndex,
+      chapterNumber: chapterIndex + 1,
+      totalChapters,
+      arcGuidance: buildChapterArcGuidance(chapterIndex, totalChapters),
+    };
+  }
+
+
+  function buildChapterArcGuidance(chapterIndex: number, totalChapters: number) {
+    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const chapterNumber = chapterIndex + 1;
+    const openingCut = Math.max(2, Math.ceil(totalChapters * 0.25));
+    const endingCut = Math.max(openingCut + 1, totalChapters - Math.max(2, Math.ceil(totalChapters * 0.2)));
+    if (chapterNumber <= openingCut) {
+      return pacingMode === "fast"
+        ? "- Arc stage: opening. Hook quickly, but do NOT spend major endgame reveals yet."
+        : "- Arc stage: opening. Establish character, stakes, and world with controlled escalation. Do NOT jump to endgame beats.";
+    }
+    if (chapterNumber >= endingCut) {
+      return "- Arc stage: closing movement. Escalate toward resolution while paying off earlier setups.";
+    }
+    return "- Arc stage: middle movement. Build complications, deepen consequences, and set up later payoffs.";
+  }
+
+  function buildPhase2Prompt(chapterContext: string, chapterIndex: number, totalChapters: number): string {
+    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const pacingRule =
+      pacingMode === "slow-burn"
+        ? "- Pace this chapter as slow-burn: deepen character motives and setting texture before major reveals."
+        : pacingMode === "fast"
+          ? "- Pace this chapter tightly: immediate tension, crisp progression, minimal drag."
+          : "- Pace this chapter with balanced progression: setup, development, and movement.";
+    const arcGuidance = buildChapterArcGuidance(chapterIndex, totalChapters);
     return [
-      "Expand this chapter into a detailed plan. Use Canon names exactly.",
-      `Return JSON: { "synopsis": "3-5 sentences", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
-      "Synopsis must reference character names, locations, and plot points. One primary location. 1-2 events.",
+      "Expand this chapter into an INTERNAL WRITER PLAN used to generate scene blocs and prose. Use Canon names exactly.",
+      "This is NOT reader-facing copy. Do not write teaser blurbs or marketing language.",
+      `Return JSON: { "synopsis": "5-9 sentences with concrete events", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      "Synopsis must clearly state what happens, in order, so another AI can split it into blocs.",
+      "Include concrete beats: setup, goal, conflict/escalation, turning point, and chapter outcome.",
+      "The synopsis is an internal production note for AI, not reader copy.",
+      "Use explicit nouns and actions, not vague language.",
+      "Use one primary location for this chapter unless transition is absolutely story-critical.",
       "- Maintain continuity with previous and next chapters.",
+      pacingRule,
+      arcGuidance,
       "- Respect all worldbuilding constraints — if a lore entry has rules (e.g. \"magic costs life force\"), the synopsis must not violate them.",
       "- Do NOT contradict the Canon. Author-only secrets must not appear in reader-facing content.",
-      "- If referencing a character or location not yet in the Canon, still include them — they will be created.",
+      "- Characters must be real human names (First Last). Never output role labels, abstract words, or placeholders as characters.",
+      "- Prefer existing Canon characters/locations. Only add a new character if a clear real person name is present.",
+      "- Arrays must align with synopsis details: characters/locations/events listed must actually appear in the synopsis.",
       "",
       chapterContext,
     ].join("\n");
+  }
+
+  function evaluateOperationalPlanResult(
+    result: { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[] } | null,
+  ) {
+    const synopsis = typeof result?.synopsis === "string" ? result.synopsis.trim() : "";
+    const characters = parseStringList(result?.characters);
+    const locations = parseStringList(result?.locations);
+    const events = parseStringList(result?.events);
+    const sentenceCount = synopsis ? synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
+    const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up)\b/i.test(synopsis);
+    const ok =
+      synopsis.length >= 150 &&
+      sentenceCount >= 4 &&
+      events.length >= 1 &&
+      (characters.length >= 1 || locations.length >= 1) &&
+      hasOutcomeCue;
+    return { ok, synopsis, characters, locations, events, sentenceCount };
+  }
+
+  function evaluateBlocSynopsisResult(
+    synopsis: string,
+    index: number,
+    isLast: boolean,
+  ) {
+    const text = synopsis.trim();
+    const sentenceCount = text ? text.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
+    const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+    const hasActionCue = /\b(confronts|discovers|reveals|decides|forces|escalates|fails|succeeds|chooses|arrives|leaves|admits|threatens|fights|negotiates|betrays)\b/i.test(text);
+    const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up)\b/i.test(text);
+    const hasMultiLocationCue = /\b(meanwhile|elsewhere|across town|back at|cut to|later at|in another location)\b/i.test(text);
+    const ok =
+      wordCount >= 14 &&
+      sentenceCount >= 1 &&
+      sentenceCount <= 4 &&
+      hasActionCue &&
+      (!isLast || hasOutcomeCue || /\b(resolve|resolution|outcome|choice|cost)\b/i.test(text)) &&
+      (index === 0 || !/^\s*(new location|meanwhile in a new place)/i.test(text)) &&
+      !hasMultiLocationCue;
+    return { ok, text, sentenceCount, wordCount };
+  }
+
+  async function repairBlocSynopsisResult(args: {
+    chapterSynopsis: string;
+    previousChapterSynopsis: string;
+    nextChapterSynopsis: string;
+    previousSynopses: string;
+    currentSynopsis: string;
+    blocNumber: number;
+    totalBlocs: number;
+    isLast: boolean;
+    systemMsg: string;
+  }) {
+    const repairPrompt = [
+      "Your bloc synopsis is too weak or vague for reliable prose generation.",
+      "Rewrite it with concrete events and clear continuity.",
+      `Return JSON only: { "synopsis": "1-3 sentences with explicit actions" }`,
+      "Requirements:",
+      "- explicit actions and conflict, no vague phrasing",
+      "- keep continuity with previous and next chapter context",
+      "- do not force a location change just because this is a new bloc",
+      args.isLast ? "- this is the final bloc: include chapter outcome/setup cue" : "",
+      "",
+      `Bloc ${args.blocNumber} of ${args.totalBlocs}`,
+      `Chapter synopsis: ${args.chapterSynopsis}`,
+      args.previousChapterSynopsis ? `Previous chapter: ${args.previousChapterSynopsis}` : "",
+      args.nextChapterSynopsis ? `Next chapter: ${args.nextChapterSynopsis}` : "",
+      args.previousSynopses ? `Previous blocs:\n${args.previousSynopses}` : "",
+      `Current weak synopsis:\n${args.currentSynopsis}`,
+    ].filter(Boolean).join("\n");
+    return requestOpenRouterJson<{ synopsis?: string }>(repairPrompt, 320, {
+      timeoutMs: 180000,
+      systemMessage: args.systemMsg,
+    });
+  }
+
+  function evaluateProseResult(
+    prose: string,
+    args: { targetWords: number; minAcceptable: number; useBestFit: boolean; previousProse: string },
+  ) {
+    const text = prose.trim();
+    const wc = countWords(text);
+    const paragraphCount = text ? text.split(/\n{2,}/).filter(Boolean).length : 0;
+    const hasForbiddenMeta = /\b(word count\s*:|scene\s*\d+\s*:|chapter\s*\d+\s*:)\b/i.test(text);
+    const prevTail = args.previousProse.trim().slice(-220);
+    const appearsDuplicatedTail = Boolean(prevTail) && text.startsWith(prevTail);
+    const minByMode = args.useBestFit ? Math.max(220, Math.round(args.targetWords * 0.62)) : args.minAcceptable;
+    const maxByMode = args.useBestFit ? Math.round(args.targetWords * 1.3) : Math.round(args.targetWords * 1.12);
+    const ok =
+      wc >= minByMode &&
+      wc <= maxByMode &&
+      paragraphCount >= 1 &&
+      !hasForbiddenMeta &&
+      !appearsDuplicatedTail;
+    return { ok, wc, text };
+  }
+
+  async function repairGeneratedProse(args: {
+    prose: string;
+    sceneSynopsis: string;
+    chapterSynopsis: string;
+    previousChapterSynopsis: string;
+    nextChapterSynopsis: string;
+    targetWords: number;
+    useBestFit: boolean;
+    systemMsg: string;
+    canon: string;
+  }) {
+    const repairPrompt = [
+      args.useBestFit
+        ? `Rewrite this prose so it best fits the scene at around ${args.targetWords} words.`
+        : `Rewrite this prose to exactly ${args.targetWords} words while preserving scene events.`,
+      "Keep POV, tense, and chapter voice consistent. Keep continuity with adjacent chapters.",
+      "Return ONLY prose paragraphs. No metadata, labels, or notes.",
+      `Scene synopsis: ${args.sceneSynopsis}`,
+      args.chapterSynopsis ? `Chapter synopsis: ${args.chapterSynopsis}` : "",
+      args.previousChapterSynopsis ? `Previous chapter synopsis: ${args.previousChapterSynopsis}` : "",
+      args.nextChapterSynopsis ? `Next chapter synopsis: ${args.nextChapterSynopsis}` : "",
+      args.canon ? `Canon:\n${args.canon}` : "",
+      `Draft to repair:\n${args.prose.slice(0, 6000)}`,
+    ].filter(Boolean).join("\n\n");
+    return requestOpenRouterText(repairPrompt, Math.min(10000, Math.max(1800, Math.round(args.targetWords * 2.5))), 240000, args.systemMsg, false);
+  }
+
+  async function repairPhase2ChapterResult(
+    chapterContext: string,
+    chapterIndex: number,
+    totalChapters: number,
+    prior: { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[]; lore?: string[] },
+    systemMsg: string,
+  ) {
+    const repairPrompt = [
+      "Your previous chapter plan was too vague or incomplete for scene-block generation.",
+      "Rewrite it as a concrete INTERNAL drafting plan.",
+      `Return JSON: { "synopsis": "5-9 sentences with explicit events", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      "Requirements:",
+      "- clear sequence of what happens",
+      "- explicit conflict/escalation and chapter outcome",
+      "- arrays must match synopsis mentions",
+      "- one primary location unless absolutely necessary",
+      "",
+      `Current draft JSON:\n${JSON.stringify(prior)}`,
+      "",
+      `Canonical context:\n${chapterContext}`,
+      "",
+      `Arc guidance:\n${buildChapterArcGuidance(chapterIndex, totalChapters)}`,
+    ].join("\n");
+    return requestOpenRouterJson<{
+      synopsis?: string;
+      characters?: string[];
+      locations?: string[];
+      events?: string[];
+      lore?: string[];
+    }>(repairPrompt, 700, { timeoutMs: 240000, systemMessage: systemMsg });
   }
 
   async function runConcurrent<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
@@ -1990,6 +2444,7 @@ function NovelWorkspacePage() {
     preset: string;
     notes: string;
     regenConstraint: string;
+    lengthMode: "strict" | "best-fit";
   };
 
   const DEFAULT_BLOCK: ChapterBlock = {
@@ -1999,6 +2454,7 @@ function NovelWorkspacePage() {
     preset: "default",
     notes: "",
     regenConstraint: "",
+    lengthMode: "strict",
   };
 
   function parseChapterBlocks(content: string): { blocks: ChapterBlock[]; hasBlocks: boolean } {
@@ -2016,6 +2472,7 @@ function NovelWorkspacePage() {
       let preset = DEFAULT_BLOCK.preset;
       let notes = DEFAULT_BLOCK.notes;
       let regenConstraint = DEFAULT_BLOCK.regenConstraint;
+      let lengthMode = DEFAULT_BLOCK.lengthMode;
       if (header.startsWith(META_DELIM)) {
         const firstNewline = header.indexOf("\n");
         const metaLine = firstNewline >= 0 ? header.slice(META_DELIM.length, firstNewline) : header.slice(META_DELIM.length);
@@ -2025,8 +2482,11 @@ function NovelWorkspacePage() {
         if (metaParts.length >= 2) preset = metaParts[1] || DEFAULT_BLOCK.preset;
         if (metaParts.length >= 3) notes = metaParts[2] ?? DEFAULT_BLOCK.notes;
         if (metaParts.length >= 4) regenConstraint = metaParts[3] ?? DEFAULT_BLOCK.regenConstraint;
+        if (metaParts.length >= 5) {
+          lengthMode = metaParts[4] === "best-fit" ? "best-fit" : "strict";
+        }
       }
-      blocks.push({ synopsis, prose, wordTarget, preset, notes, regenConstraint });
+      blocks.push({ synopsis, prose, wordTarget, preset, notes, regenConstraint, lengthMode });
     }
     return { blocks, hasBlocks: blocks.length > 0 };
   }
@@ -2034,7 +2494,7 @@ function NovelWorkspacePage() {
   function serializeChapterBlocks(blocks: ChapterBlock[]): string {
     return blocks
       .map((b) => {
-        const meta = `${META_DELIM}${b.wordTarget}|${b.preset}|${b.notes}|${b.regenConstraint}\n`;
+        const meta = `${META_DELIM}${b.wordTarget}|${b.preset}|${b.notes}|${b.regenConstraint}|${b.lengthMode}\n`;
         return `${BLOCK_DELIM}\n${meta}${b.synopsis}\n${PROSE_DELIM}\n${b.prose}\n${END_BLOCK}`;
       })
       .join("\n\n");
@@ -2136,6 +2596,9 @@ function NovelWorkspacePage() {
   async function runGenerateChapterBlocks() {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
+    const chapterLevelBolton = chapterBoltonByChapterId[targetChapterId]?.trim() ?? "";
+    const { previousChapterSynopsis, nextChapterSynopsis } = getAdjacentChapterSynopses(targetChapterId);
+    const storyPosition = getChapterStoryPosition(targetChapterId);
     const planChapter = planChapters.find((p) => p.manuscriptChapterId === targetChapterId);
     const chapterSynopsis = (planChapter?.synopsis || activeChapter.subtitle || "").trim();
     if (!chapterSynopsis) {
@@ -2156,7 +2619,7 @@ function NovelWorkspacePage() {
       for (let i = 0; i < BLOC_COUNT; i++) {
         const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
         const isLast = i === BLOC_COUNT - 1;
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 5;
 
         let synopsis = "";
 
@@ -2165,17 +2628,34 @@ function NovelWorkspacePage() {
 
           const prompt = isSimple
             ? [
+                storyPosition.chapterNumber > 0
+                  ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
+                  : "",
+                storyPosition.arcGuidance,
                 `Chapter: ${chapterSynopsis}`,
+                previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 180)}` : "",
+                nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 180)}` : "",
                 previousSynopses ? `\n${previousSynopses}` : "",
                 `\nWrite a 1-3 sentence synopsis for scene ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the final scene — resolve the chapter." : ""}`,
+                "Use existing Canon character names only. Do not invent role labels as character names.",
+                "Keep this chapter grounded to one primary location unless a clear transition is essential. A new bloc does not require a new location.",
+                "Each bloc must flow directly from the previous bloc while setting up the next one.",
                 `Return JSON: { "synopsis": "your synopsis here" }`,
               ].filter(Boolean).join("\n")
             : [
                 `You are splitting a chapter into ${BLOC_COUNT} scene blocs. Write the synopsis for bloc ${i + 1} of ${BLOC_COUNT}.${isLast ? " This is the FINAL bloc — resolve or close the chapter." : ""}`,
                 `Return JSON: { "synopsis": "1-3 sentences describing what happens in this scene" }`,
+                "Use existing Canon character names where possible; avoid creating duplicate/role-only identities.",
+                "Keep one primary location for the chapter unless story-critical movement is required.",
+                storyPosition.chapterNumber > 0
+                  ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
+                  : "",
+                storyPosition.arcGuidance,
                 "",
                 `Chapter: ${activeChapter.title}`,
                 `Chapter synopsis: ${chapterSynopsis}`,
+                previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 180)}` : "",
+                nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 180)}` : "",
                 previousSynopses ? `\nPrevious blocs:\n${previousSynopses}` : "",
                 i === 0 ? `\n${context}` : "",
               ].filter(Boolean).join("\n");
@@ -2184,12 +2664,32 @@ function NovelWorkspacePage() {
             const data = await requestOpenRouterJson<{ synopsis?: string }>(
               prompt,
               400,
-              { timeoutMs: 120000, systemMessage: isSimple ? "Return ONLY valid JSON." : systemMsg },
+              { timeoutMs: 180000, systemMessage: isSimple ? "Return ONLY valid JSON." : systemMsg },
             );
             const candidate = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
-            // Reject suspiciously short synopses (likely truncated)
-            if (candidate.length >= 20) {
-              synopsis = candidate;
+            const quality = evaluateBlocSynopsisResult(candidate, i, isLast);
+            if (quality.ok) {
+              synopsis = quality.text;
+            } else if (candidate.length >= 24) {
+              try {
+                const repaired = await repairBlocSynopsisResult({
+                  chapterSynopsis,
+                  previousChapterSynopsis,
+                  nextChapterSynopsis,
+                  previousSynopses,
+                  currentSynopsis: candidate,
+                  blocNumber: i + 1,
+                  totalBlocs: BLOC_COUNT,
+                  isLast,
+                  systemMsg: "Return ONLY valid JSON.",
+                });
+                const repairedText = (typeof repaired?.synopsis === "string" ? repaired.synopsis : "").trim();
+                if (evaluateBlocSynopsisResult(repairedText, i, isLast).ok) {
+                  synopsis = repairedText;
+                }
+              } catch {
+                // keep retry loop alive
+              }
             }
           } catch {
             // Will retry
@@ -2204,7 +2704,7 @@ function NovelWorkspacePage() {
           break;
         }
 
-        blocks.push({ ...DEFAULT_BLOCK, synopsis });
+        blocks.push({ ...DEFAULT_BLOCK, synopsis, notes: chapterLevelBolton });
 
         // Update the chapter progressively so the user sees blocs appearing one by one
         updateChapter(targetChapterId, { content: serializeChapterBlocks(blocks) });
@@ -2212,6 +2712,33 @@ function NovelWorkspacePage() {
 
       if (blocks.length < 3) {
         throw new Error(`Only generated ${blocks.length} blocs. Try again or use a different model.`);
+      }
+
+      // Link generated bloc names back to Canon IDs for this chapter plan.
+      if (planChapter) {
+        const linked = inferCanonIdsFromText([chapterSynopsis, ...blocks.map((b) => b.synopsis)].join("\n"));
+        const mergedCharacterIds = Array.from(new Set([...(planChapter.characterIds ?? []), ...linked.characterIds]));
+        const mergedLocationIds = Array.from(new Set([...(planChapter.locationIds ?? []), ...linked.locationIds]));
+        const mergedLoreIds = Array.from(new Set([...(planChapter.loreIds ?? []), ...linked.loreIds]));
+        updateStoryBible({
+          bookPlan: {
+            ...(novel.storyBible.bookPlan ?? {
+              chapters: [],
+              aiChapterTarget: "auto" as const,
+              updatedAt: new Date().toISOString(),
+            }),
+            chapters: planChapters.map((chapter) =>
+              chapter.id === planChapter.id
+                ? {
+                    ...chapter,
+                    characterIds: mergedCharacterIds,
+                    locationIds: mergedLocationIds,
+                    loreIds: mergedLoreIds,
+                  }
+                : chapter,
+            ),
+          },
+        });
       }
     } catch (error) {
       setStoryAiError(error instanceof Error ? error.message : "Block generation failed.");
@@ -2226,17 +2753,6 @@ function NovelWorkspacePage() {
     { id: "internal-thoughts", label: "More internal thoughts", instruction: "Add more of the POV character's inner thoughts and reactions." },
     { id: "tighten", label: "Tighten/shorten", instruction: "Tighten the prose; cut flab, keep it punchy." },
     { id: "expand", label: "Expand/sensory", instruction: "Expand with more sensory detail and atmosphere." },
-  ];
-
-  const BLOCK_PROSE_PRESETS: Array<{ id: string; label: string; hint: string }> = [
-    { id: "default", label: "Default", hint: "Use Canon style" },
-    { id: "literary", label: "Literary", hint: "Richer prose, metaphor, lyrical" },
-    { id: "sparse", label: "Sparse", hint: "Lean, punchy, minimal" },
-    { id: "dialogue", label: "Dialogue-heavy", hint: "More speech, less narration" },
-    { id: "action", label: "Action-driven", hint: "Physical movement, pace" },
-    { id: "internal", label: "Internal focus", hint: "Deep POV, thoughts, reactions" },
-    { id: "sensory", label: "Sensory-rich", hint: "Vivid sensory detail" },
-    { id: "noir", label: "Noir / thriller", hint: "Tense, atmospheric" },
   ];
 
   async function runGenerateBlockProse(blockIndex: number, regenerateInstruction?: string) {
@@ -2257,31 +2773,25 @@ function NovelWorkspacePage() {
 
     const planChapter = planChapters.find((p) => p.manuscriptChapterId === targetChapterId);
     const planChapterSynopsis = planChapter?.synopsis?.trim() || "";
-    const planCharIds = planChapter?.characterIds ?? [];
-    const planLocIds = planChapter?.locationIds ?? [];
-
-    const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
-    const nextChapter = chIndex >= 0 && chIndex + 1 < novel.chapters.length ? novel.chapters[chIndex + 1] : null;
-    const nextPlanChapter = nextChapter ? planChapters.find((p) => p.manuscriptChapterId === nextChapter.id) : null;
-    const nextChapterSynopsis = nextPlanChapter?.synopsis?.trim() || nextChapter?.subtitle?.trim() || "";
+    const inferredCanon = inferCanonIdsFromText(`${planChapterSynopsis}\n${block.synopsis}`);
+    const planCharIds = Array.from(new Set([...(planChapter?.characterIds ?? []), ...inferredCanon.characterIds]));
+    const planLocIds = Array.from(new Set([...(planChapter?.locationIds ?? []), ...inferredCanon.locationIds]));
+    const { previousChapterSynopsis, nextChapterSynopsis } = getAdjacentChapterSynopses(targetChapterId);
+    const storyPosition = getChapterStoryPosition(targetChapterId);
 
     setStoryAiBusyAction(`block-${targetChapterId}-${blockIndex}`);
     setStoryAiError(null);
     try {
       const wt = block.wordTarget;
-      const minAcceptable = Math.round(wt * 0.90); // 90% minimum — hard enforcement
+      const useBestFit = block.lengthMode === "best-fit";
+      const minAcceptable = useBestFit ? Math.round(wt * 0.72) : Math.round(wt * 0.95);
 
       // Build lean canon context — keep it short for speed
       const canon = buildProseContext(block.synopsis, planChapterSynopsis, planCharIds, planLocIds);
-
-      const activePreset = block.preset && block.preset !== "default"
-        ? BLOCK_PROSE_PRESETS.find((p) => p.id === block.preset)
-        : null;
-      const presetLine = activePreset ? `Style: ${activePreset.hint}.` : "";
       const activeBoltonId = chapterBoltonId || block.notes.trim();
       const activeBolton = activeBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === activeBoltonId) : null;
       const boltonLine = activeBolton
-        ? `Bolt-On rule: ${activeBolton.prompt?.trim() || activeBolton.description?.trim() || ""}`
+        ? `Bolt-On rule (priority, max 500 chars): ${getBoltonDirectiveText(activeBolton)}`
         : "";
       const constraint = (regenerateInstruction || block.regenConstraint)?.trim();
 
@@ -2306,40 +2816,64 @@ function NovelWorkspacePage() {
       const styleDirective = styleRules.length > 0
         ? ` MANDATORY STYLE RULES — follow exactly: ${styleRules.join(". ")}.`
         : "";
-
-      const systemMsg = `Write ${wt} words of prose in ${profileLangLabel}. YOU MUST WRITE ${wt} WORDS — NOT 200, NOT 300, EXACTLY ${wt}. If you finish the scene early, expand with dialogue, action, interiority, and sensory detail until you reach ${wt} words.${styleDirective} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Your entire response must read like pages from a published novel.`;
+      const lengthRule = useBestFit
+        ? `Write the best-fit scene length around ${wt} words. You may choose the most natural length between ${Math.round(wt * 0.75)} and ${Math.round(wt * 1.15)} words.`
+        : `YOU MUST WRITE ${wt} WORDS — NOT 200, NOT 300, EXACTLY ${wt}. If you finish the scene early, expand with dialogue, action, interiority, and sensory detail until you reach ${wt} words.`;
+      const systemMsg = `Write prose in ${profileLangLabel}. ${lengthRule}${styleDirective} STRICT OUTPUT RULES: Return ONLY prose paragraphs. NEVER include: word counts, "Word count:", scene labels, "Scene 1", "Scene 2", chapter headings, separators (---), asterisks for metadata, thinking, notes, or any non-prose text. Keep one continuous chapter voice and POV, and never break story continuity.`;
+      const novelistQualityRule = `Grammar and prose quality are non-negotiable: use correct ${profileLangLabel} spelling, punctuation, paragraphing, and sentence structure like a published novelist.`;
 
       // Build concise prompt — word count hammered at top, middle, and bottom
-      const wcReminder = `[MANDATORY: Your response MUST be ${wt} words long. Do NOT stop at 200 words. Keep writing until you reach ${wt} words.]`;
+      const wcReminder = useBestFit
+        ? `[TARGET LENGTH: Best fit around ${wt} words, allowed range ${Math.round(wt * 0.75)}-${Math.round(wt * 1.15)}.]`
+        : `[MANDATORY: Your response MUST be ${wt} words long. Do NOT stop at 200 words. Keep writing until you reach ${wt} words.]`;
       const prompt = isRegenerate
         ? [
             wcReminder,
-            `Rewrite this scene. Same story beats, fresh prose. TARGET: ${wt} words.`,
-            presetLine,
+            `Rewrite this scene. Same story beats, fresh prose. ${useBestFit ? `Best-fit target: around ${wt} words.` : `TARGET: ${wt} words.`}`,
+            novelistQualityRule,
             boltonLine,
             constraint ? `Change: ${constraint}` : "",
+            storyPosition.chapterNumber > 0
+              ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
+              : "",
+            storyPosition.arcGuidance,
             `Scene: ${block.synopsis}`,
+            previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+            nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
             `Current:\n${block.prose!.slice(0, 1500)}`,
+            "Continuity rule: preserve character placement, POV, and location continuity unless explicitly transitioning scenes.",
+            "A new bloc is not an automatic location change.",
             canon ? `Canon:\n${canon}` : "",
             wcReminder,
           ].filter(Boolean).join("\n")
         : [
             wcReminder,
-            `Write ${wt} words of prose for this scene. If you finish the scene, add more detail — describe the setting, deepen character thoughts, extend dialogue — until you have ${wt} words.`,
-            presetLine,
+            useBestFit
+              ? `Write this scene with best-fit length around ${wt} words. Prioritize narrative fit and continuity over exact count.`
+              : `Write ${wt} words of prose for this scene. If you finish the scene, add more detail — describe the setting, deepen character thoughts, extend dialogue — until you have ${wt} words.`,
+            novelistQualityRule,
             boltonLine,
+            storyPosition.chapterNumber > 0
+              ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
+              : "",
+            storyPosition.arcGuidance,
             `Scene: ${block.synopsis}`,
             planChapterSynopsis ? `Chapter: ${clampPromptText(planChapterSynopsis, 150)}` : "",
+            previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+            nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
             prevProse ? `Previous scene ended: "${prevProse.slice(-150)}"` : "",
+            blocks[blockIndex - 1]?.synopsis ? `Previous bloc summary: ${clampPromptText(blocks[blockIndex - 1].synopsis, 120)}` : "",
             nextBlockSynopses.length > 0 ? `Next scenes: ${nextBlockSynopses.slice(0, 2).join("; ")}` : "",
+            "Continuity rule: keep character placement, POV, and location continuity coherent with the previous bloc unless a clear transition is written.",
+            "Do not force a new location just because this is a new bloc.",
             canon ? `Canon:\n${canon}` : "",
             wcReminder,
           ].filter(Boolean).join("\n");
 
       // Token budget: ~2.5 tokens per word — generous to ensure model doesn't cut off
       const scaledMaxTokens = Math.min(10000, Math.max(2000, Math.round(wt * 2.5)));
-      // Timeout: minimum 3 minutes, scales with word target for slow models
-      const scaledTimeoutMs = Math.max(180000, Math.round(wt * 220));
+      // Timeout: minimum 4 minutes, scales aggressively for slow models
+      const scaledTimeoutMs = Math.max(240000, Math.round(wt * 320));
 
       let prose = "";
 
@@ -2382,16 +2916,16 @@ function NovelWorkspacePage() {
       // Show prose to the user immediately after initial generation
       saveProseProgress(prose);
 
-      // ── Word count enforcement: auto-continue until we hit 90% of target ──
+      // ── Word count enforcement: auto-continue only when strict mode needs more coverage ──
       let wc = countWords(prose);
-      const MAX_CONTINUES = 5; // Up to 5 continuations to reach target
+      const MAX_CONTINUES = 8; // More continuation attempts for slower/shorter models
       let continues = 0;
-      while (wc < minAcceptable && continues < MAX_CONTINUES) {
+      while (!useBestFit && wc < minAcceptable && continues < MAX_CONTINUES) {
         continues++;
         const deficit = wt - wc;
         // Ask for manageable chunks — max 500 words per continuation to help weaker models
-        const chunkTarget = Math.min(500, deficit);
-        const continueSystemMsg = `You are a novelist continuing a scene. Write exactly ${chunkTarget} words in ${profileLangLabel}. Return ONLY prose paragraphs — no word counts, no scene labels, no "---", no metadata, no notes. Continue seamlessly from where the text left off.`;
+        const chunkTarget = Math.min(450, deficit);
+        const continueSystemMsg = `You are a novelist continuing a scene. Write exactly ${chunkTarget} words in ${profileLangLabel}. Grammar, punctuation, and sentence structure must be publication-quality in ${profileLangLabel}. Return ONLY prose paragraphs — no word counts, no scene labels, no "---", no metadata, no notes. Continue seamlessly from where the text left off.`;
         const continuePrompt = [
           `WORD COUNT: ${chunkTarget} words.`,
           `Continue this scene. Write ${chunkTarget} more words.`,
@@ -2415,7 +2949,47 @@ function NovelWorkspacePage() {
         }
       }
 
-      const trimmed = prose;
+      let quality = evaluateProseResult(prose, {
+        targetWords: wt,
+        minAcceptable,
+        useBestFit,
+        previousProse: prevProse,
+      });
+      if (!quality.ok) {
+        try {
+          const repairedRaw = await repairGeneratedProse({
+            prose,
+            sceneSynopsis: block.synopsis,
+            chapterSynopsis: planChapterSynopsis,
+            previousChapterSynopsis,
+            nextChapterSynopsis,
+            targetWords: wt,
+            useBestFit,
+            systemMsg,
+            canon,
+          });
+          const repaired = cleanProseOutput(repairedRaw);
+          const repairedQuality = evaluateProseResult(repaired, {
+            targetWords: wt,
+            minAcceptable,
+            useBestFit,
+            previousProse: prevProse,
+          });
+          if (repairedQuality.ok) {
+            prose = repaired;
+            quality = repairedQuality;
+            saveProseProgress(prose);
+          }
+        } catch {
+          // keep the best available prose
+        }
+      }
+
+      if (!quality.ok && quality.wc < Math.max(160, Math.round(wt * 0.5))) {
+        throw new Error("Generated prose was too short for a reliable scene. Try again or switch model.");
+      }
+
+      const trimmed = quality.text;
 
       const nextBlocks = [...blocks];
       nextBlocks[blockIndex] = { ...block, prose: trimmed };
@@ -2427,9 +3001,34 @@ function NovelWorkspacePage() {
     }
   }
 
-  async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 90000, systemMessage?: string, jsonMode = false, temperature?: number) {
+  function getAiLatencyProfile(modelId: string, provider: AssistantProviderId) {
+    const model = modelId.toLowerCase();
+    const slowPattern = /(reason|thinking|r1|qwq|o1|o3|sonnet|opus|grok-4|deepseek\/deepseek-r1|gemini-2\.5-pro)/i;
+    const fastPattern = /(mini|flash|haiku|8b|7b|small)/i;
+    if (slowPattern.test(model)) {
+      return { timeoutMultiplier: 1.8, minTotalMs: 240000, attemptWeights: [0.52, 0.30, 0.18] as const };
+    }
+    if (provider === "openrouter" && model.includes(":free")) {
+      return { timeoutMultiplier: 1.5, minTotalMs: 220000, attemptWeights: [0.55, 0.28, 0.17] as const };
+    }
+    if (fastPattern.test(model)) {
+      return { timeoutMultiplier: 1.0, minTotalMs: 120000, attemptWeights: [0.62, 0.23, 0.15] as const };
+    }
+    return { timeoutMultiplier: 1.25, minTotalMs: 180000, attemptWeights: [0.58, 0.25, 0.17] as const };
+  }
+
+  async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 180000, systemMessage?: string, jsonMode = false, temperature?: number) {
     const normalizedApiKey = normalizeClientApiKey(openRouterKey);
     const startMs = Date.now();
+    const latencyProfile = getAiLatencyProfile(openRouterModel, assistantProvider);
+    const totalBudgetMs = Math.max(
+      timeoutMs,
+      Math.round(timeoutMs * latencyProfile.timeoutMultiplier),
+      latencyProfile.minTotalMs,
+    );
+    const firstBudget = Math.max(12000, Math.floor(totalBudgetMs * latencyProfile.attemptWeights[0]));
+    const secondPlannedBudget = Math.max(9000, Math.floor(totalBudgetMs * latencyProfile.attemptWeights[1]));
+    const thirdPlannedBudget = Math.max(8000, Math.floor(totalBudgetMs * latencyProfile.attemptWeights[2]));
 
     // Pre-build request body once (avoid re-serializing on retry)
     const requestBody = JSON.stringify({
@@ -2473,29 +3072,43 @@ function NovelWorkspacePage() {
     }
 
     // First attempt
-    const first = await singleAttempt(timeoutMs);
+    const first = await singleAttempt(firstBudget);
 
     // If we got a non-empty successful response, return it
     if (first.ok && first.text) return first.text;
 
     // Determine if retry is worthwhile
     const elapsed = Date.now() - startMs;
-    const remaining = timeoutMs - elapsed;
+    const remaining = totalBudgetMs - elapsed;
     const isAuthError = first.apiError?.includes("API key") || first.status === 401 || first.status === 402;
     const isTransient = first.text === "" || first.status === 500 || first.status === 502 || first.status === 503;
 
-    if (!isAuthError && isTransient && remaining > 10000) {
-      // Brief pause — 500ms is enough for transient errors, no need to wait 2s
-      await new Promise((r) => window.setTimeout(r, 500));
-      const second = await singleAttempt(remaining - 500);
+    if (!isAuthError && isTransient && remaining > 12000) {
+      // Quality-first: allow up to two retries when models are slow/unreliable.
+      await new Promise((r) => window.setTimeout(r, 600));
+      const secondBudget = Math.max(6000, Math.min(secondPlannedBudget, remaining - 600));
+      const second = await singleAttempt(secondBudget);
       if (second.ok && second.text) return second.text;
-      const bestError = second.apiError || first.apiError;
-      if (bestError) throw new Error(bestError);
+
+      const elapsedAfterSecond = Date.now() - startMs;
+      const remainingAfterSecond = totalBudgetMs - elapsedAfterSecond;
+      const secondTransient = second.text === "" || second.status === 500 || second.status === 502 || second.status === 503;
+      if (secondTransient && remainingAfterSecond > 8000) {
+        await new Promise((r) => window.setTimeout(r, 800));
+        const thirdBudget = Math.max(6000, Math.min(thirdPlannedBudget, remainingAfterSecond - 800));
+        const third = await singleAttempt(thirdBudget);
+        if (third.ok && third.text) return third.text;
+        const bestError = third.apiError || second.apiError || first.apiError;
+        if (bestError) throw new Error(bestError);
+      } else {
+        const bestError = second.apiError || first.apiError;
+        if (bestError) throw new Error(bestError);
+      }
     }
 
     // Report the failure
     if (first.apiError === "timeout") {
-      throw new Error("Request timed out — your model may be too slow for this task. Try a faster model or lower the word count.");
+      throw new Error("Request timed out. This model is slow but can still work—retrying often helps. You can also try again with the same settings.");
     }
     if (first.apiError) throw new Error(first.apiError);
     if (!first.ok && first.status === 400) {
@@ -2633,7 +3246,7 @@ function NovelWorkspacePage() {
     maxTokens = 900,
     options?: { timeoutMs?: number; systemMessage?: string },
   ) {
-    const totalBudgetMs = options?.timeoutMs ?? 90000;
+    const totalBudgetMs = options?.timeoutMs ?? 240000;
     const sysMsg = options?.systemMessage;
     // Do NOT use jsonMode (response_format) — many providers (Infermatic/vLLM) don't support it.
     const startMs = Date.now();
@@ -2650,13 +3263,13 @@ function NovelWorkspacePage() {
 
     // Only retry if we have enough time budget left
     const remainingMs = totalBudgetMs - (Date.now() - startMs);
-    if (remainingMs < 15000) {
+    if (remainingMs < 18000) {
       throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
     }
 
-    // Retry with short, strict prompt (don't resend the full context — saves input tokens)
-    const retryPrompt = `Your previous response was not valid JSON. Respond with ONLY the JSON object requested. No explanation.\n\nOriginal request (respond with JSON only):\n${prompt.slice(0, 1500)}`;
-    const retryMaxTokens = Math.max(300, Math.min(maxTokens, 600));
+    // Retry with strict prompt while preserving more context for accuracy.
+    const retryPrompt = `Your previous response was not valid JSON. Respond with ONLY the JSON object requested. No explanation.\n\nOriginal request (respond with JSON only):\n${prompt.slice(0, 4000)}`;
+    const retryMaxTokens = Math.max(450, Math.min(maxTokens, 900));
     const secondPass = await requestOpenRouterText(retryPrompt, retryMaxTokens, remainingMs, "Return ONLY valid JSON. No markdown, no text.", false, 0.1);
     const secondParsed = parseJsonFromAi<T>(secondPass);
     if (secondParsed) return secondParsed;
@@ -2666,6 +3279,32 @@ function NovelWorkspacePage() {
     if (retryRepair) {
       try { return JSON.parse(retryRepair) as T; } catch { /* fall through */ }
     }
+
+    // Third pass: tiny schema lock to salvage slower models that drift.
+    const remainingAfterSecond = totalBudgetMs - (Date.now() - startMs);
+    if (remainingAfterSecond > 12000) {
+      const thirdPrompt = [
+        "Return ONLY valid JSON that exactly matches the requested shape.",
+        "No prose, no explanation, no markdown.",
+        "If unsure, still return best-effort JSON object with the required keys.",
+        `Original request:\n${prompt.slice(0, 2500)}`,
+      ].join("\n\n");
+      const thirdPass = await requestOpenRouterText(
+        thirdPrompt,
+        Math.max(450, Math.min(maxTokens, 850)),
+        remainingAfterSecond,
+        "Strict JSON mode. Output one JSON object only.",
+        false,
+        0,
+      );
+      const thirdParsed = parseJsonFromAi<T>(thirdPass);
+      if (thirdParsed) return thirdParsed;
+      const thirdRepair = attemptCloseTruncatedJson(stripThinkingBlocks(thirdPass).trim());
+      if (thirdRepair) {
+        try { return JSON.parse(thirdRepair) as T; } catch { /* fall through */ }
+      }
+    }
+
     throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
   }
 
@@ -2711,7 +3350,7 @@ function NovelWorkspacePage() {
 
       // Attempt 1: direct call
       try {
-        const raw = await requestOpenRouterText(prompt, 800, 90000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 800, 180000, sysMsg, false, 0.7);
         data = parseJsonFromAi<SummaryResult>(raw);
       } catch { /* continue */ }
 
@@ -2719,7 +3358,7 @@ function NovelWorkspacePage() {
       if (!data || !data.synopsis) {
         try {
           const retryPrompt = prompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 800, 90000, sysMsg, false, 0.4);
+          const raw2 = await requestOpenRouterText(retryPrompt, 800, 180000, sysMsg, false, 0.4);
           data = parseJsonFromAi<SummaryResult>(raw2);
         } catch { /* continue */ }
       }
@@ -2874,11 +3513,15 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     try {
       const summaryNameHints = extractSummaryNameHints();
+      if (summaryNameHints.length === 0) {
+        throw new Error("No clear person names were found in the synopsis. Add real character names first.");
+      }
       const existingNames = storyCharacters.map((c) => c.name).filter(Boolean).join(", ") || "none";
       const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "";
       const sb = novel.storyBible;
       const genre = (sb.summary.genre ?? []).slice(0, 4).join(", ") || "fiction";
       const synopsis = sb.summary.synopsisShort?.trim() || "";
+      const requestedCount = Math.min(6, Math.max(2, summaryNameHints.length));
 
       // ── Name validation ──
       const allKnownLocations = new Set<string>(
@@ -2942,13 +3585,14 @@ function NovelWorkspacePage() {
         `${genre} novel: ${clampPromptText(synopsis, 300)}`,
         summaryNamesText ? `Key names: ${summaryNamesText}` : "",
         existingNames !== "none" ? `Skip: ${existingNames}` : "",
-        `List 4-6 characters. JSON: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
+        "Use ONLY names from Key names. Never invent new names. Never output placeholders, roles, or abstract words.",
+        `List up to ${requestedCount} characters. JSON: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
       ].filter(Boolean).join("\n");
 
       let roster: RosterEntry[] = [];
 
       try {
-        const raw = await requestOpenRouterText(prompt, 300, 90000, "Return JSON array only.", false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 300, 180000, "Return JSON array only.", false, 0.7);
         const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
         if (Array.isArray(parsed)) {
           roster = parsed;
@@ -2980,6 +3624,8 @@ function NovelWorkspacePage() {
 
       // Filter through name validation
       roster = roster.filter((r) => typeof r.name === "string" && isValidName(r.name.trim()));
+      const hintSet = new Set(summaryNameHints.map((hint) => hint.trim().toLowerCase()));
+      roster = roster.filter((r) => hintSet.has((r.name || "").trim().toLowerCase()));
 
       // Add any summary name hints not in roster
       const rosterNames = new Set(roster.map((r) => (r.name ?? "").trim().toLowerCase()));
@@ -2988,7 +3634,7 @@ function NovelWorkspacePage() {
       summaryNameHints.forEach((hint) => {
         const normalized = hint.trim().toLowerCase();
         if (normalized && !rosterNames.has(normalized) && !existingNamesSet.has(normalized)) {
-          const fullName = ensureFullCharacterName(hint, roster.length);
+          const fullName = hint.trim();
           if (fullName && isValidName(fullName)) {
             roster.push({ name: fullName, role: roster.length === 0 ? "Protagonist" : "Supporting" });
             rosterNames.add(fullName.toLowerCase());
@@ -3014,10 +3660,10 @@ function NovelWorkspacePage() {
       });
 
       let addedCount = 0;
-      roster.forEach((entry, idx) => {
+      roster.forEach((entry) => {
         const name = (entry.name ?? "").trim();
         if (!name) return;
-        const fullName = ensureFullCharacterName(name, idx);
+        const fullName = name;
         if (!fullName) return;
         const k = fullName.trim().toLowerCase();
         const firstName = k.split(/\s+/)[0] ?? "";
@@ -3418,16 +4064,21 @@ function NovelWorkspacePage() {
 
   function inferEntityIdsFromText(
     text: string,
-    candidates: Array<{ id: string; name: string }>,
+    candidates: Array<{ id: string; name: string; aliases?: string[] }>,
   ) {
     const source = normalizeLookup(text || "");
     if (!source) return [] as string[];
     return candidates
       .filter((candidate) => {
-        const candidateName = (candidate.name || "").trim();
-        if (!candidateName) return false;
-        const pattern = new RegExp(`\\b${escapeForRegex(candidateName.toLowerCase())}\\b`, "i");
-        return pattern.test(source);
+        const candidateNames = [
+          (candidate.name || "").trim(),
+          ...((candidate.aliases ?? []).map((alias) => alias.trim()).filter(Boolean)),
+        ].filter(Boolean);
+        if (!candidateNames.length) return false;
+        return candidateNames.some((candidateName) => {
+          const pattern = new RegExp(`\\b${escapeForRegex(candidateName.toLowerCase())}\\b`, "i");
+          return pattern.test(source);
+        });
       })
       .map((candidate) => candidate.id);
   }
@@ -3439,6 +4090,10 @@ function NovelWorkspacePage() {
       (sourceNovel.storyBible.characters ?? []).map((character) => ({
         id: character.id,
         name: character.name || "",
+        aliases: (character.otherNames || "")
+          .split(/[;,]/)
+          .map((alias) => alias.trim())
+          .filter(Boolean),
       })),
     );
     const inferredLocationIds = inferEntityIdsFromText(
@@ -3494,6 +4149,7 @@ function NovelWorkspacePage() {
     if (!novel) return;
     const target = normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
     setPlanGenerateCustomCount(String(target));
+    setPlanGeneratePacingMode(novel.storyBible.bookPlan?.pacingMode ?? "balanced");
     setShowPlanGenerateModal(true);
   }
 
@@ -3512,7 +4168,7 @@ function NovelWorkspacePage() {
       if (!ok) return;
     }
     setShowPlanGenerateModal(false);
-    updateBookPlan({ aiChapterTarget: target });
+    updateBookPlan({ aiChapterTarget: target, pacingMode: planGeneratePacingMode });
     void runGeneratePlan(target);
   }
 
@@ -3700,7 +4356,7 @@ function NovelWorkspacePage() {
       const titlesResponse = await requestOpenRouterJson<TitlesResult>(
         buildPhase1TitlesPrompt(planTarget),
         400,
-        { timeoutMs: 90000, systemMessage: systemMsg },
+        { timeoutMs: 180000, systemMessage: systemMsg },
       );
       let allTitles = Array.isArray(titlesResponse.titles) ? titlesResponse.titles : [];
       if (!allTitles.length) {
@@ -3740,10 +4396,91 @@ function NovelWorkspacePage() {
       mergedCharacters.forEach((character) => {
         const key = normalizeLookup(character.name || "");
         if (key) characterByName.set(key, character);
+        (character.otherNames || "")
+          .split(/[;,]/)
+          .map((alias) => normalizeLookup(alias))
+          .filter(Boolean)
+          .forEach((aliasKey) => characterByName.set(aliasKey, character));
       });
+      const appendAliasToCharacter = (characterId: string, alias: string) => {
+        const cleanAlias = alias.trim();
+        if (!cleanAlias) return;
+        const idx = mergedCharacters.findIndex((c) => c.id === characterId);
+        if (idx === -1) return;
+        const current = mergedCharacters[idx];
+        const aliasList = (current.otherNames || "")
+          .split(/[;,]/)
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (!aliasList.some((existingAlias) => normalizeLookup(existingAlias) === normalizeLookup(cleanAlias))) {
+          aliasList.push(cleanAlias);
+        }
+        const secretNote = `Known alias: ${cleanAlias}`;
+        const readerNote = `May be referred to as "${cleanAlias}" before identity is confirmed.`;
+        mergedCharacters[idx] = {
+          ...current,
+          otherNames: aliasList.join(", "),
+          secrets: current.secrets?.includes(secretNote) ? current.secrets : [current.secrets, secretNote].filter(Boolean).join(" | "),
+          readerSecretHint: current.readerSecretHint?.includes(cleanAlias)
+            ? current.readerSecretHint
+            : [current.readerSecretHint, readerNote].filter(Boolean).join(" "),
+        };
+        characterByName.set(normalizeLookup(mergedCharacters[idx].name || ""), mergedCharacters[idx]);
+        aliasList.forEach((aliasVal) => characterByName.set(normalizeLookup(aliasVal), mergedCharacters[idx]));
+
+        // If a legacy role-like character already exists as a separate entry, merge it into this real character.
+        const roleLikeIdx = mergedCharacters.findIndex((c, i) => i !== idx && normalizeLookup(c.name || "") === normalizeLookup(cleanAlias));
+        if (roleLikeIdx >= 0 && isRoleLikeCharacterLabel(mergedCharacters[roleLikeIdx].name || "")) {
+          const roleLike = mergedCharacters[roleLikeIdx];
+          const mergedSecret = [mergedCharacters[idx].secrets, roleLike.secrets].filter(Boolean).join(" | ");
+          const mergedHint = [mergedCharacters[idx].readerSecretHint, roleLike.readerSecretHint].filter(Boolean).join(" ");
+          mergedCharacters[idx] = {
+            ...mergedCharacters[idx],
+            secrets: mergedSecret,
+            readerSecretHint: mergedHint,
+          };
+          mergedCharacters.splice(roleLikeIdx, 1);
+        }
+      };
+      const extractAliasRevealLinks = (text: string): Array<{ alias: string; realName: string }> => {
+        const links: Array<{ alias: string; realName: string }> = [];
+        const t = text || "";
+        const revealPatterns = [
+          /(?:the\s+)?(anonymous\s+[a-z]+|[a-z]+)\s+(?:is|was|revealed as|revealed to be|turns out to be)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi,
+          /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+),\s*the\s+([a-z]+(?:\s+[a-z]+)?)/gi,
+        ];
+        for (const pattern of revealPatterns) {
+          let match: RegExpExecArray | null = null;
+          while ((match = pattern.exec(t)) !== null) {
+            const first = (match[1] || "").trim();
+            const second = (match[2] || "").trim();
+            const [alias, realName] = isLikelyHumanName(first)
+              ? [second, first]
+              : [first, second];
+            if (!alias || !realName) continue;
+            if (!isRoleLikeCharacterLabel(alias) || !isLikelyHumanName(realName)) continue;
+            links.push({ alias, realName });
+          }
+        }
+        return links;
+      };
+      const findExistingCharacterIdByName = (rawName: string) => {
+        const key = normalizeLookup(rawName);
+        if (!key) return "";
+        const direct = characterByName.get(key);
+        if (direct) return direct.id;
+        const first = key.split(/\s+/)[0];
+        const firstMatches = mergedCharacters.filter((c) => normalizeLookup(c.name || "").split(/\s+/)[0] === first);
+        if (firstMatches.length === 1) return firstMatches[0].id;
+        return "";
+      };
       const ensureCharacterId = (rawName: string) => {
         const name = rawName.trim();
         if (!name) return "";
+        if (isRoleLikeCharacterLabel(name)) return "";
+        if (!isLikelyHumanName(name)) return "";
+        const fuzzyExistingId = findExistingCharacterIdByName(name);
+        if (fuzzyExistingId) return fuzzyExistingId;
         const key = normalizeLookup(name);
         const existing = characterByName.get(key);
         if (existing) return existing.id;
@@ -3844,26 +4581,41 @@ function NovelWorkspacePage() {
           prevSummary,
           nextTitle,
         );
-        const prompt = buildPhase2Prompt(chapterContext);
+        const prompt = buildPhase2Prompt(chapterContext, index, allTitles.length);
 
         let result: Phase2Result | null = null;
-        for (let attempt = 0; attempt < 2 && !result; attempt++) {
+        for (let attempt = 0; attempt < 4 && !result; attempt++) {
           try {
-            const raw = await requestOpenRouterText(prompt, 400, 90000, systemMsg, false, 0.3);
+            const raw = await requestOpenRouterText(prompt, 500, 240000, systemMsg, false, 0.25);
             let parsed = parseJsonFromAi<Phase2Result>(raw);
             if (!parsed) {
               const repaired = attemptCloseTruncatedJson(raw.trim());
               if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
             }
-            // Validate the result actually has real detail (not just a generic fallback-like synopsis)
-            if (parsed?.synopsis && parsed.synopsis.length > 40 && (parsed.characters?.length || parsed.locations?.length)) {
+            const quality = evaluateOperationalPlanResult(parsed ?? null);
+            if (quality.ok) {
               result = parsed;
+            } else if (parsed?.synopsis) {
+              try {
+                const repaired = await repairPhase2ChapterResult(
+                  chapterContext,
+                  index,
+                  allTitles.length,
+                  parsed,
+                  systemMsg,
+                );
+                if (evaluateOperationalPlanResult(repaired).ok) {
+                  result = repaired;
+                }
+              } catch {
+                // keep retry loop alive
+              }
             }
           } catch { /* retry */ }
         }
         if (!result) {
           result = {
-            synopsis: `Chapter outline for ${allTitles[index]}.`,
+            synopsis: `In this chapter, the central viewpoint character pursues a clear goal, encounters escalating opposition, and is forced into a meaningful turn that changes the direction of the story into the next chapter.`,
             characters: [],
             locations: [],
             events: [`${allTitles[index]} key event`],
@@ -3876,10 +4628,26 @@ function NovelWorkspacePage() {
           (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${chapterTitle}.`;
         prevSummary = synopsis;
 
+        const rawCharacterNames = parseStringList(result.characters);
+        const resolvedCharacterIds = rawCharacterNames.map(ensureCharacterId).filter(Boolean);
+        const roleAliasesFromSynopsis = ROLE_ALIAS_TOKENS
+          .filter((token) => synopsis.toLowerCase().includes(token))
+          .map((token) => (synopsis.toLowerCase().includes(`anonymous ${token}`) ? `anonymous ${token}` : token));
+        const roleAliases = [...rawCharacterNames.filter(isRoleLikeCharacterLabel), ...roleAliasesFromSynopsis];
+        if (roleAliases.length > 0 && resolvedCharacterIds.length === 1) {
+          roleAliases.forEach((alias) => appendAliasToCharacter(resolvedCharacterIds[0], alias));
+        }
+        extractAliasRevealLinks(synopsis).forEach(({ alias, realName }) => {
+          const id = ensureCharacterId(realName);
+          if (id) appendAliasToCharacter(id, alias);
+        });
+
         const chapterCharacterIds = mergeUniqueIds(
-          parseStringList(result.characters).map(ensureCharacterId).filter(Boolean),
+          resolvedCharacterIds,
           inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedCharacters.map((c) => ({
-            id: c.id, name: c.name || "",
+            id: c.id,
+            name: c.name || "",
+            aliases: (c.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
           }))),
         );
         const chapterLocationIds = mergeUniqueIds(
@@ -3898,6 +4666,7 @@ function NovelWorkspacePage() {
         parseStringList(result.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
 
         // ── Live UI update: fill in this chapter's detail immediately ──
+        const shouldSyncNow = index === allTitles.length - 1 || index % 3 === 2;
         mutateNovel((current) => {
           const plan = current.storyBible.bookPlan;
           if (!plan) return current;
@@ -3932,7 +4701,7 @@ function NovelWorkspacePage() {
               bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
             },
           };
-        });
+        }, { skipSync: !shouldSyncNow });
       }
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
@@ -3955,20 +4724,36 @@ function NovelWorkspacePage() {
       const prevSynopsis = chapterIndex > 0 ? (plan.chapters[chapterIndex - 1]?.synopsis ?? "") : "";
       const nextTitle = chapterIndex < allTitles.length - 1 ? allTitles[chapterIndex + 1] : "";
       const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
-      const prompt = buildPhase2Prompt(chapterContext);
+      const prompt = buildPhase2Prompt(chapterContext, chapterIndex, allTitles.length);
 
       type Phase2Result = { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[]; lore?: string[] };
       let result: Phase2Result | null = null;
-      for (let attempt = 0; attempt < 2 && !result; attempt++) {
+        for (let attempt = 0; attempt < 4 && !result; attempt++) {
         try {
-          const raw = await requestOpenRouterText(prompt, 400, 90000, systemMsg, false, 0.3);
+          const raw = await requestOpenRouterText(prompt, 500, 240000, systemMsg, false, 0.25);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
           }
-          if (parsed?.synopsis && parsed.synopsis.length > 40 && (parsed.characters?.length || parsed.locations?.length)) {
+          const quality = evaluateOperationalPlanResult(parsed ?? null);
+          if (quality.ok) {
             result = parsed;
+          } else if (parsed?.synopsis) {
+            try {
+              const repaired = await repairPhase2ChapterResult(
+                chapterContext,
+                chapterIndex,
+                allTitles.length,
+                parsed,
+                systemMsg,
+              );
+              if (evaluateOperationalPlanResult(repaired).ok) {
+                result = repaired;
+              }
+            } catch {
+              // keep retry loop alive
+            }
           }
         } catch { /* retry */ }
       }
@@ -3987,7 +4772,14 @@ function NovelWorkspacePage() {
           const key = normalizeLookup(n);
           return characters.find((c) => normalizeLookup(c.name || "") === key)?.id ?? "";
         }).filter(Boolean),
-        inferEntityIdsFromText(`${title}\n${synopsis}`, characters.map((c) => ({ id: c.id, name: c.name || "" }))),
+        inferEntityIdsFromText(
+          `${title}\n${synopsis}`,
+          characters.map((c) => ({
+            id: c.id,
+            name: c.name || "",
+            aliases: (c.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
+          })),
+        ),
       );
       const locIds = mergeUniqueIds(
         parseStringList(result.locations).map((n) => {
@@ -4052,21 +4844,21 @@ function NovelWorkspacePage() {
     autoSizeEditorInput(editorInputRef.current);
   }, [activeChapter?.id, activeChapter?.content]);
 
-  function mutateNovel(mutator: (current: Novel) => Novel) {
+  function mutateNovel(mutator: (current: Novel) => Novel, options?: { skipSync?: boolean }) {
     if (!novelId) return;
     setNovels((current) => {
       let changed = false;
       const next = current.map((item) => {
         if (item.id !== novelId) return item;
         changed = true;
-        const mutated = mutator(item);
+        const mutated = enforceNovelIntegrity(mutator(item));
         return {
           ...mutated,
           updatedAt: new Date().toISOString(),
         };
       });
 
-      if (changed) {
+      if (changed && !options?.skipSync) {
         const savedAt = new Date().toISOString();
         const ok = saveNovelsWithSync(next);
         setAutosaveStatus(
@@ -4368,7 +5160,7 @@ function NovelWorkspacePage() {
     const maxTokens = Math.min(1200, Math.max(300, paragraphs.length * 120));
     const data = await requestOpenRouterJson<{
       edits?: Array<{ p?: number; text?: string; reason?: string }>;
-    }>(prompt, maxTokens, { timeoutMs: 90000, systemMessage: sysMsg });
+    }>(prompt, maxTokens, { timeoutMs: 180000, systemMessage: sysMsg });
 
     const edits = Array.isArray(data?.edits) ? data.edits : [];
     const changes: EditorChange[] = [];
@@ -4421,15 +5213,16 @@ function NovelWorkspacePage() {
 
           const prompt = [
             "Return ONLY valid JSON:",
-            `{"issues":[{"severity":"high|medium|low","category":"Consistency|Character|Continuity|Repetition|Prose|Genre","quote":"excerpt","issue":"desc","suggestion":"fix"}]}`,
+            `{"issues":[{"severity":"high|medium|low","category":"Consistency|Character|Continuity|Placement|Repetition|Prose|Genre","quote":"excerpt","issue":"desc","suggestion":"fix"}]}`,
             "Max 4 issues for this section. Evidence-based only.",
+            "Flag character-placement and location-transition breaks (for example, a character is suddenly in a new place without transition).",
             "",
             numbered,
           ].join("\n");
 
           try {
             const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
-              prompt, 500, { timeoutMs: 90000, systemMessage: sysMsg },
+              prompt, 500, { timeoutMs: 180000, systemMessage: sysMsg },
             );
             if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
           } catch {
@@ -4457,11 +5250,11 @@ function NovelWorkspacePage() {
 
         const sysMsg = isTargeted
           ? `Professional ${ctx.genreStr} editor. ${ctx.brief} TARGETED: ${focus}. Preserve voice. Never invent plot.`
-          : `Professional ${ctx.genreStr} editor. ${ctx.brief} Quick polish: fix continuity, repetition, tighten prose. Preserve voice. Never invent plot.`;
+          : `Professional ${ctx.genreStr} editor. ${ctx.brief} Quick polish: fix continuity, repetition, tighten prose, and catch scene-placement continuity errors (character location jumps without transitions). Preserve voice. Never invent plot.`;
 
         const taskLine = isTargeted
           ? `Focus: ${focus}. Change ONLY paragraphs where this applies.`
-          : "Fix continuity, repetition, weak prose, dialogue. Do NOT add plot/characters.";
+          : "Fix continuity, repetition, weak prose, dialogue, and location/placement inconsistencies between adjacent blocs. Do NOT add plot/characters.";
 
         const allChanges: EditorChange[] = [];
 
@@ -4540,7 +5333,7 @@ function NovelWorkspacePage() {
         try {
           const data = await requestOpenRouterJson<{
             edits?: Array<{ p?: number; text?: string; reason?: string }>;
-          }>(prompt, 600, { timeoutMs: 90000, systemMessage: sysMsg });
+          }>(prompt, 600, { timeoutMs: 180000, systemMessage: sysMsg });
 
           const edits = Array.isArray(data?.edits) ? data.edits : [];
           for (const e of edits) {
@@ -4742,14 +5535,16 @@ function NovelWorkspacePage() {
     });
   }
 
-  // ── Bolton CRUD ──
-  function addBolton() {
+  // ── Bolt-On plugins ──
+  function addBolton(category: BoltonCategory = "custom") {
     if (!novel) return;
     const existing = novel.storyBible.boltons ?? [];
     if (existing.length >= 10) return;
+    const categoryMeta = getBoltonCategoryMeta(category);
     const newBolton: Bolton = {
       id: createEntityId("bolton"),
-      title: "",
+      title: category === "custom" ? "" : `${categoryMeta.label} Plugin`,
+      category,
       description: "",
       prompt: "",
       createdAt: new Date().toISOString(),
@@ -4759,18 +5554,101 @@ function NovelWorkspacePage() {
 
   function updateBolton(boltonId: string, patch: Partial<Bolton>) {
     if (!novel) return;
+    const nextPatch: Partial<Bolton> = { ...patch };
+    if ("category" in nextPatch) {
+      nextPatch.category = normalizeBoltonCategory(nextPatch.category);
+    }
+    if ("prompt" in nextPatch && typeof nextPatch.prompt === "string") {
+      nextPatch.prompt = clampPromptText(nextPatch.prompt, 500);
+    }
+    if ("description" in nextPatch && typeof nextPatch.description === "string") {
+      nextPatch.description = clampPromptText(nextPatch.description, 500);
+    }
     updateStoryBible({
       boltons: (novel.storyBible.boltons ?? []).map((b) =>
-        b.id === boltonId ? { ...b, ...patch } : b,
+        b.id === boltonId ? { ...b, ...nextPatch } : b,
       ),
     });
   }
 
   function removeBolton(boltonId: string) {
     if (!novel) return;
+    setChapterBoltonByChapterId((current) => {
+      const next: Record<string, string> = {};
+      for (const [chapterId, selectedId] of Object.entries(current)) {
+        if (selectedId !== boltonId) next[chapterId] = selectedId;
+      }
+      return next;
+    });
     updateStoryBible({
       boltons: (novel.storyBible.boltons ?? []).filter((b) => b.id !== boltonId),
     });
+  }
+
+  function setChapterBoltonForActiveChapter(nextBoltonId: string) {
+    if (!activeChapter) return;
+    const normalized = nextBoltonId.trim();
+    setChapterBoltonByChapterId((current) => {
+      const next = { ...current };
+      if (normalized) next[activeChapter.id] = normalized;
+      else delete next[activeChapter.id];
+      return next;
+    });
+    const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+    if (!hasBlocks || blocks.length === 0) return;
+    const aligned = blocks.map((block) => ({ ...block, notes: normalized }));
+    updateChapter(activeChapter.id, { content: serializeChapterBlocks(aligned) });
+  }
+
+  async function saveBoltonLibrary() {
+    if (!novel || typeof window === "undefined") return;
+    const source = (novel.storyBible.boltons ?? [])
+      .map((bolton) => ({
+        title: clampText(bolton.title, 40),
+        description: clampPromptText(bolton.description || "", 500),
+        prompt: clampPromptText(bolton.prompt || "", 500),
+        category: normalizeBoltonCategory(bolton.category),
+      }))
+      .filter((item) => item.title || item.description || item.prompt);
+    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(source));
+    setBoltonLibraryCount(source.length);
+    const syncOk = await saveSettingsToServer(gatherSettings());
+    const now = new Date().toISOString();
+    setAutosaveStatus({
+      status: syncOk ? "ok" : "error",
+      message: syncOk
+        ? `Saved ${source.length} bolt-on plugin${source.length === 1 ? "" : "s"}`
+        : "Saved locally, but cloud sync failed.",
+      at: now,
+    });
+  }
+
+  function loadBoltonLibrary() {
+    if (!novel) return;
+    const library = readBoltonLibrary();
+    setBoltonLibraryCount(library.length);
+    if (library.length === 0) return;
+
+    const existing = novel.storyBible.boltons ?? [];
+    const seen = new Set(existing.map((item) => `${item.title.trim().toLowerCase()}|${item.description.trim().toLowerCase()}`));
+    const merged = [...existing];
+
+    for (const item of library) {
+      if (merged.length >= 10) break;
+      const key = `${item.title.trim().toLowerCase()}|${item.description.trim().toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        id: createEntityId("bolton"),
+        title: item.title || "Imported Plugin",
+        category: normalizeBoltonCategory(item.category),
+        description: item.description || "",
+        prompt: item.prompt || "",
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    updateStoryBible({ boltons: merged });
   }
 
   async function sharpenBolton(boltonId: string) {
@@ -4784,14 +5662,18 @@ function NovelWorkspacePage() {
       const tone = novel.storyBible.summary.tone.join(", ") || "not set";
       const styleRules = novel.storyBible.styleVoice?.voiceRules?.slice(0, 300) || "";
       const pov = novel.storyBible.styleVoice?.pov || "";
+      const categoryMeta = getBoltonCategoryMeta(bolton.category);
       const systemMsg = "You are a creative writing AI director. You convert author instructions into sharp prose directives that a text-generation AI can follow precisely. Return only valid JSON.";
       const prompt = [
-        "Turn this user instruction into a sharp, concise AI prompt directive (max 200 words) that tells a prose-generation AI exactly how to adjust its output.",
-        "The directive must be actionable, specific, and calibrated to the novel's genre and tone.",
+        "Turn this user instruction into a short directive that will be injected into chapter/bloc generation.",
+        "Output must be a single actionable instruction under 500 characters.",
+        "Prioritize clear verbs, explicit constraints, and the highest-impact writing behavior.",
+        "The directive must help the AI prioritize this plugin while still respecting canon and scene continuity.",
         "Return JSON only: { \"prompt\": \"the sharpened directive\" }",
         "",
         `User instruction: ${bolton.description}`,
         bolton.title ? `Context label: ${bolton.title}` : "",
+        `Plugin category: ${categoryMeta.label}`,
         "",
         `Novel genre: ${genre}`,
         `Novel tone: ${tone}`,
@@ -4800,10 +5682,10 @@ function NovelWorkspacePage() {
       ].filter(Boolean).join("\n");
       const data = await requestOpenRouterJson<{ prompt?: string }>(prompt, 300, { systemMessage: systemMsg });
       if (typeof data.prompt === "string" && data.prompt.trim()) {
-        updateBolton(boltonId, { prompt: data.prompt.trim() });
+        updateBolton(boltonId, { prompt: clampPromptText(data.prompt, 500) });
       }
     } catch (error) {
-                              setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen Bolt-On.");
+      setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen Bolt-On.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -4848,14 +5730,14 @@ function NovelWorkspacePage() {
       let data: LoreGenResult | null = null;
 
       try {
-        const raw = await requestOpenRouterText(userPrompt, 800, 90000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(userPrompt, 800, 180000, sysMsg, false, 0.7);
         data = parseJsonFromAi<LoreGenResult>(raw);
       } catch { /* continue */ }
 
       if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
         try {
           const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 800, 90000, sysMsg, false, 0.4);
+          const raw2 = await requestOpenRouterText(retryPrompt, 800, 180000, sysMsg, false, 0.4);
           data = parseJsonFromAi<LoreGenResult>(raw2);
         } catch { /* continue */ }
       }
@@ -5019,11 +5901,15 @@ function NovelWorkspacePage() {
     setLocationLookupMessage(null);
     setStoryAiError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
       const response = await fetch("/api/location/summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: locationName }),
+        signal: controller.signal,
       });
+      window.clearTimeout(timeoutId);
       const payload = (await response.json().catch(() => null)) as
         | {
             found?: boolean;
@@ -5055,7 +5941,11 @@ function NovelWorkspacePage() {
       const matchedName = payload.name?.trim() || locationName;
       setLocationLookupMessage(`Loaded real-world reference for ${matchedName}${sourceLabel}.`);
     } catch (error) {
-      setStoryAiError(error instanceof Error ? error.message : "Unable to look up this location.");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setStoryAiError("Location lookup timed out. Please try again.");
+      } else {
+        setStoryAiError(error instanceof Error ? error.message : "Unable to look up this location.");
+      }
     } finally {
       setLocationLookupBusyId(null);
     }
@@ -5096,14 +5986,14 @@ function NovelWorkspacePage() {
       let data: LocGenResult | null = null;
 
       try {
-        const raw = await requestOpenRouterText(userPrompt, 700, 90000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(userPrompt, 700, 180000, sysMsg, false, 0.7);
         data = parseJsonFromAi<LocGenResult>(raw);
       } catch { /* continue */ }
 
       if (!data || !Array.isArray(data.locations) || data.locations.length === 0) {
         try {
           const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 700, 90000, sysMsg, false, 0.4);
+          const raw2 = await requestOpenRouterText(retryPrompt, 700, 180000, sysMsg, false, 0.4);
           data = parseJsonFromAi<LocGenResult>(raw2);
         } catch { /* continue */ }
       }
@@ -5389,6 +6279,33 @@ function NovelWorkspacePage() {
   ).length;
   const suggestionsPerThousandWords = Math.round((visibleMatches.length / Math.max(chapterWords, 1)) * 1000);
   const proofreadScore = Math.max(0, Math.min(100, Math.round(100 - suggestionsPerThousandWords * 3)));
+  const autosaveLabel =
+    autosaveStatus.status === "error"
+      ? autosaveStatus.message
+      : autosaveStatus.at
+        ? `Saved ${new Date(autosaveStatus.at).toLocaleTimeString()}`
+        : "Autosaving";
+  const aiBusyLabel = (() => {
+    if (!storyAiBusyAction) return null;
+    if (storyAiBusyAction === "plan-generate") return "Building your chapter plan";
+    if (storyAiBusyAction.startsWith("plan-regen-")) return "Regenerating chapter plan";
+    if (storyAiBusyAction.startsWith("chapter-blocks-")) return "Generating chapter blocs";
+    if (storyAiBusyAction.startsWith("block-")) return "Writing prose";
+    if (storyAiBusyAction === "events-generate") return "Generating key events";
+    if (storyAiBusyAction === "characters-generate") return "Generating characters";
+    if (storyAiBusyAction === "locations-generate") return "Generating locations";
+    if (storyAiBusyAction === "worldbuilding-generate") return "Generating lore";
+    return "Working with AI";
+  })();
+  const aiBusyDuration =
+    storyAiBusyElapsedSec < 60
+      ? `${storyAiBusyElapsedSec}s`
+      : `${Math.floor(storyAiBusyElapsedSec / 60)}m ${storyAiBusyElapsedSec % 60}s`;
+  const allBoltons = novel?.storyBible.boltons ?? [];
+  const visibleBoltons =
+    boltonCategoryFilter === "all"
+      ? allBoltons
+      : allBoltons.filter((bolton) => normalizeBoltonCategory(bolton.category) === boltonCategoryFilter);
   const proofreadBuckets: Record<ProofreadCategoryId, Array<{ key: string; match: GrammarMatch }>> = {
     spelling: [],
     vocabulary: [],
@@ -5498,6 +6415,26 @@ function NovelWorkspacePage() {
         </div>
 
         <section className="pw-workspace-main">
+          <div style={{ padding: "10px 20px 0", display: "grid", gap: 8 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: autosaveStatus.status === "error" ? "var(--pw-danger, #ef4444)" : "var(--pw-text-dim)",
+              }}
+            >
+              {autosaveLabel}
+            </div>
+            {!showStoryBibleModal && !aiOff && storyAiBusyAction && aiBusyLabel && (
+              <div style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
+                {aiBusyLabel} - {aiBusyDuration} elapsed. Slow models get extra time automatically.
+              </div>
+            )}
+            {!showStoryBibleModal && !aiOff && storyAiError && (
+              <div className="pw-ora-error" style={{ margin: 0 }}>
+                {storyAiError}
+              </div>
+            )}
+          </div>
           {activeChapter ? (
             <div className="pw-editor-area">
               <div className="pw-editor-card">
@@ -5513,15 +6450,13 @@ function NovelWorkspacePage() {
                   const pc = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id) ?? planChapters[ci];
                   const overview = activeChapter.subtitle || pc?.synopsis || "";
                   if (!overview) return null;
-                  const short = overview.length > 80 ? overview.slice(0, 80) + "…" : overview;
                   return (
                     <span
                       className="pw-subtitle"
                       title={overview}
-                      style={{ display: "block", fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.4, cursor: "default" }}
                       dir="ltr"
                     >
-                      {short}
+                      {overview}
                     </span>
                   );
                 })()}
@@ -5595,13 +6530,13 @@ function NovelWorkspacePage() {
                         </button>
                         <div className="pw-block-bolton-dropdown">
                           <div className="pw-bolton-dropdown-head">Chapter Bolt-On</div>
-                          <button type="button" className={`pw-block-bolton-option ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonId(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                          <button type="button" className={`pw-block-bolton-option ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
                             <span className="pw-block-bolton-option-title">None</span>
                           </button>
                           {(novel.storyBible.boltons ?? []).map((b, i) => (
-                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonId(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                              <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                              <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                             </button>
                           ))}
                         </div>
@@ -5718,22 +6653,32 @@ function NovelWorkspacePage() {
                                         </button>
                                       ))}
                                     </div>
-                                    <select
-                                      className="pw-block-preset-btn"
-                                      value={block.preset}
-                                      onChange={(e) => {
-                                        const next = [...blocks];
-                                        next[idx] = { ...block, preset: e.target.value };
-                                        updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
-                                      }}
-                                      title="Tone"
-                                    >
-                                      {BLOCK_PROSE_PRESETS.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                          {p.label}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div className="pw-block-word-pills">
+                                      <button
+                                        type="button"
+                                        className={`pw-word-pill ${block.lengthMode === "strict" ? "active" : ""}`}
+                                        onClick={() => {
+                                          const next = [...blocks];
+                                          next[idx] = { ...block, lengthMode: "strict" };
+                                          updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                        }}
+                                        title="Exact word target"
+                                      >
+                                        Exact
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`pw-word-pill ${block.lengthMode === "best-fit" ? "active" : ""}`}
+                                        onClick={() => {
+                                          const next = [...blocks];
+                                          next[idx] = { ...block, lengthMode: "best-fit" };
+                                          updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                        }}
+                                        title="AI chooses best fit around target"
+                                      >
+                                        Best fit
+                                      </button>
+                                    </div>
                                     {(novel.storyBible.boltons ?? []).length > 0 && (
                                       chapterBoltonId ? (
                                         <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}`}>
@@ -5784,7 +6729,7 @@ function NovelWorkspacePage() {
                                                 }}
                                               >
                                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                                <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                                <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                                               </button>
                                             ))}
                                           </div>
@@ -5869,7 +6814,13 @@ function NovelWorkspacePage() {
                           </div>
                           {(() => {
                             const isGenerating = storyAiBusyAction === `block-${activeChapter.id}-${idx}`;
-                            const currentWc = block.prose ? countWords(block.prose) : 0;
+                            const proseDraftKey = `${activeChapter.id}:${idx}`;
+                            const proseValue = blockProseDrafts[proseDraftKey] ?? block.prose;
+                            const proseWordCount = proseValue ? countWords(proseValue) : 0;
+                            const progressPct = Math.max(
+                              0,
+                              Math.min(100, Math.round((proseWordCount / Math.max(block.wordTarget, 1)) * 100)),
+                            );
                             return (
                               <div style={{ position: "relative" }}>
                                 <textarea
@@ -5889,13 +6840,22 @@ function NovelWorkspacePage() {
                                       EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
                                         ?.font ?? "Georgia, serif",
                                     overflow: "hidden",
-                                    ...(isGenerating ? { opacity: 0.35, pointerEvents: "none" as const } : {}),
+                                    ...(isGenerating ? { opacity: 0.55, pointerEvents: "none" as const } : {}),
                                   }}
                                   placeholder="Continue writing..."
-                                  defaultValue={block.prose}
-                                  key={`freewrite-${idx}-${blocks.length}-${hideBlocks ? "h" : "v"}-${block.prose ? block.prose.length : 0}`}
+                                  value={proseValue}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBlockProseDrafts((current) => ({ ...current, [proseDraftKey]: val }));
+                                  }}
                                   onBlur={(e) => {
                                     const val = e.target.value;
+                                    setBlockProseDrafts((current) => {
+                                      if (!(proseDraftKey in current)) return current;
+                                      const next = { ...current };
+                                      delete next[proseDraftKey];
+                                      return next;
+                                    });
                                     if (val !== block.prose) {
                                       const next = [...blocks];
                                       next[idx] = { ...block, prose: val };
@@ -5909,32 +6869,20 @@ function NovelWorkspacePage() {
                                     el.style.height = el.scrollHeight + "px";
                                   }}
                                 />
-                                {isGenerating && (
-                                  <div style={{
-                                    position: "absolute",
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    pointerEvents: "none",
-                                  }}>
-                                    <span style={{
-                                      background: "var(--pw-surface, #1a1a2e)",
-                                      color: "var(--pw-text-muted, #aaa)",
-                                      fontSize: 13,
-                                      padding: "6px 14px",
-                                      borderRadius: 6,
-                                      border: "1px solid var(--pw-border, #333)",
-                                      fontWeight: 500,
-                                      letterSpacing: 0.3,
-                                    }}>
-                                      Writing{currentWc > 0 ? ` — ${currentWc}/${block.wordTarget} words` : "…"}
+                                <div className={`pw-writing-bar ${isGenerating ? "is-generating" : ""}`}>
+                                  <div className="pw-writing-bar-head">
+                                    <span className="pw-writing-bar-label">
+                                      {isGenerating ? "AI writing..." : "Writing"}
+                                    </span>
+                                    <span className="pw-writing-bar-value">
+                                      {proseWordCount}/{block.wordTarget}
+                                      {block.lengthMode === "best-fit" ? " best fit" : " words"}
                                     </span>
                                   </div>
-                                )}
+                                  <div className="pw-writing-bar-track">
+                                    <span style={{ width: `${progressPct}%` }} />
+                                  </div>
+                                </div>
                               </div>
                             );
                           })()}
@@ -6896,7 +7844,7 @@ function NovelWorkspacePage() {
                     ? autosaveStatus.message
                     : autosaveStatus.at
                       ? `Saved ${new Date(autosaveStatus.at).toLocaleTimeString()}`
-                      : "Autosaves locally"}
+                      : "Autosaves and syncs"}
                 </div>
               </aside>
 
@@ -7747,30 +8695,91 @@ function NovelWorkspacePage() {
                   <div className="pw-bible-section">
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Bolt-Ons</h3>
+                        <h3>Bolt-On Plugins</h3>
                         <p className="pw-bible-section-note">
-                          AI directives that shape how your blocks are written. Create up to 10 per novel.
+                          Tell AI exactly what to prioritize. Build reusable plugin prompts (max 500 chars) and apply them to a chapter or bloc.
                         </p>
                       </div>
                       <div className="pw-bible-inline-actions">
-                        {(novel.storyBible.boltons ?? []).length < 10 && (
-                          <button type="button" className="pw-bolton-add-btn" onClick={addBolton}>
+                        {allBoltons.length < 10 && (
+                          <button type="button" className="pw-bolton-add-btn" onClick={() => addBolton()}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                            New Bolt-On
+                            New plugin
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="pw-bolton-add-btn"
+                          disabled={allBoltons.length === 0}
+                          onClick={() => void saveBoltonLibrary()}
+                          title="Save all current bolt-ons for new projects"
+                        >
+                          Save all
+                        </button>
+                        <button
+                          type="button"
+                          className="pw-bolton-add-btn"
+                          disabled={boltonLibraryCount === 0 || allBoltons.length >= 10}
+                          onClick={loadBoltonLibrary}
+                          title={boltonLibraryCount > 0 ? "Load saved plugin pack" : "No saved plugin pack yet"}
+                        >
+                          Load saved {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
+                        </button>
                       </div>
+                    </div>
+
+                    <div className="pw-bolton-quick-cats">
+                      {BOLTON_PLUGIN_CATEGORIES.filter((category) => category.id !== "custom").map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          className="pw-bolton-quick-cat-btn"
+                          disabled={allBoltons.length >= 10}
+                          onClick={() => addBolton(category.id)}
+                          title={category.hint}
+                        >
+                          + {category.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pw-bolton-filter-row">
+                      <button
+                        type="button"
+                        className={`pw-bolton-filter-btn ${boltonCategoryFilter === "all" ? "active" : ""}`}
+                        onClick={() => setBoltonCategoryFilter("all")}
+                      >
+                        All ({allBoltons.length})
+                      </button>
+                      {BOLTON_PLUGIN_CATEGORIES.map((category) => {
+                        const count = allBoltons.filter((bolton) => normalizeBoltonCategory(bolton.category) === category.id).length;
+                        return (
+                          <button
+                            key={category.id}
+                            type="button"
+                            className={`pw-bolton-filter-btn ${boltonCategoryFilter === category.id ? "active" : ""}`}
+                            onClick={() => setBoltonCategoryFilter(category.id)}
+                            title={category.hint}
+                          >
+                            {category.label} ({count})
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {!aiOff && storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
 
-                    {(novel.storyBible.boltons ?? []).length === 0 ? (
+                    {allBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
-                        <p>No Bolt-Ons yet. Create one to give your AI a creative direction — like &quot;more tension&quot;, &quot;vivid sensory detail&quot;, or &quot;slow-burn romance&quot;.</p>
+                        <p>No plugins yet. Add one, write what you want, then click Build 500-char prompt.</p>
+                      </div>
+                    ) : visibleBoltons.length === 0 ? (
+                      <div className="pw-bolton-empty">
+                        <p>No plugins in this category yet.</p>
                       </div>
                     ) : (
                       <div className="pw-bolton-grid">
-                        {(novel.storyBible.boltons ?? []).map((bolton, idx) => (
+                        {visibleBoltons.map((bolton, idx) => (
                           <div key={bolton.id} className="pw-bolton-card">
                             <div className="pw-bolton-card-head">
                               <div className="pw-bolton-card-num">{idx + 1}</div>
@@ -7781,18 +8790,31 @@ function NovelWorkspacePage() {
                                 value={bolton.title}
                                 onChange={(e) => updateBolton(bolton.id, { title: e.target.value })}
                               />
+                              <select
+                                className="pw-bolton-category-select"
+                                value={normalizeBoltonCategory(bolton.category)}
+                                onChange={(event) =>
+                                  updateBolton(bolton.id, { category: normalizeBoltonCategory(event.target.value) })
+                                }
+                              >
+                                {BOLTON_PLUGIN_CATEGORIES.map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.label}
+                                  </option>
+                                ))}
+                              </select>
                               <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete Bolt-On">×</button>
                             </div>
                             <textarea
                               className="pw-bolton-desc"
                               rows={3}
                               maxLength={500}
-                              placeholder="Describe the direction (e.g. 'Write with more visceral horror imagery and slower pacing')..."
+                              placeholder="Tell AI what you want in this chapter/bloc (example: push subtext in dialogue and end with unresolved tension)."
                               value={bolton.description}
                               onChange={(e) => updateBolton(bolton.id, { description: e.target.value })}
                             />
                             <div className="pw-bolton-card-foot">
-                              <span className="pw-bolton-char-count">{bolton.description.length}/500</span>
+                              <span className="pw-bolton-char-count">Instruction {bolton.description.length}/500</span>
                               {!aiOff && (
                               <button
                                 type="button"
@@ -7800,14 +8822,14 @@ function NovelWorkspacePage() {
                                 disabled={storyAiBusyAction !== null || !bolton.description.trim()}
                                 onClick={() => void sharpenBolton(bolton.id)}
                               >
-                                {storyAiBusyAction === `bolton-${bolton.id}` ? "Sharpening..." : "⚡ Sharpen"}
+                                {storyAiBusyAction === `bolton-${bolton.id}` ? "Building..." : "⚡ Build 500-char prompt"}
                               </button>
                               )}
                             </div>
                             {bolton.prompt && (
                               <div className="pw-bolton-prompt-preview">
-                                <span className="pw-bolton-prompt-label">AI directive</span>
-                                <p className="pw-bolton-prompt-text">{bolton.prompt}</p>
+                                <span className="pw-bolton-prompt-label">AI directive ({getBoltonDirectiveText(bolton).length}/500)</span>
+                                <p className="pw-bolton-prompt-text">{getBoltonDirectiveText(bolton)}</p>
                               </div>
                             )}
                           </div>
@@ -8105,12 +9127,36 @@ function NovelWorkspacePage() {
                   </button>
                 ))}
               </div>
+              <div style={{ marginTop: "12px" }}>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--pw-text-dim)",
+                    marginBottom: "6px",
+                    display: "block",
+                  }}
+                >
+                  Story pacing
+                </label>
+                <select
+                  className="pw-select"
+                  value={planGeneratePacingMode}
+                  onChange={(event) => setPlanGeneratePacingMode(event.target.value as "balanced" | "slow-burn" | "fast")}
+                >
+                  <option value="balanced">Balanced novel pacing</option>
+                  <option value="slow-burn">Slow-burn (gradual build)</option>
+                  <option value="fast">Fast-paced (quicker progression)</option>
+                </select>
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
               <button
                 type="button"
-                className="btn"
+                className="btn pw-cancel-btn"
                 style={{ flex: 1 }}
                 onClick={() => setShowPlanGenerateModal(false)}
               >
@@ -8128,27 +9174,6 @@ function NovelWorkspacePage() {
           </div>
         </div>
       )}
-
-      {pendingChapterDelete && (
-        <div className="pw-modal-overlay" onClick={() => setPendingChapterDelete(null)}>
-          <div className="pw-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="pw-delete-modal-title">Delete chapter?</div>
-            <p className="pw-delete-modal-copy">
-              This will permanently remove <strong>{pendingChapterDelete.title}</strong>.
-            </p>
-            <div className="pw-delete-modal-actions">
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setPendingChapterDelete(null)}>
-                Cancel
-              </button>
-              <button type="button" className="btn pw-danger-btn" onClick={confirmDeleteChapter}>
-                Delete permanently
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings replaced by Profile popup */}
 
       {pendingChapterDelete && (
         <div className="pw-modal-overlay" onClick={() => setPendingChapterDelete(null)}>

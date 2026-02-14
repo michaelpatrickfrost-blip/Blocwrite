@@ -494,9 +494,18 @@ a { color: inherit; text-decoration: none; }
 }
 
 .pw-subtitle {
-  font-size: 15px;
-  color: var(--pw-text-muted);
-  margin-top: var(--pw-space-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pw-text-dim);
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--pw-border-light);
+  border-radius: 8px;
+  background: var(--pw-surface-alt);
   direction: ltr;
 }
 
@@ -1282,6 +1291,52 @@ a { color: inherit; text-decoration: none; }
 }
 /* Hide freewrite when it has content (text lives in it, no placeholder needed) */
 .pw-block-freewrite:not(:focus):empty { min-height: 0; padding: 0; }
+
+.pw-writing-bar {
+  margin: 2px 4px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--pw-border-light);
+  border-radius: 8px;
+  background: var(--pw-surface-alt);
+}
+.pw-writing-bar.is-generating {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+.pw-writing-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.pw-writing-bar-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pw-text-dim);
+}
+.pw-writing-bar-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pw-text-muted);
+}
+.pw-writing-bar-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--pw-border-light);
+  overflow: hidden;
+}
+.pw-writing-bar-track > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--pw-accent), rgba(var(--accent-rgb), 0.6));
+  transition: width 180ms ease;
+}
 
 .pw-chapter-block {
   border: 1px solid var(--pw-border);
@@ -3459,6 +3514,59 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   background: var(--pw-accent);
   color: #000;
 }
+.pw-bolton-add-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pw-bolton-quick-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pw-bolton-quick-cat-btn {
+  border: 1px solid var(--pw-border);
+  background: var(--pw-surface-alt);
+  color: var(--pw-text-muted);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-bolton-quick-cat-btn:hover:not(:disabled) {
+  border-color: var(--pw-accent);
+  color: var(--pw-accent);
+}
+.pw-bolton-quick-cat-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pw-bolton-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.pw-bolton-filter-btn {
+  border: 1px solid var(--pw-border);
+  background: var(--pw-surface);
+  color: var(--pw-text-dim);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-bolton-filter-btn:hover {
+  border-color: var(--pw-accent);
+  color: var(--pw-accent);
+}
+.pw-bolton-filter-btn.active {
+  background: var(--pw-accent-muted);
+  border-color: var(--pw-accent);
+  color: var(--pw-accent);
+}
 .pw-bolton-empty {
   border: 1px dashed var(--pw-border);
   border-radius: var(--pw-radius-lg);
@@ -3515,6 +3623,15 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   padding: 0;
 }
 .pw-bolton-card-title::placeholder { color: var(--pw-text-dim); }
+.pw-bolton-category-select {
+  border: 1px solid var(--pw-border);
+  border-radius: 8px;
+  background: var(--pw-surface);
+  color: var(--pw-text-muted);
+  padding: 4px 8px;
+  font-size: 11px;
+  max-width: 150px;
+}
 .pw-bolton-remove {
   width: 22px; height: 22px; border-radius: 50%; border: none; background: transparent;
   color: var(--pw-text-dim); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;

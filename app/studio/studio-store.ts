@@ -120,9 +120,20 @@ export type GlossaryTerm = {
   definition: string;
 };
 
+export type BoltonCategory =
+  | "voice-style"
+  | "pacing-tension"
+  | "dialogue-subtext"
+  | "description-sensory"
+  | "emotion-psychology"
+  | "plot-structure"
+  | "world-atmosphere"
+  | "custom";
+
 export type Bolton = {
   id: string;
   title: string;
+  category?: BoltonCategory;
   description: string;
   prompt: string;
   createdAt: string;
@@ -158,6 +169,7 @@ export type BookPlanChapter = {
 export type BookPlan = {
   chapters: BookPlanChapter[];
   aiChapterTarget: "auto" | number;
+  pacingMode?: "balanced" | "slow-burn" | "fast";
   updatedAt: string;
 };
 
@@ -473,9 +485,24 @@ function normalizeStoryBible(raw: unknown): StoryBible {
   const boltons: Bolton[] = mapArray(record.boltons, (obj, index) => {
     const id =
       typeof obj.id === "string" && obj.id ? obj.id : `bolton-${index + 1}-${Math.random().toString(36).slice(2, 6)}`;
+    const category =
+      typeof obj.category === "string" &&
+      [
+        "voice-style",
+        "pacing-tension",
+        "dialogue-subtext",
+        "description-sensory",
+        "emotion-psychology",
+        "plot-structure",
+        "world-atmosphere",
+        "custom",
+      ].includes(obj.category)
+        ? (obj.category as BoltonCategory)
+        : "custom";
     return {
       id,
       title: typeof obj.title === "string" && obj.title ? obj.title : `Bolton ${index + 1}`,
+      category,
       description: typeof obj.description === "string" ? obj.description : "",
       prompt: typeof obj.prompt === "string" ? obj.prompt : "",
       createdAt: typeof obj.createdAt === "string" ? obj.createdAt : now,
@@ -531,6 +558,13 @@ function normalizeStoryBible(raw: unknown): StoryBible {
         (record.bookPlan as Record<string, unknown>).aiChapterTarget === "auto")
         ? ((record.bookPlan as Record<string, unknown>).aiChapterTarget as BookPlan["aiChapterTarget"])
         : "auto",
+    pacingMode:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).pacingMode &&
+      ["balanced", "slow-burn", "fast"].includes(String((record.bookPlan as Record<string, unknown>).pacingMode))
+        ? ((record.bookPlan as Record<string, unknown>).pacingMode as BookPlan["pacingMode"])
+        : "balanced",
     updatedAt:
       record.bookPlan && typeof record.bookPlan === "object" && typeof (record.bookPlan as Record<string, unknown>).updatedAt === "string"
         ? ((record.bookPlan as Record<string, unknown>).updatedAt as string)
@@ -700,6 +734,69 @@ function restoreChapterBlocks(novel: Novel): Novel {
   return { ...novel, chapters };
 }
 
+function uniqueIds(values: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Enforce Canon referential integrity across chapters, plan links, relationships, and timeline references. */
+export function enforceNovelIntegrity(novel: Novel): Novel {
+  const chapterIds = new Set(novel.chapters.map((chapter) => chapter.id));
+  const characterIds = new Set((novel.storyBible.characters ?? []).map((character) => character.id));
+  const locationIds = new Set((novel.storyBible.locations ?? []).map((location) => location.id));
+  const loreIds = new Set((novel.storyBible.lore ?? []).map((entry) => entry.id));
+  const factionIds = new Set((novel.storyBible.factions ?? []).map((faction) => faction.id));
+  const itemIds = new Set((novel.storyBible.items ?? []).map((item) => item.id));
+
+  const nextCharacters = (novel.storyBible.characters ?? []).map((character) => ({
+    ...character,
+    relationships: (character.relationships ?? []).filter((relationship) => characterIds.has(relationship.targetCharacterId)),
+  }));
+
+  const nextBookPlan = {
+    ...novel.storyBible.bookPlan,
+    chapters: (novel.storyBible.bookPlan?.chapters ?? []).map((chapter) => ({
+      ...chapter,
+      characterIds: uniqueIds((chapter.characterIds ?? []).filter((id) => characterIds.has(id))),
+      locationIds: uniqueIds((chapter.locationIds ?? []).filter((id) => locationIds.has(id))),
+      loreIds: uniqueIds((chapter.loreIds ?? []).filter((id) => loreIds.has(id))),
+      manuscriptChapterId:
+        chapter.manuscriptChapterId && chapterIds.has(chapter.manuscriptChapterId)
+          ? chapter.manuscriptChapterId
+          : "",
+    })),
+  };
+
+  const nextTimeline = (novel.storyBible.timeline ?? []).map((event) => ({
+    ...event,
+    chapterId: event.chapterId && chapterIds.has(event.chapterId) ? event.chapterId : "",
+    affectedEntities: (event.affectedEntities ?? []).filter((entity) => {
+      if (entity.type === "Character") return characterIds.has(entity.id);
+      if (entity.type === "Location") return locationIds.has(entity.id);
+      if (entity.type === "Faction") return factionIds.has(entity.id);
+      if (entity.type === "Item") return itemIds.has(entity.id);
+      return false;
+    }),
+  }));
+
+  return {
+    ...novel,
+    storyBible: {
+      ...novel.storyBible,
+      characters: nextCharacters,
+      bookPlan: nextBookPlan,
+      timeline: nextTimeline,
+    },
+  };
+}
+
 export function loadNovels(): Novel[] {
   if (typeof window === "undefined") return [];
   const safeGetItem = (storage: Storage, key: string) => {
@@ -735,7 +832,7 @@ export function loadNovels(): Novel[] {
     const parsed = parsePayload(safeGetItem(source.storage, source.key));
     if (parsed) {
       // Reverse migration: if any chapters had sceneBlocks split out, merge them back
-      const restored = parsed.map(restoreChapterBlocks);
+      const restored = parsed.map(restoreChapterBlocks).map(enforceNovelIntegrity);
 
       // Save restored data
       try {
@@ -752,7 +849,8 @@ export function loadNovels(): Novel[] {
 
 export function saveNovels(novels: Novel[]): boolean {
   if (typeof window === "undefined") return false;
-  const payload = JSON.stringify(novels);
+  const safeNovels = novels.map(enforceNovelIntegrity);
+  const payload = JSON.stringify(safeNovels);
   let wroteAnything = false;
 
   try {
@@ -813,6 +911,7 @@ export function createNovel(title: string, coverImage: string | null = null): No
       bookPlan: {
         chapters: [],
         aiChapterTarget: "auto",
+        pacingMode: "balanced",
         updatedAt: now,
       },
       characters: [],
@@ -869,7 +968,8 @@ export async function loadNovelsFromServer(): Promise<Novel[] | null> {
     const novels = raw
       .map((item: unknown) => normalizeNovel(item))
       .filter((item: Novel | null): item is Novel => item !== null)
-      .map(restoreChapterBlocks);
+      .map(restoreChapterBlocks)
+      .map(enforceNovelIntegrity);
     return novels;
   } catch {
     return null;
@@ -879,11 +979,12 @@ export async function loadNovelsFromServer(): Promise<Novel[] | null> {
 /** Save novels to the server API. Returns true on success. */
 export async function saveNovelsToServer(novels: Novel[]): Promise<boolean> {
   try {
+    const safeNovels = novels.map(enforceNovelIntegrity);
     const res = await fetch("/api/novels", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(novels),
+      body: JSON.stringify(safeNovels),
     });
     return res.ok;
   } catch {
@@ -925,6 +1026,7 @@ export function gatherSettings(): Record<string, string> {
     "pilotwriter.profile.language",
     "pilotwriter.profile.aiOff",
     "pilotwriter.assistant.provider",
+    "pilotwriter.boltons.library.v1",
     "bw-theme",
   ];
   // Also grab per-provider settings

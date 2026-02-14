@@ -9,6 +9,7 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
 };
+const CHECK_TIMEOUT_MS = 15000;
 
 function providerLabel(provider: ProviderId) {
   return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : "LM Studio";
@@ -98,10 +99,26 @@ export async function POST(request: Request) {
     } = {};
 
     for (const endpoint of endpoints) {
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers,
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return NextResponse.json(
+            { ok: false, error: `${providerLabel(provider)} timed out while checking connection.` },
+            { status: 504 },
+          );
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (response.ok) {
         return NextResponse.json({ ok: true });
       }

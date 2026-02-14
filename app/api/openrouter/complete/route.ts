@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 // Force long-lived connections for slow model providers
-export const maxDuration = 300; // 5 minutes — prevents Vercel/serverless timeout before client timeout
+export const maxDuration = 900; // 15 minutes for self-hosted/slow providers
 
 type ProviderId = "openrouter" | "infermatic" | "lmstudio";
 type CompletionRequest = {
@@ -30,6 +30,11 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
+};
+const PROVIDER_TIMEOUT_MS: Record<ProviderId, number> = {
+  openrouter: 300000,
+  infermatic: 420000,
+  lmstudio: 300000,
 };
 
 function normalizeProvider(raw: unknown): ProviderId {
@@ -163,11 +168,28 @@ export async function POST(request: Request) {
       requestBody.stop = ["```", "\n\n\n\n"];
     }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    });
+    const controller = new AbortController();
+    const timeoutMs = PROVIDER_TIMEOUT_MS[provider];
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: `Provider timeout after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.` },
+          { status: 504 },
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
 

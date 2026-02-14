@@ -100,9 +100,6 @@ export function TheEditor({
   originalParagraphs,
   onResultUpdate,
 }: TheEditorProps) {
-  const [mode, setMode] = useState<EditorMode>("quick-fix");
-  const [targetedFocus, setTargetedFocus] = useState<TargetedFocus>("pacing");
-
   const loading = !!loadingPhase;
 
   /* Compute the assembled text and word delta from accepted changes */
@@ -135,7 +132,7 @@ export function TheEditor({
   if (!open) return null;
 
   const handleRun = () => {
-    void onRun(mode, mode === "targeted" ? targetedFocus : undefined);
+    void onRun("quick-fix");
   };
 
   const handleApply = () => {
@@ -185,69 +182,9 @@ export function TheEditor({
             Professional chapter-level editing. Enhances prose, catches inconsistencies, respects your story.
           </p>
 
-          {/* Mode selector */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            {([
-              { id: "quick-fix" as EditorMode, label: "Quick Fix" },
-              { id: "targeted" as EditorMode, label: "Targeted" },
-              { id: "report" as EditorMode, label: "Report" },
-            ]).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setMode(m.id)}
-                style={{
-                  flex: 1,
-                  padding: "9px 8px",
-                  borderRadius: 8,
-                  border: mode === m.id ? "1.5px solid var(--pw-accent, #a3e635)" : "1px solid var(--pw-border, #333)",
-                  background: mode === m.id ? "var(--pw-surface-active, rgba(163,230,53,0.08))" : "transparent",
-                  color: mode === m.id ? "var(--pw-accent, #a3e635)" : "var(--pw-text, #fff)",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: mode === m.id ? 600 : 400,
-                  textAlign: "center",
-                  transition: "all 0.15s",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Mode descriptions */}
           <div style={{ fontSize: 12, opacity: 0.55, marginBottom: 12, lineHeight: 1.5 }}>
-            {mode === "quick-fix" && "Safe polish — fix continuity, remove repetition, tighten prose. Only changed paragraphs are returned — fast and token-efficient."}
-            {mode === "targeted" && "Focused rewrite on a specific aspect. Story remains intact. You review each change individually."}
-            {mode === "report" && "Lists issues by severity with suggestions. No rewriting unless you choose to fix them."}
+            Safe polish and continuity pass — checks prose quality plus scene/place consistency across the chapter. Only changed paragraphs are returned for speed.
           </div>
-
-          {/* Targeted focus selector */}
-          {mode === "targeted" && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-              {TARGETED_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setTargetedFocus(opt.id)}
-                  title={opt.desc}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 6,
-                    border: targetedFocus === opt.id ? "2px solid var(--pw-accent, #a3e635)" : "1px solid var(--pw-border, #333)",
-                    background: targetedFocus === opt.id ? "var(--pw-surface-active, rgba(163,230,53,0.08))" : "transparent",
-                    color: "var(--pw-text, #fff)",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: targetedFocus === opt.id ? 600 : 400,
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Run button */}
           <div style={{ marginBottom: 16 }}>
@@ -260,9 +197,7 @@ export function TheEditor({
             >
               {loading
                 ? loadingPhase
-                : mode === "quick-fix" ? "Run Quick Fix"
-                : mode === "targeted" ? `Run: ${TARGETED_OPTIONS.find((o) => o.id === targetedFocus)?.label}`
-                : "Generate Report"}
+                : "Run Editor Check"}
             </button>
           </div>
 

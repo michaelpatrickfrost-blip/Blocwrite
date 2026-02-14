@@ -80,6 +80,17 @@ const COUNTRY_HINTS: Array<{ code: string; label: string; aliases: string[] }> =
   { code: "za", label: "South Africa", aliases: ["south africa", "za"] },
   { code: "ie", label: "Ireland", aliases: ["ireland", "ire"] },
 ];
+const LOCATION_LOOKUP_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs = LOCATION_LOOKUP_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function collapseWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -224,7 +235,7 @@ async function fetchWikipediaSummaryByTitle(title: string) {
   const cleanTitle = title.trim();
   if (!cleanTitle) return null;
   const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTitle)}`;
-  const summaryResponse = await fetch(summaryUrl, {
+  const summaryResponse = await fetchWithTimeout(summaryUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -244,7 +255,7 @@ async function fetchWikipediaSummaryByTitle(title: string) {
   extractUrl.searchParams.set("explaintext", "1");
   extractUrl.searchParams.set("exsentences", "8");
   extractUrl.searchParams.set("titles", cleanTitle);
-  const extractResponse = await fetch(extractUrl, {
+  const extractResponse = await fetchWithTimeout(extractUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -291,7 +302,7 @@ async function fetchWikipediaTitleFromGeo(
   searchUrl.searchParams.set("gsradius", "12000");
   searchUrl.searchParams.set("gslimit", "8");
 
-  const response = await fetch(searchUrl, {
+  const response = await fetchWithTimeout(searchUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -317,7 +328,7 @@ async function fetchWikipediaTitleFromText(searchQuery: string) {
   searchUrl.searchParams.set("srlimit", "3");
   searchUrl.searchParams.set("srsearch", searchQuery);
 
-  const searchResponse = await fetch(searchUrl, {
+  const searchResponse = await fetchWithTimeout(searchUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -387,7 +398,7 @@ export async function POST(request: Request) {
       nominatimUrl.searchParams.set("countrycodes", query.countryCode);
     }
 
-    const nominatimResponse = await fetch(nominatimUrl, {
+    const nominatimResponse = await fetchWithTimeout(nominatimUrl, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -440,6 +451,9 @@ export async function POST(request: Request) {
       source: wiki ? `Wikipedia: ${wiki.title}` : "OpenStreetMap Nominatim",
     });
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return NextResponse.json({ found: false, error: "Location services timed out. Try again." }, { status: 504 });
+    }
     const message = error instanceof Error ? error.message : "Unable to look up location details.";
     return NextResponse.json({ found: false, error: message }, { status: 500 });
   }

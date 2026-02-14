@@ -29,6 +29,7 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
 };
+const MODELS_TIMEOUT_MS = 15000;
 
 function providerLabel(provider: ProviderId) {
   return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : "LM Studio";
@@ -121,11 +122,26 @@ export async function GET(request: Request) {
     }) | GenericModelsPayload = {};
 
     for (const endpoint of endpoints) {
-      response = await fetch(endpoint, {
-        method: "GET",
-        headers,
-        cache: "no-store",
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), MODELS_TIMEOUT_MS);
+      try {
+        response = await fetch(endpoint, {
+          method: "GET",
+          headers,
+          cache: "no-store",
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return NextResponse.json(
+            { error: `${providerLabel(provider)} timed out while loading models.` },
+            { status: 504 },
+          );
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
       payload = (await response.json().catch(() => ({}))) as typeof payload;
       if (response.ok) break;
       if (response.status !== 404) break;
