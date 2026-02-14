@@ -55,13 +55,11 @@ export async function POST(request: Request) {
     const raw = await readFile(join(dir, "novels.json"), "utf-8").catch(() => "[]");
     const novels = JSON.parse(raw) as Array<{
       id: string;
-      manuscript?: {
-        chapters?: Array<{
-          id: string;
-          title: string;
-          blocks?: Array<{ prose?: string }>;
-        }>;
-      };
+      chapters?: Array<{
+        id: string;
+        title: string;
+        content?: string;
+      }>;
     }>;
 
     const novel = novels.find((n) => n.id === novelId);
@@ -69,18 +67,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Novel not found." }, { status: 404 });
     }
 
-    const chapters = novel.manuscript?.chapters ?? [];
+    const chapters = novel.chapters ?? [];
     const selectedChapters = chapters
       .filter((ch) => chapterIds.includes(ch.id))
       .map((ch, idx) => {
-        // Combine all block prose into chapter content
-        const prose = (ch.blocks ?? [])
-          .map((b) => b.prose ?? "")
-          .filter(Boolean)
-          .join("\n\n");
         return {
           chapterTitle: ch.title || `Chapter ${idx + 1}`,
-          chapterContent: prose || "(No content yet)",
+          chapterContent: ch.content || "(No content yet)",
           order: idx,
         };
       });
