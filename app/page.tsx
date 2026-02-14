@@ -101,7 +101,7 @@ function Nav() {
     >
       <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 28px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-          <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 56, width: "auto" }} />
+          <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 48, width: "auto", display: "block" }} />
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
@@ -484,21 +484,18 @@ function HowItWorks() {
                   overflow: "hidden",
                   border: `1px solid ${C.border}`,
                   boxShadow: "0 16px 48px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04)",
-                  background: C.bgSoft,
-                  /* Slight inset to hide grey edges of screenshots */
-                  padding: 0,
-                  position: "relative",
+                  background: "#ffffff",
                 }}>
                   <img
                     src={s.screenshot}
                     alt={`${s.title} screenshot`}
                     style={{
-                      width: "104%",
+                      width: "112%",
                       height: "auto",
                       display: "block",
-                      marginLeft: "-2%",
-                      marginTop: "-1%",
-                      marginBottom: "-1%",
+                      marginLeft: "-6%",
+                      marginTop: "-4%",
+                      marginBottom: "-4%",
                     }}
                   />
                 </div>

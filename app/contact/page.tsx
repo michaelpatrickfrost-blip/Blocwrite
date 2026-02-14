@@ -65,13 +65,13 @@ export default function ContactPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       {/* Nav */}
-      <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 28px" }}>
+      <nav style={{ borderBottom: `1px solid ${C.border}`, padding: "16px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Link href="/" style={{ textDecoration: "none" }}>
-            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 40, width: "auto" }} />
+          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+            <img src="/blocwrite-full-light.png" alt="Blocwrite" style={{ height: 48, width: "auto", display: "block" }} />
           </Link>
           <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: C.textSoft, textDecoration: "none" }}>
-            Back to home
+            &larr; Back to Home
           </Link>
         </div>
       </nav>
@@ -195,6 +195,30 @@ export default function ContactPage() {
           </form>
         )}
       </div>
+
+      {/* Footer */}
+      <footer style={{ padding: "48px 0 40px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: 80 }}>
+        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <img src="/blocwrite-main-dark.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
+              &copy; {new Date().getFullYear()} Blocwrite
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+            {[
+              { label: "Home", href: "/" },
+              { label: "Terms", href: "/terms" },
+              { label: "Refund Policy", href: "/refunds" },
+              { label: "Contact", href: "/contact" },
+            ].map((l) => (
+              <Link key={l.href} href={l.href} style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none" }}>
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
