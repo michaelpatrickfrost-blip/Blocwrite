@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const COOKIE_NAME = "bw-session";
-const ADMIN_EMAIL = "kickablur@icloud.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
 
 /** HMAC-SHA256 sign using Web Crypto API (Edge-compatible). */
 async function hmacSign(payload: string, secret: string): Promise<string> {

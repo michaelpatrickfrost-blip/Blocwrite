@@ -35,7 +35,7 @@ function extractProse(content: string): string {
   return proseChunks.join("\n\n\n") || "(No content yet)";
 }
 
-const ADMIN_EMAIL = "kickablur@icloud.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
 
 async function getAuthEmail(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -207,10 +207,9 @@ export async function POST(request: Request) {
       },
     });
 
-    // Build URL
-    const origin = request.headers.get("origin") || request.headers.get("host") || "";
-    const protocol = origin.startsWith("http") ? "" : "https://";
-    const shareUrl = `${protocol}${origin}/share/${token}`;
+    // Build URL — use env variable to prevent header spoofing
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.headers.get("origin") || `https://${request.headers.get("host") || "blocwrite.com"}`;
+    const shareUrl = `${appUrl.replace(/\/$/, "")}/share/${token}`;
 
     // Send email if recipient provided
     let emailSent = false;

@@ -13,30 +13,35 @@ export async function GET() {
   const admin = await requireAdminApiAccess();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const guests = await prisma.guestAccess.findMany({
-    include: {
-      user: { select: { email: true, name: true, createdAt: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  try {
+    const guests = await prisma.guestAccess.findMany({
+      include: {
+        user: { select: { email: true, name: true, createdAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  const now = new Date();
-  const result = guests.map((g) => ({
-    id: g.id,
-    email: g.user.email,
-    name: g.user.name,
-    duration: g.duration,
-    expiresAt: g.expiresAt?.toISOString() ?? null,
-    createdAt: g.createdAt.toISOString(),
-    status:
-      g.duration === "forever"
-        ? "active"
-        : g.expiresAt && g.expiresAt < now
-          ? "expired"
-          : "active",
-  }));
+    const now = new Date();
+    const result = guests.map((g) => ({
+      id: g.id,
+      email: g.user.email,
+      name: g.user.name,
+      duration: g.duration,
+      expiresAt: g.expiresAt?.toISOString() ?? null,
+      createdAt: g.createdAt.toISOString(),
+      status:
+        g.duration === "forever"
+          ? "active"
+          : g.expiresAt && g.expiresAt < now
+            ? "expired"
+            : "active",
+    }));
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("Fetch guests error:", error);
+    return NextResponse.json({ error: "Failed to fetch guests." }, { status: 500 });
+  }
 }
 
 /**

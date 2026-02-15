@@ -48,11 +48,17 @@ export async function POST(
       return NextResponse.json({ error: "At least one annotation is required." }, { status: 400 });
     }
 
-    // Validate all chapter IDs belong to this share link
+    // Validate all chapter IDs belong to this share link and offsets are valid
     const validChapterIds = new Set(shareLink.chapters.map((c) => c.id));
     for (const ann of annotations) {
       if (!validChapterIds.has(ann.sharedChapterId)) {
         return NextResponse.json({ error: "Invalid chapter reference." }, { status: 400 });
+      }
+      if (typeof ann.startOffset !== "number" || typeof ann.endOffset !== "number" || ann.startOffset < 0 || ann.endOffset <= ann.startOffset) {
+        return NextResponse.json({ error: "Invalid annotation offsets." }, { status: 400 });
+      }
+      if (typeof ann.selectedText !== "string" || ann.selectedText.length > 10000) {
+        return NextResponse.json({ error: "Invalid annotation text." }, { status: 400 });
       }
     }
 

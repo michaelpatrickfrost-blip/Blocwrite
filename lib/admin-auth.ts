@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { COOKIE_NAME, verifySessionToken, extractSessionPayload } from "@/lib/bw-auth";
 
-const ADMIN_EMAIL = "kickablur@icloud.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
 
 export function isAdminEmail(email: string | null | undefined) {
   return Boolean(email && email.trim().toLowerCase() === ADMIN_EMAIL);

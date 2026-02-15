@@ -1084,44 +1084,50 @@ export async function saveSettingsToServer(settings: Record<string, string>): Pr
 /** Collect all profile/assistant settings from localStorage into one object. */
 export function gatherSettings(): Record<string, string> {
   if (typeof window === "undefined") return {};
-  const keys = [
-    "pilotwriter.profile.language",
-    "pilotwriter.profile.aiOff",
-    "pilotwriter.assistant.provider",
-    "pilotwriter.boltons.library.v1",
-    "bw-theme",
-  ];
-  // Also grab per-provider settings
-  const provider = window.localStorage.getItem("pilotwriter.assistant.provider") || "openrouter";
-  for (const field of ["key", "model", "baseUrl"]) {
-    keys.push(`pilotwriter.assistant.${provider}.${field}`);
-  }
-  // Grab other providers too
-  for (const p of ["openrouter", "infermatic", "lmstudio"]) {
+  try {
+    const keys = [
+      "pilotwriter.profile.language",
+      "pilotwriter.profile.aiOff",
+      "pilotwriter.assistant.provider",
+      "pilotwriter.boltons.library.v1",
+      "bw-theme",
+    ];
+    // Also grab per-provider settings
+    const provider = window.localStorage.getItem("pilotwriter.assistant.provider") || "openrouter";
     for (const field of ["key", "model", "baseUrl"]) {
-      const k = `pilotwriter.assistant.${p}.${field}`;
-      if (!keys.includes(k)) keys.push(k);
+      keys.push(`pilotwriter.assistant.${provider}.${field}`);
     }
-  }
-  // Legacy keys
-  keys.push("pilotwriter.openrouter.key", "pilotwriter.openrouter.model");
+    // Grab other providers too
+    for (const p of ["openrouter", "infermatic", "lmstudio"]) {
+      for (const field of ["key", "model", "baseUrl"]) {
+        const k = `pilotwriter.assistant.${p}.${field}`;
+        if (!keys.includes(k)) keys.push(k);
+      }
+    }
+    // Legacy keys
+    keys.push("pilotwriter.openrouter.key", "pilotwriter.openrouter.model");
 
-  const settings: Record<string, string> = {};
-  for (const key of keys) {
-    const val = window.localStorage.getItem(key);
-    if (val !== null) settings[key] = val;
+    const settings: Record<string, string> = {};
+    for (const key of keys) {
+      const val = window.localStorage.getItem(key);
+      if (val !== null) settings[key] = val;
+    }
+    return settings;
+  } catch {
+    return {};
   }
-  return settings;
 }
 
 /** Apply settings from server into localStorage. */
 export function applySettings(settings: Record<string, string>) {
   if (typeof window === "undefined") return;
-  for (const [key, value] of Object.entries(settings)) {
-    if (typeof value === "string") {
-      window.localStorage.setItem(key, value);
+  try {
+    for (const [key, value] of Object.entries(settings)) {
+      if (typeof value === "string") {
+        window.localStorage.setItem(key, value);
+      }
     }
-  }
+  } catch { /* ignore — private browsing or quota exceeded */ }
 }
 
 // ─── Debounced server save helper ─────────────────────────────────────────────

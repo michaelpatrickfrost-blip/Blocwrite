@@ -105,7 +105,7 @@ export async function POST(request: Request) {
         matches: [],
         error: "Grammar service is currently unavailable. Please try again.",
       },
-      { status: 200 },
+      { status: 503 },
     );
   }
 }

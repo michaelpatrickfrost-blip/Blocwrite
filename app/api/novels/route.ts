@@ -8,7 +8,7 @@ import { verifySessionToken, COOKIE_NAME } from "@/lib/bw-auth";
 export const runtime = "nodejs";
 
 const DATA_DIR = join(process.cwd(), "data");
-const ADMIN_EMAIL = "kickablur@icloud.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
 
 /** Get the authenticated user's email, or null. */
 async function getAuthEmail(): Promise<string | null> {

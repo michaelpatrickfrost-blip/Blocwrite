@@ -691,7 +691,7 @@ a { color: inherit; text-decoration: none; }
 .pw-novel-card-new {
   animation: pw-novel-appear 0.4s ease-out;
   border-color: var(--pw-accent);
-  box-shadow: 0 0 0 3px rgba(var(--pw-accent-rgb, 99, 102, 241), 0.25), 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 99, 102, 241), 0.25), 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .pw-novel-cover {

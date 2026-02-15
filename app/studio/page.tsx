@@ -75,8 +75,10 @@ function StudioHomePage() {
 
   // Initialize theme from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem("bw-theme") as "dark" | "light" | null;
-    if (stored) setCurrentTheme(stored);
+    try {
+      const stored = localStorage.getItem("bw-theme") as "dark" | "light" | null;
+      if (stored) setCurrentTheme(stored);
+    } catch { /* ignore */ }
   }, []);
 
   // Load novels from server on mount — server is the source of truth
@@ -126,7 +128,7 @@ function StudioHomePage() {
   function toggleTheme() {
     const next = currentTheme === "dark" ? "light" : "dark";
     setCurrentTheme(next);
-    localStorage.setItem("bw-theme", next);
+    try { localStorage.setItem("bw-theme", next); } catch { /* ignore */ }
     document.documentElement.setAttribute("data-theme", next);
     void saveSettingsToServer(gatherSettings());
   }
@@ -408,7 +410,7 @@ function StudioHomePage() {
                       style={novel.coverImage ? { backgroundImage: `url(${novel.coverImage})` } : undefined}
                     >
                       {!novel.coverImage && (
-                        <span className="pw-novel-cover-empty">{novel.title.charAt(0).toUpperCase()}</span>
+                        <span className="pw-novel-cover-empty">{(novel.title || "N").charAt(0).toUpperCase()}</span>
                       )}
                     </div>
 
@@ -553,7 +555,7 @@ function StudioHomePage() {
                       >
                         {!novel.coverImage && (
                           <span style={{ color: "var(--pw-accent)", fontSize: 28, fontWeight: 700, opacity: 0.4 }}>
-                            {novel.title.charAt(0).toUpperCase()}
+                            {(novel.title || "N").charAt(0).toUpperCase()}
                           </span>
                         )}
                         {/* Archived badge */}

@@ -216,21 +216,25 @@ function getProviderOption(id: AssistantProviderId) {
 
 function getStoredProvider() {
   if (typeof window === "undefined") return "openrouter" as AssistantProviderId;
-  const stored = window.localStorage.getItem("pilotwriter.assistant.provider");
-  if (stored && ASSISTANT_PROVIDER_OPTIONS.some((provider) => provider.id === stored)) {
-    return stored as AssistantProviderId;
-  }
+  try {
+    const stored = window.localStorage.getItem("pilotwriter.assistant.provider");
+    if (stored && ASSISTANT_PROVIDER_OPTIONS.some((provider) => provider.id === stored)) {
+      return stored as AssistantProviderId;
+    }
+  } catch { /* ignore */ }
   return "openrouter" as AssistantProviderId;
 }
 
 function readStoredProviderField(provider: AssistantProviderId, field: "key" | "model" | "baseUrl") {
   if (typeof window === "undefined") return "";
-  const modern = window.localStorage.getItem(`pilotwriter.assistant.${provider}.${field}`) ?? "";
-  if (modern) return modern;
-  if (provider === "openrouter") {
-    if (field === "key") return window.localStorage.getItem("pilotwriter.openrouter.key") ?? "";
-    if (field === "model") return window.localStorage.getItem("pilotwriter.openrouter.model") ?? "";
-  }
+  try {
+    const modern = window.localStorage.getItem(`pilotwriter.assistant.${provider}.${field}`) ?? "";
+    if (modern) return modern;
+    if (provider === "openrouter") {
+      if (field === "key") return window.localStorage.getItem("pilotwriter.openrouter.key") ?? "";
+      if (field === "model") return window.localStorage.getItem("pilotwriter.openrouter.model") ?? "";
+    }
+  } catch { /* ignore */ }
   return "";
 }
 
@@ -588,7 +592,7 @@ function NovelWorkspacePage() {
   const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
   const [sidebarPinned, setSidebarPinned] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("pilotwriter.sidebar.pinned") === "true";
+    try { return window.localStorage.getItem("pilotwriter.sidebar.pinned") === "true"; } catch { return false; }
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => !sidebarPinned);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
@@ -596,14 +600,16 @@ function NovelWorkspacePage() {
 
   // Initialize theme from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem("bw-theme") as "dark" | "light" | null;
-    if (stored) setCurrentTheme(stored);
+    try {
+      const stored = localStorage.getItem("bw-theme") as "dark" | "light" | null;
+      if (stored) setCurrentTheme(stored);
+    } catch { /* ignore */ }
   }, []);
 
   function toggleTheme() {
     const next = currentTheme === "dark" ? "light" : "dark";
     setCurrentTheme(next);
-    localStorage.setItem("bw-theme", next);
+    try { localStorage.setItem("bw-theme", next); } catch { /* ignore */ }
     document.documentElement.setAttribute("data-theme", next);
   }
 
@@ -759,7 +765,7 @@ function NovelWorkspacePage() {
 
   // Fetch pending feedback count on mount / novelId change
   useEffect(() => {
-    fetch("/api/share/feedback").then((r) => r.json()).then((data) => {
+    fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((data) => {
       if (Array.isArray(data)) {
         let count = 0;
         for (const fb of data) {
@@ -891,7 +897,7 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem("pilotwriter.assistant.provider", assistantProvider);
+    try { window.localStorage.setItem("pilotwriter.assistant.provider", assistantProvider); } catch { /* ignore */ }
     const providerOption = getProviderOption(assistantProvider);
     const storedKey = readStoredProviderField(assistantProvider, "key");
     const storedModel = readStoredProviderField(assistantProvider, "model");
@@ -912,7 +918,7 @@ function NovelWorkspacePage() {
     const normalized = normalizeClientApiKey(key);
     setOpenRouterKey(normalized);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.key`, normalized);
+      try { window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.key`, normalized); } catch { /* ignore */ }
       void saveSettingsToServer(gatherSettings());
     }
   }
@@ -920,7 +926,7 @@ function NovelWorkspacePage() {
   function persistOpenRouterModel(model: string) {
     setOpenRouterModel(model);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.model`, model);
+      try { window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.model`, model); } catch { /* ignore */ }
       void saveSettingsToServer(gatherSettings());
     }
   }
@@ -928,7 +934,7 @@ function NovelWorkspacePage() {
   function persistAssistantBaseUrl(baseUrl: string) {
     setAssistantBaseUrl(baseUrl);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, baseUrl);
+      try { window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, baseUrl); } catch { /* ignore */ }
       void saveSettingsToServer(gatherSettings());
     }
   }
@@ -1560,9 +1566,9 @@ function NovelWorkspacePage() {
 
   function readBoltonLibrary(): Array<Pick<Bolton, "title" | "description" | "prompt" | "category">> {
     if (typeof window === "undefined") return [];
-    const raw = window.localStorage.getItem(BOLTON_LIBRARY_KEY);
-    if (!raw) return [];
     try {
+      const raw = window.localStorage.getItem(BOLTON_LIBRARY_KEY);
+      if (!raw) return [];
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return [];
       return parsed
@@ -6300,7 +6306,7 @@ function NovelWorkspacePage() {
         category: normalizeBoltonCategory(bolton.category || "custom"),
       });
     }
-    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library));
+    try { window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library)); } catch { /* ignore */ }
     setBoltonLibraryCount(library.length);
     const syncOk = await saveSettingsToServer(gatherSettings());
     const now = new Date().toISOString();
@@ -6316,7 +6322,7 @@ function NovelWorkspacePage() {
     if (typeof window === "undefined") return;
     const library = readBoltonLibrary();
     library.splice(index, 1);
-    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library));
+    try { window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library)); } catch { /* ignore */ }
     setBoltonLibraryCount(library.length);
     await saveSettingsToServer(gatherSettings());
   }
@@ -6351,7 +6357,7 @@ function NovelWorkspacePage() {
         category: normalizeBoltonCategory(bolton.category),
       }))
       .filter((item) => item.title || item.description || item.prompt);
-    window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(source));
+    try { window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(source)); } catch { /* ignore */ }
     setBoltonLibraryCount(source.length);
     const syncOk = await saveSettingsToServer(gatherSettings());
     const now = new Date().toISOString();
@@ -7213,7 +7219,7 @@ function NovelWorkspacePage() {
                 setFeedbackReviewAccepted(0);
                 setFeedbackReviewRejected(0);
                 setDismissedAnnotations(new Set());
-                fetch("/api/share/feedback").then((r) => r.json()).then((d) => {
+                fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
                   if (Array.isArray(d)) {
                     setFeedbackData(d);
                     // Build the review queue from all feedback
@@ -7245,7 +7251,7 @@ function NovelWorkspacePage() {
                 setShareRecipientEmail("");
                 setShowShareModal(true);
                 setShareLinksLoading(true);
-                fetch("/api/share").then((r) => r.json()).then((data) => {
+                fetch("/api/share").then((r) => r.ok ? r.json() : []).then((data) => {
                   if (Array.isArray(data)) setShareLinks(data);
                 }).catch(() => {}).finally(() => setShareLinksLoading(false));
               }
@@ -8913,7 +8919,7 @@ function NovelWorkspacePage() {
                     const data = await res.json();
                     if (res.ok && data.token) {
                       setShareResult(data);
-                      fetch("/api/share").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
+                      fetch("/api/share").then((r) => r.ok ? r.json() : []).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
                     } else {
                       setShareError(data.error || "Failed to create share link.");
                     }
@@ -8960,7 +8966,7 @@ function NovelWorkspacePage() {
                             setFeedbackReviewRejected(0);
                             setDismissedAnnotations(new Set());
                             setFeedbackLoading(true);
-                            fetch("/api/share/feedback").then((r) => r.json()).then((d) => {
+                            fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
                               if (Array.isArray(d)) {
                                 setFeedbackData(d);
                                 const queue: typeof feedbackReviewQueue = [];
@@ -9030,7 +9036,7 @@ function NovelWorkspacePage() {
                       setShareRecipientEmail("");
                       setShowShareModal(true);
                       setShareLinksLoading(true);
-                      fetch("/api/share").then((r) => r.json()).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
+                      fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
                     }
                   }}>Share Chapters</button>
                 </div>
@@ -9350,7 +9356,7 @@ function NovelWorkspacePage() {
                       setShareRecipientEmail("");
                       setShowShareModal(true);
                       setShareLinksLoading(true);
-                      fetch("/api/share").then((r) => r.json()).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
+                      fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
                     }
                   }}>Share More Chapters</button>
                 </div>

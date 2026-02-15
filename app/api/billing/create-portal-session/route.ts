@@ -21,26 +21,32 @@ export async function POST() {
     );
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: { stripeCustomer: { select: { stripeCustomerId: true } } },
-  });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: sessionUser.id },
+      select: { stripeCustomer: { select: { stripeCustomerId: true } } },
+    });
 
-  const stripeCustomerId = user?.stripeCustomer?.stripeCustomerId;
-  if (!stripeCustomerId) {
-    return NextResponse.json(
-      { error: "No active Stripe subscription found. Subscribe first." },
-      { status: 400 },
-    );
+    const stripeCustomerId = user?.stripeCustomer?.stripeCustomerId;
+    if (!stripeCustomerId) {
+      return NextResponse.json(
+        { error: "No active Stripe subscription found. Subscribe first." },
+        { status: 400 },
+      );
+    }
+
+    const Stripe = (await import("stripe")).default;
+    const stripe = new Stripe(config.secretKey);
+
+    const returnUrl = config.appUrl ? `${config.appUrl}/studio` : "/studio";
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      return_url: returnUrl,
+    });
+
+    return NextResponse.json({ url: portal.url });
+  } catch (error) {
+    console.error("Portal session error:", error);
+    return NextResponse.json({ error: "Failed to create portal session." }, { status: 500 });
   }
-
-  const Stripe = (await import("stripe")).default;
-  const stripe = new Stripe(config.secretKey);
-
-  const portal = await stripe.billingPortal.sessions.create({
-    customer: stripeCustomerId,
-    return_url: `${config.appUrl}/studio`,
-  });
-
-  return NextResponse.json({ url: portal.url });
 }
