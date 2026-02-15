@@ -621,6 +621,7 @@ function NovelWorkspacePage() {
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => !sidebarPinned);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
+  const [navigatingAway, setNavigatingAway] = useState(false);
   const sidebarHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize theme from localStorage
@@ -7257,7 +7258,7 @@ function NovelWorkspacePage() {
                   border: "2.5px solid var(--pw-border, #333)",
                   borderTopColor: "var(--pw-accent, #a3e635)",
                   borderRadius: "50%",
-                  animation: "pw-tk-spin 0.7s linear infinite",
+                  animation: "spin 0.7s linear infinite",
                 }} />
                 <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Opening novel...</p>
               </div>
@@ -7357,7 +7358,7 @@ function NovelWorkspacePage() {
       : PROOFREAD_CATEGORIES.filter((category) => category.id === proofreadFilter);
 
   return (
-    <div className="pw-wallpaper">
+    <div className={`pw-wallpaper${navigatingAway ? " pw-exit" : ""}`}>
       <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}`}>
         <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
@@ -7369,7 +7370,11 @@ function NovelWorkspacePage() {
               <span style={{ fontWeight: 300, fontSize: 16, fontStyle: "italic", lineHeight: 1 }}>/</span>
             </button>
           </div>
-          <Link href="/studio" className="pw-back-link">
+          <Link href="/studio" prefetch={true} className="pw-back-link" onClick={(e) => {
+            e.preventDefault();
+            setNavigatingAway(true);
+            setTimeout(() => router.push("/studio"), 80);
+          }}>
             <span>← Back to novels</span>
           </Link>
 

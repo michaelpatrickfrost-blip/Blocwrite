@@ -1,8 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   countChapterWords,
   countNovelWords,
@@ -72,6 +73,7 @@ function StudioHomePage() {
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
   const [isAdmin, setIsAdmin] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [navigatingAway, setNavigatingAway] = useState(false);
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -175,6 +177,14 @@ function StudioHomePage() {
   }
 
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+
+  /** Navigate to a novel with a smooth exit transition */
+  const navigateToNovel = useCallback((novelId: string) => {
+    void saveNovelsToServer(novels);
+    setNavigatingAway(true);
+    // Tiny delay to let exit fade start before the route changes
+    setTimeout(() => router.push(`/studio/${novelId}`), 80);
+  }, [novels, router]);
 
   const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
 
@@ -310,7 +320,7 @@ function StudioHomePage() {
   const selectedChapterCount = exportScope === "all" ? (exportNovel?.chapters.length ?? 0) : selectedExportChapterIds.length;
 
   return (
-    <div className="pw-wallpaper">
+    <div className={`pw-wallpaper${navigatingAway ? " pw-exit" : ""}`}>
       <div className="pw-window">
         <aside className="pw-sidebar">
           <div className="pw-logo">
@@ -403,23 +413,15 @@ function StudioHomePage() {
               {/* Horizontal novel covers */}
               <div className="pw-novel-grid">
                 {sortedNovels.map((novel) => (
-                  <article
+                  <Link
                     key={novel.id}
+                    href={`/studio/${novel.id}`}
+                    prefetch={true}
                     className={`pw-novel-card${hoveredNovelId === novel.id ? " pw-novel-card-active" : ""}${justCreatedId === novel.id ? " pw-novel-card-new" : ""}`}
-                    role="button"
-                    tabIndex={0}
                     onMouseEnter={() => setHoveredNovelId(novel.id)}
-                    onClick={() => {
-                      // Save in background — don't block navigation
-                      void saveNovelsToServer(novels);
-                      router.push(`/studio/${novel.id}`);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        void saveNovelsToServer(novels);
-                        router.push(`/studio/${novel.id}`);
-                      }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigateToNovel(novel.id);
                     }}
                   >
                     <div
@@ -447,7 +449,7 @@ function StudioHomePage() {
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
                     </button>
-                  </article>
+                  </Link>
                 ))}
               </div>
 
