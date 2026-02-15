@@ -166,10 +166,41 @@ export type BookPlanChapter = {
   manuscriptChapterId?: string;
 };
 
+/** Arc Intelligence Engine — narrative arc analysis per plan */
+export type ArcDimension =
+  | "goal-evolution"
+  | "flaw-growth"
+  | "stagnation"
+  | "midpoint-shift"
+  | "third-act-escalation";
+
+export type ArcIssue = {
+  dimension: ArcDimension;
+  chapter?: number;       // 1-based chapter number (null = overall)
+  severity: "info" | "warning" | "critical";
+  message: string;
+  suggestion: string;
+};
+
+export type ArcScore = {
+  dimension: ArcDimension;
+  score: number;  // 1–10
+  label: string;
+  summary: string;
+};
+
+export type ArcAnalysis = {
+  scores: ArcScore[];
+  issues: ArcIssue[];
+  overall: number;        // 1–10 average
+  generatedAt: string;
+};
+
 export type BookPlan = {
   chapters: BookPlanChapter[];
   aiChapterTarget: "auto" | number;
   pacingMode?: "balanced" | "slow-burn" | "fast";
+  arcAnalysis?: ArcAnalysis | null;
   updatedAt: string;
 };
 

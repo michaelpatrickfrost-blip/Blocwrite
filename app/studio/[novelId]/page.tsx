@@ -28,6 +28,10 @@ import {
   type Bolton,
   type BoltonCategory,
   type Character,
+  type ArcAnalysis,
+  type ArcDimension,
+  type ArcScore,
+  type ArcIssue,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -820,6 +824,10 @@ function NovelWorkspacePage() {
   const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
   const [planGenerateProgressIdx, setPlanGenerateProgressIdx] = useState<number | null>(null);
   const [planGenerateTotal, setPlanGenerateTotal] = useState(0);
+  const [showArcOfferPopup, setShowArcOfferPopup] = useState(false);
+  const [arcBusy, setArcBusy] = useState(false);
+  const [arcError, setArcError] = useState<string | null>(null);
+  const [arcExpandedDimension, setArcExpandedDimension] = useState<ArcDimension | null>(null);
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -5183,6 +5191,7 @@ function NovelWorkspacePage() {
     setPlanError(null);
     setPlanGenerateProgressIdx(null);
     setPlanGenerateTotal(0);
+    let planGenFailed = false;
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
       const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
@@ -5565,10 +5574,165 @@ function NovelWorkspacePage() {
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); setPlanGenerateProgressIdx(null); return; }
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
+      planGenFailed = true;
     } finally {
       setStoryAiBusyAction(null);
       setPlanGenerateProgressIdx(null);
       setPlanGenerateTotal(0);
+      // Offer Arc Intelligence after successful generation
+      if (!planGenFailed) {
+        setTimeout(() => setShowArcOfferPopup(true), 600);
+      }
+    }
+  }
+
+  /* ─── Arc Intelligence Engine ─── */
+  const ARC_DIMENSION_META: Record<ArcDimension, { label: string; icon: string; color: string; hint: string }> = {
+    "goal-evolution": {
+      label: "Goal Evolution",
+      icon: "M13 10V3L4 14h7v7l9-11h-7z",
+      color: "#f59e0b",
+      hint: "Tracks how the protagonist's goals shift and sharpen across the story.",
+    },
+    "flaw-growth": {
+      label: "Flaw vs Growth",
+      icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z",
+      color: "#f472b6",
+      hint: "Checks whether internal flaws are challenged and growth is earned.",
+    },
+    "stagnation": {
+      label: "Arc Stagnation",
+      icon: "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+      color: "#ef4444",
+      hint: "Detects stretches where the character arc flatlines with no change.",
+    },
+    "midpoint-shift": {
+      label: "Midpoint Shift",
+      icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
+      color: "#818cf8",
+      hint: "Flags whether a clear midpoint turn exists that reframes the story.",
+    },
+    "third-act-escalation": {
+      label: "Third-Act Escalation",
+      icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
+      color: "#06b6d4",
+      hint: "Checks if stakes and tension rise sufficiently toward the climax.",
+    },
+  };
+
+  async function runArcAnalysis() {
+    if (!novel || aiOff) return;
+    const plan = novel.storyBible.bookPlan;
+    if (!plan || plan.chapters.length < 3) {
+      setArcError("Need at least 3 plan chapters to analyse arcs.");
+      return;
+    }
+
+    setArcBusy(true);
+    setArcError(null);
+
+    try {
+      // Build the chapter outline for the AI
+      const chapterOutline = plan.chapters.map((ch, i) => {
+        const chars = (ch.characterIds ?? [])
+          .map((id) => novel.storyBible.characters.find((c) => c.id === id)?.name)
+          .filter(Boolean);
+        return `Chapter ${i + 1}: "${ch.title}"\nSynopsis: ${ch.synopsis || "(empty)"}\nCharacters: ${chars.length > 0 ? chars.join(", ") : "none listed"}`;
+      }).join("\n\n");
+
+      // Find the protagonist
+      const protagonist = novel.storyBible.characters.find((c) => c.role === "Protagonist");
+      const protagonistLine = protagonist
+        ? `Protagonist: ${protagonist.name}. ${protagonist.logline || ""} Goals: ${protagonist.goals || "none"}. Fears: ${protagonist.fears || "none"}. Backstory: ${protagonist.backstory || "none"}.`
+        : "No protagonist explicitly tagged — analyse the most prominent character.";
+
+      const systemPrompt = [
+        "You are an expert story structure analyst specialising in narrative arc analysis.",
+        "You evaluate chapter plans against proven story structure principles (three-act structure, Save the Cat, Story Circle, etc.).",
+        "Be specific — reference chapter numbers. Be constructive — give actionable suggestions.",
+        "Respond ONLY with valid JSON. No markdown, no commentary outside the JSON.",
+      ].join("\n");
+
+      const userPrompt = [
+        `Novel: "${novel.title}"`,
+        `Synopsis: ${novel.synopsis || novel.storyBible.summary.synopsisShort || "(none)"}`,
+        `Pacing mode: ${plan.pacingMode || "balanced"}`,
+        protagonistLine,
+        "",
+        "CHAPTER PLAN:",
+        chapterOutline,
+        "",
+        "Analyse this plan across these 5 arc dimensions. For each, give a score (1-10) and a short summary (1-2 sentences). Then list specific issues found.",
+        "",
+        "Dimensions:",
+        "1. goal-evolution: How well do the protagonist's goals evolve? Do they sharpen, shift, or deepen across chapters?",
+        "2. flaw-growth: Is there a clear internal flaw that gets tested and transformed? Is growth earned through struggle?",
+        "3. stagnation: Are there stretches (3+ consecutive chapters) where the character arc doesn't advance? Flag stagnant zones.",
+        "4. midpoint-shift: Is there a clear midpoint turn (around chapter " + Math.ceil(plan.chapters.length / 2) + ") that reframes the story, raises stakes, or shifts the protagonist from reactive to proactive?",
+        "5. third-act-escalation: Do the final ~25% of chapters show genuine escalation in stakes, tension, and emotional weight toward the climax?",
+        "",
+        'Return JSON: { "scores": [{ "dimension": string, "score": number, "label": string, "summary": string }], "issues": [{ "dimension": string, "chapter": number|null, "severity": "info"|"warning"|"critical", "message": string, "suggestion": string }] }',
+        "scores must have exactly 5 entries (one per dimension). issues can be 0-15 entries. label is a 2-4 word label like 'Strong Evolution' or 'Missing Midpoint'.",
+      ].join("\n");
+
+      const result = await requestOpenRouterJson(
+        userPrompt,
+        2000,
+        { systemMessage: systemPrompt },
+      );
+
+      if (!result || typeof result !== "object") {
+        setArcError("AI returned an invalid response. Try again.");
+        return;
+      }
+
+      const res = result as Record<string, unknown>;
+
+      const rawScores: ArcScore[] = Array.isArray(res.scores)
+        ? (res.scores as Record<string, unknown>[])
+            .filter((s) => s && typeof s.dimension === "string")
+            .map((s) => ({
+              dimension: s.dimension as ArcDimension,
+              score: Math.max(1, Math.min(10, Number(s.score) || 5)),
+              label: String(s.label || "").slice(0, 40),
+              summary: String(s.summary || "").slice(0, 300),
+            }))
+        : [];
+
+      const rawIssues: ArcIssue[] = Array.isArray(res.issues)
+        ? (res.issues as Record<string, unknown>[])
+            .filter((i) => i && typeof i.dimension === "string" && typeof i.message === "string")
+            .map((i) => ({
+              dimension: i.dimension as ArcDimension,
+              chapter: typeof i.chapter === "number" ? i.chapter : undefined,
+              severity: (["info", "warning", "critical"].includes(String(i.severity)) ? String(i.severity) : "info") as ArcIssue["severity"],
+              message: String(i.message).slice(0, 300),
+              suggestion: String(i.suggestion || "").slice(0, 400),
+            }))
+        : [];
+
+      // Ensure all 5 dimensions have scores
+      const allDimensions: ArcDimension[] = ["goal-evolution", "flaw-growth", "stagnation", "midpoint-shift", "third-act-escalation"];
+      const finalScores: ArcScore[] = allDimensions.map((dim) => {
+        const found = rawScores.find((s) => s.dimension === dim);
+        return found || { dimension: dim, score: 5, label: "Not assessed", summary: "AI did not return a score for this dimension." };
+      });
+
+      const overall = Math.round(finalScores.reduce((sum, s) => sum + s.score, 0) / finalScores.length * 10) / 10;
+
+      const analysis: ArcAnalysis = {
+        scores: finalScores,
+        issues: rawIssues,
+        overall,
+        generatedAt: new Date().toISOString(),
+      };
+
+      updateBookPlan({ arcAnalysis: analysis });
+
+    } catch (err) {
+      setArcError(err instanceof Error ? err.message : "Arc analysis failed.");
+    } finally {
+      setArcBusy(false);
     }
   }
 
@@ -9235,6 +9399,217 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
+              {/* ── Arc Intelligence panel ── */}
+              {(novel.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
+                <div style={{
+                  marginBottom: 18, borderRadius: 14,
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  overflow: "hidden",
+                }}>
+                  {/* Panel header */}
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(6,182,212,0.15))",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>Arc Intelligence</span>
+                        {novel.storyBible.bookPlan?.arcAnalysis && (
+                          <span style={{
+                            marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                            background: novel.storyBible.bookPlan.arcAnalysis.overall >= 7 ? "rgba(163,230,53,0.12)" : novel.storyBible.bookPlan.arcAnalysis.overall >= 5 ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
+                            color: novel.storyBible.bookPlan.arcAnalysis.overall >= 7 ? "#a3e635" : novel.storyBible.bookPlan.arcAnalysis.overall >= 5 ? "#f59e0b" : "#ef4444",
+                          }}>
+                            {novel.storyBible.bookPlan.arcAnalysis.overall}/10
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={arcBusy || aiOff}
+                      onClick={() => void runArcAnalysis()}
+                      title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc analysis"}
+                      style={{
+                        padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                        background: arcBusy ? "rgba(255,255,255,0.04)" : "rgba(129,140,248,0.12)",
+                        color: arcBusy ? "var(--pw-text-dim)" : "#818cf8",
+                        border: "1px solid rgba(129,140,248,0.2)", cursor: arcBusy ? "default" : "pointer",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}
+                    >
+                      {arcBusy ? (
+                        <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Analysing...</>
+                      ) : (
+                        <>{novel.storyBible.bookPlan?.arcAnalysis ? "Regenerate" : "Run Analysis"}</>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Error */}
+                  {arcError && (
+                    <div style={{ padding: "10px 18px", fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.06)" }}>
+                      {arcError}
+                    </div>
+                  )}
+
+                  {/* Busy state */}
+                  {arcBusy && !novel.storyBible.bookPlan?.arcAnalysis && (
+                    <div style={{ padding: "24px 18px", textAlign: "center" }}>
+                      <div style={{
+                        width: 24, height: 24, border: "2px solid rgba(129,140,248,0.2)", borderTopColor: "#818cf8",
+                        borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
+                      }} />
+                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>Analysing story arcs across {planChapters.length} chapters...</p>
+                    </div>
+                  )}
+
+                  {/* Results */}
+                  {novel.storyBible.bookPlan?.arcAnalysis && (() => {
+                    const arc = novel.storyBible.bookPlan.arcAnalysis!;
+                    return (
+                      <div style={{ padding: "14px 18px 18px" }}>
+                        {/* Score cards */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 16 }}>
+                          {arc.scores.map((s) => {
+                            const meta = ARC_DIMENSION_META[s.dimension];
+                            if (!meta) return null;
+                            const isExpanded = arcExpandedDimension === s.dimension;
+                            const relatedIssues = arc.issues.filter((i) => i.dimension === s.dimension);
+                            return (
+                              <div key={s.dimension}
+                                style={{
+                                  borderRadius: 10, padding: "12px",
+                                  background: isExpanded ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.015)",
+                                  border: `1px solid ${isExpanded ? meta.color + "30" : "rgba(255,255,255,0.05)"}`,
+                                  cursor: "pointer", transition: "all 0.15s",
+                                  gridColumn: isExpanded ? "1 / -1" : undefined,
+                                }}
+                                onClick={() => setArcExpandedDimension(isExpanded ? null : s.dimension)}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={meta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={meta.icon}/></svg>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", flex: 1 }}>{meta.label}</span>
+                                  <span style={{
+                                    fontSize: 13, fontWeight: 800,
+                                    color: s.score >= 7 ? "#a3e635" : s.score >= 5 ? "#f59e0b" : "#ef4444",
+                                  }}>{s.score}</span>
+                                </div>
+                                <div style={{
+                                  width: "100%", height: 3, borderRadius: 2,
+                                  background: "rgba(255,255,255,0.06)", overflow: "hidden", marginBottom: 6,
+                                }}>
+                                  <div style={{
+                                    height: "100%", borderRadius: 2,
+                                    background: s.score >= 7 ? "#a3e635" : s.score >= 5 ? "#f59e0b" : "#ef4444",
+                                    width: `${s.score * 10}%`, transition: "width 0.3s",
+                                  }} />
+                                </div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginBottom: 2 }}>{s.label}</div>
+                                <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>{s.summary}</div>
+
+                                {/* Expanded issues */}
+                                {isExpanded && relatedIssues.length > 0 && (
+                                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-text-dim)", marginBottom: 2 }}>
+                                      {relatedIssues.length} issue{relatedIssues.length !== 1 ? "s" : ""} found
+                                    </div>
+                                    {relatedIssues.map((issue, ii) => (
+                                      <div key={ii} style={{
+                                        padding: "8px 10px", borderRadius: 8,
+                                        background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(255,255,255,0.02)",
+                                        border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)"}`,
+                                      }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                          <span style={{
+                                            fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4,
+                                            background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
+                                            color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8",
+                                          }}>{issue.severity}</span>
+                                          {issue.chapter && <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Chapter {issue.chapter}</span>}
+                                        </div>
+                                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{issue.message}</div>
+                                        {issue.suggestion && (
+                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, fontStyle: "italic" }}>
+                                            Suggestion: {issue.suggestion}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {isExpanded && relatedIssues.length === 0 && (
+                                  <div style={{ marginTop: 10, fontSize: 11, color: "var(--pw-text-dim)", fontStyle: "italic" }}>
+                                    No issues detected for this dimension.
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Issue summary */}
+                        {arc.issues.length > 0 && (
+                          <div style={{
+                            padding: "10px 14px", borderRadius: 10,
+                            background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.05)",
+                            display: "flex", alignItems: "center", gap: 10,
+                          }}>
+                            <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
+                              {arc.issues.filter((i) => i.severity === "critical").length > 0 && (
+                                <span style={{ color: "#ef4444", fontWeight: 700 }}>
+                                  {arc.issues.filter((i) => i.severity === "critical").length} critical
+                                </span>
+                              )}
+                              {arc.issues.filter((i) => i.severity === "critical").length > 0 && arc.issues.filter((i) => i.severity === "warning").length > 0 && " · "}
+                              {arc.issues.filter((i) => i.severity === "warning").length > 0 && (
+                                <span style={{ color: "#f59e0b", fontWeight: 700 }}>
+                                  {arc.issues.filter((i) => i.severity === "warning").length} warning{arc.issues.filter((i) => i.severity === "warning").length !== 1 ? "s" : ""}
+                                </span>
+                              )}
+                              {(arc.issues.filter((i) => i.severity === "critical").length > 0 || arc.issues.filter((i) => i.severity === "warning").length > 0) && arc.issues.filter((i) => i.severity === "info").length > 0 && " · "}
+                              {arc.issues.filter((i) => i.severity === "info").length > 0 && (
+                                <span style={{ color: "#818cf8", fontWeight: 600 }}>
+                                  {arc.issues.filter((i) => i.severity === "info").length} info
+                                </span>
+                              )}
+                              <span style={{ marginLeft: 6, opacity: 0.5 }}>— click a dimension card to see details</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Also show a small "Run Arc Intelligence" button when no analysis exists yet */}
+              {!novel.storyBible.bookPlan?.arcAnalysis && !arcBusy && planChapters.length >= 3 && !aiOff && (
+                <div style={{ marginBottom: 14, textAlign: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => void runArcAnalysis()}
+                    style={{
+                      padding: "8px 18px", fontSize: 12, fontWeight: 700, borderRadius: 10,
+                      background: "linear-gradient(135deg, rgba(129,140,248,0.12), rgba(6,182,212,0.12))",
+                      color: "#818cf8", border: "1px solid rgba(129,140,248,0.18)",
+                      cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    Run Arc Intelligence
+                  </button>
+                </div>
+              )}
+
               {planChapters.length === 0 ? (
                 <div className="pw-plan-empty">
                   <div className="pw-plan-empty-icon">&#128214;</div>
@@ -12070,6 +12445,87 @@ function NovelWorkspacePage() {
                 }}
               >
                 Continue with {nameConfirmPopup.selected.size} name{nameConfirmPopup.selected.size !== 1 ? "s" : ""}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Arc Intelligence offer popup (shown after plan generation) ── */}
+      {showArcOfferPopup && !aiOff && planChapters.length >= 3 && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10001,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          animation: "pw-fade-in 0.2s ease-out",
+        }}
+          onClick={() => setShowArcOfferPopup(false)}
+        >
+          <div
+            style={{
+              background: "var(--pw-bg, #18181b)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 20, width: "92%", maxWidth: 420,
+              padding: "32px 28px 28px",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
+              textAlign: "center",
+              animation: "pw-content-in 0.25s ease-out",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Arc icon */}
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
+              background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(6,182,212,0.15))",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+              </svg>
+            </div>
+
+            <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Arc Intelligence</h3>
+            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 20px", lineHeight: 1.5 }}>
+              Your plan is ready. Want to analyse your story arcs? Arc Intelligence checks goal evolution, character growth, stagnation, midpoint shifts, and third-act escalation.
+            </p>
+
+            {/* Dimension pills */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 22 }}>
+              {(Object.entries(ARC_DIMENSION_META) as [ArcDimension, typeof ARC_DIMENSION_META[ArcDimension]][]).map(([dim, meta]) => (
+                <span key={dim} style={{
+                  fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 8,
+                  background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25`,
+                }}>
+                  {meta.label}
+                </span>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={() => setShowArcOfferPopup(false)}
+                style={{
+                  padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10,
+                  background: "rgba(255,255,255,0.06)", color: "var(--pw-text)", border: "1px solid rgba(255,255,255,0.08)",
+                  cursor: "pointer",
+                }}
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowArcOfferPopup(false);
+                  void runArcAnalysis();
+                }}
+                style={{
+                  padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
+                  background: "linear-gradient(135deg, #818cf8, #06b6d4)", color: "#fff", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(129,140,248,0.3)",
+                }}
+              >
+                Analyse Arcs
               </button>
             </div>
           </div>
