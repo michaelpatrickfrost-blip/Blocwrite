@@ -7203,10 +7203,28 @@ function NovelWorkspacePage() {
       event.target.value = "";
       return;
     }
+    // Reject files over 5 MB — even after compression they may cause issues
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+    if (file.size > MAX_FILE_SIZE) {
+      setAutosaveStatus({
+        status: "error",
+        message: "Image too large (max 5 MB). Please use a smaller file.",
+        at: new Date().toISOString(),
+      });
+      event.target.value = "";
+      return;
+    }
 
     compressCoverImage(file)
       .then((dataUrl) => updateNovel({ coverImage: dataUrl }))
-      .catch((err) => console.warn("Cover upload failed:", err));
+      .catch((err) => {
+        console.warn("Cover upload failed:", err);
+        setAutosaveStatus({
+          status: "error",
+          message: "Cover upload failed. Try a different image.",
+          at: new Date().toISOString(),
+        });
+      });
     event.target.value = "";
   }
 
