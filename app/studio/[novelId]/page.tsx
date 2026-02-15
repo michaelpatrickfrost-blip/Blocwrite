@@ -595,6 +595,26 @@ function NovelWorkspacePage() {
   } | null>(null);
   const [proseCtxBusy, setProseCtxBusy] = useState(false);
 
+  // ── Smart Rewrite floating toolbar ──
+  const [rewriteSelection, setRewriteSelection] = useState<{
+    x: number; y: number;
+    blockIdx: number; // -1 = plain editor
+    selStart: number; selEnd: number;
+    selectedText: string;
+    fullContent: string; // the full prose/content of the textarea
+  } | null>(null);
+  const [rewriteBusy, setRewriteBusy] = useState(false);
+  const [rewriteMode, setRewriteMode] = useState<string | null>(null);
+  const [rewritePreview, setRewritePreview] = useState<{
+    original: string;
+    revised: string;
+    blockIdx: number;
+    selStart: number;
+    selEnd: number;
+    fullContent: string;
+  } | null>(null);
+  const rewriteSelectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const EDITOR_FONT_OPTIONS = [
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
     { id: "sans", label: "Sans", font: "var(--font-sans), 'Inter', system-ui, sans-serif" },
@@ -1077,6 +1097,14 @@ function NovelWorkspacePage() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (rewritePreview) {
+        setRewritePreview(null);
+        return;
+      }
+      if (rewriteSelection) {
+        setRewriteSelection(null);
+        return;
+      }
       if (pendingChapterDelete) {
         setPendingChapterDelete(null);
         return;
@@ -2656,6 +2684,155 @@ function NovelWorkspacePage() {
     } finally {
       setProseCtxBusy(false);
     }
+  }
+
+  // ── Smart Rewrite: detect selection in any editor textarea ──
+  const REWRITE_MODES = [
+    { id: "emotional", label: "More Emotional", desc: "Deepen feeling and interiority", icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" },
+    { id: "suspenseful", label: "More Suspenseful", desc: "Build tension and dread", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
+    { id: "poetic", label: "More Poetic", desc: "Richer imagery and rhythm", icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" },
+    { id: "tighter", label: "Shorter & Tighter", desc: "Cut filler, sharpen every line", icon: "M4 6h16M4 12h10M4 18h6" },
+    { id: "bestseller", label: "Bestseller Tone", desc: "Punchy, commercial, page-turner", icon: "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" },
+  ];
+
+  function handleEditorMouseUp(
+    e: React.MouseEvent<HTMLTextAreaElement>,
+    blockIdx: number, // -1 for plain editor
+  ) {
+    // Clear any pending timer
+    if (rewriteSelectionTimer.current) clearTimeout(rewriteSelectionTimer.current);
+
+    // Small delay so the browser finalises the selection
+    rewriteSelectionTimer.current = setTimeout(() => {
+      const el = e.target as HTMLTextAreaElement;
+      const selText = el.value.slice(el.selectionStart, el.selectionEnd).trim();
+      if (!selText || selText.length < 5) {
+        setRewriteSelection(null);
+        return;
+      }
+      // Position the toolbar above the cursor
+      const rect = el.getBoundingClientRect();
+      // Approximate x/y from click position, clamped inside viewport
+      const x = Math.min(Math.max(e.clientX - 120, 16), window.innerWidth - 280);
+      const y = Math.max(e.clientY - 52, 16);
+      setRewriteSelection({
+        x, y,
+        blockIdx,
+        selStart: el.selectionStart,
+        selEnd: el.selectionEnd,
+        selectedText: selText,
+        fullContent: el.value,
+      });
+    }, 200);
+  }
+
+  async function runSmartRewrite(modeId: string) {
+    if (!rewriteSelection || !novel || !activeChapter || !ensureStoryAiReady()) return;
+    const { blockIdx, selStart, selEnd, selectedText, fullContent } = rewriteSelection;
+    setRewriteBusy(true);
+    setRewriteMode(modeId);
+
+    const before = fullContent.slice(Math.max(0, selStart - 600), selStart);
+    const after = fullContent.slice(selEnd, selEnd + 600);
+    const novelGenre = novel.storyBible.summary.genre.join(", ") || "fiction";
+
+    const modeInstructions: Record<string, string> = {
+      emotional: `Rewrite the SELECTED TEXT to be more emotionally resonant. Deepen interiority, let the reader feel what the character feels. Add sensory and emotional depth. Keep the same events and meaning.`,
+      suspenseful: `Rewrite the SELECTED TEXT to be more suspenseful. Build tension, add dread, shorten sentences where needed, use pacing tricks. Make the reader need to keep reading. Keep the same events and meaning.`,
+      poetic: `Rewrite the SELECTED TEXT with richer, more poetic prose. Use imagery, metaphor, rhythm, and lyrical phrasing. Make it beautiful without being purple. Keep the same events and meaning.`,
+      tighter: `Rewrite the SELECTED TEXT to be shorter and tighter. Cut every unnecessary word, eliminate filler, sharpen sentences. Keep every important beat but make it leaner and punchier. Aim for 60-75% of the original length.`,
+      bestseller: `Rewrite the SELECTED TEXT in a bestseller tone — punchy, commercial, page-turning prose. Short sentences mixed with longer ones. Active voice. Direct. Makes you want to keep reading. Think of the pacing in a Colleen Hoover, Lee Child, or Gillian Flynn novel. Keep the same events and meaning.`,
+    };
+
+    const systemMsg = [
+      `You are a prose rewriting specialist for a ${novelGenre} novel.`,
+      `Return ONLY the replacement prose — nothing else. No quotes, no labels, no explanations, no "Here is the rewritten text:".`,
+      `NEVER include thinking, notes, word counts, or meta-commentary.`,
+      `The replacement must flow naturally with the text before and after it.`,
+      `Avoid AI writing patterns: no excessive em dashes, no "a testament to", "the weight of", "couldn't help but". Write like a human author.`,
+      `Match the tense, POV, and general voice of the surrounding prose.`,
+    ].join(" ");
+
+    const prompt = [
+      `TEXT BEFORE (context only — do NOT include in output):`,
+      `"""${before}"""`,
+      ``,
+      `SELECTED TEXT (rewrite this):`,
+      `"""${selectedText}"""`,
+      ``,
+      `TEXT AFTER (context only — do NOT include in output):`,
+      `"""${after}"""`,
+      ``,
+      modeInstructions[modeId] || modeInstructions.emotional,
+      `Return ONLY the replacement prose. Nothing else.`,
+    ].join("\n");
+
+    try {
+      const result = await requestOpenRouterText(
+        prompt,
+        Math.max(500, Math.round(selectedText.split(/\s+/).length * 3)),
+        120000, systemMsg, false, 0.7,
+      );
+      if (!result || !result.trim()) { setRewriteBusy(false); setRewriteMode(null); return; }
+
+      let cleaned = result.trim();
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+      if (cleaned.startsWith("'") && cleaned.endsWith("'")) cleaned = cleaned.slice(1, -1);
+
+      setRewritePreview({
+        original: selectedText,
+        revised: cleaned,
+        blockIdx,
+        selStart, selEnd,
+        fullContent,
+      });
+      setRewriteSelection(null);
+    } catch (err) {
+      console.error("Smart rewrite failed:", err);
+    } finally {
+      setRewriteBusy(false);
+      setRewriteMode(null);
+    }
+  }
+
+  function acceptRewrite() {
+    if (!rewritePreview || !activeChapter) return;
+    const { blockIdx, selStart, selEnd, fullContent, revised } = rewritePreview;
+    const newContent = fullContent.slice(0, selStart) + revised + fullContent.slice(selEnd);
+
+    if (blockIdx === -1) {
+      // Plain editor mode
+      updateChapter(activeChapter.id, { content: newContent });
+    } else {
+      // Block editor mode
+      const { blocks, hasBlocks } = parseChapterBlocks(activeChapter.content);
+      if (hasBlocks && blockIdx >= 0 && blockIdx < blocks.length) {
+        const next = [...blocks];
+        next[blockIdx] = { ...blocks[blockIdx], prose: newContent };
+        updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+      }
+    }
+    setRewritePreview(null);
+    saveNow();
+  }
+
+  function rejectRewrite() {
+    setRewritePreview(null);
+  }
+
+  async function regenerateRewrite() {
+    if (!rewritePreview) return;
+    // Restore the selection context and re-run with the same mode
+    setRewriteSelection({
+      x: window.innerWidth / 2 - 120,
+      y: window.innerHeight / 3,
+      blockIdx: rewritePreview.blockIdx,
+      selStart: rewritePreview.selStart,
+      selEnd: rewritePreview.selEnd,
+      selectedText: rewritePreview.original,
+      fullContent: rewritePreview.fullContent,
+    });
+    setRewritePreview(null);
   }
 
   function evaluateProseResult(
@@ -8013,6 +8190,7 @@ function NovelWorkspacePage() {
                                     const newH = el.scrollHeight;
                                     if (newH > el.clientHeight) el.style.height = newH + "px";
                                   }}
+                                  onMouseUp={(e) => handleEditorMouseUp(e, idx)}
                                   onContextMenu={(e) => {
                                     const el = e.currentTarget;
                                     const selText = el.value.slice(el.selectionStart, el.selectionEnd).trim();
@@ -8141,6 +8319,7 @@ function NovelWorkspacePage() {
                         dir="ltr"
                         spellCheck
                         value={activeChapter.content}
+                        onMouseUp={(e) => handleEditorMouseUp(e, -1)}
                         onInput={(event) => autoSizeEditorInput(event.currentTarget)}
                         onChange={(event) => {
                           const newVal = event.target.value;
@@ -8294,6 +8473,7 @@ function NovelWorkspacePage() {
                                 "Georgia, serif",
                             }}
                             value={block.prose}
+                            onMouseUp={(e) => handleEditorMouseUp(e, focusBlockIndex)}
                             onChange={(e) => {
                               const newVal = e.target.value;
                               const prevVal = block.prose;
@@ -11485,6 +11665,153 @@ function NovelWorkspacePage() {
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
+
+      {/* ── Smart Rewrite floating toolbar ── */}
+      {rewriteSelection && !rewriteBusy && !rewritePreview && !aiOff && (
+        <>
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 99996 }}
+            onClick={() => setRewriteSelection(null)}
+          />
+          <div style={{
+            position: "fixed",
+            left: rewriteSelection.x,
+            top: rewriteSelection.y,
+            zIndex: 99997,
+            background: "var(--pw-surface, #1c1c20)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 10,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)",
+            padding: "4px",
+            display: "flex",
+            gap: 2,
+            alignItems: "center",
+            fontFamily: "var(--font-sans), system-ui, sans-serif",
+          }}>
+            {REWRITE_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                title={`${mode.label} — ${mode.desc}`}
+                onClick={() => void runSmartRewrite(mode.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "6px 10px", background: "none", border: "none",
+                  borderRadius: 7, cursor: "pointer",
+                  color: "var(--pw-text-dim, #bbb)", fontSize: 11, fontWeight: 600,
+                  transition: "all 0.1s", whiteSpace: "nowrap",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)";
+                  e.currentTarget.style.color = "var(--pw-accent, #a3e635)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "none";
+                  e.currentTarget.style.color = "var(--pw-text-dim, #bbb)";
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Smart Rewrite busy indicator ── */}
+      {rewriteBusy && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 99999,
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "12px 20px", borderRadius: 12,
+          background: "var(--pw-surface, #1c1c20)",
+          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        }}>
+          <span style={{
+            width: 14, height: 14, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)",
+            borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%",
+            animation: "spin 0.7s linear infinite", display: "inline-block",
+          }} />
+          <span style={{ fontSize: 12, color: "var(--pw-text, #e4e4e7)" }}>
+            Rewriting{rewriteMode ? ` (${REWRITE_MODES.find((m) => m.id === rewriteMode)?.label || rewriteMode})` : ""}...
+          </span>
+        </div>
+      )}
+
+      {/* ── Smart Rewrite preview modal ── */}
+      {rewritePreview && (
+        <div className="pw-modal-overlay" onClick={() => setRewritePreview(null)}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: "85vh", overflow: "auto" }}>
+            <div style={{ padding: "20px 24px 0" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Smart Rewrite Preview</h3>
+              <p style={{ fontSize: 12, opacity: 0.5, margin: "0 0 16px" }}>
+                Review the rewrite below. Accept to replace, reject to keep original, or regenerate for a new version.
+              </p>
+            </div>
+
+            <div style={{ padding: "0 24px" }}>
+              {/* Original */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-text-dim, #888)", marginBottom: 6 }}>
+                  Original
+                </div>
+                <div style={{
+                  padding: "12px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.7,
+                  background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)",
+                  color: "var(--pw-text, #e4e4e7)", opacity: 0.7,
+                  textDecoration: "line-through", textDecorationColor: "rgba(239,68,68,0.3)",
+                }}>
+                  {rewritePreview.original}
+                </div>
+              </div>
+
+              {/* Revised */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-accent, #a3e635)", marginBottom: 6 }}>
+                  Rewritten
+                </div>
+                <div style={{
+                  padding: "12px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.7,
+                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)",
+                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+                  color: "var(--pw-text, #e4e4e7)",
+                }}>
+                  {rewritePreview.revised}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{
+              display: "flex", gap: 8, justifyContent: "flex-end",
+              padding: "16px 24px", borderTop: "1px solid var(--pw-border-light, #2a2a2a)",
+            }}>
+              <button
+                type="button" className="btn"
+                onClick={rejectRewrite}
+                style={{ fontSize: 12, padding: "8px 16px" }}
+              >
+                Reject
+              </button>
+              <button
+                type="button" className="btn"
+                onClick={() => void regenerateRewrite()}
+                style={{ fontSize: 12, padding: "8px 16px" }}
+              >
+                Regenerate
+              </button>
+              <button
+                type="button" className="btn btn-primary"
+                onClick={acceptRewrite}
+                style={{ fontSize: 12, padding: "8px 20px", fontWeight: 700 }}
+              >
+                Accept Rewrite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Prose right-click context menu ── */}
       {proseCtx && !proseCtxBusy && (
