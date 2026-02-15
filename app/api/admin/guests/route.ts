@@ -82,11 +82,11 @@ export async function POST(request: Request) {
     let user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
 
     if (!user) {
-      // Create the user with a default password they can reset
+      // Create the user with a default password they must change on first login
       const defaultPassword = body.password?.trim() || "blocwrite123";
       const passwordHash = await bcrypt.hash(defaultPassword, 12);
       user = await prisma.user.create({
-        data: { email, passwordHash },
+        data: { email, passwordHash, mustChangePassword: true },
         select: { id: true },
       });
     }

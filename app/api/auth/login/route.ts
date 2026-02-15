@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     // ── 2. Regular user login (Prisma lookup) ──
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, passwordHash: true, sessionNonce: true },
+      select: { id: true, passwordHash: true, sessionNonce: true, mustChangePassword: true },
     });
 
     if (!user || !user.passwordHash) {
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     const hasSub = await hasActiveSubscription(normalizedEmail);
     const redirectTo = hasSub ? "/studio" : "/subscribe";
 
-    const response = NextResponse.json({ ok: true, redirectTo });
+    const response = NextResponse.json({ ok: true, redirectTo, mustChangePassword: !!user.mustChangePassword });
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

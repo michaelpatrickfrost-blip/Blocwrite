@@ -15234,25 +15234,47 @@ function NovelWorkspacePage() {
         if (!step) return null;
         const isFirst = tutorialStep === 0;
         const isLast = tutorialStep === TUTORIAL_STEPS.length - 1;
-        const pad = 8;
-        const cardW = 320;
-        const cardH = 280;
-        let cardStyle: React.CSSProperties = {};
+        const pad = 10;
+        const cardW = 340;
+        const margin = 12;
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+
+        const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(val, max));
+
+        let cardTop = vh / 2 - 150;
+        let cardLeft = vw / 2 - cardW / 2;
+        let centered = true;
+
         if (tutorialRect) {
-          const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
-          const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-          if (vw - tutorialRect.left - tutorialRect.width > cardW + 24) {
-            cardStyle = { top: Math.max(16, Math.min(tutorialRect.top, vh - cardH - 16)), left: tutorialRect.left + tutorialRect.width + 16 };
-          } else if (tutorialRect.left > cardW + 24) {
-            cardStyle = { top: Math.max(16, Math.min(tutorialRect.top, vh - cardH - 16)), left: tutorialRect.left - cardW - 16 };
-          } else if (vh - tutorialRect.top - tutorialRect.height > cardH + 24) {
-            cardStyle = { top: tutorialRect.top + tutorialRect.height + 16, left: Math.max(16, Math.min(tutorialRect.left, vw - cardW - 16)) };
+          centered = false;
+          const r = tutorialRect;
+          const spaceRight = vw - r.left - r.width;
+          const spaceLeft = r.left;
+          const spaceBelow = vh - r.top - r.height;
+
+          if (spaceRight > cardW + 24) {
+            cardLeft = r.left + r.width + 18;
+            cardTop = r.top;
+          } else if (spaceLeft > cardW + 24) {
+            cardLeft = r.left - cardW - 18;
+            cardTop = r.top;
+          } else if (spaceBelow > 200) {
+            cardTop = r.top + r.height + 18;
+            cardLeft = r.left + r.width / 2 - cardW / 2;
           } else {
-            cardStyle = { top: Math.max(16, tutorialRect.top - cardH - 16), left: Math.max(16, Math.min(tutorialRect.left, vw - cardW - 16)) };
+            cardTop = r.top - 300;
+            cardLeft = r.left + r.width / 2 - cardW / 2;
           }
-        } else {
-          cardStyle = { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+
+          cardLeft = clamp(cardLeft, margin, vw - cardW - margin);
+          cardTop = clamp(cardTop, margin, vh - 120);
         }
+
+        const cardStyle: React.CSSProperties = centered
+          ? { top: "50%", left: "50%", transform: "translate(-50%, -50%)" }
+          : { top: cardTop, left: cardLeft };
+
         return (
           <div className="pw-tutorial-overlay" onClick={completeTutorial}>
             {tutorialRect && (
@@ -15273,13 +15295,13 @@ function NovelWorkspacePage() {
                 ))}
               </div>
               <div className="pw-tutorial-actions">
-                <button type="button" className="pw-tutorial-skip" onClick={completeTutorial}>Skip</button>
-                <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" className="pw-tutorial-skip" onClick={completeTutorial}>Skip tutorial</button>
+                <div style={{ display: "flex", gap: 8 }}>
                   {!isFirst && (
                     <button type="button" className="pw-tutorial-back" onClick={() => setTutorialStep((s) => s - 1)}>Back</button>
                   )}
                   <button type="button" className="pw-tutorial-next" onClick={() => isLast ? completeTutorial() : setTutorialStep((s) => s + 1)}>
-                    {isLast ? "Finish" : "Next"}
+                    {isLast ? "Finish" : "Next \u2192"}
                   </button>
                 </div>
               </div>
