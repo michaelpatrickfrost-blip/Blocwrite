@@ -889,8 +889,7 @@ function NovelWorkspacePage() {
   const [editorError, setEditorError] = useState<string | null>(null);
   const [editorOriginalParagraphs, setEditorOriginalParagraphs] = useState<string[]>([]);
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
-  const [pendingNovelArchive, setPendingNovelArchive] = useState(false);
-  const [pendingNovelDelete, setPendingNovelDelete] = useState(false);
+  // Novel archive/delete is handled from the studio dashboard only
   const [regenConfirm, setRegenConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   // ── Chat (Characters + Co-Author) ──
   const [charChatOpen, setCharChatOpen] = useState(false);
@@ -10453,35 +10452,6 @@ function NovelWorkspacePage() {
                 </div>
               </div>
 
-              {/* ── Novel Management ── */}
-              <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr", marginTop: 16 }}>
-                <div className="pw-overview-card" style={{ borderColor: "rgba(239,68,68,0.15)" }}>
-                  <div className="pw-overview-card-head">
-                    <div>
-                      <h3 style={{ color: "var(--pw-text-dim)" }}>Novel Management</h3>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 10, padding: "12px 0 4px", flexWrap: "wrap" }}>
-                    <button type="button" onClick={() => setPendingNovelArchive(true)} style={{
-                      padding: "8px 16px", fontSize: 12, fontWeight: 600, borderRadius: 8,
-                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)",
-                      border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
-                      color: "var(--pw-text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
-                      Archive Novel
-                    </button>
-                    <button type="button" onClick={() => setPendingNovelDelete(true)} style={{
-                      padding: "8px 16px", fontSize: 12, fontWeight: 600, borderRadius: 8,
-                      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)",
-                      color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                      Delete Novel
-                    </button>
-                  </div>
-                </div>
-              </div>
 
             </div>
           )}
@@ -10505,58 +10475,7 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Archive confirmation modal ── */}
-      {pendingNovelArchive && novel && (
-        <div className="pw-modal-overlay" onClick={() => setPendingNovelArchive(false)}>
-          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, textAlign: "center" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>Archive &ldquo;{novel.title}&rdquo;?</div>
-            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>
-              This novel will be moved to your archive on the dashboard. You can restore it at any time.
-            </p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setPendingNovelArchive(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={() => {
-                updateNovel({ archived: true });
-                saveNow();
-                setPendingNovelArchive(false);
-                router.push("/studio");
-              }}>
-                Archive
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Permanent delete confirmation modal ── */}
-      {pendingNovelDelete && novel && (
-        <div className="pw-modal-overlay" onClick={() => setPendingNovelDelete(false)}>
-          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, textAlign: "center" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>Permanently delete?</div>
-            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>
-              This will <strong>permanently delete</strong> &ldquo;{novel.title}&rdquo; and all its chapters, characters, and content. This cannot be undone.
-            </p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setPendingNovelDelete(false)}>Cancel</button>
-              <button type="button" className="btn pw-danger-btn" onClick={() => {
-                const remaining = novels.filter((n) => n.id !== novel.id);
-                saveNovels(remaining);
-                flushServerSave();
-                setPendingNovelDelete(false);
-                router.push("/studio");
-              }}>
-                Yes, delete permanently
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Novel management (archive/delete) is handled from the studio dashboard */}
 
       {/* Old overview editor removed — now unified inside showEditorModal block */}
 
