@@ -5603,6 +5603,84 @@ function NovelWorkspacePage() {
     flushServerSave();
   }
 
+  // ── Manuscript Health Score ──
+  const [healthScoreBusy, setHealthScoreBusy] = useState(false);
+
+  async function generateHealthScore() {
+    if (!novel || !ensureStoryAiReady()) return;
+    setHealthScoreBusy(true);
+
+    // Collect prose samples from across the novel
+    const allProse = novel.chapters.map((ch) => extractProseFromContent(ch.content)).filter(Boolean);
+    if (allProse.length === 0) { setHealthScoreBusy(false); return; }
+
+    // Take samples from start, middle, and end to give a balanced assessment
+    const sampleSize = 2000;
+    const samples: string[] = [];
+    if (allProse.length === 1) {
+      samples.push(allProse[0].slice(0, sampleSize * 2));
+    } else {
+      samples.push(allProse[0].slice(0, sampleSize)); // first chapter
+      const midIdx = Math.floor(allProse.length / 2);
+      samples.push(allProse[midIdx].slice(0, sampleSize)); // middle chapter
+      samples.push(allProse[allProse.length - 1].slice(0, sampleSize)); // last chapter
+    }
+
+    const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
+    const totalWords = countNovelWords(novel);
+
+    const systemMsg = [
+      `You are a professional manuscript assessor evaluating a ${novelGenre} novel (${totalWords.toLocaleString()} words, ${novel.chapters.length} chapters).`,
+      `Score each category from 1 to 10 (10 = publishable quality). Be honest but constructive.`,
+      `Return ONLY valid JSON, nothing else.`,
+    ].join(" ");
+
+    const prompt = [
+      `Assess this manuscript based on prose samples from beginning, middle, and end.`,
+      ``,
+      `PROSE SAMPLES:`,
+      ...samples.map((s, i) => `--- Sample ${i + 1} ---\n${s}\n`),
+      ``,
+      `Score each category 1-10:`,
+      `- pacing: How well does the story flow? Are scenes the right length? Does momentum build?`,
+      `- dialogue: Does dialogue sound natural? Is it distinct per character? Does it advance plot?`,
+      `- clarity: Is the writing clear? Can the reader follow what's happening?`,
+      `- engagement: Does the prose pull the reader in? Would they want to keep reading?`,
+      ``,
+      `Also provide 3-5 specific, actionable tips to improve the manuscript.`,
+      ``,
+      `Return ONLY this JSON format:`,
+      `{"pacing":7,"dialogue":6,"clarity":8,"engagement":7,"tips":["Tip 1","Tip 2","Tip 3"]}`,
+    ].join("\n");
+
+    try {
+      const data = await requestOpenRouterJson<{
+        pacing?: number; dialogue?: number; clarity?: number; engagement?: number;
+        tips?: string[];
+      }>(prompt, 400, { timeoutMs: 120000, systemMessage: systemMsg });
+
+      if (!data) { setHealthScoreBusy(false); return; }
+
+      const clamp = (v: unknown) => Math.max(1, Math.min(10, Math.round(Number(v) || 5)));
+      const pacing = clamp(data.pacing);
+      const dialogue = clamp(data.dialogue);
+      const clarity = clamp(data.clarity);
+      const engagement = clamp(data.engagement);
+      const overall = Math.round((pacing + dialogue + clarity + engagement) / 4);
+      const tips = Array.isArray(data.tips)
+        ? data.tips.filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 5)
+        : [];
+
+      updateNovel({
+        healthScore: { pacing, dialogue, clarity, engagement, overall, tips, generatedAt: new Date().toISOString() },
+      });
+    } catch (err) {
+      console.error("Health score generation failed:", err);
+    } finally {
+      setHealthScoreBusy(false);
+    }
+  }
+
   function mutateNovel(mutator: (current: Novel) => Novel, options?: { skipSync?: boolean }) {
     if (!novelId) return;
     setNovels((current) => {
@@ -8696,6 +8774,150 @@ function NovelWorkspacePage() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Manuscript Health Score ── */}
+              <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
+                <div className="pw-overview-card">
+                  <div className="pw-overview-card-head">
+                    <div>
+                      <h3>Manuscript Health</h3>
+                      <p className="pw-overview-sub">AI-powered publishing readiness assessment</p>
+                    </div>
+                    <button
+                      type="button"
+                      className={novel.healthScore ? "btn" : "btn btn-primary"}
+                      disabled={healthScoreBusy || aiOff || totalWords < 100}
+                      onClick={() => void generateHealthScore()}
+                      style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+                      title={aiOff ? "Enable AI in settings to use this feature" : totalWords < 100 ? "Write at least 100 words first" : "Generate health report"}
+                    >
+                      {healthScoreBusy ? (
+                        <>
+                          <span style={{
+                            width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)",
+                            borderTopColor: "#fff", borderRadius: "50%",
+                            animation: "spin 0.7s linear infinite", display: "inline-block",
+                          }} />
+                          Analysing...
+                        </>
+                      ) : novel.healthScore ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                          Regenerate
+                        </>
+                      ) : "Run Assessment"}
+                    </button>
+                  </div>
+
+                  {novel.healthScore ? (() => {
+                    const hs = novel.healthScore;
+                    const scoreColor = (v: number) =>
+                      v >= 8 ? "#22c55e" : v >= 6 ? "#a3e635" : v >= 4 ? "#f59e0b" : "#ef4444";
+                    const scoreLabel = (v: number) =>
+                      v >= 9 ? "Excellent" : v >= 7 ? "Good" : v >= 5 ? "Fair" : v >= 3 ? "Needs work" : "Weak";
+                    const categories = [
+                      { label: "Pacing", value: hs.pacing, desc: "Scene flow and momentum" },
+                      { label: "Dialogue", value: hs.dialogue, desc: "Natural, distinct speech" },
+                      { label: "Clarity", value: hs.clarity, desc: "Readability and coherence" },
+                      { label: "Engagement", value: hs.engagement, desc: "Reader pull and hook" },
+                    ];
+                    return (
+                      <>
+                        {/* Overall score */}
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: 16, padding: "16px 0 12px",
+                          borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
+                        }}>
+                          <div style={{
+                            width: 56, height: 56, borderRadius: "50%",
+                            border: `3px solid ${scoreColor(hs.overall)}`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            flexShrink: 0,
+                          }}>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: scoreColor(hs.overall) }}>
+                              {hs.overall}
+                            </span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>
+                              {scoreLabel(hs.overall)} — {hs.overall}/10
+                            </div>
+                            <div style={{ fontSize: 11, opacity: 0.45, marginTop: 2 }}>
+                              Last assessed {new Date(hs.generatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Category scores */}
+                        <div style={{
+                          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10,
+                          padding: "14px 0",
+                        }}>
+                          {categories.map((cat) => (
+                            <div key={cat.label} style={{
+                              padding: "10px 12px", borderRadius: 8,
+                              background: "var(--pw-surface-alt, #161616)",
+                              border: "1px solid var(--pw-border-light, #2a2a2a)",
+                            }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600 }}>{cat.label}</span>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: scoreColor(cat.value) }}>
+                                  {cat.value}/10
+                                </span>
+                              </div>
+                              {/* Score bar */}
+                              <div style={{
+                                height: 4, borderRadius: 2, background: "var(--pw-border, #333)",
+                                overflow: "hidden",
+                              }}>
+                                <div style={{
+                                  height: "100%", borderRadius: 2, width: `${cat.value * 10}%`,
+                                  background: scoreColor(cat.value),
+                                  transition: "width 0.3s ease-out",
+                                }} />
+                              </div>
+                              <div style={{ fontSize: 10, opacity: 0.4, marginTop: 4 }}>{cat.desc}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Tips */}
+                        {hs.tips.length > 0 && (
+                          <div style={{
+                            padding: "12px 14px", borderRadius: 8, marginTop: 2,
+                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)",
+                            border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                          }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent, #a3e635)" }}>
+                              Actionable Tips
+                            </div>
+                            <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: 12, lineHeight: 1.7, opacity: 0.8 }}>
+                              {hs.tips.map((tip, i) => (
+                                <li key={i} style={{ marginBottom: 4 }}>{tip}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })() : (
+                    <div style={{ textAlign: "center", padding: "28px 16px", opacity: 0.35 }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block" }}>
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                      </svg>
+                      <p style={{ fontSize: 13, margin: "0 0 4px" }}>No health score yet</p>
+                      <p style={{ fontSize: 11, maxWidth: 280, margin: "0 auto", lineHeight: 1.5 }}>
+                        {aiOff
+                          ? "Enable AI in settings to run the manuscript assessment."
+                          : totalWords < 100
+                          ? "Write at least 100 words to run the assessment."
+                          : "Click \"Run Assessment\" to get your manuscript health report."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           )}
         </section>

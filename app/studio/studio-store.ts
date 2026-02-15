@@ -198,6 +198,17 @@ export type StoryBible = {
   updatedAt: string;
 };
 
+/** Manuscript health score — AI-generated publishing readiness report */
+export type ManuscriptHealthScore = {
+  pacing: number;        // 1–10
+  dialogue: number;      // 1–10
+  clarity: number;       // 1–10
+  engagement: number;    // 1–10
+  overall: number;       // 1–10 (average)
+  tips: string[];        // actionable edits (max 5)
+  generatedAt: string;   // ISO timestamp
+};
+
 export type Novel = {
   id: string;
   title: string;
@@ -210,6 +221,7 @@ export type Novel = {
   createdAt: string;
   updatedAt: string;
   archived?: boolean;
+  healthScore?: ManuscriptHealthScore | null;
 };
 
 // ─── User-scoped localStorage keys ────────────────────────────────────────────

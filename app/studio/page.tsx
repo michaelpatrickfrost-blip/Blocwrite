@@ -432,6 +432,22 @@ function StudioHomePage() {
                       {!novel.coverImage && (
                         <span className="pw-novel-cover-empty">{(novel.title || "N").charAt(0).toUpperCase()}</span>
                       )}
+                      {novel.healthScore && (
+                        <div
+                          title={`Health: ${novel.healthScore.overall}/10`}
+                          style={{
+                            position: "absolute", bottom: 6, right: 6,
+                            width: 26, height: 26, borderRadius: "50%",
+                            background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
+                            border: `2px solid ${novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#a3e635" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444"}`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 10, fontWeight: 800,
+                            color: novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#a3e635" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444",
+                          }}
+                        >
+                          {novel.healthScore.overall}
+                        </div>
+                      )}
                     </div>
 
                     <div className="pw-novel-card-label">
@@ -524,6 +540,49 @@ function StudioHomePage() {
                             </span>
                           </div>
                         )}
+
+                        {/* Manuscript Health Score */}
+                        {hoveredNovel.healthScore && (() => {
+                          const hs = hoveredNovel.healthScore;
+                          const scoreColor = (v: number) =>
+                            v >= 8 ? "#22c55e" : v >= 6 ? "#a3e635" : v >= 4 ? "#f59e0b" : "#ef4444";
+                          return (
+                            <div className="pw-novel-detail-stat pw-novel-detail-stat-wide" style={{ marginTop: 4 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                                <div style={{
+                                  width: 32, height: 32, borderRadius: "50%",
+                                  border: `2.5px solid ${scoreColor(hs.overall)}`,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  flexShrink: 0,
+                                }}>
+                                  <span style={{ fontSize: 13, fontWeight: 800, color: scoreColor(hs.overall) }}>
+                                    {hs.overall}
+                                  </span>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <span className="pw-novel-detail-stat-label" style={{ fontWeight: 600 }}>
+                                    Manuscript Health
+                                  </span>
+                                </div>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                                {([
+                                  { label: "Pace", value: hs.pacing },
+                                  { label: "Dialogue", value: hs.dialogue },
+                                  { label: "Clarity", value: hs.clarity },
+                                  { label: "Hook", value: hs.engagement },
+                                ]).map((cat) => (
+                                  <div key={cat.label} style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: scoreColor(cat.value) }}>
+                                      {cat.value}
+                                    </div>
+                                    <div style={{ fontSize: 9, opacity: 0.4 }}>{cat.label}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </>
                   );
