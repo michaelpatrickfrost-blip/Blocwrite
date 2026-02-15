@@ -898,6 +898,8 @@ function NovelWorkspacePage() {
   const [coAuthorMode, setCoAuthorMode] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
   const [charChatPickerOpen, setCharChatPickerOpen] = useState(false);
+  const chatOpenedAt = useRef<number>(0); // timestamp when current chat session started
+  const [chatIsStale, setChatIsStale] = useState(false); // true if reopening an old chat (>5 min)
   // Chat review system
   type ChatRecommendation = {
     id: string;
@@ -935,6 +937,16 @@ function NovelWorkspacePage() {
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [charChatMessages, charChatLoading]);
+  // Auto-clear stale chats (older than 5 minutes) when reopening
+  useEffect(() => {
+    if (!charChatOpen) return;
+    const elapsed = Date.now() - chatOpenedAt.current;
+    if (elapsed > 5 * 60 * 1000 && charChatMessages.length > 0) {
+      setCharChatMessages([]);
+      setChatIsStale(false);
+      chatOpenedAt.current = Date.now();
+    }
+  }, [charChatOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<AssistantProviderId>(() => getStoredProvider());
@@ -1955,6 +1967,11 @@ function NovelWorkspacePage() {
       }).filter(Boolean);
       if (relLines.length) parts.push(`Key relationships: ${relLines.join("; ")}`);
     }
+    // If character has almost no profile, encourage discovery
+    const hasDetail = !!(char.personality || char.backstory || char.goals || char.fears || char.speakingStyle || char.logline);
+    if (!hasDetail) {
+      parts.push(`This character's profile is mostly blank — the author is discovering who you are through conversation. Be creative. Invent details about yourself that feel authentic for the story. Let your personality emerge naturally.`);
+    }
     parts.push(`Keep responses concise and natural — like real dialogue, not essays. Show personality through word choice, rhythm, and attitude.`);
     return parts.join("\n\n");
   }
@@ -2009,6 +2026,18 @@ function NovelWorkspacePage() {
   }
 
   function openCharacterChat(char: Character) {
+    const isSameChat = !coAuthorMode && charChatTarget?.id === char.id;
+    const elapsed = Date.now() - chatOpenedAt.current;
+    const stale = elapsed > 5 * 60 * 1000; // 5 minutes
+
+    if (isSameChat && !stale && charChatMessages.length > 0) {
+      // Reopen existing chat — mark stale so End & Review won't apply changes
+      setChatIsStale(true);
+      setCharChatOpen(true);
+      return;
+    }
+
+    // Fresh chat
     setCoAuthorMode(false);
     setCharChatTarget(char);
     setCharChatMessages([]);
@@ -2016,10 +2045,22 @@ function NovelWorkspacePage() {
     setCharChatLoading(false);
     setCharChatReviewDone(false);
     setCharChatRecommendations([]);
+    setChatIsStale(false);
+    chatOpenedAt.current = Date.now();
     setCharChatOpen(true);
   }
 
   function openCoAuthorChat() {
+    const isSameChat = coAuthorMode;
+    const elapsed = Date.now() - chatOpenedAt.current;
+    const stale = elapsed > 5 * 60 * 1000;
+
+    if (isSameChat && !stale && charChatMessages.length > 0) {
+      setChatIsStale(true);
+      setCharChatOpen(true);
+      return;
+    }
+
     setCoAuthorMode(true);
     setCharChatTarget(null);
     setCharChatMessages([]);
@@ -2027,6 +2068,8 @@ function NovelWorkspacePage() {
     setCharChatLoading(false);
     setCharChatReviewDone(false);
     setCharChatRecommendations([]);
+    setChatIsStale(false);
+    chatOpenedAt.current = Date.now();
     setCharChatOpen(true);
   }
 
@@ -14089,7 +14132,7 @@ function NovelWorkspacePage() {
 
       {/* ── Chat Modal (Co-Author + Character) ── */}
       {charChatOpen && (coAuthorMode || charChatTarget) && (
-        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCoAuthorMode(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
+        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); saveNow(); }}>
           <div className="pw-chat-modal" style={{
             maxWidth: charChatReviewDone && !coAuthorMode ? 820 : 520,
             flexDirection: charChatReviewDone && !coAuthorMode ? "row" : "column",
@@ -14121,8 +14164,8 @@ function NovelWorkspacePage() {
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                  {/* End & Review (character chat only) */}
-                  {!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && (
+                  {/* End & Review (character chat only, not for stale/resumed chats) */}
+                  {!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && !chatIsStale && (
                     <button type="button" disabled={charChatReviewing}
                       onClick={() => void endChatAndReview()}
                       style={{
@@ -14140,51 +14183,7 @@ function NovelWorkspacePage() {
                       )}
                     </button>
                   )}
-                  {/* Switch chat target dropdown */}
-                  {!charChatReviewDone && (
-                    <div style={{ position: "relative" }}>
-                      <button type="button" onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
-                        className="pw-chat-switch-btn"
-                        title="Switch"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-                      </button>
-                      {charChatPickerOpen && (
-                        <>
-                          <div style={{ position: "fixed", inset: 0, zIndex: 100 }} onClick={() => setCharChatPickerOpen(false)} />
-                          <div ref={(el) => {
-                            if (!el) return;
-                            const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
-                            if (trigger) positionDropdown(trigger, el);
-                          }} className="pw-chat-switch-dropdown">
-                            {/* Co-Author option */}
-                            {!coAuthorMode && (
-                              <button type="button"
-                                onClick={() => { setCharChatPickerOpen(false); openCoAuthorChat(); }}
-                                className="pw-chat-switch-item"
-                              >
-                                <div style={{ width: 24, height: 24, borderRadius: 7, background: "rgba(var(--pw-accent-rgb,163,230,53),0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                </div>
-                                <span style={{ fontWeight: 700 }}>The Co-Author</span>
-                              </button>
-                            )}
-                            {/* Characters */}
-                            {storyCharacters.filter(c => !charChatTarget || c.id !== charChatTarget.id).map((char) => (
-                              <button key={char.id} type="button"
-                                onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
-                                className="pw-chat-switch-item"
-                              >
-                                <div style={{ width: 24, height: 24, borderRadius: 7, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent)" }}>{char.name.charAt(0).toUpperCase()}</div>
-                                <span>{char.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  <button type="button" onClick={() => { setCharChatOpen(false); setCoAuthorMode(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }} style={{
+                  <button type="button" onClick={() => { setCharChatOpen(false); saveNow(); }} style={{
                     background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                     width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                     color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
@@ -14647,7 +14646,7 @@ function NovelWorkspacePage() {
                     <div className="pw-chat-fab-picker-avatar">{char.name.charAt(0).toUpperCase()}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{char.name}</div>
-                      <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{char.role}</div>
+                      {char.role && <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{char.role}</div>}
                     </div>
                   </button>
                 ))}
