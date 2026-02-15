@@ -659,7 +659,7 @@ function StudioHomePage() {
                             onClick={() => restoreNovel(novel.id)}
                             style={{
                               flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                              background: "var(--pw-accent)", color: "#111", border: "none", cursor: "pointer",
+                              background: "var(--pw-accent)", color: "#fff", border: "none", cursor: "pointer",
                             }}
                           >
                             Restore
