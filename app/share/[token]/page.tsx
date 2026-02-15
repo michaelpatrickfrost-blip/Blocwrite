@@ -33,9 +33,9 @@ type ShareData = {
 };
 
 const TYPE_META: Record<AnnotationType, { label: string; color: string; bg: string; border: string; lightBg: string }> = {
-  comment:    { label: "Comment",    color: "#525252", bg: "rgba(82,82,82,0.08)",  border: "rgba(82,82,82,0.15)",   lightBg: "#fafafa" },
-  suggestion: { label: "Suggestion", color: "#16a34a", bg: "rgba(22,163,74,0.08)", border: "rgba(22,163,74,0.15)",  lightBg: "#f0fdf4" },
-  issue:      { label: "Issue",      color: "#dc2626", bg: "rgba(220,38,38,0.08)", border: "rgba(220,38,38,0.15)",  lightBg: "#fef2f2" },
+  comment:    { label: "Comment",    color: "#475569", bg: "rgba(71,85,105,0.08)",  border: "rgba(71,85,105,0.18)",  lightBg: "#f8fafc" },
+  suggestion: { label: "Suggestion", color: "#059669", bg: "rgba(5,150,105,0.08)",  border: "rgba(5,150,105,0.18)",  lightBg: "#ecfdf5" },
+  issue:      { label: "Issue",      color: "#dc2626", bg: "rgba(220,38,38,0.06)",  border: "rgba(220,38,38,0.15)",  lightBg: "#fef2f2" },
 };
 
 export default function ShareReaderPage() {
@@ -66,6 +66,9 @@ export default function ShareReaderPage() {
   const [noteType, setNoteType] = useState<AnnotationType>("comment");
   const contentRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+
+  // Sidebar collapsed on mobile
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   function loadShareData(d: ShareData) {
     setData(d);
@@ -114,6 +117,7 @@ export default function ShareReaderPage() {
 
   const activeChapter = data?.chapters?.[activeChapterIdx] ?? null;
   const hasChapters = data && data.chapters && data.chapters.length > 0;
+  const multipleChapters = data && data.chapters && data.chapters.length > 1;
 
   const handleMouseUp = useCallback(() => {
     if (submitted) return;
@@ -149,10 +153,9 @@ export default function ShareReaderPage() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Close popup on Escape
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSelPopup(null);
+      if (e.key === "Escape") { setSelPopup(null); setSidebarOpen(false); }
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
@@ -197,7 +200,7 @@ export default function ShareReaderPage() {
   function renderHighlightedContent(content: string, anns: Annotation[]) {
     if (anns.length === 0) {
       return content.split("\n\n").map((para, i) => (
-        <p key={i} style={{ marginBottom: 22, lineHeight: 1.9 }}>{para || "\u00A0"}</p>
+        <p key={i} style={{ marginBottom: 24, lineHeight: 1.9 }}>{para || "\u00A0"}</p>
       ));
     }
     const sorted = [...anns].sort((a, b) => a.startOffset - b.startOffset);
@@ -224,49 +227,42 @@ export default function ShareReaderPage() {
 
   const daysRemaining = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
 
-  /* ── Shared styles ── */
-  const closeBtnStyle: React.CSSProperties = {
-    background: "none", border: "none", cursor: "pointer",
-    width: 28, height: 28, borderRadius: 8,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    color: "#94a3b8", transition: "all 0.12s",
-  };
-
   /* ── Full-page states ── */
 
   if (loading) return (
     <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28, marginBottom: 20, opacity: 0.15 }} />
       <div style={S.spinner} />
-      <p style={{ color: "#94a3b8", marginTop: 14, fontSize: 13 }}>Loading shared content...</p>
+      <p style={{ color: "#64748b", marginTop: 16, fontSize: 14, fontWeight: 500 }}>Loading manuscript...</p>
     </div>
   );
 
   if (error) return (
     <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28, marginBottom: 24, opacity: 0.15 }} />
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e293b", marginTop: 14 }}>Link Unavailable</h2>
-      <p style={{ color: "#64748b", marginTop: 6, maxWidth: 340, textAlign: "center", lineHeight: 1.6, fontSize: 14 }}>{error}</p>
-      <a href="/" style={{ marginTop: 20, fontSize: 13, color: "#94a3b8", textDecoration: "none" }}>← Back to Blocwrite</a>
+      <div style={S.iconCircle}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+      </div>
+      <h2 style={S.title}>Link Unavailable</h2>
+      <p style={S.subtitle}>{error}</p>
+      <a href="/" style={S.backLink}>Back to Blocwrite</a>
     </div>
   );
 
   if (requiresPassword) return (
     <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28, marginBottom: 28, opacity: 0.15 }} />
       <div style={{
-        background: "#fff", borderRadius: 16, padding: "36px 32px", width: "100%", maxWidth: 380,
-        boxShadow: "0 8px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)",
+        background: "#fff", borderRadius: 20, padding: "40px 36px", width: "100%", maxWidth: 400,
+        boxShadow: "0 20px 60px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.03)",
       }}>
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" style={{ marginBottom: 12 }}>
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e293b", marginBottom: 6 }}>Password Protected</h2>
-          <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-            This content requires a password to view.
-            {daysRemaining !== null && <><br/>Link expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}.</>}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ ...S.iconCircle, margin: "0 auto 16px" }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="1.5" strokeLinecap="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Password Protected</h2>
+          <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>
+            Enter the password to read this manuscript.
+            {daysRemaining !== null && <><br/><span style={{ fontSize: 13 }}>Link expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}.</span></>}
           </p>
         </div>
         <div>
@@ -276,85 +272,123 @@ export default function ShareReaderPage() {
             onKeyDown={(e) => { if (e.key === "Enter") handlePasswordSubmit(); }}
             autoFocus
             style={{
-              width: "100%", padding: "12px 14px", fontSize: 14, borderRadius: 10,
-              border: passwordError ? "1.5px solid #ef4444" : "1px solid #e2e8f0",
-              background: "#f8fafc", color: "#1e293b", fontFamily: "inherit", outline: "none",
-              boxSizing: "border-box",
+              width: "100%", padding: "13px 16px", fontSize: 15, borderRadius: 12,
+              border: passwordError ? "2px solid #ef4444" : "1.5px solid #e2e8f0",
+              background: "#f8fafc", color: "#0f172a", fontFamily: "inherit", outline: "none",
+              boxSizing: "border-box", transition: "border-color 0.15s",
             }}
           />
-          {passwordError && <p style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>{passwordError}</p>}
+          {passwordError && <p style={{ fontSize: 13, color: "#ef4444", marginTop: 8 }}>{passwordError}</p>}
           <button onClick={handlePasswordSubmit} disabled={passwordLoading || !passwordInput.trim()} style={{
-            width: "100%", marginTop: 12, padding: "12px 0", fontSize: 14, fontWeight: 600,
-            borderRadius: 10, border: "none", cursor: passwordInput.trim() ? "pointer" : "default",
-            background: passwordInput.trim() ? "#1e293b" : "#e2e8f0",
+            width: "100%", marginTop: 14, padding: "13px 0", fontSize: 15, fontWeight: 600,
+            borderRadius: 12, border: "none", cursor: passwordInput.trim() ? "pointer" : "default",
+            background: passwordInput.trim() ? "#0f172a" : "#e2e8f0",
             color: passwordInput.trim() ? "#fff" : "#94a3b8",
-            opacity: passwordLoading ? 0.6 : 1, transition: "all 0.15s",
+            opacity: passwordLoading ? 0.6 : 1, transition: "all 0.2s",
+            fontFamily: "inherit",
           }}>
             {passwordLoading ? "Verifying..." : "Unlock"}
           </button>
         </div>
       </div>
-      <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 24 }}>Shared via Blocwrite</p>
+      <a href="/" style={{ ...S.backLink, marginTop: 28 }}>Back to Blocwrite</a>
     </div>
   );
 
   if (submitted) return (
     <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28, marginBottom: 24, opacity: 0.15 }} />
-      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" strokeOpacity="0.3"/><polyline points="20 6 9 17 4 12"/></svg>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e293b", marginTop: 14 }}>Feedback Submitted</h2>
-      <p style={{ color: "#64748b", marginTop: 6, maxWidth: 380, textAlign: "center", lineHeight: 1.6, fontSize: 14 }}>
+      <div style={{ ...S.iconCircle, background: "#ecfdf5", border: "1px solid #d1fae5" }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h2 style={S.title}>Feedback Submitted</h2>
+      <p style={S.subtitle}>
         Thank you{readerName ? `, ${readerName}` : ""}! Your notes have been sent to the author.
       </p>
+      <a href="/" style={S.backLink}>Back to Blocwrite</a>
     </div>
   );
 
   /* ── No chapters shared ── */
   if (!data || !hasChapters) return (
     <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28, marginBottom: 24, opacity: 0.15 }} />
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-      </svg>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1e293b", marginTop: 14 }}>No Chapters Available</h2>
-      <p style={{ color: "#64748b", marginTop: 6, maxWidth: 360, textAlign: "center", lineHeight: 1.6, fontSize: 14 }}>
-        The author hasn&apos;t shared any chapters with this link yet. Check back later or contact them for an updated link.
+      <div style={S.iconCircle}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+      </div>
+      <h2 style={S.title}>No Chapters Available</h2>
+      <p style={S.subtitle}>
+        The author hasn&apos;t shared any chapters with this link yet.<br/>Check back later or contact them for an updated link.
       </p>
       {daysRemaining !== null && (
-        <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 12 }}>
-          This link expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}.
+        <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 8 }}>
+          Link expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}.
         </p>
       )}
-      <a href="/" style={{ marginTop: 20, fontSize: 13, color: "#94a3b8", textDecoration: "none" }}>← Back to Blocwrite</a>
+      <a href="/" style={S.backLink}>Back to Blocwrite</a>
     </div>
   );
 
+  /* ── Main reader UI ── */
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#1e293b", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+    <div style={{
+      minHeight: "100vh",
+      background: "#f8fafc",
+      color: "#1e293b",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    }}>
+      {/* Inline keyframes */}
+      <style>{`
+        @keyframes shareSpin { to { transform: rotate(360deg); } }
+        @keyframes shareSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
 
       {/* ── Top bar ── */}
       <header style={{
         position: "sticky", top: 0, zIndex: 100,
-        background: "rgba(255,255,255,0.92)", backdropFilter: "blur(16px)",
-        borderBottom: "1px solid #e2e8f0",
+        background: "rgba(255,255,255,0.88)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        borderBottom: "1px solid rgba(0,0,0,0.06)",
       }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 20, opacity: 0.15, flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 500, flexShrink: 0 }}>Shared for feedback</span>
+        <div style={{
+          maxWidth: 1100, margin: "0 auto", padding: "0 24px",
+          height: 56, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <img src="/blocwrite-logo-dark.png" alt="Blocwrite" style={{ height: 18, opacity: 0.7, flexShrink: 0 }} />
+            <div style={{ width: 1, height: 16, background: "#e2e8f0", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500, flexShrink: 0 }}>Shared manuscript</span>
             {daysRemaining !== null && (
               <span style={{
-                fontSize: 11, flexShrink: 0,
-                color: daysRemaining <= 3 ? "#ea580c" : "#94a3b8",
-                fontWeight: daysRemaining <= 3 ? 600 : 400,
+                fontSize: 11, flexShrink: 0, padding: "3px 8px", borderRadius: 6,
+                background: daysRemaining <= 3 ? "#fef2f2" : "#f1f5f9",
+                color: daysRemaining <= 3 ? "#dc2626" : "#64748b",
+                fontWeight: 600,
               }}>
-                · {daysRemaining}d left
+                {daysRemaining}d left
               </span>
             )}
+            {/* Mobile chapter toggle */}
+            {multipleChapters && (
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                style={{
+                  display: "none", padding: "5px 10px", borderRadius: 8,
+                  border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer",
+                  fontSize: 12, fontWeight: 600, color: "#475569", fontFamily: "inherit",
+                }}
+                className="share-sidebar-toggle"
+              >
+                Ch. {activeChapterIdx + 1}
+              </button>
+            )}
           </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             {annotations.length > 0 && (
-              <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+              <span style={{
+                fontSize: 12, color: "#475569", fontWeight: 600,
+                padding: "4px 10px", borderRadius: 8, background: "#f1f5f9",
+              }}>
                 {annotations.length} note{annotations.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -362,19 +396,22 @@ export default function ShareReaderPage() {
               type="text" placeholder="Your name (optional)" value={readerName}
               onChange={(e) => setReaderName(e.target.value)}
               style={{
-                fontSize: 13, padding: "7px 12px", borderRadius: 8,
-                border: "1px solid #e2e8f0", background: "#fff",
-                color: "#1e293b", width: 150, outline: "none", fontFamily: "inherit",
+                fontSize: 13, padding: "8px 12px", borderRadius: 10,
+                border: "1.5px solid #e2e8f0", background: "#fff",
+                color: "#0f172a", width: 160, outline: "none", fontFamily: "inherit",
+                transition: "border-color 0.15s",
               }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "#94a3b8"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
             />
             <button onClick={submitFeedback} disabled={submitting || annotations.length === 0} style={{
-              fontSize: 13, fontWeight: 600, padding: "7px 18px", borderRadius: 8,
+              fontSize: 13, fontWeight: 600, padding: "8px 20px", borderRadius: 10,
               border: "none",
-              background: annotations.length === 0 ? "#e2e8f0" : "#1e293b",
+              background: annotations.length === 0 ? "#e2e8f0" : "#0f172a",
               color: annotations.length === 0 ? "#94a3b8" : "#fff",
               cursor: annotations.length === 0 ? "default" : "pointer",
-              opacity: submitting ? 0.6 : 1, transition: "all 0.15s",
-              whiteSpace: "nowrap",
+              opacity: submitting ? 0.6 : 1, transition: "all 0.2s",
+              whiteSpace: "nowrap", fontFamily: "inherit",
             }}>
               {submitting ? "Sending..." : "Submit Feedback"}
             </button>
@@ -385,32 +422,42 @@ export default function ShareReaderPage() {
       <div style={{ display: "flex", maxWidth: 1100, margin: "0 auto", minHeight: "calc(100vh - 56px)" }}>
 
         {/* ── Chapter sidebar ── */}
-        {data.chapters.length > 1 && (
+        {multipleChapters && (
           <aside style={{
-            width: 220, padding: "20px 12px", borderRight: "1px solid #e2e8f0",
+            width: 240, padding: "24px 14px", borderRight: "1px solid rgba(0,0,0,0.06)",
             flexShrink: 0, overflowY: "auto", background: "#fff",
           }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, padding: "0 8px" }}>
-              Chapters
+            <p style={{
+              fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase",
+              letterSpacing: "0.08em", marginBottom: 12, padding: "0 10px",
+            }}>
+              Chapters ({data.chapters.length})
             </p>
             {data.chapters.map((ch, idx) => {
               const count = annotations.filter((a) => a.sharedChapterId === ch.id).length;
               const active = idx === activeChapterIdx;
               return (
-                <button key={ch.id} onClick={() => setActiveChapterIdx(idx)} style={{
+                <button key={ch.id} onClick={() => { setActiveChapterIdx(idx); setSidebarOpen(false); }} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
-                  width: "100%", textAlign: "left", padding: "9px 12px", borderRadius: 8,
+                  width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 10,
                   border: "none", cursor: "pointer", marginBottom: 2,
                   background: active ? "#f1f5f9" : "transparent",
-                  color: active ? "#1e293b" : "#64748b",
-                  fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.12s",
+                  color: active ? "#0f172a" : "#64748b",
+                  fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.15s",
                   fontFamily: "inherit",
-                }}>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "#f8fafc"; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                     {ch.title || `Chapter ${idx + 1}`}
                   </span>
                   {count > 0 && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: "#f1f5f9", color: "#64748b", flexShrink: 0, marginLeft: 6 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                      background: active ? "#e2e8f0" : "#f1f5f9",
+                      color: "#475569", flexShrink: 0, marginLeft: 8,
+                    }}>
                       {count}
                     </span>
                   )}
@@ -421,59 +468,94 @@ export default function ShareReaderPage() {
         )}
 
         {/* ── Main reading area ── */}
-        <main style={{ flex: 1, padding: "40px 48px", maxWidth: 720, background: "#fff", minHeight: "100%" }}>
+        <main style={{
+          flex: 1, padding: "48px 56px", maxWidth: 740, background: "#fff",
+          minHeight: "100%", borderRight: "1px solid rgba(0,0,0,0.03)",
+        }}>
           {activeChapter ? (
             <>
-              <div style={{ marginBottom: 28, paddingBottom: 16, borderBottom: "1px solid #f1f5f9" }}>
-                {data.chapters.length > 1 && (
-                  <p style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+              {/* Chapter heading */}
+              <div style={{ marginBottom: 36 }}>
+                {multipleChapters && (
+                  <p style={{
+                    fontSize: 12, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase",
+                    letterSpacing: "0.05em", marginBottom: 8,
+                  }}>
                     Chapter {activeChapterIdx + 1} of {data.chapters.length}
                   </p>
                 )}
-                <h2 style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em", margin: 0 }}>
+                <h2 style={{
+                  fontSize: 28, fontWeight: 700, color: "#0f172a",
+                  letterSpacing: "-0.02em", margin: 0, lineHeight: 1.3,
+                }}>
                   {activeChapter.title || `Chapter ${activeChapterIdx + 1}`}
                 </h2>
                 {!submitted && (
-                  <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 8, lineHeight: 1.5 }}>
-                    Highlight any text to leave a note for the author.
-                  </p>
+                  <div style={{
+                    marginTop: 16, padding: "12px 16px", borderRadius: 10,
+                    background: "#f8fafc", border: "1px solid #f1f5f9",
+                    display: "flex", alignItems: "center", gap: 10,
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                    </svg>
+                    <p style={{ fontSize: 13, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
+                      <strong style={{ color: "#475569" }}>Highlight any text</strong> to leave a note for the author.
+                    </p>
+                  </div>
                 )}
               </div>
+
+              {/* Divider */}
+              <div style={{ height: 1, background: "#f1f5f9", marginBottom: 36 }} />
 
               {/* Content */}
               {activeChapter.content ? (
                 <div ref={contentRef} onMouseUp={handleMouseUp} style={{
-                  fontSize: 16, color: "#334155", userSelect: "text", cursor: "text",
+                  fontSize: 17, color: "#334155", userSelect: "text", cursor: "text",
                   fontFamily: "Georgia, 'Times New Roman', serif",
+                  letterSpacing: "0.01em",
                 }}>
                   {renderHighlightedContent(activeChapter.content, chapterAnnotations)}
                 </div>
               ) : (
-                <div style={{ padding: "60px 20px", textAlign: "center" }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}>
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                  </svg>
-                  <p style={{ fontSize: 14, color: "#94a3b8" }}>This chapter has no content yet.</p>
+                <div style={{ padding: "80px 20px", textAlign: "center" }}>
+                  <div style={S.iconCircle}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontSize: 15, color: "#94a3b8", marginTop: 14 }}>This chapter has no content yet.</p>
                 </div>
               )}
 
-              {/* Notes list */}
+              {/* Notes list for this chapter */}
               {chapterAnnotations.length > 0 && (
-                <div style={{ marginTop: 40, paddingTop: 24, borderTop: "1px solid #f1f5f9" }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: "#64748b" }}>
-                    Your Notes ({chapterAnnotations.length})
-                  </p>
-                  <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ marginTop: 48, paddingTop: 28, borderTop: "1px solid #f1f5f9" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round">
+                      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                    </svg>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: "#475569", margin: 0 }}>
+                      Your Notes ({chapterAnnotations.length})
+                    </p>
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
                     {chapterAnnotations.map((ann, i) => {
                       const globalIdx = annotations.indexOf(ann);
                       const meta = TYPE_META[ann.type];
                       return (
                         <div key={i} style={{
-                          padding: "12px 14px", borderRadius: 10,
+                          padding: "14px 16px", borderRadius: 12,
                           background: meta.lightBg, border: `1px solid ${meta.border}`,
+                          animation: "shareSlideIn 0.2s ease",
                         }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: meta.bg, color: meta.color, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6,
+                              background: meta.bg, color: meta.color, textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                            }}>
                               {meta.label}
                             </span>
                             {!submitted && (
@@ -481,19 +563,22 @@ export default function ShareReaderPage() {
                                 onClick={() => removeAnnotation(globalIdx)}
                                 title="Remove note"
                                 style={{
-                                  ...closeBtnStyle,
-                                  width: 22, height: 22, borderRadius: 6,
-                                  color: "#94a3b8", fontSize: 14,
+                                  background: "none", border: "none", cursor: "pointer",
+                                  width: 24, height: 24, borderRadius: 6,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  color: "#cbd5e1", transition: "all 0.15s",
                                 }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.05)"; e.currentTarget.style.color = "#ef4444"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "#94a3b8"; }}
-                              >&times;</button>
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.08)"; e.currentTarget.style.color = "#ef4444"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "#cbd5e1"; }}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                              </button>
                             )}
                           </div>
-                          <p style={{ fontSize: 12, color: "#64748b", fontStyle: "italic", margin: "4px 0", lineHeight: 1.5 }}>
+                          <p style={{ fontSize: 13, color: "#64748b", fontStyle: "italic", margin: "0 0 6px", lineHeight: 1.5 }}>
                             &ldquo;{ann.selectedText.slice(0, 120)}{ann.selectedText.length > 120 ? "..." : ""}&rdquo;
                           </p>
-                          <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.5, marginTop: 4, marginBottom: 0 }}>{ann.note}</p>
+                          <p style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.6, margin: 0 }}>{ann.note}</p>
                         </div>
                       );
                     })}
@@ -502,118 +587,144 @@ export default function ShareReaderPage() {
               )}
 
               {/* Chapter navigation */}
-              {data.chapters.length > 1 && (
+              {multipleChapters && (
                 <div style={{
-                  display: "flex", justifyContent: "space-between", marginTop: 48, paddingTop: 20,
+                  display: "flex", justifyContent: "space-between", marginTop: 48, paddingTop: 24,
                   borderTop: "1px solid #f1f5f9",
                 }}>
                   <button onClick={() => setActiveChapterIdx((i) => Math.max(0, i - 1))} disabled={activeChapterIdx === 0} style={{
-                    fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8,
-                    border: "1px solid #e2e8f0", background: "#fff",
+                    fontSize: 13, fontWeight: 500, padding: "10px 20px", borderRadius: 10,
+                    border: "1.5px solid #e2e8f0", background: "#fff",
                     color: activeChapterIdx === 0 ? "#cbd5e1" : "#475569",
                     cursor: activeChapterIdx === 0 ? "default" : "pointer",
-                    fontFamily: "inherit",
-                  }}>
+                    fontFamily: "inherit", transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => { if (activeChapterIdx > 0) e.currentTarget.style.borderColor = "#94a3b8"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
+                  >
                     ← Previous
                   </button>
                   <button onClick={() => setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1))} disabled={activeChapterIdx === data.chapters.length - 1} style={{
-                    fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8,
-                    border: "1px solid #e2e8f0", background: "#fff",
+                    fontSize: 13, fontWeight: 500, padding: "10px 20px", borderRadius: 10,
+                    border: "1.5px solid #e2e8f0", background: "#fff",
                     color: activeChapterIdx === data.chapters.length - 1 ? "#cbd5e1" : "#475569",
                     cursor: activeChapterIdx === data.chapters.length - 1 ? "default" : "pointer",
-                    fontFamily: "inherit",
-                  }}>
+                    fontFamily: "inherit", transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => { if (activeChapterIdx < data.chapters.length - 1) e.currentTarget.style.borderColor = "#94a3b8"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
+                  >
                     Next →
                   </button>
                 </div>
               )}
             </>
           ) : (
-            <div style={{ padding: "60px 20px", textAlign: "center" }}>
-              <p style={{ fontSize: 14, color: "#94a3b8" }}>Select a chapter from the sidebar to start reading.</p>
+            <div style={{ padding: "80px 20px", textAlign: "center" }}>
+              <p style={{ fontSize: 15, color: "#94a3b8" }}>Select a chapter from the sidebar to start reading.</p>
             </div>
           )}
 
           {/* Footer */}
-          <div style={{ textAlign: "center", padding: "48px 0 24px" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 16, opacity: 0.08 }} />
-            <p style={{ fontSize: 10, color: "#cbd5e1", marginTop: 8 }}>&copy; {new Date().getFullYear()} Blocwrite</p>
+          <div style={{ textAlign: "center", padding: "56px 0 24px" }}>
+            <img src="/blocwrite-logo-dark.png" alt="Blocwrite" style={{ height: 14, opacity: 0.12 }} />
+            <p style={{ fontSize: 11, color: "#cbd5e1", marginTop: 8 }}>&copy; {new Date().getFullYear()} Blocwrite</p>
           </div>
         </main>
       </div>
 
-      {/* ── Annotation popup — appears below selection ── */}
+      {/* ── Annotation popup ── */}
       {selPopup && (
         <div ref={popupRef} style={{
           position: "fixed",
-          left: Math.min(Math.max(selPopup.x - 170, 16), (typeof window !== "undefined" ? window.innerWidth : 900) - 360),
-          top: Math.min(selPopup.y, (typeof window !== "undefined" ? window.innerHeight : 700) - 320),
-          width: 340, background: "#fff", borderRadius: 14,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)",
-          padding: "14px 16px", zIndex: 1000,
+          left: Math.min(Math.max(selPopup.x - 180, 16), (typeof window !== "undefined" ? window.innerWidth : 900) - 380),
+          top: Math.min(selPopup.y, (typeof window !== "undefined" ? window.innerHeight : 700) - 340),
+          width: 360, background: "#fff", borderRadius: 16,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)",
+          padding: "18px 20px", zIndex: 1000,
+          animation: "shareSlideIn 0.15s ease",
         }}>
-          {/* Close X */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <p style={{ fontSize: 12, color: "#64748b", fontStyle: "italic", lineHeight: 1.4, margin: 0, flex: 1, paddingRight: 8 }}>
-              &ldquo;{selPopup.text.slice(0, 60)}{selPopup.text.length > 60 ? "..." : ""}&rdquo;
-            </p>
+          {/* Header with selected text and close */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+            <div style={{ flex: 1, paddingRight: 10 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 4px" }}>Selected text</p>
+              <p style={{ fontSize: 13, color: "#475569", fontStyle: "italic", lineHeight: 1.5, margin: 0 }}>
+                &ldquo;{selPopup.text.slice(0, 80)}{selPopup.text.length > 80 ? "..." : ""}&rdquo;
+              </p>
+            </div>
             <button
               onClick={() => setSelPopup(null)}
               title="Close"
               style={{
-                ...closeBtnStyle, flexShrink: 0,
+                background: "none", border: "none", cursor: "pointer",
+                width: 28, height: 28, borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#94a3b8", transition: "all 0.12s", flexShrink: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.color = "#475569"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "#94a3b8"; }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
 
-          <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-            {(["comment", "suggestion", "issue"] as AnnotationType[]).map((t) => (
-              <button key={t} onClick={() => setNoteType(t)} style={{
-                flex: 1, fontSize: 11, fontWeight: 600, padding: "6px 0", borderRadius: 7,
-                border: noteType === t ? `1.5px solid ${TYPE_META[t].color}` : "1.5px solid #e2e8f0",
-                background: noteType === t ? TYPE_META[t].lightBg : "#fff",
-                color: noteType === t ? TYPE_META[t].color : "#94a3b8",
-                cursor: "pointer", textTransform: "capitalize", transition: "all 0.12s",
-                fontFamily: "inherit",
-              }}>{t}</button>
-            ))}
+          {/* Type selector */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {(["comment", "suggestion", "issue"] as AnnotationType[]).map((t) => {
+              const active = noteType === t;
+              const meta = TYPE_META[t];
+              return (
+                <button key={t} onClick={() => setNoteType(t)} style={{
+                  flex: 1, fontSize: 12, fontWeight: 600, padding: "7px 0", borderRadius: 8,
+                  border: active ? `1.5px solid ${meta.color}` : "1.5px solid #e2e8f0",
+                  background: active ? meta.lightBg : "#fff",
+                  color: active ? meta.color : "#94a3b8",
+                  cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s",
+                  fontFamily: "inherit",
+                }}>{t}</button>
+              );
+            })}
           </div>
 
+          {/* Note input */}
           <textarea
-            autoFocus placeholder="Type your note here..." value={noteText}
+            autoFocus placeholder="Write your note for the author..." value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             style={{
-              width: "100%", minHeight: 72, fontSize: 13, padding: "10px 12px", borderRadius: 8,
-              border: "1px solid #e2e8f0", background: "#f8fafc",
-              color: "#1e293b", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, outline: "none",
-              boxSizing: "border-box",
+              width: "100%", minHeight: 80, fontSize: 14, padding: "12px 14px", borderRadius: 10,
+              border: "1.5px solid #e2e8f0", background: "#f8fafc",
+              color: "#0f172a", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6, outline: "none",
+              boxSizing: "border-box", transition: "border-color 0.15s",
             }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#94a3b8"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addAnnotation();
               if (e.key === "Escape") setSelPopup(null);
             }}
           />
-          <p style={{ fontSize: 10, color: "#cbd5e1", margin: "4px 0 10px", textAlign: "right" }}>
-            Cmd+Enter to add · Esc to close
+          <p style={{ fontSize: 11, color: "#cbd5e1", margin: "6px 0 14px", textAlign: "right" }}>
+            {navigator.platform?.includes("Mac") ? "Cmd" : "Ctrl"}+Enter to add
           </p>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <button onClick={() => setSelPopup(null)} style={{
-              fontSize: 12, padding: "7px 16px", borderRadius: 8,
-              border: "1px solid #e2e8f0", background: "#fff",
+              fontSize: 13, padding: "8px 18px", borderRadius: 10,
+              border: "1.5px solid #e2e8f0", background: "#fff",
               color: "#64748b", cursor: "pointer", fontFamily: "inherit",
-            }}>Cancel</button>
+              fontWeight: 500, transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#94a3b8"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
+            >Cancel</button>
             <button onClick={addAnnotation} disabled={!noteText.trim()} style={{
-              fontSize: 12, fontWeight: 600, padding: "7px 16px", borderRadius: 8,
+              fontSize: 13, fontWeight: 600, padding: "8px 20px", borderRadius: 10,
               border: "none",
-              background: noteText.trim() ? "#1e293b" : "#e2e8f0",
+              background: noteText.trim() ? "#0f172a" : "#e2e8f0",
               color: noteText.trim() ? "#fff" : "#94a3b8",
               cursor: noteText.trim() ? "pointer" : "default",
-              fontFamily: "inherit",
+              fontFamily: "inherit", transition: "all 0.2s",
             }}>Add Note</button>
           </div>
         </div>
@@ -622,13 +733,32 @@ export default function ShareReaderPage() {
   );
 }
 
+/* ── Shared styles ── */
 const S: Record<string, React.CSSProperties> = {
   fullCenter: {
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    minHeight: "100vh", background: "#f8fafc", padding: 24,
+    minHeight: "100vh", background: "#f8fafc", padding: 32,
+  },
+  iconCircle: {
+    width: 56, height: 56, borderRadius: 16,
+    background: "#f1f5f9", border: "1px solid #e2e8f0",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 16, marginBottom: 0,
+    letterSpacing: "-0.01em",
+  },
+  subtitle: {
+    color: "#64748b", marginTop: 8, maxWidth: 380, textAlign: "center" as const,
+    lineHeight: 1.6, fontSize: 15,
+  },
+  backLink: {
+    marginTop: 20, fontSize: 13, color: "#94a3b8", textDecoration: "none",
+    fontWeight: 500, transition: "color 0.15s",
   },
   spinner: {
-    width: 28, height: 28, border: "2.5px solid #e2e8f0",
-    borderTopColor: "#475569", borderRadius: "50%", animation: "spin 0.7s linear infinite",
+    width: 32, height: 32, border: "3px solid #e2e8f0",
+    borderTopColor: "#475569", borderRadius: "50%", animation: "shareSpin 0.7s linear infinite",
   },
 };
