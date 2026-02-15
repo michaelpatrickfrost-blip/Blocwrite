@@ -11216,13 +11216,36 @@ function NovelWorkspacePage() {
       {/* ── Share Modal ── */}
       {showShareModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowShareModal(false)}>
-          <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
+            {/* Close X */}
+            <button
+              type="button"
+              onClick={() => setShowShareModal(false)}
+              style={{
+                position: "absolute", top: 14, right: 14, zIndex: 2,
+                background: "none", border: "none", cursor: "pointer",
+                width: 28, height: 28, borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "var(--pw-text-dim)", transition: "all 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--pw-text)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
             <div className="pw-export-header">
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 20, width: "auto", opacity: 0.85 }} />
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                </div>
                 <div className="pw-delete-modal-title" style={{ margin: 0 }}>Share for Feedback</div>
               </div>
-              <p className="pw-delete-modal-copy">
+              <p className="pw-delete-modal-copy" style={{ paddingRight: 24 }}>
                 Send a read-only link to a reader. They can highlight text, leave notes, and send feedback back to you.
               </p>
             </div>
