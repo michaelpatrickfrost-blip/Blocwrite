@@ -515,8 +515,6 @@ function NovelWorkspacePage() {
   const [charChatInput, setCharChatInput] = useState("");
   const [charChatLoading, setCharChatLoading] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
-  // ── Manuscript Insights ──
-  const [showInsightsModal, setShowInsightsModal] = useState(false);
   // Auto-scroll character chat to bottom
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1110,10 +1108,6 @@ function NovelWorkspacePage() {
         setCharChatOpen(false);
         return;
       }
-      if (showInsightsModal) {
-        setShowInsightsModal(false);
-        return;
-      }
       if (showStoryBibleModal) {
         setShowStoryBibleModal(false);
         return;
@@ -1137,7 +1131,6 @@ function NovelWorkspacePage() {
     showPlanModal,
     showEditorModal,
     charChatOpen,
-    showInsightsModal,
     showStoryBibleModal,
     profileOpen,
     focusBlockIndex,
@@ -1533,43 +1526,6 @@ function NovelWorkspacePage() {
     setCharChatInput("");
     setCharChatLoading(false);
     setCharChatOpen(true);
-  }
-
-  // ── Manuscript Insights helpers ──────────────────────
-  function computeInsights() {
-    if (!novel) return null;
-    const chapters = novel.chapters ?? [];
-    const chapterStats = chapters.map((ch) => {
-      const words = countChapterWords(ch);
-      const prose = extractProseFromContent(ch.content);
-      const sentences = prose.split(/[.!?]+/).filter((s) => s.trim().length > 0).length;
-      const paragraphs = prose.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length;
-      // Dialogue detection — count text within quotes
-      const dialogueMatches = prose.match(/[""\u201C\u201D][^""\u201C\u201D]{2,}[""\u201C\u201D]/g) ?? [];
-      const dialogueWords = dialogueMatches.reduce((sum, m) => sum + countWords(m), 0);
-      return { id: ch.id, title: ch.title || "Untitled", words, sentences, paragraphs, dialogueWords };
-    });
-    const totalWords = chapterStats.reduce((s, c) => s + c.words, 0);
-    const totalSentences = chapterStats.reduce((s, c) => s + c.sentences, 0);
-    const totalDialogueWords = chapterStats.reduce((s, c) => s + c.dialogueWords, 0);
-    const totalParagraphs = chapterStats.reduce((s, c) => s + c.paragraphs, 0);
-    const avgWordsPerChapter = chapters.length > 0 ? Math.round(totalWords / chapters.length) : 0;
-    const avgSentenceLength = totalSentences > 0 ? Math.round(totalWords / totalSentences) : 0;
-    const readingTimeMinutes = Math.max(1, Math.round(totalWords / 250));
-    const estimatedPages = Math.max(1, Math.round(totalWords / 275));
-    const dialoguePercent = totalWords > 0 ? Math.round((totalDialogueWords / totalWords) * 100) : 0;
-    const longestChapter = chapterStats.length > 0 ? chapterStats.reduce((a, b) => a.words > b.words ? a : b) : null;
-    const shortestChapter = chapterStats.filter((c) => c.words > 0).length > 0 ? chapterStats.filter((c) => c.words > 0).reduce((a, b) => a.words < b.words ? a : b) : null;
-    const maxChapterWords = longestChapter?.words ?? 1;
-    const characterCount = storyCharacters.length;
-    const locationCount = storyLocations.length;
-    return {
-      totalWords, totalSentences, totalParagraphs, totalDialogueWords,
-      chapterCount: chapters.length, avgWordsPerChapter, avgSentenceLength,
-      readingTimeMinutes, estimatedPages, dialoguePercent,
-      longestChapter, shortestChapter, maxChapterWords,
-      chapterStats, characterCount, locationCount,
-    };
   }
 
   function normalizeCharacterRole(value: unknown): CharacterRole {
@@ -7562,15 +7518,6 @@ function NovelWorkspacePage() {
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
-            <button
-              type="button"
-              className="btn"
-              style={{ padding: "6px 8px", minWidth: 0 }}
-              onClick={() => setShowInsightsModal(true)}
-              title="Manuscript Insights"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            </button>
             <ProfileButton onClick={() => setProfileOpen(true)} />
             {isAdmin && (
               <Link
@@ -11665,120 +11612,6 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Manuscript Insights Modal ── */}
-      {showInsightsModal && novel && (() => {
-        const insights = computeInsights();
-        if (!insights) return null;
-        return (
-          <div className="pw-modal-overlay" onClick={() => setShowInsightsModal(false)}>
-            <div className="pw-insights-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="pw-insights-header">
-                <div>
-                  <h3 className="pw-insights-title">Manuscript Insights</h3>
-                  <p className="pw-insights-sub">{novel.title || "Untitled Novel"}</p>
-                </div>
-                <button type="button" className="pw-plan-modal-close" onClick={() => setShowInsightsModal(false)} aria-label="Close">&times;</button>
-              </div>
-              <div className="pw-insights-body">
-                <div className="pw-insights-stats-grid">
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.totalWords.toLocaleString()}</div>
-                    <div className="pw-insights-stat-label">Total Words</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.chapterCount}</div>
-                    <div className="pw-insights-stat-label">Chapters</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.estimatedPages}</div>
-                    <div className="pw-insights-stat-label">Est. Pages</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.readingTimeMinutes < 60 ? `${insights.readingTimeMinutes}m` : `${Math.floor(insights.readingTimeMinutes / 60)}h ${insights.readingTimeMinutes % 60}m`}</div>
-                    <div className="pw-insights-stat-label">Reading Time</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.avgWordsPerChapter.toLocaleString()}</div>
-                    <div className="pw-insights-stat-label">Avg Words / Chapter</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.avgSentenceLength}</div>
-                    <div className="pw-insights-stat-label">Avg Sentence Length</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.dialoguePercent}%</div>
-                    <div className="pw-insights-stat-label">Dialogue</div>
-                  </div>
-                  <div className="pw-insights-stat">
-                    <div className="pw-insights-stat-value">{insights.characterCount}</div>
-                    <div className="pw-insights-stat-label">Characters</div>
-                  </div>
-                </div>
-
-                {insights.longestChapter && insights.shortestChapter && (
-                  <div className="pw-insights-extremes">
-                    <div className="pw-insights-extreme">
-                      <span className="pw-insights-extreme-label">Longest chapter</span>
-                      <span className="pw-insights-extreme-name">{insights.longestChapter.title}</span>
-                      <span className="pw-insights-extreme-value">{insights.longestChapter.words.toLocaleString()} words</span>
-                    </div>
-                    <div className="pw-insights-extreme">
-                      <span className="pw-insights-extreme-label">Shortest chapter</span>
-                      <span className="pw-insights-extreme-name">{insights.shortestChapter.title}</span>
-                      <span className="pw-insights-extreme-value">{insights.shortestChapter.words.toLocaleString()} words</span>
-                    </div>
-                  </div>
-                )}
-
-                {insights.chapterStats.length > 0 && (
-                  <div className="pw-insights-chart-section">
-                    <h4 className="pw-insights-chart-title">Chapter Length</h4>
-                    <div className="pw-insights-chart">
-                      {insights.chapterStats.map((ch, idx) => (
-                        <div key={ch.id} className="pw-insights-bar-row">
-                          <span className="pw-insights-bar-label" title={ch.title}>Ch {idx + 1}</span>
-                          <div className="pw-insights-bar-track">
-                            <div
-                              className="pw-insights-bar-fill"
-                              style={{ width: `${Math.max(2, (ch.words / insights.maxChapterWords) * 100)}%` }}
-                            />
-                          </div>
-                          <span className="pw-insights-bar-value">{ch.words.toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {insights.chapterStats.length > 0 && (
-                  <div className="pw-insights-chart-section">
-                    <h4 className="pw-insights-chart-title">Dialogue vs Prose</h4>
-                    <div className="pw-insights-chart">
-                      {insights.chapterStats.filter((ch) => ch.words > 0).map((ch, idx) => {
-                        const dp = ch.words > 0 ? Math.round((ch.dialogueWords / ch.words) * 100) : 0;
-                        return (
-                          <div key={ch.id} className="pw-insights-bar-row">
-                            <span className="pw-insights-bar-label" title={ch.title}>Ch {idx + 1}</span>
-                            <div className="pw-insights-bar-track">
-                              <div className="pw-insights-bar-fill pw-dialogue" style={{ width: `${Math.max(dp > 0 ? 2 : 0, dp)}%` }} />
-                              <div className="pw-insights-bar-fill pw-prose" style={{ width: `${Math.max(2, 100 - dp)}%` }} />
-                            </div>
-                            <span className="pw-insights-bar-value">{dp}%</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="pw-insights-legend">
-                      <span className="pw-insights-legend-item"><span className="pw-insights-dot pw-dialogue" /> Dialogue</span>
-                      <span className="pw-insights-legend-item"><span className="pw-insights-dot pw-prose" /> Prose</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Busy indicator while prose context action runs */}
       {proseCtxBusy && (
