@@ -1004,7 +1004,10 @@ const FAQ_ITEMS = [
   { q: "How does The Editor work?", a: "One button, two modes. In a chapter: 11 continuity checks, grammar pass, and prose polish. In the overview: full-manuscript sentence-level rewrites with current vs. suggested diffs. Accept or dismiss each one." },
   { q: "What is Manuscript Health?", a: "AI scores your novel on pacing, dialogue, clarity, and engagement (out of 10). Per-chapter breakdowns with specific tips to improve." },
   { q: "What are Writing Packs?", a: "Genre-specific craft kits \u2014 Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Engine, Horror Atmosphere, Sci-Fi World Engine, and more. Install bolt-ons in one click." },
-  { q: "Can I share with beta readers?", a: "Yes. Generate a password-protected, time-limited link. Readers see a branded dark-mode view, highlight text, and leave annotations. Feedback arrives instantly." },
+  { q: "What are Bolt-Ons?", a: "Plain-English directives you attach per-chapter or per-scene \u2014 \u2018keep it gritty\u2019, \u2018more dialogue\u2019, \u2018Yorkshire dialect\u2019. They tell the AI exactly how to write. Stack as many as you like." },
+  { q: "What is Arc Intelligence?", a: "AI analyses your story structure and generates three scored arc directions. Compare them side by side, pick the best fit, and it rewrites every chapter synopsis to match. Only available before you\u2019ve written prose, so it never overwrites your work." },
+  { q: "How does Chat with Characters work?", a: "Open a live AI conversation with any character from your Canon. They answer in their own voice using their backstory, goals, and personality. When you end the chat, Story Insights recommends profile updates based on what was revealed." },
+  { q: "Can I share with beta readers?", a: "Yes. Generate a password-protected, time-limited link. Readers see your manuscript in a clean branded view with light and dark mode, highlight text, and leave annotations. Feedback arrives instantly." },
   { q: "How does the free trial work?", a: "7 days, full access, every feature. No charge until the trial ends. Cancel anytime \u2014 no questions asked." },
   { q: "Is my writing private?", a: "Yes. Isolated storage, no training on your data, API keys stored in your browser. We never read or share your content." },
 ];
