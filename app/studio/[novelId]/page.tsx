@@ -32,6 +32,7 @@ import {
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
 import { TheEditor, type EditorMode, type TargetedFocus, type EditorResult, type EditorChange, type EditorialIssue } from "../components/TheEditor";
+import type { ThreadKeeperCategoryId, ThreadKeeperIssue } from "../components/ThreadKeeper";
 import { getProfileAiOff, getProfileLanguage, PROFILE_LANGUAGE_OPTIONS, type ProfileLanguageCode } from "@/lib/profile-store";
 
 type ExportFormat = "docx" | "epub";
@@ -5953,7 +5954,7 @@ function NovelWorkspacePage() {
     const tab = editorTab || "grammar";
 
     try {
-      if (tab === "consistency") {
+      if (tab === "threadkeeper" || tab === "consistency") {
         /* ═══ CONSISTENCY — report mode: deep story-aware analysis ═══ */
         const sysMsg = [
           `You are a professional continuity editor for a ${ctx.genreStr} novel.`,
@@ -6215,6 +6216,111 @@ function NovelWorkspacePage() {
       setEditorError(err instanceof Error ? err.message : "Failed to fix issues. Try again.");
     } finally {
       setEditorLoadingPhase(null);
+    }
+  }
+
+  /* ── ThreadKeeper AI handler — Layer 2 & 3 checks ── */
+  async function runThreadKeeperAiCheck(
+    categoryId: ThreadKeeperCategoryId,
+    context: {
+      chapterProse: string;
+      prevChapterProse: string;
+      nextChapterProse: string;
+      canonSummary: string;
+    },
+  ): Promise<ThreadKeeperIssue[]> {
+    if (!novel || !ensureStoryAiReady()) return [];
+
+    const CATEGORY_PROMPTS: Record<string, { system: string; task: string; categoryLabel: string }> = {
+      "state-drift": {
+        categoryLabel: "State Drift",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect state drift — injuries, conditions, possession changes, death states that are contradicted between chapters without explanation.`,
+        task: `Find state drift issues: injuries that heal without mention, characters who die then reappear, possession of items changing without explanation, conditions (pregnant, sick, imprisoned) that vanish. Only flag genuine contradictions.`,
+      },
+      "timeline": {
+        categoryLabel: "Timeline Error",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect timeline errors — time-of-day impossibilities, travel that's too fast, events happening in wrong order.`,
+        task: `Find timeline issues: impossible time jumps, characters traveling too fast between locations, events referenced before they happen, day/night contradictions. Only flag genuine issues.`,
+      },
+      "relationships": {
+        categoryLabel: "Relationship Inconsistency",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect relationship inconsistencies — emotional states between characters that shift without catalyst.`,
+        task: `Find relationship issues: characters acting deeply in love after a breakup with no reconciliation scene, enemies suddenly friendly, betrayals forgotten. Flag missing emotional transitions.`,
+      },
+      "knowledge": {
+        categoryLabel: "Knowledge Violation",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect knowledge violations — characters knowing things they shouldn't.`,
+        task: `Find knowledge violations: a character references information only another character knows, secrets mentioned before being revealed, deductions made without evidence. Only flag genuine impossible knowledge.`,
+      },
+      "spatial-logic": {
+        categoryLabel: "Spatial Logic Error",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect spatial logic errors — characters speaking after leaving, impossible physical positions.`,
+        task: `Find spatial issues: characters speaking after exiting a scene, people in rooms they never entered, physical impossibilities (facing wrong direction, grabbing with injured hand). Only flag genuine errors.`,
+      },
+      "emotional-arc": {
+        categoryLabel: "Emotional Arc Break",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect emotional arc breaks — grief vanishing too fast, fear disappearing without resolution, disproportionate reactions.`,
+        task: `Find emotional arc issues: intense grief that vanishes next scene, fear of something suddenly forgotten, joy that's unrealistic given recent trauma. Is the character reacting proportionally? Flag missing emotional transitions.`,
+      },
+      "setup-payoff": {
+        categoryLabel: "Setup / Payoff",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect setup/payoff issues — loose threads, promises to the reader that go unfulfilled, payoffs with no setup.`,
+        task: `Find setup/payoff issues: mysteries introduced but never referenced again in this chapter range, dramatic events that get no follow-through, resolutions to things never set up. Report as open threads that need attention.`,
+      },
+      "voice-drift": {
+        categoryLabel: "Voice Drift",
+        system: `You are ThreadKeeper, a continuity engine for novels. Detect character voice drift — speech patterns changing without reason.`,
+        task: `Find voice drift: formal character suddenly using slang, shy character becoming aggressive without catalyst, accent inconsistencies in dialogue, vocabulary level shifts. Only flag clear voice breaks, not subtle variation.`,
+      },
+    };
+
+    const config = CATEGORY_PROMPTS[categoryId];
+    if (!config) return [];
+
+    const prevSnippet = context.prevChapterProse ? `PREVIOUS CHAPTER (ending):\n${context.prevChapterProse.slice(-1500)}` : "No previous chapter.";
+    const nextSnippet = context.nextChapterProse ? `NEXT CHAPTER (opening):\n${context.nextChapterProse.slice(0, 800)}` : "No next chapter.";
+
+    const sysMsg = [
+      config.system,
+      "",
+      "CANON CONTEXT:",
+      context.canonSummary,
+      "",
+      prevSnippet,
+      "",
+      nextSnippet,
+    ].join("\n");
+
+    const prompt = [
+      config.task,
+      "",
+      "Return ONLY valid JSON:",
+      `{"issues":[{"severity":"high|medium|low","quote":"exact quote from text","issue":"clear description","suggestion":"specific actionable fix"}]}`,
+      "Max 5 issues. Evidence-based only — quote the problematic text. If none: {\"issues\":[]}",
+      "high = reader will definitely notice. medium = attentive reader catches. low = minor but worth noting.",
+      "",
+      "CURRENT CHAPTER PROSE:",
+      context.chapterProse.slice(0, 6000),
+    ].join("\n");
+
+    try {
+      const data = await requestOpenRouterJson<{ issues?: Array<{ severity?: string; quote?: string; issue?: string; suggestion?: string }> }>(
+        prompt, 800, { timeoutMs: 300000, systemMessage: sysMsg },
+      );
+      if (!Array.isArray(data?.issues)) return [];
+      return data.issues
+        .filter((i): i is { severity: string; issue: string; suggestion: string; quote?: string } =>
+          typeof i.issue === "string" && typeof i.suggestion === "string")
+        .map((i) => ({
+          severity: (i.severity === "high" || i.severity === "medium" || i.severity === "low") ? i.severity : "medium",
+          category: categoryId,
+          categoryLabel: config.categoryLabel,
+          quote: i.quote || undefined,
+          issue: i.issue,
+          suggestion: i.suggestion,
+        }));
+    } catch {
+      return [];
     }
   }
 
@@ -9536,6 +9642,12 @@ function NovelWorkspacePage() {
         const chNum = edCtx?.chapterNumber ?? (novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1);
         const chTotal = edCtx?.totalChapters ?? novel.chapters.length;
         const chWc = edCtx?.wordCount ?? 0;
+        const chIdx = novel.chapters.findIndex((c) => c.id === activeChapter.id);
+        const bpChapters = novel.storyBible.bookPlan?.chapters ?? [];
+        const bpMatch = bpChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id);
+        const tkCharIds = bpMatch?.characterIds ?? [];
+        const tkLocIds = bpMatch?.locationIds ?? [];
+        const chProse = extractProseFromContent(activeChapter.content);
         return (
           <TheEditor
             open={showEditorModal}
@@ -9556,9 +9668,15 @@ function NovelWorkspacePage() {
             onApply={(revisedText) => {
               if (!activeChapter) return;
               updateChapter(activeChapter.id, { content: revisedText });
-              /* Update original paragraphs so further edits work on the new text */
               setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
             }}
+            chapterProse={chProse}
+            storyBible={novel.storyBible}
+            allChapters={novel.chapters}
+            currentChapterIndex={chIdx >= 0 ? chIdx : 0}
+            planCharacterIds={tkCharIds}
+            planLocationIds={tkLocIds}
+            onThreadKeeperAiCheck={runThreadKeeperAiCheck}
           />
         );
       })()}

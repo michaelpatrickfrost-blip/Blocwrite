@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { ThreadKeeper, ThreadKeeperLogo, type ThreadKeeperCategoryId, type ThreadKeeperIssue } from "./ThreadKeeper";
+import type { StoryBible, Chapter } from "../studio-store";
 
 /* ─── Types ─── */
 
@@ -53,7 +55,7 @@ export const TARGETED_OPTIONS: Array<{ id: TargetedFocus; label: string; desc: s
 ];
 
 /* Editor pass tabs */
-type EditorTab = "consistency" | "grammar" | "polish";
+type EditorTab = "threadkeeper" | "grammar" | "polish";
 
 const EDITOR_TABS: Array<{
   id: EditorTab;
@@ -62,13 +64,15 @@ const EDITOR_TABS: Array<{
   icon: string;
   mode: EditorMode;
   targetedFocus?: TargetedFocus;
+  isThreadKeeper?: boolean;
 }> = [
   {
-    id: "consistency",
-    label: "Consistency",
-    desc: "Character placement, location transitions, timeline, names, POV, and continuity with adjacent chapters",
-    icon: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    id: "threadkeeper",
+    label: "ThreadKeeper",
+    desc: "Canon violations, state drift, timeline errors, relationship breaks, knowledge violations, and more",
+    icon: "M6 26L22 10", // placeholder — logo rendered separately
     mode: "report",
+    isThreadKeeper: true,
   },
   {
     id: "grammar",
@@ -131,6 +135,22 @@ type TheEditorProps = {
   onResultUpdate: (result: EditorResult) => void;
   /** Word count of this chapter */
   wordCount: number;
+  /** ThreadKeeper props */
+  chapterProse: string;
+  storyBible: StoryBible;
+  allChapters: Chapter[];
+  currentChapterIndex: number;
+  planCharacterIds: string[];
+  planLocationIds: string[];
+  onThreadKeeperAiCheck: (
+    categoryId: ThreadKeeperCategoryId,
+    context: {
+      chapterProse: string;
+      prevChapterProse: string;
+      nextChapterProse: string;
+      canonSummary: string;
+    },
+  ) => Promise<ThreadKeeperIssue[]>;
 };
 
 /* ─── Component ─── */
@@ -152,9 +172,16 @@ export function TheEditor({
   originalParagraphs,
   onResultUpdate,
   wordCount,
+  chapterProse,
+  storyBible,
+  allChapters,
+  currentChapterIndex,
+  planCharacterIds,
+  planLocationIds,
+  onThreadKeeperAiCheck,
 }: TheEditorProps) {
   const loading = !!loadingPhase;
-  const [activeTab, setActiveTab] = useState<EditorTab>("consistency");
+  const [activeTab, setActiveTab] = useState<EditorTab>("threadkeeper");
   const [expandedChange, setExpandedChange] = useState<number | null>(null);
 
   /* Compute the assembled text and word delta from accepted changes */
@@ -302,16 +329,24 @@ export function TheEditor({
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "12px 16px",
                 fontSize: 13, fontWeight: activeTab === tab.id ? 650 : 500,
-                color: activeTab === tab.id ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim, #888)",
+                color: activeTab === tab.id
+                  ? (tab.isThreadKeeper ? "#a78bfa" : "var(--pw-accent, #a3e635)")
+                  : "var(--pw-text-dim, #888)",
                 background: "none", border: "none", cursor: loading ? "default" : "pointer",
-                borderBottom: activeTab === tab.id ? "2px solid var(--pw-accent, #a3e635)" : "2px solid transparent",
+                borderBottom: activeTab === tab.id
+                  ? `2px solid ${tab.isThreadKeeper ? "#a78bfa" : "var(--pw-accent, #a3e635)"}`
+                  : "2px solid transparent",
                 transition: "all 0.15s",
                 opacity: loading && activeTab !== tab.id ? 0.4 : 1,
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d={tab.icon} />
-              </svg>
+              {tab.isThreadKeeper ? (
+                <ThreadKeeperLogo size={16} />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={tab.icon} />
+                </svg>
+              )}
               {tab.label}
             </button>
           ))}
@@ -319,6 +354,26 @@ export function TheEditor({
 
         {/* ═══ BODY ═══ */}
         <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px 24px" }}>
+          {/* ═══ ThreadKeeper tab — dedicated component ═══ */}
+          {activeTab === "threadkeeper" && (
+            <ThreadKeeper
+              chapterProse={chapterProse}
+              chapterTitle={chapterTitle}
+              chapterNumber={chapterNumber}
+              totalChapters={totalChapters}
+              storyBible={storyBible}
+              allChapters={allChapters}
+              currentChapterIndex={currentChapterIndex}
+              planCharacterIds={planCharacterIds}
+              planLocationIds={planLocationIds}
+              onRunAiCheck={onThreadKeeperAiCheck}
+              wordCount={wordCount}
+            />
+          )}
+
+          {/* ═══ Grammar & Polish tabs — original editor flow ═══ */}
+          {activeTab !== "threadkeeper" && (
+          <>
           {/* Tab description + Run button */}
           <div style={{
             display: "flex", alignItems: "center", gap: 16,
@@ -682,6 +737,8 @@ export function TheEditor({
                 Slower AI models may take longer. The editor will keep working — don&apos;t close this window.
               </p>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
