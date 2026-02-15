@@ -1173,21 +1173,61 @@ function NovelWorkspacePage() {
   const [arcApplyingChoice, setArcApplyingChoice] = useState<number | null>(null);
 
   // ── Tutorial walkthrough ──
-  const TUTORIAL_STEPS: Array<{ target: string; title: string; desc: string }> = [
-    { target: "sidebar", title: "Your Manuscript", desc: "Your chapters live here. Click any chapter to start writing, or hit \u2018+ New chapter\u2019 to add one. The sidebar auto-collapses while you write to give you more space." },
-    { target: "overview", title: "Novel Overview", desc: "Your novel\u2019s command centre. See the cover, synopsis, word count dashboard, and every tool in one view. Click here anytime to return to the big picture." },
-    { target: "plan", title: "The Plan", desc: "Generate a full chapter outline from your synopsis and Canon. Each chapter gets a title, synopsis, characters, and locations. Arc Intelligence then scores three story directions for you." },
-    { target: "canon", title: "The Canon", desc: "Your story\u2019s single source of truth \u2014 characters, locations, lore, voice rules, and bolt-on directives. Every AI feature reads the Canon first so nothing drifts from your world." },
-    { target: "editor", title: "The Editor", desc: "One button, two modes. In a chapter: 11 continuity checks covering canon traits, timeline, voice drift, and more. In the overview: full-manuscript sentence-level rewrites with accept/dismiss diffs." },
-    { target: "health", title: "Manuscript Health", desc: "AI scores your novel on pacing, dialogue, clarity, and engagement \u2014 out of 10. Per-chapter breakdowns with specific, actionable tips to strengthen your writing." },
-    { target: "share", title: "Share & Export", desc: "Generate password-protected, time-limited links for beta readers. They highlight text and leave annotations in a branded reader view. Export to EPUB or DOCX when ready." },
-    { target: "chat", title: "Chat & Co-Author", desc: "Interview any character from your Canon \u2014 they answer in voice using their backstory and personality. Or open the Co-Author for a writing partner who knows your entire novel." },
-    { target: "theme", title: "Dark & Light Mode", desc: "Switch themes to suit your preference. Your choice saves automatically and syncs across devices." },
-    { target: "settings", title: "Settings", desc: "Set up your AI provider and API key, change language, manage your subscription \u2014 or restart this tutorial anytime from the General tab." },
+  type TutorialStep = { target: string; title: string; desc: string; onEnter?: () => void; onLeave?: () => void };
+  const TUTORIAL_STEPS: TutorialStep[] = [
+    {
+      target: "sidebar", title: "Your Manuscript",
+      desc: "This is your chapter list. Every chapter you create appears here. Click any chapter to jump straight into writing it. Hit \u2018+ New chapter\u2019 at the bottom to add more. The sidebar auto-collapses while you write to maximise your writing space \u2014 hover to bring it back, or pin it open.",
+    },
+    {
+      target: "overview", title: "Novel Overview",
+      desc: "This button takes you to the command centre for your entire novel. You\u2019ll see your cover image, full synopsis, live word count dashboard, chapter progress bars, and quick access to every major feature \u2014 Canon, Health Score, Arc Intelligence, and more. Click it anytime to get the big picture.",
+    },
+    {
+      target: "plan", title: "The Plan",
+      desc: "This opens your chapter planner. Enter your synopsis, hit generate, and the AI builds a structured outline: chapter titles, detailed synopses, character assignments, and location mapping \u2014 all pulled from your Canon. Rearrange chapters, add or remove them, then sync everything to your manuscript. After planning, Arc Intelligence will offer three scored story directions to choose from.",
+      onEnter: () => setShowPlanModal(true),
+      onLeave: () => setShowPlanModal(false),
+    },
+    {
+      target: "canon", title: "The Canon",
+      desc: "This is the heart of Blocwrite \u2014 your story\u2019s single source of truth. Define your characters with personalities, speech patterns, and backstories. Add locations, lore entries, worldbuilding rules, and voice directives. Set bolt-on writing instructions like \u2018keep it gritty\u2019 or \u2018more dialogue\u2019. Every AI feature reads your Canon before generating, so nothing ever contradicts your world.",
+      onEnter: () => setShowStoryBibleModal(true),
+      onLeave: () => setShowStoryBibleModal(false),
+    },
+    {
+      target: "editor", title: "The Editor",
+      desc: "Your AI-powered manuscript analysis tool. In a chapter, it runs 11 continuity checks: Canon Traits, Character Presence, Timeline, Emotional Arc, Voice Drift, Spatial Logic, and more \u2014 each issue shows severity, explanation, and location. From the overview, it scans your entire manuscript and suggests sentence-level rewrites with current vs. proposed text side by side. Accept or dismiss each change individually.",
+    },
+    {
+      target: "health", title: "Manuscript Health",
+      desc: "Scroll down in your overview to find Manuscript Health. The AI reads your entire novel and scores it on pacing, dialogue quality, clarity, and reader engagement \u2014 each out of 10. You get per-chapter breakdowns with specific, actionable tips: which chapters are strong, which need work, and exactly what to improve. Think of it as a publishing readiness report.",
+    },
+    {
+      target: "share", title: "Share & Export",
+      desc: "This button lets you share your manuscript with beta readers or export it. Generate a password-protected, time-limited link \u2014 readers open it in a clean branded view with light and dark mode, highlight passages, and leave typed annotations. Their feedback arrives instantly in your dashboard. When you\u2019re ready to publish, export to EPUB or DOCX with clean chaptered prose.",
+      onEnter: () => { if (novel) { setSelectedShareChapterIds(novel.chapters.map((c) => c.id)); setShareResult(null); setShareError(null); setShowShareModal(true); } },
+      onLeave: () => setShowShareModal(false),
+    },
+    {
+      target: "chat", title: "Chat & Co-Author",
+      desc: "This floating button opens your AI conversation panel. Choose a character from your Canon and interview them \u2014 they respond in their own voice using their backstory, goals, and personality. When you end the chat, Story Insights recommends changes to their profile. Or switch to Co-Author mode: a writing partner who\u2019s read every chapter, knows every character, and gives advice specific to your story \u2014 not generic writing tips.",
+    },
+    {
+      target: "theme", title: "Dark & Light Mode",
+      desc: "Switch between dark and light themes with one click. Your preference saves automatically and syncs across all your devices. The entire studio \u2014 sidebar, editor, modals, and toolbars \u2014 adapts instantly.",
+    },
+    {
+      target: "settings", title: "Settings",
+      desc: "Open your settings to configure your AI provider (OpenRouter, Hugging Face, Infermatic, or LM Studio for free local AI), enter your API key, choose your model, set your language and context budget, manage your subscription, or change your password. You can also restart this tutorial anytime from the General tab.",
+      onEnter: () => setProfileOpen(true),
+      onLeave: () => setProfileOpen(false),
+    },
   ];
   const [tutorialActive, setTutorialActive] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [tutorialRect, setTutorialRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const tutorialPrevStep = useRef<number>(-1);
 
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
@@ -1550,6 +1590,9 @@ function NovelWorkspacePage() {
     setTutorialActive(true);
   }
   function completeTutorial() {
+    // Close any modals the tutorial may have opened
+    const prev = tutorialPrevStep.current;
+    if (prev >= 0 && TUTORIAL_STEPS[prev]?.onLeave) TUTORIAL_STEPS[prev].onLeave!();
     setTutorialActive(false);
     setTutorialStep(0);
     try {
@@ -1568,21 +1611,34 @@ function NovelWorkspacePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [novelSyncDone]);
 
-  // ── Tutorial: recompute spotlight rect on step change ──
+  // ── Tutorial: run step actions + recompute spotlight on step change ──
   useEffect(() => {
-    if (!tutorialActive) { setTutorialRect(null); return; }
+    if (!tutorialActive) { setTutorialRect(null); tutorialPrevStep.current = -1; return; }
     const step = TUTORIAL_STEPS[tutorialStep];
     if (!step) return;
+    // Leave previous step
+    const prev = tutorialPrevStep.current;
+    if (prev >= 0 && prev !== tutorialStep && TUTORIAL_STEPS[prev]?.onLeave) {
+      TUTORIAL_STEPS[prev].onLeave!();
+    }
+    tutorialPrevStep.current = tutorialStep;
+    // Enter current step
+    if (step.onEnter) step.onEnter();
+    // Measure with delay so modals/DOM have time to render
+    const delay = step.onEnter ? 350 : 80;
     const measure = () => {
       const el = document.querySelector(`[data-tutorial="${step.target}"]`) as HTMLElement | null;
       if (el) {
-        const r = el.getBoundingClientRect();
-        setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+        el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        requestAnimationFrame(() => {
+          const r = el.getBoundingClientRect();
+          setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+        });
       } else {
         setTutorialRect(null);
       }
     };
-    const t = setTimeout(measure, 80);
+    const t = setTimeout(measure, delay);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => { clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };

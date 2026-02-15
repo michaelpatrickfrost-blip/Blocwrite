@@ -4655,9 +4655,10 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 }
 .pw-tutorial-desc {
   margin: 0 0 20px;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--pw-text-dim, #999);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--pw-text, #e4e4e4);
+  opacity: 0.88;
 }
 .pw-tutorial-dots {
   display: flex;
