@@ -7204,6 +7204,9 @@ function NovelWorkspacePage() {
                 Undo
               </button>
             )}
+            <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
+              The Plan
+            </button>
             {!aiOff && (
             <button
               type="button"
@@ -7214,7 +7217,7 @@ function NovelWorkspacePage() {
               The Editor
             </button>
             )}
-            <button type="button" className="btn" style={{ position: "relative" }} onClick={() => {
+            <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }} onClick={() => {
               if (!novel) return;
               if (pendingFeedbackCount > 0) {
                 // Open feedback review mode
@@ -7263,8 +7266,7 @@ function NovelWorkspacePage() {
                 }).catch(() => {}).finally(() => setShareLinksLoading(false));
               }
             }} title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-              {pendingFeedbackCount > 0 ? "Feedback" : "Share"}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               {pendingFeedbackCount > 0 && (
                 <span style={{
                   position: "absolute", top: -4, right: -4,
@@ -7275,9 +7277,6 @@ function NovelWorkspacePage() {
                   lineHeight: 1, animation: "pulse 2s infinite",
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
-              The Plan
             </button>
             <ProfileButton onClick={() => setProfileOpen(true)} />
             {isAdmin && (
