@@ -252,7 +252,7 @@ a { color: inherit; text-decoration: none; }
 
 .pw-window {
   width: 100%;
-  max-width: calc(100vw - 48px);
+  max-width: 100%;
   height: calc(100vh - 48px);
   background: var(--pw-surface);
   border-radius: var(--pw-radius-2xl);
