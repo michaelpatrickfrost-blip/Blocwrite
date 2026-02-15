@@ -183,8 +183,8 @@ function StudioHomePage() {
     saveNovels(novels);
     void saveNovelsToServer(novels);
     setNavigatingAway(true);
-    // Short delay — just long enough for opacity to start fading
-    setTimeout(() => router.push(`/studio/${novelId}`), 60);
+    // Wait for exit animation (0.22s) to complete before navigating
+    setTimeout(() => router.push(`/studio/${novelId}`), 240);
   }, [novels, router]);
 
   const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
@@ -389,7 +389,7 @@ function StudioHomePage() {
         <section className="pw-home-main">
           {!serverLoaded ? (
             /* Skeleton while loading from server — prevents flash of "No novels" */
-            <div className="pw-novel-grid" style={{ opacity: 0.3 }}>
+            <div className="pw-novel-grid" style={{ opacity: 0.25 }}>
               {[1, 2, 3].map((i) => (
                 <div key={i} className="pw-novel-card" style={{
                   pointerEvents: "none",
@@ -405,14 +405,14 @@ function StudioHomePage() {
               ))}
             </div>
           ) : sortedNovels.length === 0 ? (
-            <div className="pw-empty">
+            <div className="pw-empty pw-content-ready">
               <p className="pw-empty-title">No novels yet.</p>
               <p className="pw-empty-subtitle">Create a novel using the left panel.</p>
             </div>
           ) : (
             <>
               {/* Horizontal novel covers */}
-              <div className="pw-novel-grid">
+              <div className="pw-novel-grid pw-content-ready">
                 {sortedNovels.map((novel) => (
                   <Link
                     key={novel.id}

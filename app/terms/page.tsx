@@ -61,8 +61,21 @@ export default function TermsPage() {
         <div style={sectionStyle}>
           <h2 style={headingStyle}>2. Description of Service</h2>
           <p style={paraStyle}>
-            Blocwrite is an AI-assisted novel writing platform that provides tools for planning, writing, and exporting manuscripts. The Service includes chapter planning, bloc-by-bloc prose writing, story bible management, AI-powered text generation, and manuscript export features.
+            Blocwrite is an AI-assisted novel writing platform that provides tools for planning, writing, editing, and exporting manuscripts. Core features include:
           </p>
+          <ul style={{ ...paraStyle, paddingLeft: 24, display: "grid", gap: 6 }}>
+            <li><strong>Chapter Planning &amp; Bloc Architecture:</strong> Structure novels into chapters and scene-level blocs, each with synopsis, word targets, and writing directives.</li>
+            <li><strong>Canon (Story Bible):</strong> Manage characters, locations, lore, timeline events, relationships, style guidelines, and bolt-on writing directives that inform AI generation.</li>
+            <li><strong>AI-Powered Prose Generation:</strong> Generate scene prose, rewrite passages in multiple modes (emotional, suspenseful, poetic, tighter, bestseller, and prose polish), and rewrite entire chapters.</li>
+            <li><strong>Narrative Control Center (NCC):</strong> A dashboard that analyses your manuscript to visualise character arcs, relationship evolution, tension curves, plot threads, canon conflicts, theme presence, and knowledge/reveal tracking.</li>
+            <li><strong>Talk to Your Characters:</strong> AI-driven conversations with characters from your Canon. The &ldquo;End &amp; Review&rdquo; feature generates story recommendations based on chat transcripts, which can be accepted or dismissed.</li>
+            <li><strong>Manuscript Health Report:</strong> AI assessment of pacing, dialogue, clarity, and engagement with per-chapter breakdowns and a thematic consistency scanner.</li>
+            <li><strong>Continuity Engine:</strong> Multi-layered consistency checks across timeline, character, location, and canon data.</li>
+            <li><strong>Arc Intelligence Engine:</strong> Tracking of character goal evolution, growth, stagnation, and structural arc patterns.</li>
+            <li><strong>Writing Packs:</strong> Pre-built genre-specific collections of bolt-on writing directives (e.g. Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Engine).</li>
+            <li><strong>Shareable Manuscripts:</strong> Time-limited shareable links for beta readers and editors, with annotation support.</li>
+            <li><strong>Manuscript Export:</strong> Export your completed manuscript in multiple formats.</li>
+          </ul>
         </div>
 
         <div style={sectionStyle}>
@@ -121,6 +134,12 @@ export default function TermsPage() {
           <p style={paraStyle}>
             We collect only the minimum personal data necessary to provide the Service: your email address, name, and payment information (processed by Stripe — we do not store card details directly).
           </p>
+          <p style={paraStyle}>
+            <strong>Shareable Manuscripts:</strong> When you generate a shareable link for your manuscript, the shared content is accessible to anyone with the link for the duration you specify. You are responsible for managing who you share links with. Shared manuscripts can include reader annotations. You may revoke a share link at any time.
+          </p>
+          <p style={paraStyle}>
+            <strong>AI Provider Data:</strong> When you use AI features, your Canon data and prose excerpts are sent to your chosen AI provider to generate responses. We do not control how third-party AI providers handle data — please review their respective privacy policies. Blocwrite does not store AI provider API keys on our servers; they are stored locally in your browser.
+          </p>
         </div>
 
         <div style={sectionStyle}>
@@ -143,10 +162,22 @@ export default function TermsPage() {
         <div style={sectionStyle}>
           <h2 style={headingStyle}>8. AI Features &amp; Third-Party Services</h2>
           <p style={paraStyle}>
-            The AI writing assistance features of Blocwrite are powered by third-party AI models accessed via API services. While we strive to provide high-quality AI output, we cannot guarantee the accuracy, originality, or suitability of AI-generated content for any particular purpose.
+            The AI-powered features of Blocwrite — including prose generation, smart rewrite modes, chapter rewrites, manuscript health assessment, thematic consistency scanning, narrative control centre analysis, arc intelligence, continuity checks, knowledge/reveal scanning, and character conversations — are powered by third-party AI models accessed via API services (such as OpenRouter, Infermatic, Hugging Face, or locally hosted models via LM Studio).
           </p>
           <p style={paraStyle}>
-            You are responsible for reviewing and editing all AI-generated content before publication. AI-generated prose should be treated as a first draft that requires your creative judgement and editing.
+            <strong>BYOK Model:</strong> Blocwrite does not include AI credits. You provide your own API key and choose which AI model to use. AI usage costs are determined by your chosen provider and model, not by Blocwrite. Free models are available through some providers.
+          </p>
+          <p style={paraStyle}>
+            <strong>AI Output:</strong> While we strive to provide high-quality AI output, we cannot guarantee the accuracy, originality, or suitability of AI-generated content for any particular purpose. AI-generated prose, analyses, scores, recommendations, and character dialogue should be treated as creative suggestions that require your judgement and editing.
+          </p>
+          <p style={paraStyle}>
+            <strong>Character Conversations:</strong> The &ldquo;Talk to Your Characters&rdquo; feature generates AI responses based on your character profiles stored in the Canon. These conversations are fictional simulations and do not represent real persons. Story recommendations generated from these conversations are suggestions only — you control whether to accept or dismiss each one.
+          </p>
+          <p style={paraStyle}>
+            <strong>Manuscript Analysis:</strong> Scores, ratings, and assessments provided by features such as Manuscript Health, Thematic Consistency, and the Narrative Control Centre are AI-generated estimates. They are intended as writing aids, not definitive evaluations of literary quality or publishability.
+          </p>
+          <p style={paraStyle}>
+            <strong>Your Responsibility:</strong> You are responsible for reviewing and editing all AI-generated content before publication. You acknowledge that AI output may contain errors, inconsistencies, or unintended similarities to existing works.
           </p>
         </div>
 

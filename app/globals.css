@@ -33,10 +33,18 @@
   --pw-coral-light: rgba(255, 107, 107, 0.08);
 
   /* ── Surfaces ── */
+  --pw-bg: #1e1c1c;
   --pw-surface: #252323;
   --pw-surface-alt: #2c2a2a;
   --pw-surface-glass: rgba(37, 35, 35, 0.92);
   --pw-surface-glass-strong: rgba(30, 28, 28, 0.97);
+
+  /* ── Overlay helpers (for inline styles) ── */
+  --pw-overlay-bg: rgba(255, 255, 255, 0.04);
+  --pw-overlay-bg-hover: rgba(255, 255, 255, 0.06);
+  --pw-overlay-border: rgba(255, 255, 255, 0.08);
+  --pw-overlay-border-light: rgba(255, 255, 255, 0.05);
+  --pw-shadow-popup: 0 12px 40px rgba(0,0,0,0.6);
 
   /* ── Sidebar ── */
   --pw-sidebar: #1a1919;
@@ -88,10 +96,17 @@
   --pw-coral: #e17055;
   --pw-coral-light: rgba(225, 112, 85, 0.06);
 
+  --pw-bg: #f2f0eb;
   --pw-surface: #ffffff;
   --pw-surface-alt: #f8f7f4;
   --pw-surface-glass: rgba(255, 255, 255, 0.92);
   --pw-surface-glass-strong: rgba(255, 255, 255, 0.97);
+
+  --pw-overlay-bg: rgba(0, 0, 0, 0.03);
+  --pw-overlay-bg-hover: rgba(0, 0, 0, 0.05);
+  --pw-overlay-border: rgba(0, 0, 0, 0.08);
+  --pw-overlay-border-light: rgba(0, 0, 0, 0.05);
+  --pw-shadow-popup: 0 12px 40px rgba(0,0,0,0.15);
 
   --pw-sidebar: #f2f1ee;
   --pw-sidebar-hover: rgba(74, 109, 0, 0.04);
@@ -248,7 +263,7 @@ a { color: inherit; text-decoration: none; }
   justify-content: center;
   color: var(--pw-text);
   padding: var(--pw-space-6);
-  /* No entrance animation — the loading.tsx skeleton provides visual continuity */
+  animation: pw-fade-in 0.3s ease-out both;
 }
 
 .pw-window {
@@ -265,7 +280,6 @@ a { color: inherit; text-decoration: none; }
   grid-template-rows: auto 1fr;
   position: relative;
   color: var(--pw-text);
-  /* No entrance animation — kept stable for seamless transitions */
 }
 
 @keyframes pw-fade-in {
@@ -273,21 +287,26 @@ a { color: inherit; text-decoration: none; }
   to   { opacity: 1; }
 }
 @keyframes pw-content-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Exit transition (page navigation) ── */
 .pw-exit {
-  animation: pw-fade-out 0.12s ease-out forwards !important;
+  animation: pw-fade-out 0.22s ease-in forwards !important;
   pointer-events: none;
 }
 .pw-exit .pw-window {
-  animation: pw-fade-out 0.12s ease-out forwards !important;
+  animation: pw-fade-out 0.22s ease-in forwards !important;
 }
 @keyframes pw-fade-out {
   from { opacity: 1; }
   to   { opacity: 0; }
+}
+
+/* ── Content-ready transition (data loaded, swap skeleton → real content) ── */
+.pw-content-ready {
+  animation: pw-content-in 0.35s ease-out both;
 }
 
 /* ── Sidebar ── */
@@ -1165,9 +1184,9 @@ a { color: inherit; text-decoration: none; }
 .pw-block-bolton-trigger:hover, .pw-chapter-bolton-trigger:hover { border-color: var(--pw-accent); color: var(--pw-accent); background: var(--pw-accent-muted); }
 .pw-block-bolton-trigger.pw-bolton-active, .pw-chapter-bolton-trigger.pw-bolton-active { border-color: var(--pw-accent); color: var(--pw-accent); background: var(--pw-accent-muted); }
 .pw-block-bolton-dropdown {
-  display: none; position: absolute; bottom: calc(100% + 4px); right: 0; min-width: 220px; max-width: 300px;
+  display: none; position: fixed; min-width: 220px; max-width: 300px; max-height: 70vh; overflow-y: auto;
   background: var(--pw-surface); border: 1px solid var(--pw-border); border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.25); padding: 4px; z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25); padding: 4px; z-index: 10000;
 }
 .pw-block-bolton-dropdown.open, .pw-bolton-open > .pw-block-bolton-dropdown { display: flex; flex-direction: column; }
 .pw-block-bolton-option {

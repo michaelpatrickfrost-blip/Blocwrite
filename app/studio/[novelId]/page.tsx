@@ -650,7 +650,7 @@ function NovelWorkspacePage() {
   // ── Narrative Control Center ──
   const [showNccModal, setShowNccModal] = useState(false);
   const [nccBusy, setNccBusy] = useState(false);
-  const [nccTab, setNccTab] = useState<"arcs" | "relationships" | "tension" | "threads" | "conflicts" | "themes">("arcs");
+  const [nccTab, setNccTab] = useState<"arcs" | "relationships" | "tension" | "threads" | "conflicts" | "themes" | "knowledge">("arcs");
   // Auto-scroll character chat to bottom
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -6316,6 +6316,7 @@ function NovelWorkspacePage() {
     { id: "threads", label: "Plot Threads", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", color: "#818cf8" },
     { id: "conflicts", label: "Canon Conflicts", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "#ef4444" },
     { id: "themes", label: "Theme Presence", icon: "M4 6h16M4 12h16M4 18h7", color: "#06b6d4" },
+    { id: "knowledge", label: "Knowledge & Reveals", icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z", color: "#f59e0b" },
   ];
 
   async function runNccAnalysis() {
@@ -7496,6 +7497,25 @@ function NovelWorkspacePage() {
     });
   }
 
+  /** Position a fixed-position dropdown so it stays fully within the viewport */
+  function positionDropdown(trigger: HTMLElement, dropdown: HTMLElement) {
+    const rect = trigger.getBoundingClientRect();
+    const ddRect = dropdown.getBoundingClientRect();
+    const ddH = ddRect.height || 260;
+    const ddW = ddRect.width || 240;
+    const gap = 4;
+    // Prefer above trigger
+    let top = rect.top - ddH - gap;
+    if (top < 8) top = rect.bottom + gap; // flip below if not enough room
+    if (top + ddH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - ddH - 8);
+    // Align right edge to trigger's right edge
+    let left = rect.right - ddW;
+    if (left < 8) left = 8;
+    if (left + ddW > window.innerWidth - 8) left = window.innerWidth - ddW - 8;
+    dropdown.style.top = `${top}px`;
+    dropdown.style.left = `${left}px`;
+  }
+
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {
     if (!activeChapter) return;
     const normalized = nextBoltonId.trim();
@@ -8429,44 +8449,9 @@ function NovelWorkspacePage() {
   if (!novel) {
     // While server sync is in progress, show a loading state instead of "not found"
     if (!novelSyncDone) {
-      return (
-        <div className="pw-wallpaper">
-          <div className="pw-window">
-            <aside className="pw-sidebar">
-              <div className="pw-logo">
-                <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
-              </div>
-              <Link href="/studio" className="pw-back-link">
-                <span>&larr; Back to novels</span>
-              </Link>
-              {/* Skeleton chapter list */}
-              <div style={{ padding: "8px 0", display: "flex", flexDirection: "column", gap: 6 }}>
-                {[1, 2, 3].map((i) => (
-                  <div key={i} style={{
-                    height: 36, borderRadius: 8,
-                    background: "var(--pw-surface-alt, #161616)",
-                    animation: "pw-pulse 1.5s ease-in-out infinite",
-                    animationDelay: `${i * 0.15}s`,
-                  }} />
-                ))}
-              </div>
-              <div className="pw-sidebar-foot" style={{ opacity: 0.4 }}>Loading...</div>
-            </aside>
-            <section className="pw-home-main" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ textAlign: "center", opacity: 0.4 }}>
-                <div style={{
-                  width: 28, height: 28, margin: "0 auto 14px",
-                  border: "2.5px solid var(--pw-border, #333)",
-                  borderTopColor: "var(--pw-accent, #a3e635)",
-                  borderRadius: "50%",
-                  animation: "spin 0.7s linear infinite",
-                }} />
-                <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Opening novel...</p>
-              </div>
-            </section>
-          </div>
-        </div>
-      );
+      // Return nothing — the loading.tsx skeleton is already visible via Next.js Suspense.
+      // Rendering a second skeleton here causes a flash when it replaces loading.tsx.
+      return null;
     }
     return (
       <div className="pw-wallpaper">
@@ -8559,7 +8544,7 @@ function NovelWorkspacePage() {
       : PROOFREAD_CATEGORIES.filter((category) => category.id === proofreadFilter);
 
   return (
-    <div className={`pw-wallpaper${navigatingAway ? " pw-exit" : ""}`}>
+    <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
       <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}`}>
         <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
@@ -8577,7 +8562,7 @@ function NovelWorkspacePage() {
             saveNovels(novels);
             flushServerSave();
             setNavigatingAway(true);
-            setTimeout(() => router.push("/studio"), 60);
+            setTimeout(() => router.push("/studio"), 240);
           }}>
             <span>← Back to novels</span>
           </Link>
@@ -8624,7 +8609,7 @@ function NovelWorkspacePage() {
           <div className="pw-sidebar-foot">
             <span>{activeChapter ? "Editing chapter" : "Novel overview"}</span>
           </div>
-          <div style={{ fontSize: 9, color: "var(--pw-text-dim, rgba(255,255,255,0.12))", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>&copy; {new Date().getFullYear()} Blocwrite</div>
+          <div style={{ fontSize: 9, color: "var(--pw-text-dim)", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>&copy; {new Date().getFullYear()} Blocwrite</div>
         </aside>
 
         <div className="pw-topbar">
@@ -8675,11 +8660,15 @@ function NovelWorkspacePage() {
                 {charChatPickerOpen && (
                   <>
                     <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setCharChatPickerOpen(false)} />
-                    <div style={{
-                      position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 9999,
-                      background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
+                    <div ref={(el) => {
+                      if (!el) return;
+                      const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
+                      if (trigger) positionDropdown(trigger, el);
+                    }} style={{
+                      position: "fixed", zIndex: 9999,
+                      background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
                       borderRadius: 12, padding: 6, minWidth: 200, maxHeight: 300, overflow: "auto",
-                      boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+                      boxShadow: "var(--pw-shadow-popup)",
                     }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Talk to...</div>
                       {storyCharacters.map((char) => (
@@ -8696,7 +8685,7 @@ function NovelWorkspacePage() {
                           <div style={{
                             width: 28, height: 28, borderRadius: 8, flexShrink: 0,
                             background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 12, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                            fontSize: 12, fontWeight: 800, color: "var(--pw-accent)",
                           }}>{char.name.charAt(0).toUpperCase()}</div>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{char.name}</div>
@@ -8923,8 +8912,8 @@ function NovelWorkspacePage() {
                           style={{
                             display: "flex", alignItems: "center", gap: 4,
                             padding: "4px 8px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                            background: chapterRewriteBusy ? "rgba(244,114,182,0.08)" : "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.08)", cursor: chapterRewriteBusy ? "default" : "pointer",
+                            background: chapterRewriteBusy ? "rgba(244,114,182,0.08)" : "var(--pw-overlay-bg)",
+                            border: "1px solid var(--pw-border)", cursor: chapterRewriteBusy ? "default" : "pointer",
                             color: chapterRewriteBusy ? "#f472b6" : "var(--pw-text-dim)",
                             transition: "all 0.12s",
                           }}
@@ -8939,11 +8928,16 @@ function NovelWorkspacePage() {
                         {chapterRewriteMenuOpen && (
                           <>
                             <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setChapterRewriteMenuOpen(false)} />
-                            <div style={{
-                              position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 9999,
-                              background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
+                            <div ref={(el) => {
+                              if (!el) return;
+                              const parent = el.previousElementSibling?.previousElementSibling?.previousElementSibling as HTMLElement | null; // backdrop -> skip to trigger's wrapper
+                              const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
+                              if (trigger) positionDropdown(trigger, el);
+                            }} style={{
+                              position: "fixed", zIndex: 9999,
+                              background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
                               borderRadius: 10, padding: 4, minWidth: 180,
-                              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                              boxShadow: "var(--pw-shadow-elevated)",
                             }}>
                               {REWRITE_MODES.map((mode) => (
                                 <button key={mode.id} type="button"
@@ -8969,14 +8963,17 @@ function NovelWorkspacePage() {
                         )}
                       </div>
                     )}
-                    {(novel.storyBible.boltons ?? []).length > 0 && (
+                    {((novel.storyBible.boltons ?? []).length > 0 || WRITING_PACKS.length > 0) && (
                       <div className="pw-chapter-bolton-wrap">
                         <button
                           type="button"
                           className={`pw-chapter-bolton-trigger ${chapterBoltonId ? "pw-bolton-active" : ""}`}
                           onClick={(e) => {
-                            const dd = e.currentTarget.parentElement?.querySelector(".pw-block-bolton-dropdown");
-                            if (dd) dd.classList.toggle("open");
+                            const dd = e.currentTarget.parentElement?.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                            if (dd) {
+                              const isOpen = dd.classList.toggle("open");
+                              if (isOpen) positionDropdown(e.currentTarget, dd);
+                            }
                           }}
                           title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Bolt-On: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Bolt-On"; })() : "Apply Bolt-On to chapter"}
                         >
@@ -8994,6 +8991,36 @@ function NovelWorkspacePage() {
                               <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                             </button>
                           ))}
+                          {/* Writing Packs section */}
+                          <div style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 4 }}>
+                            <div className="pw-bolton-dropdown-head" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                              Packs
+                            </div>
+                            {WRITING_PACKS.map((pack) => {
+                              const installed = getPackInstalledCount(pack);
+                              const allInstalled = installed === pack.boltons.length;
+                              return (
+                                <button key={pack.id} type="button" className="pw-block-bolton-option"
+                                  disabled={allInstalled}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    installWritingPack(pack);
+                                    e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open");
+                                  }}
+                                  style={{ opacity: allInstalled ? 0.4 : 1 }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                                  <div>
+                                    <span className="pw-block-bolton-option-title" style={{ fontSize: 11 }}>{pack.name}</span>
+                                    <div style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 400, marginTop: 1 }}>
+                                      {allInstalled ? "Installed" : `${pack.boltons.length} bolt-ons · ${pack.genre}`}
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -9051,34 +9078,6 @@ function NovelWorkspacePage() {
                                 </span>
                               </div>
                               <div className="pw-block-header-actions">
-                                {/* Scene Purpose toggle */}
-                                <button
-                                  type="button"
-                                  className="pw-block-header-btn"
-                                  title={scenePurposeOpen.has(idx) ? "Hide scene purpose" : "Scene purpose — declare POV, goal, conflict, outcome, emotional shift"}
-                                  onClick={() =>
-                                    setScenePurposeOpen((s) => {
-                                      const next = new Set(s);
-                                      if (next.has(idx)) next.delete(idx);
-                                      else next.add(idx);
-                                      return next;
-                                    })
-                                  }
-                                  style={{
-                                    display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11,
-                                    color: scenePurposeOpen.has(idx) || block.scenePurpose ? "#818cf8" : undefined,
-                                    fontWeight: scenePurposeOpen.has(idx) ? 700 : undefined,
-                                  }}
-                                >
-                                  {isStaticScene(block.scenePurpose) ? (
-                                    <span style={{ color: "#f59e0b", display: "inline-flex", alignItems: "center", gap: 3 }}>
-                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                      Static
-                                    </span>
-                                  ) : (
-                                    <>{scenePurposeOpen.has(idx) ? "−" : "+"} Purpose</>
-                                  )}
-                                </button>
                                 <button
                                   type="button"
                                   className="pw-block-header-btn"
@@ -9119,75 +9118,7 @@ function NovelWorkspacePage() {
                                     });
                                   }}
                                 />
-                                {/* Scene Purpose panel */}
-                                {scenePurposeOpen.has(idx) && (() => {
-                                  const sp = block.scenePurpose ?? { ...EMPTY_SCENE_PURPOSE };
-                                  const staticScene = isStaticScene(block.scenePurpose);
-                                  const updateSP = (field: keyof ScenePurpose, value: string) => {
-                                    const next = [...blocks];
-                                    const updated = { ...sp, [field]: value };
-                                    next[idx] = { ...block, scenePurpose: updated };
-                                    updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
-                                  };
-                                  const fields: Array<{ key: keyof ScenePurpose; label: string; placeholder: string; icon: string; color: string }> = [
-                                    { key: "pov", label: "POV", placeholder: "Whose perspective? (e.g. Elena, Third-person limited)", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z", color: "#06b6d4" },
-                                    { key: "goal", label: "Goal", placeholder: "What does the POV character want in this scene?", icon: "M13 10V3L4 14h7v7l9-11h-7z", color: "#a3e635" },
-                                    { key: "conflict", label: "Conflict", placeholder: "What stands in the way?", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "#f59e0b" },
-                                    { key: "outcome", label: "Outcome", placeholder: "How does the scene end? What changes?", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z", color: "#818cf8" },
-                                    { key: "emotionalShift", label: "Emotional Shift", placeholder: "How does the character feel before → after?", icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z", color: "#f472b6" },
-                                  ];
-                                  return (
-                                    <div style={{
-                                      margin: "6px 0 8px",
-                                      padding: "10px 12px 12px",
-                                      borderRadius: 10,
-                                      background: staticScene ? "rgba(245,158,11,0.04)" : "rgba(129,140,248,0.04)",
-                                      border: `1px solid ${staticScene ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
-                                    }}>
-                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: staticScene ? "#f59e0b" : "#818cf8" }}>
-                                          Scene Purpose
-                                        </span>
-                                        {staticScene && (
-                                          <span style={{
-                                            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                                            background: "rgba(245,158,11,0.12)", color: "#f59e0b",
-                                            display: "inline-flex", alignItems: "center", gap: 4,
-                                          }}>
-                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                            Static Scene — outcome doesn&apos;t alter state
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                        {fields.map((f) => (
-                                          <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <div style={{
-                                              width: 24, height: 24, borderRadius: 6, flexShrink: 0,
-                                              background: `${f.color}12`, display: "flex", alignItems: "center", justifyContent: "center",
-                                            }}>
-                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={f.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon}/></svg>
-                                            </div>
-                                            <span style={{ width: 80, fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", flexShrink: 0 }}>{f.label}</span>
-                                            <input
-                                              className="pw-bible-input"
-                                              value={sp[f.key]}
-                                              placeholder={f.placeholder}
-                                              maxLength={120}
-                                              onChange={(e) => updateSP(f.key, e.target.value)}
-                                              style={{ flex: 1, fontSize: 12, padding: "5px 8px", margin: 0 }}
-                                            />
-                                          </div>
-                                        ))}
-                                      </div>
-                                      {(sp.goal || sp.conflict) && !sp.outcome && (
-                                        <p style={{ fontSize: 10, color: "#f59e0b", margin: "6px 0 0", fontStyle: "italic" }}>
-                                          Every scene needs an outcome that changes something — fill in Outcome to avoid a static scene.
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
+                                {/* Scene Purpose data preserved in serialization but UI removed */}
                                 <div className="pw-block-toolbar">
                                   <div className="pw-block-toolbar-left">
                                     <div className="pw-block-word-pills">
@@ -9248,7 +9179,14 @@ function NovelWorkspacePage() {
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               const wrap = e.currentTarget.parentElement;
-                                              wrap?.classList.toggle("pw-bolton-open");
+                                              if (wrap) {
+                                                const wasOpen = wrap.classList.contains("pw-bolton-open");
+                                                wrap.classList.toggle("pw-bolton-open");
+                                                if (!wasOpen) {
+                                                  const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                                                  if (dd) positionDropdown(e.currentTarget, dd);
+                                                }
+                                              }
                                             }}
                                             title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
                                           >
@@ -9286,6 +9224,36 @@ function NovelWorkspacePage() {
                                                 <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                                               </button>
                                             ))}
+                                            {/* Writing Packs */}
+                                            <div style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 4 }}>
+                                              <div className="pw-bolton-dropdown-head" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                                Packs
+                                              </div>
+                                              {WRITING_PACKS.map((pack) => {
+                                                const installed = getPackInstalledCount(pack);
+                                                const allInstalled = installed === pack.boltons.length;
+                                                return (
+                                                  <button key={pack.id} type="button" className="pw-block-bolton-option"
+                                                    disabled={allInstalled}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      installWritingPack(pack);
+                                                      e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                    }}
+                                                    style={{ opacity: allInstalled ? 0.4 : 1 }}
+                                                  >
+                                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                                                    <div>
+                                                      <span className="pw-block-bolton-option-title" style={{ fontSize: 11 }}>{pack.name}</span>
+                                                      <div style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 400, marginTop: 1 }}>
+                                                        {allInstalled ? "Installed" : `${pack.boltons.length} bolt-ons · ${pack.genre}`}
+                                                      </div>
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
                                           </div>
                                         </div>
                                       )
@@ -9445,7 +9413,7 @@ function NovelWorkspacePage() {
                                       display: "inline-flex", alignItems: "center", gap: 6,
                                       padding: "6px 16px", borderRadius: 8,
                                       background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
-                                      color: "var(--pw-accent, #a3e635)", fontSize: 12, fontWeight: 600,
+                                      color: "var(--pw-accent)", fontSize: 12, fontWeight: 600,
                                       letterSpacing: "0.02em",
                                       animation: "pw-pulse 1.5s ease-in-out infinite",
                                     }}>
@@ -9943,7 +9911,7 @@ function NovelWorkspacePage() {
                       {healthScoreBusy ? (
                         <>
                           <span style={{
-                            width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)",
+                            width: 12, height: 12, border: "2px solid var(--pw-border)",
                             borderTopColor: "#fff", borderRadius: "50%",
                             animation: "spin 0.7s linear infinite", display: "inline-block",
                           }} />
@@ -10037,7 +10005,7 @@ function NovelWorkspacePage() {
                             background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)",
                             border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
                           }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent, #a3e635)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent)" }}>
                               Overall Tips
                             </div>
                             <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: 12, lineHeight: 1.7, opacity: 0.8 }}>
@@ -10061,14 +10029,14 @@ function NovelWorkspacePage() {
                           return (
                             <div style={{
                               marginTop: 10, borderRadius: 10, padding: "14px 16px",
-                              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+                              background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)",
                             }}>
                               {/* Chapter nav header */}
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                                 <button type="button" disabled={chIdx <= 0}
                                   onClick={() => setHealthChapterIdx((p) => Math.max(0, p - 1))}
                                   style={{
-                                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 6,
+                                    background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 6,
                                     width: 26, height: 26, cursor: chIdx <= 0 ? "default" : "pointer",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                     opacity: chIdx <= 0 ? 0.25 : 0.7, color: "inherit",
@@ -10082,7 +10050,7 @@ function NovelWorkspacePage() {
                                 <button type="button" disabled={chIdx >= hs.chapterBreakdowns!.length - 1}
                                   onClick={() => setHealthChapterIdx((p) => Math.min(hs.chapterBreakdowns!.length - 1, p + 1))}
                                   style={{
-                                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 6,
+                                    background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 6,
                                     width: 26, height: 26, cursor: chIdx >= hs.chapterBreakdowns!.length - 1 ? "default" : "pointer",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                     opacity: chIdx >= hs.chapterBreakdowns!.length - 1 ? 0.25 : 0.7, color: "inherit",
@@ -10095,7 +10063,7 @@ function NovelWorkspacePage() {
                                 {chCategories.map((cat) => (
                                   <div key={cat.label} style={{
                                     flex: 1, padding: "6px 0", textAlign: "center", borderRadius: 6,
-                                    background: "rgba(255,255,255,0.03)",
+                                    background: "var(--pw-overlay-bg)",
                                   }}>
                                     <div style={{ fontSize: 14, fontWeight: 800, color: scoreColor(cat.value) }}>{cat.value}</div>
                                     <div style={{ fontSize: 9, color: "var(--pw-text-dim)", marginTop: 1 }}>{cat.label}</div>
@@ -10134,175 +10102,153 @@ function NovelWorkspacePage() {
                       </p>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* ── Thematic Consistency Scanner ── */}
-              <div className="pw-overview-grid">
-                <div className="pw-overview-card">
-                  {/* Card header */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{
-                        width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                        background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(244,114,182,0.15))",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-                      </div>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Thematic Consistency</h4>
+                  {/* ── Thematic Consistency (integrated) ── */}
+                  <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--pw-border-light)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                        <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Thematic Consistency</h4>
                         {novel.thematicAnalysis && (
                           <span style={{
-                            fontSize: 11, fontWeight: 700, marginLeft: 0,
+                            fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
+                            background: novel.thematicAnalysis.overallCohesion >= 7 ? "rgba(163,230,53,0.1)" : novel.thematicAnalysis.overallCohesion >= 5 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)",
                             color: novel.thematicAnalysis.overallCohesion >= 7 ? "#a3e635" : novel.thematicAnalysis.overallCohesion >= 5 ? "#f59e0b" : "#ef4444",
                           }}>
-                            Cohesion: {novel.thematicAnalysis.overallCohesion}/10
+                            {novel.thematicAnalysis.overallCohesion}/10
                           </span>
                         )}
                       </div>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={themeScanBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
+                        onClick={() => void runThematicScan()}
+                        style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}
+                        title={aiOff ? "Enable AI in settings" : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2 ? "Need at least 2 chapters with content" : ""}
+                      >
+                        {themeScanBusy ? (
+                          <><span style={{ display: "inline-block", width: 10, height: 10, border: "1.5px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Scanning...</>
+                        ) : novel.thematicAnalysis ? "Rescan" : "Scan Themes"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className={novel.thematicAnalysis ? "btn" : "btn btn-primary"}
-                      disabled={themeScanBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
-                      onClick={() => void runThematicScan()}
-                      style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
-                      title={aiOff ? "Enable AI in settings" : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2 ? "Need at least 2 chapters with content" : ""}
-                    >
-                      {themeScanBusy ? (
-                        <>
-                          <span style={{
-                            display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.2)",
-                            borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite",
-                          }} />
-                          Scanning...
-                        </>
-                      ) : novel.thematicAnalysis ? "Rescan" : "Scan Themes"}
-                    </button>
-                  </div>
 
-                  {/* Results */}
-                  {novel.thematicAnalysis ? (() => {
-                    const ta = novel.thematicAnalysis!;
-                    const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
-                    const driftThemes = ta.themes.filter((t) => t.driftWarning);
-                    const strongCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "strong").length;
-                    const contradictedCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "contradicted").length;
-                    return (
-                      <div>
-                        {/* Summary + cohesion bar */}
-                        <div style={{
-                          padding: "12px 14px", borderRadius: 10, marginBottom: 14,
-                          background: "rgba(129,140,248,0.04)", border: "1px solid rgba(129,140,248,0.1)",
-                        }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                            <div style={{ fontSize: 22, fontWeight: 800, color: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444" }}>
-                              {ta.overallCohesion}/10
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${ta.overallCohesion * 10}%`, borderRadius: 3, background: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444", transition: "width 0.3s" }} />
+                    {novel.thematicAnalysis ? (() => {
+                      const ta = novel.thematicAnalysis!;
+                      const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
+                      const strongCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "strong").length;
+                      const contradictedCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "contradicted").length;
+                      return (
+                        <div>
+                          {/* Summary + cohesion bar */}
+                          <div style={{
+                            padding: "10px 12px", borderRadius: 8, marginBottom: 10,
+                            background: "rgba(129,140,248,0.04)", border: "1px solid rgba(129,140,248,0.08)",
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <div style={{ fontSize: 18, fontWeight: 800, color: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444" }}>
+                                {ta.overallCohesion}/10
                               </div>
-                            </div>
-                          </div>
-                          <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: 0 }}>{ta.summary}</p>
-                        </div>
-
-                        {/* Per-theme detail cards */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-                          {ta.themes.map((theme) => (
-                            <div key={theme.id} style={{
-                              borderRadius: 10, padding: "10px 14px",
-                              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
-                            }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: theme.color, flexShrink: 0 }} />
-                                <span style={{ fontSize: 13, fontWeight: 700 }}>{theme.label}</span>
-                                <span style={{ fontSize: 10, color: "var(--pw-text-dim)", marginLeft: "auto" }}>
-                                  Strong in {strongCount(theme)}/{chapCount} chapters
-                                  {contradictedCount(theme) > 0 && <span style={{ color: "#ef4444", marginLeft: 6 }}>Contradicted in {contradictedCount(theme)}</span>}
-                                </span>
-                              </div>
-                              {theme.description && (
-                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: "0 0 6px" }}>{theme.description}</p>
-                              )}
-                              {/* Mini heatmap for this theme */}
-                              <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
-                                {Array.from({ length: chapCount }, (_, i) => {
-                                  const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
-                                  const presence = status?.presence ?? "absent";
-                                  const bg = presence === "strong" ? theme.color
-                                    : presence === "moderate" ? `${theme.color}60`
-                                    : presence === "contradicted" ? "#ef4444"
-                                    : "rgba(255,255,255,0.06)";
-                                  return (
-                                    <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
-                                      flex: 1, height: 14, borderRadius: 2, background: bg, minWidth: 0,
-                                      opacity: presence === "absent" ? 0.3 : 1,
-                                    }} />
-                                  );
-                                })}
-                              </div>
-                              {/* Notes for notable chapters */}
-                              {(() => {
-                                const notable = theme.chapterMap.filter((cm) => cm.note && (cm.presence === "contradicted" || cm.presence === "strong"));
-                                return notable.length > 0 ? (
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                                    {notable.slice(0, 4).map((cm) => (
-                                      <span key={cm.chapter} style={{
-                                        fontSize: 10, padding: "2px 6px", borderRadius: 4,
-                                        background: cm.presence === "contradicted" ? "rgba(239,68,68,0.08)" : `${theme.color}12`,
-                                        color: cm.presence === "contradicted" ? "#ef4444" : "var(--pw-text-dim)",
-                                        border: cm.presence === "contradicted" ? "1px solid rgba(239,68,68,0.15)" : "1px solid rgba(255,255,255,0.05)",
-                                      }}>
-                                        Ch{cm.chapter}: {cm.note}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null;
-                              })()}
-                              {/* Drift warning inline */}
-                              {theme.driftWarning && (
-                                <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 5, display: "flex", alignItems: "flex-start", gap: 4 }}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                  {theme.driftWarning}
+                              <div style={{ flex: 1 }}>
+                                <div style={{ height: 4, borderRadius: 2, background: "var(--pw-overlay-bg-hover)", overflow: "hidden" }}>
+                                  <div style={{ height: "100%", width: `${ta.overallCohesion * 10}%`, borderRadius: 2, background: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444", transition: "width 0.3s" }} />
                                 </div>
-                              )}
+                              </div>
                             </div>
-                          ))}
-                        </div>
+                            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: 0 }}>{ta.summary}</p>
+                          </div>
 
-                        {/* Legend */}
-                        <div style={{ display: "flex", gap: 12, marginBottom: 6 }}>
-                          {([
-                            { label: "Strong", bg: "var(--pw-accent, #a3e635)" },
-                            { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
-                            { label: "Absent", bg: "rgba(255,255,255,0.06)" },
-                            { label: "Contradicted", bg: "#ef4444" },
-                          ]).map((l) => (
-                            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <div style={{ width: 10, height: 10, borderRadius: 2, background: l.bg }} />
-                              <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
-                            </div>
-                          ))}
-                        </div>
+                          {/* Per-theme detail cards */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {ta.themes.map((theme) => (
+                              <div key={theme.id} style={{
+                                borderRadius: 8, padding: "8px 12px",
+                                background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)",
+                              }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: theme.color, flexShrink: 0 }} />
+                                  <span style={{ fontSize: 12, fontWeight: 700 }}>{theme.label}</span>
+                                  <span style={{ fontSize: 9, color: "var(--pw-text-dim)", marginLeft: "auto" }}>
+                                    {strongCount(theme)}/{chapCount} strong
+                                    {contradictedCount(theme) > 0 && <span style={{ color: "#ef4444", marginLeft: 4 }}>{contradictedCount(theme)} contradicted</span>}
+                                  </span>
+                                </div>
+                                {theme.description && (
+                                  <p style={{ fontSize: 10, color: "var(--pw-text-dim)", lineHeight: 1.3, margin: "0 0 4px" }}>{theme.description}</p>
+                                )}
+                                <div style={{ display: "flex", gap: 2, marginBottom: 3 }}>
+                                  {Array.from({ length: chapCount }, (_, i) => {
+                                    const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
+                                    const presence = status?.presence ?? "absent";
+                                    const bg = presence === "strong" ? theme.color
+                                      : presence === "moderate" ? `${theme.color}60`
+                                      : presence === "contradicted" ? "#ef4444"
+: "var(--pw-overlay-bg-hover)";
+                                  return (
+                                      <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
+                                        flex: 1, height: 12, borderRadius: 2, background: bg, minWidth: 0,
+                                        opacity: presence === "absent" ? 0.3 : 1,
+                                      }} />
+                                    );
+                                  })}
+                                </div>
+                                {(() => {
+                                  const notable = theme.chapterMap.filter((cm) => cm.note && (cm.presence === "contradicted" || cm.presence === "strong"));
+                                  return notable.length > 0 ? (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3 }}>
+                                      {notable.slice(0, 4).map((cm) => (
+                                        <span key={cm.chapter} style={{
+                                          fontSize: 9, padding: "1px 5px", borderRadius: 3,
+                                          background: cm.presence === "contradicted" ? "rgba(239,68,68,0.08)" : `${theme.color}12`,
+                                          color: cm.presence === "contradicted" ? "#ef4444" : "var(--pw-text-dim)",
+                                          border: cm.presence === "contradicted" ? "1px solid rgba(239,68,68,0.12)" : "1px solid var(--pw-border-light)",
+                                        }}>
+                                          Ch{cm.chapter}: {cm.note}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null;
+                                })()}
+                                {theme.driftWarning && (
+                                  <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4, display: "flex", alignItems: "flex-start", gap: 3 }}>
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    {theme.driftWarning}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
 
-                        {/* Timestamp */}
-                        <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.5 }}>
-                          Scanned {new Date(ta.generatedAt).toLocaleString()}
+                          {/* Legend */}
+                          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                            {([
+                              { label: "Strong", bg: "var(--pw-accent)" },
+                              { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
+                              { label: "Absent", bg: "var(--pw-overlay-bg-hover)" },
+                              { label: "Contradicted", bg: "#ef4444" },
+                            ]).map((l) => (
+                              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: 2, background: l.bg }} />
+                                <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <p style={{ fontSize: 9, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.4 }}>
+                            Scanned {new Date(ta.generatedAt).toLocaleString()}
+                          </p>
+                        </div>
+                      );
+                    })() : (
+                      <div style={{ textAlign: "center", padding: "12px 0", opacity: 0.35 }}>
+                        <p style={{ fontSize: 11, margin: 0 }}>
+                          {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
+                            ? "Write at least 2 chapters to scan for themes."
+                            : "Scan your manuscript for thematic consistency across chapters."}
                         </p>
                       </div>
-                    );
-                  })() : (
-                    <div style={{ textAlign: "center", padding: "16px 0", opacity: 0.4 }}>
-                      <p style={{ fontSize: 12, margin: 0 }}>
-                        {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
-                          ? "Write at least 2 chapters to scan for themes."
-                          : "Extract themes from your manuscript and track their consistency across chapters."}
-                      </p>
-                    </div>
-                  )}
+                    )}
+                  </div>
+
                 </div>
               </div>
 
@@ -10315,14 +10261,14 @@ function NovelWorkspacePage() {
       {showNccModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowNccModal(false)}>
           <div style={{
-            background: "var(--pw-bg, #18181b)", borderRadius: 20,
+            background: "var(--pw-bg)", borderRadius: 20,
             width: "96%", maxWidth: 900, maxHeight: "88vh",
             display: "flex", flexDirection: "column",
-            boxShadow: "0 32px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)",
+            boxShadow: "var(--pw-shadow-modal)", border: "1px solid var(--pw-border)",
           }} onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div style={{
-              padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+              padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)",
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -10345,7 +10291,7 @@ function NovelWorkspacePage() {
                   onClick={() => void runNccAnalysis()}
                   style={{
                     padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                    background: nccBusy ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
+                    background: nccBusy ? "var(--pw-overlay-bg)" : "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
                     color: nccBusy ? "var(--pw-text-dim)" : "#a3e635",
                     border: "1px solid rgba(163,230,53,0.2)", cursor: nccBusy ? "default" : "pointer",
                     display: "flex", alignItems: "center", gap: 6,
@@ -10354,7 +10300,7 @@ function NovelWorkspacePage() {
                   {nccBusy ? <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Analysing...</> : novel.narrativeControl ? "Regenerate" : "Analyse Novel"}
                 </button>
                 <button type="button" onClick={() => setShowNccModal(false)} style={{
-                  background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                  background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                   width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                   color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
                 }}>&times;</button>
@@ -10362,12 +10308,12 @@ function NovelWorkspacePage() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 2, padding: "12px 24px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", overflow: "auto" }}>
+            <div style={{ display: "flex", gap: 2, padding: "12px 24px 0", borderBottom: "1px solid var(--pw-border-light)", overflow: "auto" }}>
               {NCC_TABS.map((tab) => (
                 <button key={tab.id} type="button" onClick={() => setNccTab(tab.id)} style={{
                   padding: "8px 14px", fontSize: 12, fontWeight: nccTab === tab.id ? 700 : 500,
                   borderRadius: "8px 8px 0 0", border: "none", cursor: "pointer",
-                  background: nccTab === tab.id ? "rgba(255,255,255,0.06)" : "transparent",
+                  background: nccTab === tab.id ? "var(--pw-overlay-bg-hover)" : "transparent",
                   color: nccTab === tab.id ? tab.color : "var(--pw-text-dim)",
                   borderBottom: nccTab === tab.id ? `2px solid ${tab.color}` : "2px solid transparent",
                   display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", transition: "all 0.15s",
@@ -10400,7 +10346,7 @@ function NovelWorkspacePage() {
                     {nccTab === "arcs" && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         {nc.characterArcs.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No character arcs detected.</p> : nc.characterArcs.map((arc, ai) => (
-                          <div key={ai} style={{ borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px" }}>
+                          <div key={ai} style={{ borderRadius: 12, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", padding: "14px 16px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                               <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#a3e635" }}>
                                 {arc.name.charAt(0)}
@@ -10431,7 +10377,7 @@ function NovelWorkspacePage() {
                     {nccTab === "relationships" && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                         {nc.relationships.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No relationship evolutions detected.</p> : nc.relationships.map((rel, ri) => (
-                          <div key={ri} style={{ borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px" }}>
+                          <div key={ri} style={{ borderRadius: 12, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", padding: "14px 16px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                               <span style={{ fontWeight: 700, fontSize: 13, color: "#f472b6" }}>{rel.fromName}</span>
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f472b6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -10461,16 +10407,16 @@ function NovelWorkspacePage() {
                         {nc.tensionCurve.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No tension data.</p> : (
                           <>
                             {/* SVG tension graph */}
-                            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", padding: "16px 16px 8px", marginBottom: 12 }}>
+                            <div style={{ background: "var(--pw-overlay-bg)", borderRadius: 12, border: "1px solid var(--pw-border-light)", padding: "16px 16px 8px", marginBottom: 12 }}>
                               <svg width="100%" height="180" viewBox={`0 0 ${Math.max(nc.tensionCurve.length * 60, 300)} 180`} style={{ display: "block" }}>
                                 {/* Grid lines */}
                                 {[2, 4, 6, 8, 10].map((v) => (
                                   <line key={v} x1="30" y1={160 - (v / 10) * 140} x2={nc.tensionCurve.length * 60} y2={160 - (v / 10) * 140}
-                                    stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+                                    stroke="var(--pw-border-light)" strokeWidth="1" />
                                 ))}
                                 {/* Y-axis labels */}
                                 {[2, 5, 8, 10].map((v) => (
-                                  <text key={v} x="22" y={164 - (v / 10) * 140} fill="rgba(255,255,255,0.25)" fontSize="9" textAnchor="end">{v}</text>
+                                  <text key={v} x="22" y={164 - (v / 10) * 140} fill="var(--pw-text-dim)" fontSize="9" textAnchor="end">{v}</text>
                                 ))}
                                 {/* Area fill */}
                                 <path d={
@@ -10485,7 +10431,7 @@ function NovelWorkspacePage() {
                                 {nc.tensionCurve.map((t, i) => (
                                   <g key={i}>
                                     <circle cx={30 + i * 55} cy={160 - (t.tension / 10) * 140} r="4" fill="#f59e0b" />
-                                    <text x={30 + i * 55} y="175" fill="rgba(255,255,255,0.35)" fontSize="9" textAnchor="middle">Ch{t.chapter}</text>
+                                    <text x={30 + i * 55} y="175" fill="var(--pw-text-dim)" fontSize="9" textAnchor="middle">Ch{t.chapter}</text>
                                   </g>
                                 ))}
                               </svg>
@@ -10495,8 +10441,8 @@ function NovelWorkspacePage() {
                               {nc.tensionCurve.map((t, i) => (
                                 <div key={i} style={{
                                   padding: "6px 10px", borderRadius: 8, fontSize: 11,
-                                  background: t.tension >= 8 ? "rgba(239,68,68,0.08)" : t.tension >= 5 ? "rgba(245,158,11,0.08)" : "rgba(255,255,255,0.02)",
-                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.15)" : t.tension >= 5 ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)"}`,
+                                  background: t.tension >= 8 ? "rgba(239,68,68,0.08)" : t.tension >= 5 ? "rgba(245,158,11,0.08)" : "var(--pw-overlay-bg)",
+                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.15)" : t.tension >= 5 ? "rgba(245,158,11,0.15)" : "var(--pw-border-light)"}`,
                                 }}>
                                   <span style={{ fontWeight: 700, color: t.tension >= 8 ? "#ef4444" : t.tension >= 5 ? "#f59e0b" : "var(--pw-text-dim)" }}>Ch{t.chapter}: {t.tension}/10</span>
                                   <span style={{ color: "var(--pw-text-dim)", marginLeft: 6 }}>{t.label}</span>
@@ -10529,7 +10475,7 @@ function NovelWorkspacePage() {
                                       </div>
                                     </div>
                                     {/* Bar */}
-                                    <div style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)", position: "relative" }}>
+                                    <div style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--pw-overlay-bg)", position: "relative" }}>
                                       <div style={{
                                         position: "absolute", top: 0, left: `${startPct}%`, width: `${endPct - startPct}%`, height: "100%",
                                         borderRadius: 4, background: statusColor, opacity: 0.6,
@@ -10542,7 +10488,7 @@ function NovelWorkspacePage() {
                             {/* Notes */}
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
                               {nc.plotThreads.filter((t) => t.note).map((thread, ti) => (
-                                <div key={ti} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", maxWidth: 280 }}>
+                                <div key={ti} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", maxWidth: 280 }}>
                                   <span style={{ fontWeight: 600 }}>{thread.label}:</span> <span style={{ color: "var(--pw-text-dim)" }}>{thread.note}</span>
                                 </div>
                               ))}
@@ -10632,6 +10578,212 @@ function NovelWorkspacePage() {
                   </>
                 );
               })()}
+
+              {/* ── Knowledge & Reveals tab (independent of AI analysis) ── */}
+              {nccTab === "knowledge" && (
+                <div>
+                  {/* Header with actions */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0 }}>Track who knows what, when secrets are revealed, and scan for violations.</p>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {!aiOff && (
+                        <button type="button" disabled={knowledgeScanBusy || (novel.storyBible.knowledgeMap?.entries ?? []).length === 0}
+                          onClick={() => void runKnowledgeScan()}
+                          style={{
+                            padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                            background: knowledgeScanBusy ? "var(--pw-overlay-bg)" : "rgba(245,158,11,0.08)",
+                            color: knowledgeScanBusy ? "var(--pw-text-dim)" : "#f59e0b",
+                            border: "1px solid rgba(245,158,11,0.15)", cursor: knowledgeScanBusy ? "default" : "pointer",
+                            display: "flex", alignItems: "center", gap: 4,
+                          }}
+                        >
+                          {knowledgeScanBusy ? <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(245,158,11,0.3)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</> : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Scan</>}
+                        </button>
+                      )}
+                      <button type="button" disabled={(novel.storyBible.knowledgeMap?.entries ?? []).length >= 30}
+                        onClick={addKnowledgeEntry}
+                        style={{
+                          padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                          background: "rgba(245,158,11,0.08)", color: "#f59e0b",
+                          border: "1px solid rgba(245,158,11,0.15)", cursor: "pointer",
+                        }}
+                      >+ Add Entry</button>
+                    </div>
+                  </div>
+
+                  {/* Scan error */}
+                  {knowledgeScanError && (
+                    <div style={{ padding: "8px 12px", borderRadius: 8, marginBottom: 10, fontSize: 11, color: "#ef4444", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)" }}>{knowledgeScanError}</div>
+                  )}
+
+                  {/* Scan results banner */}
+                  {(() => {
+                    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+                    if (km.scanIssues.length === 0 && !km.lastScanAt) return null;
+                    return (
+                      <div style={{
+                        padding: "10px 14px", borderRadius: 10, marginBottom: 12,
+                        background: km.scanIssues.length === 0 ? "rgba(163,230,53,0.06)" : "rgba(245,158,11,0.06)",
+                        border: `1px solid ${km.scanIssues.length === 0 ? "rgba(163,230,53,0.15)" : "rgba(245,158,11,0.15)"}`,
+                        display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12,
+                      }}>
+                        <span>{km.scanIssues.length === 0 ? <span style={{ color: "#a3e635", fontWeight: 700 }}>No violations found</span> : <span style={{ fontWeight: 700, color: "#f59e0b" }}>{km.scanIssues.length} issue{km.scanIssues.length !== 1 ? "s" : ""} found</span>}</span>
+                        {km.lastScanAt && <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Scanned {new Date(km.lastScanAt).toLocaleTimeString()}</span>}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Empty state */}
+                  {(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "40px 16px", opacity: 0.4 }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block" }}><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                      <p style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>No knowledge entries yet</p>
+                      <p style={{ fontSize: 11 }}>Add secrets, reveals, clues, and deceptions to track who knows what.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 12, minHeight: 280 }}>
+                      {/* Entry list */}
+                      <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4, overflow: "auto", maxHeight: 400 }}>
+                        {(novel.storyBible.knowledgeMap?.entries ?? []).map((entry) => {
+                          const typeMeta = KNOWLEDGE_TYPES.find((t) => t.id === entry.type) || KNOWLEDGE_TYPES[0];
+                          const statusMeta = STATUS_META[entry.status] || STATUS_META.hidden;
+                          const isSelected = knowledgeSelectedId === entry.id;
+                          const issueCount = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id).length;
+                          return (
+                            <div key={entry.id} onClick={() => setKnowledgeSelectedId(isSelected ? null : entry.id)}
+                              style={{
+                                padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                                background: isSelected ? "var(--pw-overlay-bg-hover)" : "var(--pw-overlay-bg)",
+                                border: `1px solid ${isSelected ? typeMeta.color + "40" : "var(--pw-border-light)"}`,
+                                transition: "all 0.12s",
+                              }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={typeMeta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={typeMeta.icon}/></svg>
+                                <span style={{ fontSize: 11, fontWeight: 700, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.label || "Untitled"}</span>
+                                {issueCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>{issueCount}</span>}
+                              </div>
+                              <div style={{ display: "flex", gap: 3 }}>
+                                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: `${typeMeta.color}15`, color: typeMeta.color, fontWeight: 600 }}>{typeMeta.label}</span>
+                                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600 }}>{statusMeta.label}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Entry detail */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {(() => {
+                          const entry = (novel.storyBible.knowledgeMap?.entries ?? []).find((e) => e.id === knowledgeSelectedId);
+                          if (!entry) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.3, fontSize: 12 }}>Select an entry to edit</div>;
+                          const entryIssues = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id);
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {/* Label + type */}
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Label</label>
+                                  <input style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none" }}
+                                    value={entry.label} maxLength={80} placeholder="e.g. The letter is forged"
+                                    onChange={(e) => updateKnowledgeEntry(entry.id, { label: e.target.value })} />
+                                </div>
+                                <div style={{ width: 120 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Type</label>
+                                  <select style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 11, outline: "none" }}
+                                    value={entry.type} onChange={(e) => updateKnowledgeEntry(entry.id, { type: e.target.value as KnowledgeEntry["type"] })}>
+                                    {KNOWLEDGE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                              {/* Description */}
+                              <div>
+                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>What is it?</label>
+                                <textarea rows={2} maxLength={300} value={entry.description} placeholder="Describe the secret, reveal, clue, or deception..."
+                                  onChange={(e) => updateKnowledgeEntry(entry.id, { description: e.target.value })}
+                                  style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none", resize: "vertical" }} />
+                              </div>
+                              {/* Status + reveal chapter */}
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Status</label>
+                                  <select style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 11, outline: "none" }}
+                                    value={entry.status} onChange={(e) => updateKnowledgeEntry(entry.id, { status: e.target.value as KnowledgeEntry["status"] })}>
+                                    <option value="hidden">Hidden</option><option value="foreshadowed">Foreshadowed</option><option value="revealed">Revealed</option>
+                                  </select>
+                                </div>
+                                <div style={{ width: 100 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Reveal Ch</label>
+                                  <input type="number" min={1} max={novel.chapters.length || 99} value={entry.revealChapter ?? ""} placeholder="#"
+                                    onChange={(e) => updateKnowledgeEntry(entry.id, { revealChapter: e.target.value ? Number(e.target.value) : undefined })}
+                                    style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none" }} />
+                                </div>
+                              </div>
+                              {/* Who knows */}
+                              <div>
+                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 4, display: "block" }}>Who knows this?</label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {entry.holders.map((h) => {
+                                    const char = novel.storyBible.characters.find((c) => c.id === h.characterId);
+                                    if (!char) return null;
+                                    return (
+                                      <span key={h.characterId} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", fontSize: 11 }}>
+                                        {char.name} {h.learnedInChapter ? <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>Ch{h.learnedInChapter}</span> : <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>start</span>}
+                                        <button type="button" onClick={() => removeKnowledgeHolder(entry.id, h.characterId)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1 }}>&times;</button>
+                                      </span>
+                                    );
+                                  })}
+                                  {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).length > 0 && (
+                                    <select value="" onChange={(e) => { if (e.target.value) addKnowledgeHolder(entry.id, e.target.value); }}
+                                      style={{ padding: "3px 6px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 10, outline: "none" }}>
+                                      <option value="">+ Add</option>
+                                      {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).map((c) => (
+                                        <option key={c.id} value={c.id}>{c.name || "Unnamed"}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Notes */}
+                              <div>
+                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Notes</label>
+                                <textarea rows={2} maxLength={300} value={entry.notes ?? ""} placeholder="Private notes..."
+                                  onChange={(e) => updateKnowledgeEntry(entry.id, { notes: e.target.value })}
+                                  style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none", resize: "vertical" }} />
+                              </div>
+                              {/* Delete */}
+                              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                <button type="button" onClick={() => removeKnowledgeEntry(entry.id)}
+                                  style={{ fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)", cursor: "pointer" }}>Remove</button>
+                              </div>
+                              {/* Issues */}
+                              {entryIssues.length > 0 && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{entryIssues.length} violation{entryIssues.length !== 1 ? "s" : ""}</label>
+                                  {entryIssues.map((issue, ii) => (
+                                    <div key={ii} style={{
+                                      padding: "6px 10px", borderRadius: 7,
+                                      background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
+                                      border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.12)" : issue.severity === "warning" ? "rgba(245,158,11,0.12)" : "rgba(129,140,248,0.08)"}`,
+                                      fontSize: 11,
+                                    }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+                                        <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 4px", borderRadius: 3, background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)", color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8" }}>{issue.severity}</span>
+                                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Ch {issue.chapter}</span>
+                                      </div>
+                                      <div style={{ fontWeight: 600, marginBottom: 1 }}>{issue.message}</div>
+                                      {issue.suggestion && <div style={{ color: "var(--pw-text-dim)", fontStyle: "italic" }}>{issue.suggestion}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -10779,7 +10931,7 @@ function NovelWorkspacePage() {
                         width: "100%",
                         height: 4,
                         borderRadius: 2,
-                        background: "rgba(255,255,255,0.06)",
+                        background: "var(--pw-overlay-bg-hover)",
                         overflow: "hidden",
                       }}
                     >
@@ -10806,14 +10958,14 @@ function NovelWorkspacePage() {
               {(novel.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
                 <div style={{
                   marginBottom: 18, borderRadius: 14,
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid rgba(255,255,255,0.07)",
+                  background: "var(--pw-overlay-bg)",
+                  border: "1px solid var(--pw-border)",
                   overflow: "hidden",
                 }}>
                   {/* Panel header */}
                   <div style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    padding: "14px 18px", borderBottom: "1px solid var(--pw-border-light)",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{
@@ -10843,7 +10995,7 @@ function NovelWorkspacePage() {
                       title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc analysis"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        background: arcBusy ? "rgba(255,255,255,0.04)" : "rgba(129,140,248,0.12)",
+                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(129,140,248,0.12)",
                         color: arcBusy ? "var(--pw-text-dim)" : "#818cf8",
                         border: "1px solid rgba(129,140,248,0.2)", cursor: arcBusy ? "default" : "pointer",
                         display: "flex", alignItems: "center", gap: 6,
@@ -10891,8 +11043,8 @@ function NovelWorkspacePage() {
                               <div key={s.dimension}
                                 style={{
                                   borderRadius: 10, padding: "12px",
-                                  background: isExpanded ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.015)",
-                                  border: `1px solid ${isExpanded ? meta.color + "30" : "rgba(255,255,255,0.05)"}`,
+                                  background: isExpanded ? "var(--pw-overlay-bg)" : "var(--pw-overlay-bg)",
+                                  border: `1px solid ${isExpanded ? meta.color + "30" : "var(--pw-border-light)"}`,
                                   cursor: "pointer", transition: "all 0.15s",
                                   gridColumn: isExpanded ? "1 / -1" : undefined,
                                 }}
@@ -10908,7 +11060,7 @@ function NovelWorkspacePage() {
                                 </div>
                                 <div style={{
                                   width: "100%", height: 3, borderRadius: 2,
-                                  background: "rgba(255,255,255,0.06)", overflow: "hidden", marginBottom: 6,
+                                  background: "var(--pw-overlay-bg-hover)", overflow: "hidden", marginBottom: 6,
                                 }}>
                                   <div style={{
                                     height: "100%", borderRadius: 2,
@@ -10928,8 +11080,8 @@ function NovelWorkspacePage() {
                                     {relatedIssues.map((issue, ii) => (
                                       <div key={ii} style={{
                                         padding: "8px 10px", borderRadius: 8,
-                                        background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(255,255,255,0.02)",
-                                        border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)"}`,
+                                        background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "var(--pw-overlay-bg)",
+                                        border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "var(--pw-border-light)"}`,
                                       }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                                           <span style={{
@@ -10963,7 +11115,7 @@ function NovelWorkspacePage() {
                         {arc.issues.length > 0 && (
                           <div style={{
                             padding: "10px 14px", borderRadius: 10,
-                            background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.05)",
+                            background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)",
                             display: "flex", alignItems: "center", gap: 10,
                           }}>
                             <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
@@ -11401,7 +11553,7 @@ function NovelWorkspacePage() {
                         onClick={() => setShareExpiryDays(d)}
                         style={{
                           padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                          border: shareExpiryDays === d ? "1.5px solid var(--pw-accent, #3b82f6)" : "1px solid var(--pw-border, rgba(255,255,255,0.1))",
+                          border: shareExpiryDays === d ? "1.5px solid var(--pw-accent)" : "1px solid var(--pw-border)",
                           background: shareExpiryDays === d ? "rgba(59,130,246,0.12)" : "transparent",
                           color: shareExpiryDays === d ? "var(--pw-accent, #3b82f6)" : "var(--pw-text-muted)",
                           cursor: "pointer",
@@ -11601,7 +11753,7 @@ function NovelWorkspacePage() {
             {/* Loading state */}
             {feedbackLoading && (
               <div style={{ padding: 40, textAlign: "center" }}>
-                <div style={{ width: 28, height: 28, border: "2.5px solid var(--pw-border, rgba(255,255,255,0.08))", borderTopColor: "var(--pw-accent, #3b82f6)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 14px" }} />
+                <div style={{ width: 28, height: 28, border: "2.5px solid var(--pw-border)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 14px" }} />
                 <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>Loading feedback...</p>
               </div>
             )}
@@ -11659,8 +11811,8 @@ function NovelWorkspacePage() {
                       return (
                         <div key={fb.id} style={{
                           display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 6,
-                          borderRadius: 10, background: "var(--pw-surface-alt, rgba(255,255,255,0.02))",
-                          border: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
+                          borderRadius: 10, background: "var(--pw-surface-alt)",
+                          border: "1px solid var(--pw-border)",
                         }}>
                           <div style={{
                             width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
@@ -11744,7 +11896,7 @@ function NovelWorkspacePage() {
                         {feedbackReviewAccepted} accepted · {feedbackReviewRejected} skipped
                       </span>
                     </div>
-                    <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border, rgba(255,255,255,0.06))", overflow: "hidden" }}>
+                    <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border)", overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #3b82f6)", borderRadius: 4, transition: "width 0.3s ease" }} />
                     </div>
                   </div>
@@ -11777,7 +11929,7 @@ function NovelWorkspacePage() {
                       {/* Highlighted text */}
                       <div style={{
                         padding: "10px 14px", borderRadius: 8, marginBottom: 14,
-                        background: "rgba(255,255,255,0.03)", borderLeft: `3px solid ${typeColor}55`,
+                        background: "var(--pw-overlay-bg)", borderLeft: `3px solid ${typeColor}55`,
                       }}>
                         <p style={{ fontSize: 13, color: "var(--pw-text-dim)", fontStyle: "italic", lineHeight: 1.7, margin: 0 }}>
                           &ldquo;{item.ann.selectedText.slice(0, 250)}{item.ann.selectedText.length > 250 ? "..." : ""}&rdquo;
@@ -11858,7 +12010,7 @@ function NovelWorkspacePage() {
                       className="btn"
                       style={{
                         flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
-                        border: "1px solid var(--pw-border, rgba(255,255,255,0.1))",
+                        border: "1px solid var(--pw-border)",
                         background: "transparent", color: "var(--pw-text-muted)",
                         cursor: "pointer", transition: "all 0.15s",
                       }}
@@ -12046,12 +12198,12 @@ function NovelWorkspacePage() {
                     >
                       {feedbackReviewApplying ? (
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                           Applying...
                         </span>
                       ) : fbPreviewGenerating ? (
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                           Generating...
                         </span>
                       ) : fbPreviewRevised !== null ? (
@@ -12186,7 +12338,6 @@ function NovelWorkspacePage() {
                     { id: "characters", label: "Characters" },
                     { id: "locations", label: "Locations" },
                     { id: "worldbuilding", label: "Worldbuilding" },
-                    { id: "knowledge", label: "Knowledge & Reveals" },
                     { id: "boltons", label: "Bolt-Ons" },
                   ] as const
                 ).map((item) => (
@@ -13065,328 +13216,7 @@ function NovelWorkspacePage() {
                   </div>
                 )}
 
-                {bibleSection === "knowledge" && (
-                  <div className="pw-bible-section">
-                    {/* ── Header ── */}
-                    <div className="pw-bible-flex-head">
-                      <div>
-                        <h3>Knowledge & Reveals</h3>
-                        <p className="pw-bible-section-note">
-                          Track who knows what, when secrets are revealed, and scan for violations across your manuscript.
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        {!aiOff && (
-                          <button
-                            type="button"
-                            className="pw-bolton-add-btn"
-                            disabled={knowledgeScanBusy || (novel.storyBible.knowledgeMap?.entries ?? []).length === 0}
-                            onClick={() => void runKnowledgeScan()}
-                            title={(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? "Add entries first" : "Scan manuscript for knowledge violations"}
-                            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            {knowledgeScanBusy ? (
-                              <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Scanning...</>
-                            ) : (
-                              <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Scan Manuscript</>
-                            )}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="pw-bolton-add-btn"
-                          disabled={(novel.storyBible.knowledgeMap?.entries ?? []).length >= 30}
-                          onClick={addKnowledgeEntry}
-                          title="Add a knowledge entry (secret, reveal, clue, or deception)"
-                        >
-                          + Add Entry
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Scan error */}
-                    {knowledgeScanError && (
-                      <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 12, fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)" }}>
-                        {knowledgeScanError}
-                      </div>
-                    )}
-
-                    {/* Scan results banner */}
-                    {(() => {
-                      const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
-                      if (km.scanIssues.length === 0 && !km.lastScanAt) return null;
-                      const critical = km.scanIssues.filter((i) => i.severity === "critical").length;
-                      const warnings = km.scanIssues.filter((i) => i.severity === "warning").length;
-                      const infos = km.scanIssues.filter((i) => i.severity === "info").length;
-                      return (
-                        <div style={{
-                          padding: "12px 16px", borderRadius: 12, marginBottom: 14,
-                          background: km.scanIssues.length === 0 ? "rgba(163,230,53,0.06)" : "rgba(245,158,11,0.06)",
-                          border: `1px solid ${km.scanIssues.length === 0 ? "rgba(163,230,53,0.15)" : "rgba(245,158,11,0.15)"}`,
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                        }}>
-                          <div style={{ fontSize: 13 }}>
-                            {km.scanIssues.length === 0 ? (
-                              <span style={{ color: "#a3e635", fontWeight: 700 }}>All clear — no knowledge violations found</span>
-                            ) : (
-                              <span>
-                                {critical > 0 && <span style={{ color: "#ef4444", fontWeight: 700 }}>{critical} critical</span>}
-                                {critical > 0 && warnings > 0 && " · "}
-                                {warnings > 0 && <span style={{ color: "#f59e0b", fontWeight: 700 }}>{warnings} warning{warnings !== 1 ? "s" : ""}</span>}
-                                {(critical > 0 || warnings > 0) && infos > 0 && " · "}
-                                {infos > 0 && <span style={{ color: "#818cf8", fontWeight: 600 }}>{infos} info</span>}
-                                <span style={{ marginLeft: 6, color: "var(--pw-text-dim)", fontSize: 12 }}>found in scan</span>
-                              </span>
-                            )}
-                          </div>
-                          {km.lastScanAt && (
-                            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
-                              Scanned {new Date(km.lastScanAt).toLocaleTimeString()}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Empty state */}
-                    {(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "40px 20px", opacity: 0.5 }}>
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block" }}>
-                          <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                        </svg>
-                        <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>No knowledge entries yet</p>
-                        <p style={{ fontSize: 12 }}>Add secrets, reveals, clues, and deceptions to track who knows what in your story.</p>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 12, minHeight: 300 }}>
-                        {/* Entry list (left side) */}
-                        <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4, overflow: "auto", maxHeight: 500 }}>
-                          {(novel.storyBible.knowledgeMap?.entries ?? []).map((entry) => {
-                            const typeMeta = KNOWLEDGE_TYPES.find((t) => t.id === entry.type) || KNOWLEDGE_TYPES[0];
-                            const statusMeta = STATUS_META[entry.status] || STATUS_META.hidden;
-                            const isSelected = knowledgeSelectedId === entry.id;
-                            const issueCount = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id).length;
-                            return (
-                              <div key={entry.id}
-                                onClick={() => setKnowledgeSelectedId(isSelected ? null : entry.id)}
-                                style={{
-                                  padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                                  background: isSelected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
-                                  border: `1px solid ${isSelected ? typeMeta.color + "40" : "rgba(255,255,255,0.05)"}`,
-                                  transition: "all 0.15s",
-                                }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={typeMeta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={typeMeta.icon}/></svg>
-                                  <span style={{ fontSize: 12, fontWeight: 700, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    {entry.label || "Untitled"}
-                                  </span>
-                                  {issueCount > 0 && (
-                                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>
-                                      {issueCount}
-                                    </span>
-                                  )}
-                                </div>
-                                <div style={{ display: "flex", gap: 4 }}>
-                                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: `${typeMeta.color}15`, color: typeMeta.color, fontWeight: 600 }}>{typeMeta.label}</span>
-                                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600 }}>{statusMeta.label}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Entry detail (right side) */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {(() => {
-                            const entry = (novel.storyBible.knowledgeMap?.entries ?? []).find((e) => e.id === knowledgeSelectedId);
-                            if (!entry) return (
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.3, fontSize: 13 }}>
-                                Select an entry to edit
-                              </div>
-                            );
-                            const entryIssues = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id);
-                            return (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                {/* Label + type row */}
-                                <div style={{ display: "flex", gap: 8 }}>
-                                  <div style={{ flex: 1 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Label</label>
-                                    <input
-                                      className="pw-bible-input"
-                                      value={entry.label}
-                                      maxLength={80}
-                                      placeholder="e.g. The letter is forged"
-                                      onChange={(e) => updateKnowledgeEntry(entry.id, { label: e.target.value })}
-                                      style={{ width: "100%", fontSize: 13 }}
-                                    />
-                                  </div>
-                                  <div style={{ width: 130 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Type</label>
-                                    <select
-                                      className="pw-bible-input"
-                                      value={entry.type}
-                                      onChange={(e) => updateKnowledgeEntry(entry.id, { type: e.target.value as KnowledgeEntry["type"] })}
-                                      style={{ width: "100%" }}
-                                    >
-                                      {KNOWLEDGE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                                    </select>
-                                  </div>
-                                </div>
-
-                                {/* Description */}
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>What is it?</label>
-                                  <textarea
-                                    className="pw-bible-input"
-                                    rows={2}
-                                    maxLength={300}
-                                    value={entry.description}
-                                    placeholder="Describe the secret, reveal, clue, or deception..."
-                                    onChange={(e) => updateKnowledgeEntry(entry.id, { description: e.target.value })}
-                                    style={{ width: "100%" }}
-                                  />
-                                </div>
-
-                                {/* Status + Reveal chapter */}
-                                <div style={{ display: "flex", gap: 8 }}>
-                                  <div style={{ flex: 1 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Status</label>
-                                    <select
-                                      className="pw-bible-input"
-                                      value={entry.status}
-                                      onChange={(e) => updateKnowledgeEntry(entry.id, { status: e.target.value as KnowledgeEntry["status"] })}
-                                      style={{ width: "100%" }}
-                                    >
-                                      <option value="hidden">Hidden — reader doesn&apos;t know yet</option>
-                                      <option value="foreshadowed">Foreshadowed — hinted at</option>
-                                      <option value="revealed">Revealed — reader knows</option>
-                                    </select>
-                                  </div>
-                                  <div style={{ width: 120 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Reveal chapter</label>
-                                    <input
-                                      className="pw-bible-input"
-                                      type="number"
-                                      min={1}
-                                      max={novel.chapters.length || 99}
-                                      value={entry.revealChapter ?? ""}
-                                      placeholder="Ch #"
-                                      onChange={(e) => updateKnowledgeEntry(entry.id, { revealChapter: e.target.value ? Number(e.target.value) : undefined })}
-                                      style={{ width: "100%" }}
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Who knows — character holders */}
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 6, display: "block" }}>Who knows this?</label>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                                    {entry.holders.map((h) => {
-                                      const char = novel.storyBible.characters.find((c) => c.id === h.characterId);
-                                      if (!char) return null;
-                                      return (
-                                        <div key={h.characterId} style={{
-                                          display: "inline-flex", alignItems: "center", gap: 6,
-                                          padding: "5px 10px", borderRadius: 8,
-                                          background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-                                          fontSize: 12,
-                                        }}>
-                                          <span style={{ fontWeight: 600 }}>{char.name}</span>
-                                          {h.learnedInChapter ? (
-                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>learns Ch{h.learnedInChapter}</span>
-                                          ) : (
-                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>from start</span>
-                                          )}
-                                          <button type="button" onClick={(ev) => { ev.stopPropagation(); removeKnowledgeHolder(entry.id, h.characterId); }}
-                                            style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}
-                                          >&times;</button>
-                                        </div>
-                                      );
-                                    })}
-                                    {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).length > 0 && (
-                                      <select
-                                        className="pw-bible-input"
-                                        value=""
-                                        onChange={(e) => { if (e.target.value) addKnowledgeHolder(entry.id, e.target.value); }}
-                                        style={{ width: "auto", fontSize: 11, padding: "4px 8px" }}
-                                      >
-                                        <option value="">+ Add character</option>
-                                        {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).map((c) => (
-                                          <option key={c.id} value={c.id}>{c.name || "Unnamed"}</option>
-                                        ))}
-                                      </select>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Notes */}
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Author notes</label>
-                                  <textarea
-                                    className="pw-bible-input"
-                                    rows={2}
-                                    maxLength={300}
-                                    value={entry.notes ?? ""}
-                                    placeholder="Private notes about this piece of knowledge..."
-                                    onChange={(e) => updateKnowledgeEntry(entry.id, { notes: e.target.value })}
-                                    style={{ width: "100%" }}
-                                  />
-                                </div>
-
-                                {/* Delete */}
-                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                  <button type="button" onClick={() => removeKnowledgeEntry(entry.id)}
-                                    style={{
-                                      fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 6,
-                                      background: "rgba(239,68,68,0.08)", color: "#ef4444",
-                                      border: "1px solid rgba(239,68,68,0.15)", cursor: "pointer",
-                                    }}
-                                  >
-                                    Remove entry
-                                  </button>
-                                </div>
-
-                                {/* Issues for this entry */}
-                                {entryIssues.length > 0 && (
-                                  <div style={{ marginTop: 4 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                      {entryIssues.length} violation{entryIssues.length !== 1 ? "s" : ""} found
-                                    </label>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                      {entryIssues.map((issue, ii) => (
-                                        <div key={ii} style={{
-                                          padding: "8px 10px", borderRadius: 8,
-                                          background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
-                                          border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
-                                        }}>
-                                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                            <span style={{
-                                              fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4,
-                                              background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
-                                              color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8",
-                                            }}>{issue.severity}</span>
-                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Chapter {issue.chapter}</span>
-                                          </div>
-                                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{issue.message}</div>
-                                          {issue.suggestion && (
-                                            <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, fontStyle: "italic" }}>
-                                              {issue.suggestion}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Knowledge & Reveals moved to NCC */}
 
                 {bibleSection === "boltons" && (
                   <div className="pw-bible-section">
@@ -13432,8 +13262,8 @@ function NovelWorkspacePage() {
                       >
                         <div
                           style={{
-                            background: "var(--pw-bg, #18181b)",
-                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "var(--pw-bg)",
+                            border: "1px solid var(--pw-border)",
                             borderRadius: 20, width: "92%", maxWidth: 480, maxHeight: "75vh",
                             display: "flex", flexDirection: "column",
                             boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
@@ -13441,14 +13271,14 @@ function NovelWorkspacePage() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Header */}
-                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Bolt-On Library</h3>
                               </div>
                               <button type="button" onClick={() => setBoltonLibraryOpen(false)} style={{
-                                background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                                background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                                 width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                                 color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
                               }}>&times;</button>
@@ -13477,20 +13307,20 @@ function NovelWorkspacePage() {
                                     <div key={i} style={{
                                       display: "flex", alignItems: "center", gap: 12,
                                       padding: "10px 12px", borderRadius: 10,
-                                      background: "rgba(255,255,255,0.025)",
-                                      border: "1px solid rgba(255,255,255,0.06)",
+                                      background: "var(--pw-overlay-bg)",
+                                      border: "1px solid var(--pw-border-light)",
                                       transition: "background 0.15s",
                                     }}
-                                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg-hover)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg)"; }}
                                     >
                                       {/* Icon */}
                                       <div style={{
                                         width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                                        background: item.prompt ? "rgba(163,230,53,0.1)" : "rgba(255,255,255,0.04)",
+                                        background: item.prompt ? "rgba(163,230,53,0.1)" : "var(--pw-overlay-bg)",
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                       }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={item.prompt ? "var(--pw-accent, #a3e635)" : "none"} stroke={item.prompt ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={item.prompt ? "var(--pw-accent)" : "none"} stroke={item.prompt ? "var(--pw-accent)" : "var(--pw-text-dim)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                       </div>
 
                                       {/* Title + category */}
@@ -13512,7 +13342,7 @@ function NovelWorkspacePage() {
                                           title="Load into this novel"
                                           style={{
                                             padding: "5px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                                            background: "var(--pw-accent, #a3e635)", color: "#111", border: "none", cursor: "pointer",
+                                            background: "var(--pw-accent)", color: "var(--pw-btn-primary-text)", border: "none", cursor: "pointer",
                                           }}
                                         >
                                           Load
@@ -13523,7 +13353,7 @@ function NovelWorkspacePage() {
                                           title="Remove from library"
                                           style={{
                                             padding: "5px 8px", fontSize: 11, borderRadius: 6,
-                                            background: "rgba(255,255,255,0.04)", color: "var(--pw-text-dim)", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer",
+                                            background: "var(--pw-overlay-bg)", color: "var(--pw-text-dim)", border: "1px solid var(--pw-border)", cursor: "pointer",
                                           }}
                                         >
                                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -13551,8 +13381,8 @@ function NovelWorkspacePage() {
                       >
                         <div
                           style={{
-                            background: "var(--pw-bg, #18181b)",
-                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "var(--pw-bg)",
+                            border: "1px solid var(--pw-border)",
                             borderRadius: 20, width: "94%", maxWidth: 560, maxHeight: "80vh",
                             display: "flex", flexDirection: "column",
                             boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
@@ -13560,14 +13390,14 @@ function NovelWorkspacePage() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Header */}
-                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Writing Packs</h3>
                               </div>
                               <button type="button" onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }} style={{
-                                background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                                background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                                 width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                                 color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
                               }}>&times;</button>
@@ -13589,8 +13419,8 @@ function NovelWorkspacePage() {
                                 return (
                                   <div key={pack.id} style={{
                                     borderRadius: 14,
-                                    background: "rgba(255,255,255,0.025)",
-                                    border: `1px solid ${justInstalled ? pack.color + "55" : "rgba(255,255,255,0.06)"}`,
+                                    background: "var(--pw-overlay-bg)",
+                                    border: `1px solid ${justInstalled ? pack.color + "55" : "var(--pw-overlay-bg-hover)"}`,
                                     transition: "all 0.2s",
                                     overflow: "hidden",
                                   }}>
@@ -13602,7 +13432,7 @@ function NovelWorkspacePage() {
                                         transition: "background 0.15s",
                                       }}
                                       onClick={() => setExpandedPack(isExpanded ? null : pack.id)}
-                                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg)"; }}
                                       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                                     >
                                       {/* Genre icon */}
@@ -13625,7 +13455,7 @@ function NovelWorkspacePage() {
                                           {allInstalled && (
                                             <span style={{
                                               fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
-                                              background: "rgba(163,230,53,0.12)", color: "var(--pw-accent, #a3e635)",
+                                              background: "rgba(163,230,53,0.12)", color: "var(--pw-accent)",
                                             }}>Installed</span>
                                           )}
                                         </div>
@@ -13647,7 +13477,7 @@ function NovelWorkspacePage() {
                                       const hasSelection = packSelected.length > 0;
                                       return (
                                       <div style={{
-                                        borderTop: "1px solid rgba(255,255,255,0.05)",
+                                        borderTop: "1px solid var(--pw-border-light)",
                                         padding: "12px 16px 16px",
                                       }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -13665,7 +13495,7 @@ function NovelWorkspacePage() {
                                             if (allChecked) uninstalled.forEach((k) => next.delete(k));
                                             else uninstalled.forEach((k) => next.add(k));
                                             setPackSelectedBoltons(next);
-                                          }} style={{ fontSize: 10, background: "none", border: "none", color: "var(--pw-accent, #a3e635)", cursor: "pointer", fontWeight: 600, padding: "2px 4px" }}>
+                                          }} style={{ fontSize: 10, background: "none", border: "none", color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600, padding: "2px 4px" }}>
                                             {packBoltonKeys.every((k) => packSelectedBoltons.has(k)) ? "Deselect all" : "Select all"}
                                           </button>
                                         </div>
@@ -13688,25 +13518,25 @@ function NovelWorkspacePage() {
                                                 style={{
                                                   display: "flex", alignItems: "center", gap: 10,
                                                   padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
-                                                  background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "rgba(255,255,255,0.01)",
-                                                  border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid rgba(255,255,255,0.03)",
+                                                  background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
+                                                  border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
                                                   transition: "all 0.12s",
                                                 }}>
                                                 {/* Checkbox */}
                                                 <div style={{
                                                   width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                                  border: alreadyHas ? "1.5px solid var(--pw-accent, #a3e635)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid rgba(255,255,255,0.15)",
+                                                  border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid var(--pw-border)",
                                                   background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? `${pack.color}25` : "transparent",
                                                   display: "flex", alignItems: "center", justifyContent: "center",
                                                 }}>
                                                   {(alreadyHas || isChecked) && (
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent, #a3e635)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                                                   )}
                                                 </div>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                   <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
                                                     {pb.title}
-                                                    {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent, #a3e635)", marginLeft: 6 }}>installed</span>}
+                                                    {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>installed</span>}
                                                   </div>
                                                   <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
                                                 </div>
@@ -13728,7 +13558,7 @@ function NovelWorkspacePage() {
                                                 style={{
                                                   padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
                                                   border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer",
-                                                  background: pack.color, color: "#111", transition: "all 0.15s",
+                                                  background: pack.color, color: "var(--pw-btn-primary-text)", transition: "all 0.15s",
                                                 }}
                                               >
                                                 Install Selected ({packSelected.length})
@@ -13740,8 +13570,8 @@ function NovelWorkspacePage() {
                                               style={{
                                                 padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
                                                 border: "none", cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                                background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "rgba(255,255,255,0.06)" : pack.color,
-                                                color: allInstalled ? "var(--pw-accent, #a3e635)" : hasSelection ? "var(--pw-text-dim)" : "#111",
+                                                background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : pack.color,
+                                                color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
                                                 opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1,
                                                 transition: "all 0.15s",
                                               }}
@@ -13889,7 +13719,7 @@ function NovelWorkspacePage() {
                             {bolton.prompt && (
                               <div className="pw-bolton-step pw-bolton-prompt-preview">
                                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-accent, #a3e635)", display: "inline-block" }} />
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-accent)", display: "inline-block" }} />
                                   <span className="pw-bolton-step-label pw-bolton-step-ready" style={{ margin: 0 }}>Active directive</span>
                                 </div>
                                 <p className="pw-bolton-prompt-text">{getBoltonDirectiveText(bolton)}</p>
@@ -14232,8 +14062,8 @@ function NovelWorkspacePage() {
         >
           <div
             style={{
-              background: "var(--pw-bg, #18181b)",
-              border: "1px solid rgba(255,255,255,0.1)",
+              background: "var(--pw-bg)",
+              border: "1px solid var(--pw-border)",
               borderRadius: 20, width: "92%", maxWidth: 420,
               padding: "32px 28px 28px",
               boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
@@ -14276,7 +14106,7 @@ function NovelWorkspacePage() {
                 onClick={() => setShowArcOfferPopup(false)}
                 style={{
                   padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10,
-                  background: "rgba(255,255,255,0.06)", color: "var(--pw-text)", border: "1px solid rgba(255,255,255,0.08)",
+                  background: "var(--pw-overlay-bg-hover)", color: "var(--pw-text)", border: "1px solid var(--pw-border)",
                   cursor: "pointer",
                 }}
               >
@@ -14462,10 +14292,10 @@ function NovelWorkspacePage() {
             left: rewriteSelection.x,
             top: rewriteSelection.y,
             zIndex: 99997,
-            background: "var(--pw-surface, #1c1c20)",
-            border: "1px solid rgba(255,255,255,0.08)",
+            background: "var(--pw-surface)",
+            border: "1px solid var(--pw-border)",
             borderRadius: 10,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)",
+            boxShadow: "var(--pw-shadow-elevated)",
             padding: "4px",
             display: "flex",
             gap: 2,
@@ -14487,7 +14317,7 @@ function NovelWorkspacePage() {
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)";
-                  e.currentTarget.style.color = "var(--pw-accent, #a3e635)";
+                  e.currentTarget.style.color = "var(--pw-accent)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "none";
@@ -14508,13 +14338,13 @@ function NovelWorkspacePage() {
           position: "fixed", bottom: 24, right: 24, zIndex: 99999,
           display: "flex", alignItems: "center", gap: 10,
           padding: "12px 20px", borderRadius: 12,
-          background: "var(--pw-surface, #1c1c20)",
+          background: "var(--pw-surface)",
           border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
           <span style={{
             width: 14, height: 14, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)",
-            borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%",
+            borderTopColor: "var(--pw-accent)", borderRadius: "50%",
             animation: "spin 0.7s linear infinite", display: "inline-block",
           }} />
           <span style={{ fontSize: 12, color: "var(--pw-text, #e4e4e7)" }}>
@@ -14552,7 +14382,7 @@ function NovelWorkspacePage() {
 
               {/* Revised */}
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-accent, #a3e635)", marginBottom: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-accent)", marginBottom: 6 }}>
                   Rewritten
                 </div>
                 <div style={{
@@ -14610,10 +14440,10 @@ function NovelWorkspacePage() {
               left: Math.min(proseCtx.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
               top: Math.min(proseCtx.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 320),
               zIndex: 99999,
-              background: "#1c1c20",
-              border: "1px solid rgba(255,255,255,0.1)",
+              background: "var(--pw-surface)",
+              border: "1px solid var(--pw-border)",
               borderRadius: 14,
-              boxShadow: "0 12px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
+              boxShadow: "var(--pw-shadow-elevated)",
               padding: 0,
               width: 220,
               fontFamily: "var(--font-sans), system-ui, sans-serif",
@@ -14622,11 +14452,11 @@ function NovelWorkspacePage() {
           >
             {/* Selected text preview */}
             <div style={{
-              padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+              padding: "10px 14px", borderBottom: "1px solid var(--pw-border-light)",
               display: "flex", alignItems: "center", gap: 8,
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span style={{ fontSize: 11, color: "var(--pw-text-dim)", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 &ldquo;{proseCtx.selectedText.length > 30 ? proseCtx.selectedText.slice(0, 30) + "…" : proseCtx.selectedText}&rdquo;
               </span>
             </div>
@@ -14647,7 +14477,7 @@ function NovelWorkspacePage() {
                     padding: "8px 14px", background: "none", border: "none",
                     cursor: "pointer", textAlign: "left", transition: "background 0.1s",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg-hover)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
                   onClick={() => void runProseContextAction(opt.id)}
                 >
@@ -14656,11 +14486,11 @@ function NovelWorkspacePage() {
                     background: "rgba(163,230,53,0.08)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={opt.iconPath}/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={opt.iconPath}/></svg>
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{opt.label}</div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>{opt.desc}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>{opt.desc}</div>
                   </div>
                 </button>
               ))}
@@ -14674,24 +14504,24 @@ function NovelWorkspacePage() {
       {charChatOpen && charChatTarget && (
         <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
           <div style={{
-            background: "var(--pw-bg, #18181b)", borderRadius: 20,
+            background: "var(--pw-bg)", borderRadius: 20,
             width: "96%", maxWidth: charChatReviewDone ? 820 : 520, maxHeight: "88vh",
             display: "flex", flexDirection: charChatReviewDone ? "row" : "column",
-            boxShadow: "0 32px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)",
+            boxShadow: "var(--pw-shadow-modal)", border: "1px solid var(--pw-border)",
             overflow: "hidden", transition: "max-width 0.3s ease",
           }} onClick={(e) => e.stopPropagation()}>
             {/* Chat panel */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
               {/* Header */}
               <div style={{
-                padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+                padding: "16px 20px", borderBottom: "1px solid var(--pw-border-light)",
                 display: "flex", alignItems: "center", gap: 12,
               }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: 10,
                   background: "rgba(163,230,53,0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 15, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                  fontSize: 15, fontWeight: 800, color: "var(--pw-accent)",
                 }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{charChatTarget.name}</h3>
@@ -14705,7 +14535,7 @@ function NovelWorkspacePage() {
                       style={{
                         padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
                         background: charChatReviewing ? "rgba(163,230,53,0.05)" : "rgba(163,230,53,0.1)",
-                        color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(163,230,53,0.2)",
+                        color: "var(--pw-accent)", border: "1px solid rgba(163,230,53,0.2)",
                         cursor: charChatReviewing ? "default" : "pointer",
                         display: "flex", alignItems: "center", gap: 5,
                       }}
@@ -14721,7 +14551,7 @@ function NovelWorkspacePage() {
                   {storyCharacters.length > 1 && !charChatReviewDone && (
                     <div style={{ position: "relative" }}>
                       <button type="button" onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
-                        style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600 }}
+                        style={{ background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600 }}
                         title="Switch character"
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
@@ -14729,10 +14559,14 @@ function NovelWorkspacePage() {
                       {charChatPickerOpen && (
                         <>
                           <div style={{ position: "fixed", inset: 0, zIndex: 100 }} onClick={() => setCharChatPickerOpen(false)} />
-                          <div style={{
-                            position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 101,
-                            background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
-                            borderRadius: 10, padding: 4, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                          <div ref={(el) => {
+                            if (!el) return;
+                            const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
+                            if (trigger) positionDropdown(trigger, el);
+                          }} style={{
+                            position: "fixed", zIndex: 101,
+                            background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
+                            borderRadius: 10, padding: 4, minWidth: 180, boxShadow: "var(--pw-shadow-elevated)",
                           }}>
                             {storyCharacters.filter((c) => c.id !== charChatTarget.id).map((char) => (
                               <button key={char.id} type="button"
@@ -14745,7 +14579,7 @@ function NovelWorkspacePage() {
                                 onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(163,230,53,0.06)"; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
                               >
-                                <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent, #a3e635)" }}>{char.name.charAt(0).toUpperCase()}</div>
+                                <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent)" }}>{char.name.charAt(0).toUpperCase()}</div>
                                 {char.name}
                               </button>
                             ))}
@@ -14755,7 +14589,7 @@ function NovelWorkspacePage() {
                     </div>
                   )}
                   <button type="button" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }} style={{
-                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                    background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                     width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                     color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
                   }}>&times;</button>
@@ -14782,7 +14616,7 @@ function NovelWorkspacePage() {
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
                             background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
-                            color: "var(--pw-accent, #a3e635)", cursor: "pointer", transition: "all 0.1s",
+                            color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.1s",
                           }}
                         >{q}</button>
                       ))}
@@ -14798,13 +14632,13 @@ function NovelWorkspacePage() {
                       <div style={{
                         width: 28, height: 28, borderRadius: 8, flexShrink: 0,
                         background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 11, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                        fontSize: 11, fontWeight: 800, color: "var(--pw-accent)",
                       }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
                     )}
                     <div style={{
                       maxWidth: "75%", padding: "10px 14px", borderRadius: 14,
-                      background: msg.role === "user" ? "rgba(163,230,53,0.1)" : "rgba(255,255,255,0.04)",
-                      border: msg.role === "user" ? "1px solid rgba(163,230,53,0.15)" : "1px solid rgba(255,255,255,0.05)",
+                      background: msg.role === "user" ? "var(--pw-accent-light)" : "var(--pw-overlay-bg)",
+                      border: msg.role === "user" ? "1px solid var(--pw-accent-glow)" : "1px solid var(--pw-overlay-border-light)",
                     }}>
                       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>{msg.text}</p>
                     </div>
@@ -14812,8 +14646,8 @@ function NovelWorkspacePage() {
                 ))}
                 {charChatLoading && (
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent, #a3e635)" }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
-                    <div style={{ padding: "12px 16px", borderRadius: 14, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: 4, alignItems: "center" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                    <div style={{ padding: "12px 16px", borderRadius: 14, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-overlay-border-light)", display: "flex", gap: 4, alignItems: "center" }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0s" }} />
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.2s" }} />
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.4s" }} />
@@ -14825,7 +14659,7 @@ function NovelWorkspacePage() {
 
               {/* Input */}
               <form onSubmit={(e) => { e.preventDefault(); void sendCharacterChat(); }} style={{
-                padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)",
+                padding: "12px 16px", borderTop: "1px solid var(--pw-border-light)",
                 display: "flex", gap: 8,
               }}>
                 <input
@@ -14837,15 +14671,15 @@ function NovelWorkspacePage() {
                   autoFocus
                   style={{
                     flex: 1, padding: "10px 14px", borderRadius: 10,
-                    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                    background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)",
                     color: "inherit", fontSize: 13, outline: "none",
                   }}
                 />
                 <button type="submit" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone}
                   style={{
                     width: 38, height: 38, borderRadius: 10, border: "none", flexShrink: 0,
-                    background: charChatInput.trim() ? "var(--pw-accent, #a3e635)" : "rgba(255,255,255,0.06)",
-                    color: charChatInput.trim() ? "#111" : "var(--pw-text-dim)",
+                    background: charChatInput.trim() ? "var(--pw-accent)" : "var(--pw-overlay-bg-hover)",
+                    color: charChatInput.trim() ? "var(--pw-btn-primary-text)" : "var(--pw-text-dim)",
                     cursor: charChatInput.trim() ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
@@ -14857,12 +14691,12 @@ function NovelWorkspacePage() {
             {/* Recommendations panel — appears after End & Review */}
             {charChatReviewDone && (
               <div style={{
-                width: 300, borderLeft: "1px solid rgba(255,255,255,0.06)",
+                width: 300, borderLeft: "1px solid var(--pw-border-light)",
                 display: "flex", flexDirection: "column", flexShrink: 0,
               }}>
-                <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--pw-border-light)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Story Insights</h4>
                   </div>
                   <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>
@@ -14882,8 +14716,8 @@ function NovelWorkspacePage() {
                   {charChatRecommendations.map((rec) => (
                     <div key={rec.id} style={{
                       marginBottom: 8, borderRadius: 10, padding: "10px 12px",
-                      background: rec.accepted === true ? "rgba(163,230,53,0.04)" : rec.accepted === false ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${rec.accepted === true ? "rgba(163,230,53,0.15)" : rec.accepted === false ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.06)"}`,
+                      background: rec.accepted === true ? "var(--pw-accent-muted)" : "var(--pw-overlay-bg)",
+                      border: `1px solid ${rec.accepted === true ? "var(--pw-accent-glow)" : "var(--pw-border)"}`,
                       opacity: rec.accepted === false ? 0.4 : 1, transition: "all 0.2s",
                     }}>
                       {/* Type badge */}
@@ -14895,7 +14729,7 @@ function NovelWorkspacePage() {
                           letterSpacing: "0.04em",
                         }}>{rec.type === "chapter_synopsis" ? "Chapter" : "Profile"}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.label}</span>
-                        {rec.accepted === true && <span style={{ fontSize: 9, color: "var(--pw-accent, #a3e635)", fontWeight: 700 }}>Applied</span>}
+                        {rec.accepted === true && <span style={{ fontSize: 9, color: "var(--pw-accent)", fontWeight: 700 }}>Applied</span>}
                         {rec.accepted === false && <span style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 600 }}>Dismissed</span>}
                       </div>
                       {/* Reason */}
@@ -14906,7 +14740,7 @@ function NovelWorkspacePage() {
                           <strong>Current:</strong> {rec.currentValue.slice(0, 80)}{rec.currentValue.length > 80 ? "…" : ""}
                         </div>
                       )}
-                      <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", lineHeight: 1.4, marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", lineHeight: 1.4, marginBottom: 6 }}>
                         {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
                       </div>
                       {/* Actions */}
@@ -14916,13 +14750,13 @@ function NovelWorkspacePage() {
                             style={{
                               flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, borderRadius: 6,
                               background: "rgba(163,230,53,0.1)", border: "1px solid rgba(163,230,53,0.2)",
-                              color: "var(--pw-accent, #a3e635)", cursor: "pointer",
+                              color: "var(--pw-accent)", cursor: "pointer",
                             }}
                           >Accept</button>
                           <button type="button" onClick={() => dismissCharChatRecommendation(rec.id)}
                             style={{
                               flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
+                              background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)",
                               color: "var(--pw-text-dim)", cursor: "pointer",
                             }}
                           >Dismiss</button>
@@ -14933,17 +14767,17 @@ function NovelWorkspacePage() {
                 </div>
                 {/* Apply all / done */}
                 {charChatRecommendations.some((r) => r.accepted === null) && (
-                  <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ padding: "10px 12px", borderTop: "1px solid var(--pw-border-light)" }}>
                     <button type="button" onClick={() => charChatRecommendations.filter((r) => r.accepted === null).forEach((r) => applyCharChatRecommendation(r.id))}
                       style={{
                         width: "100%", padding: "8px 0", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                        background: "var(--pw-accent, #a3e635)", border: "none", color: "#111", cursor: "pointer",
+                        background: "var(--pw-accent)", border: "none", color: "var(--pw-btn-primary-text)", cursor: "pointer",
                       }}
                     >Accept All ({charChatRecommendations.filter((r) => r.accepted === null).length})</button>
                   </div>
                 )}
                 {charChatRecommendations.length > 0 && !charChatRecommendations.some((r) => r.accepted === null) && (
-                  <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+                  <div style={{ padding: "10px 12px", borderTop: "1px solid var(--pw-border-light)", textAlign: "center" }}>
                     <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>
                       {charChatRecommendations.filter((r) => r.accepted === true).length} applied, {charChatRecommendations.filter((r) => r.accepted === false).length} dismissed
                     </p>
@@ -14962,20 +14796,20 @@ function NovelWorkspacePage() {
           position: "fixed", bottom: 24, right: 24, zIndex: 99999,
           display: "flex", alignItems: "center", gap: 10,
           padding: "12px 20px", borderRadius: 12,
-          background: "#1c1c20", border: "1px solid rgba(163,230,53,0.15)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          background: "var(--pw-surface)", border: "1px solid var(--pw-accent-glow)",
+          boxShadow: "var(--pw-shadow-elevated)",
         }}>
           <div style={{
             width: 28, height: 28, borderRadius: 7,
-            background: "rgba(163,230,53,0.1)",
+            background: "var(--pw-accent-light)",
             display: "flex", alignItems: "center", justifyContent: "center",
             animation: "pw-pulse 1.5s ease-in-out infinite",
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>Rewriting&hellip;</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>AI is editing your selection</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>Rewriting&hellip;</div>
+            <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>AI is editing your selection</div>
           </div>
         </div>
       )}

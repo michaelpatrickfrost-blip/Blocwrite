@@ -652,64 +652,79 @@ function FeatureGrid() {
 /* ── Advanced Features ──────────────────────────────────── */
 const ADVANCED_FEATURES = [
   {
-    title: "Narrative Control Center",
-    desc: "A live dashboard showing character arc progression, relationship evolution, tension curves, open plot threads, canon conflicts, and theme presence — all visualised in one place.",
-    icon: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
-    color: "#a3e635",
+    title: "Talk to Your Characters",
+    desc: "Interview any character from your Canon in a live AI chat. Ask them about their fears, secrets, and motivations — then press \"End & Review\" and the AI recommends changes to future chapter synopses and character profiles based on what was revealed. Accept or dismiss each suggestion. Your characters literally shape the story.",
+    icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+    color: "#fb923c",
+    badge: "New",
   },
   {
-    title: "Continuity Engine",
-    desc: "11 categories of checks across 3 layers — deterministic, light AI, and deep AI. Catches timeline errors, character drift, location mismatches, and canon violations before readers do.",
-    icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-    color: "#06b6d4",
+    title: "Narrative Control Center",
+    desc: "Your entire novel visualised in one dashboard. Character arc timelines, a relationship evolution map, an interactive tension curve, Gantt-style plot thread tracking, canon conflict detection, theme presence heatmaps, and a full Knowledge & Reveal tracker — all updated with a single click.",
+    icon: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
+    color: "#a3e635",
+    badge: "New",
   },
   {
     title: "Smart Rewrite Modes",
-    desc: "Highlight any passage and instantly rewrite it: more emotional, suspenseful, poetic, tighter, or in a bestseller tone. Preview, accept, or regenerate.",
+    desc: "Highlight any text — in the prose area or inside a bloc — and instantly rewrite it in 6 modes: more emotional, suspenseful, poetic, tighter, bestseller tone, or prose polish. Preview changes, accept, or regenerate. Works at scene level or across an entire chapter with one click.",
     icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
     color: "#f472b6",
   },
   {
     title: "Manuscript Health Report",
-    desc: "AI-powered publishing readiness assessment. Scores pacing, dialogue, clarity, and engagement — with per-chapter breakdowns and actionable tips you can toggle through.",
+    desc: "AI-powered publishing readiness assessment that scores pacing, dialogue, clarity, and engagement. Includes per-chapter breakdowns with actionable tips you can toggle through, a thematic consistency scanner that tracks theme presence across every chapter, and a clear/regenerate workflow. Runs even with AI toggled off.",
     icon: "M22 12h-4l-3 9L9 3l-3 9H2",
     color: "#ef4444",
   },
   {
+    title: "Continuity Engine",
+    desc: "11 categories of checks across 3 layers — deterministic, light AI, and deep AI. Catches timeline errors, character drift, location mismatches, and canon violations before readers do. Results are layered so you see quick wins first, deep analysis second.",
+    icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#06b6d4",
+  },
+  {
     title: "Arc Intelligence Engine",
-    desc: "Go beyond continuity. Track protagonist goal evolution, internal flaw vs growth, detect arc stagnation, missing midpoint shifts, and weak third-act escalation.",
+    desc: "Go beyond continuity. Track protagonist goal evolution, internal flaw vs growth, detect arc stagnation, missing midpoint shifts, and weak third-act escalation. Visual arc phase timelines show exactly where each character's journey stands.",
     icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
     color: "#818cf8",
   },
   {
     title: "Knowledge & Reveal Tracker",
-    desc: "Track who knows what, when secrets are revealed, whether reveals are earned, and if reader knowledge exceeds character knowledge. Essential for mystery, fantasy, and thriller.",
+    desc: "Track who knows what, when secrets are revealed, and whether reveals feel earned. Assign knowledge holders, set reveal chapters, and run AI scans that flag violations — like a character referencing a secret before it's revealed. Built into the Narrative Control Center for mystery, fantasy, and thriller writers.",
     icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z",
     color: "#f59e0b",
   },
   {
-    title: "Thematic Consistency Scanner",
-    desc: "Extract themes from early chapters, then track reinforcement, absence, and contradiction across your whole manuscript. Flags drift before it becomes a plot hole.",
-    icon: "M4 6h16M4 12h16M4 18h7",
-    color: "#8b5cf6",
-  },
-  {
-    title: "Scene Purpose Enforcement",
-    desc: "Each bloc can declare POV, goal, conflict, outcome, and emotional shift. If the outcome doesn't alter state, it flags the scene as static — pushing tighter writing.",
-    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
-    color: "#10b981",
+    title: "Chapter-Level Rewrite",
+    desc: "Rewrite an entire chapter in a different tone with one click. Choose from multiple modes — tighten, add emotion, increase suspense, elevate prose, or match a bestseller style. The AI respects your bloc structure and distributes changes proportionally across scenes.",
+    icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+    color: "#ec4899",
+    badge: "New",
   },
   {
     title: "Writing Pack Marketplace",
-    desc: "Pre-made craft kits built by genre experts — Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Generator. Select individual bolt-ons or install an entire pack.",
+    desc: "Pre-made craft kits built by genre — Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Engine. Browse packs, select individual bolt-ons or install the whole set. Available right from the chapter toolbar so you can install and apply without leaving your writing flow.",
     icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
     color: "#0ea5e9",
   },
   {
-    title: "Talk to Your Characters",
-    desc: "Have a live AI conversation with any character from your Canon. Test their voice, explore backstory, or discover unexpected dialogue — all grounded in your story world.",
-    icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
-    color: "#fb923c",
+    title: "Scene Purpose Enforcement",
+    desc: "Each bloc can declare POV, goal, conflict, outcome, and emotional shift. If the outcome doesn't alter state, it flags the scene as static — pushing tighter, more intentional writing at the structural level.",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+    color: "#10b981",
+  },
+  {
+    title: "Shareable Manuscripts",
+    desc: "Generate a shareable link for beta readers or editors. They can read your manuscript in a clean, distraction-free view and leave annotations. Set expiry dates and manage access — all without giving away your source files.",
+    icon: "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3",
+    color: "#64748b",
+  },
+  {
+    title: "Bloc-Based Story Architecture",
+    desc: "Structure every chapter as a sequence of scene blocs — each with its own synopsis, bolt-on directive, and word target. Generate prose per-scene or write freely in the prose area. Toggle blocs off and write as a single continuous chapter whenever you want.",
+    icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
+    color: "#a78bfa",
   },
 ];
 
@@ -760,8 +775,18 @@ function AdvancedFeatures() {
               }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={f.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon}/></svg>
               </div>
-              <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>{f.title}</h3>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{f.title}</h3>
+                  {"badge" in f && f.badge && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+                      padding: "2px 7px", borderRadius: 6,
+                      background: `${f.color}18`, color: f.color,
+                      border: `1px solid ${f.color}30`,
+                    }}>{f.badge}</span>
+                  )}
+                </div>
                 <p style={{ fontSize: 13, lineHeight: 1.6, color: C.textSoft, margin: 0 }}>{f.desc}</p>
               </div>
             </div>
@@ -889,14 +914,20 @@ function PriceCard({
 
 /* ── FAQ ──────────────────────────────────────────────── */
 const FAQ_ITEMS = [
-  { q: "What exactly is Blocwrite?", a: "Blocwrite is a structured writing studio for long-form fiction. It gives you a story bible (Canon), a chapter planner, scene-by-scene drafting in focused blocs, and clean manuscript export. Think of it as the workspace between your outline and your finished book." },
-  { q: "Is AI included in the subscription?", a: "No. Blocwrite does not include AI credits or charge for AI usage. You bring your own API key from OpenRouter, Infermatic, or LM Studio. Free models are available on OpenRouter, and LM Studio is completely free (runs locally on your computer). The subscription covers only the studio workspace." },
-  { q: "Can I use Blocwrite without AI at all?", a: "Absolutely. Every feature works without AI. You can plan chapters, write prose, manage your Canon, and export manuscripts entirely by hand. AI generation buttons are completely optional — you can toggle them off whenever you like and just use Blocwrite as a structured writing tool." },
-  { q: "What is the Canon?", a: "The Canon is your story bible — characters with personalities and speech patterns, locations with sensory details, lore rules, and voice guidelines. When you ask the AI to generate prose, it reads your entire Canon first to stay consistent." },
-  { q: "How does the 7-day free trial work?", a: "You get full access to every feature for 7 days. No charge until the trial ends. Cancel anytime during the trial and you will not be billed." },
+  { q: "What exactly is Blocwrite?", a: "Blocwrite is a structured writing studio for long-form fiction. It gives you a story bible (Canon), a chapter planner, scene-by-scene drafting in focused blocs, AI-powered rewriting and analysis tools, a Narrative Control Center that visualises your entire story, and clean manuscript export. Think of it as the workspace between your outline and your finished book." },
+  { q: "Is AI included in the subscription?", a: "No. Blocwrite does not include AI credits or charge for AI usage. You bring your own API key from OpenRouter, Infermatic, or LM Studio. Free models are available on OpenRouter, and LM Studio is completely free (runs locally on your computer). The subscription covers only the studio workspace and all its tools." },
+  { q: "Can I use Blocwrite without AI at all?", a: "Absolutely. Every core feature works without AI — plan chapters, write prose, manage your Canon, track knowledge and reveals, and export manuscripts entirely by hand. AI features like prose generation, smart rewrite, and analysis are completely optional. You can toggle AI off globally and still use the full writing environment." },
+  { q: "What is the Canon?", a: "The Canon is your story bible — characters with personalities, speech patterns, goals, and secrets; locations with sensory details; lore rules; timeline events; relationships; and voice guidelines. Every AI feature reads your Canon first to stay consistent with your world." },
+  { q: "What is the Narrative Control Center?", a: "The NCC is a dashboard that analyses your entire manuscript and visualises character arc timelines, a relationship evolution map, tension curves, plot thread tracking, canon conflict detection, theme presence heatmaps, and knowledge/reveal tracking. It gives you a bird's-eye view of your story's structure in one place." },
+  { q: "What does 'Talk to Your Characters' do?", a: "You can have a live AI conversation with any character from your Canon. Ask about their fears, motivations, or backstory — the AI responds in character based on their profile. When you press 'End & Review', the AI analyses the conversation and recommends changes to future chapter synopses or character profiles. You accept or dismiss each recommendation." },
+  { q: "What are Smart Rewrite modes?", a: "Highlight any text and rewrite it instantly in 6 modes: more emotional, suspenseful, poetic, tighter, bestseller tone, or prose polish. You can also rewrite an entire chapter in one click. It works in both the prose area and inside individual blocs." },
+  { q: "What is the Manuscript Health Report?", a: "An AI-powered assessment that scores your manuscript on pacing, dialogue, clarity, and engagement. It includes per-chapter breakdowns with actionable tips, plus a built-in Thematic Consistency Scanner that tracks how themes evolve across your chapters. You can save, clear, and regenerate reports." },
+  { q: "What are Writing Packs?", a: "Pre-built genre-specific collections of bolt-on writing directives — like the Romance Plot Kit, Fantasy World Builder, or Thriller Dialogue Engine. Install an entire pack or pick individual bolt-ons. They're available right from the chapter toolbar, so you can install and apply them without leaving your writing flow." },
+  { q: "Can I share my manuscript with beta readers?", a: "Yes. Generate a time-limited shareable link and send it to anyone. They'll see your manuscript in a clean reading view and can leave annotations. You control the expiry date and can revoke access at any time." },
+  { q: "How does the 7-day free trial work?", a: "You get full access to every feature for 7 days — including the Narrative Control Center, character chat, smart rewrite, and all analysis tools. No charge until the trial ends. Cancel anytime during the trial and you will not be billed." },
   { q: "Can I cancel anytime?", a: "Yes. Cancel from your Settings panel inside the app. Your access continues until the end of the current billing period." },
-  { q: "Is my writing private?", a: "Yes. Your novels are stored in your own isolated data space. We do not read, train on, or share your content." },
-  { q: "What AI models can I use?", a: "Any model available through OpenRouter (including free ones like Llama, Mistral, and Gemma), Infermatic, or a locally hosted model via LM Studio. You choose the model and control the costs." },
+  { q: "Is my writing private?", a: "Yes. Your novels are stored in your own isolated data space. We do not read, train on, or share your content. AI API keys are stored locally in your browser, not on our servers. When you use AI features, data is sent to your chosen AI provider — review their privacy policy for details." },
+  { q: "What AI models can I use?", a: "Any model available through OpenRouter (including free ones like Llama, Mistral, and Gemma), Infermatic, Hugging Face, or a locally hosted model via LM Studio. You choose the model and control the costs." },
 ];
 
 function FAQ() {
