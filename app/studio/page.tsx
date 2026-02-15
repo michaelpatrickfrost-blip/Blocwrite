@@ -28,7 +28,7 @@ import { ProfilePopup } from "./components/ProfilePopup";
 type ExportFormat = "docx" | "epub";
 
 /** Hard cap on total novels (active + archived) per user. Admin bypasses. */
-const MAX_NOVELS_TOTAL = 10;
+const MAX_NOVELS_TOTAL = 25;
 
 function contentForExport(content: string): string {
   // Handle <<<BLOCK>>> delimiter format — extract only prose
@@ -864,6 +864,23 @@ function StudioHomePage() {
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
+
+      {/* Novel counter — bottom-right */}
+      {!isAdmin && novels.length > 0 && (
+        <div style={{
+          position: "fixed", bottom: 16, right: 16, zIndex: 30,
+          padding: "6px 14px", borderRadius: 10,
+          background: "var(--pw-surface, #1a1a1a)",
+          border: "1px solid var(--pw-border-light, #2a2a2a)",
+          fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)",
+          display: "flex", alignItems: "center", gap: 6,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          backdropFilter: "blur(8px)",
+        }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          {novels.length}/{MAX_NOVELS_TOTAL} novels
+        </div>
+      )}
     </div>
   );
 }
