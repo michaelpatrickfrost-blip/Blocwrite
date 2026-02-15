@@ -476,6 +476,14 @@ function NovelWorkspacePage() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [applyingFeedbackId, setApplyingFeedbackId] = useState<string | null>(null);
   const [dismissedAnnotations, setDismissedAnnotations] = useState<Set<string>>(new Set());
+  // Sequential feedback review state
+  const [feedbackReviewMode, setFeedbackReviewMode] = useState(false);
+  const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<Array<{ fbId: string; token: string; readerName: string | null; chapterId: string; chapterTitle: string; chapterContent: string; ann: { id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string } }>>([]);
+  const [feedbackReviewIdx, setFeedbackReviewIdx] = useState(0);
+  const [feedbackReviewApplying, setFeedbackReviewApplying] = useState(false);
+  const [feedbackReviewDone, setFeedbackReviewDone] = useState(false);
+  const [feedbackReviewAccepted, setFeedbackReviewAccepted] = useState(0);
+  const [feedbackReviewRejected, setFeedbackReviewRejected] = useState(0);
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
   const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
@@ -517,6 +525,8 @@ function NovelWorkspacePage() {
   const [selectedV2CharacterId, setSelectedV2CharacterId] = useState<string | null>(null);
   const [nameConfirmPopup, setNameConfirmPopup] = useState<{ detected: string[]; selected: Set<string> } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
+  // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
+  const aiAbortRef = useRef<AbortController | null>(null);
   const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
   const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
@@ -2653,6 +2663,24 @@ function NovelWorkspacePage() {
     return true;
   }
 
+  /** Create a fresh AbortController for AI work; cancels any previous one. */
+  function freshAiAbort() {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = new AbortController();
+  }
+  /** Cancel any in-flight AI request and clean up busy state. */
+  function cancelAiWork() {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setStoryAiBusyAction(null);
+    setEditorLoadingPhase(null);
+    setFeedbackReviewApplying(false);
+  }
+  /** Returns true if the error is a user-initiated cancellation (silent). */
+  function isCancelledError(err: unknown): boolean {
+    return err instanceof Error && err.message === "__CANCELLED__";
+  }
+
   /* ─── Block delimiters and types ─── */
   const BLOCK_DELIM = "<<<BLOCK>>>";
   const PROSE_DELIM = "<<<PROSE>>>";
@@ -3043,13 +3071,14 @@ function NovelWorkspacePage() {
         });
       }
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       let msg = "Block generation failed.";
       if (error instanceof Error) {
         const m = error.message.toLowerCase();
         if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
           msg = "Bloc generation timed out. Your model may be slow — try a faster one or a shorter chapter synopsis.";
         } else if (m.includes("json") || m.includes("parse") || m.includes("invalid")) {
-          msg = error.message; // already specific from our throw above
+          msg = error.message;
         } else {
           msg = error.message;
         }
@@ -3349,6 +3378,7 @@ function NovelWorkspacePage() {
       nextBlocks[blockIndex] = { ...block, prose: trimmed };
       updateChapter(targetChapterId, { content: serializeChapterBlocks(nextBlocks) });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       let msg = "Bloc prose generation failed.";
       if (error instanceof Error) {
         const m = error.message.toLowerCase();
@@ -3407,8 +3437,15 @@ function NovelWorkspacePage() {
     });
 
     async function singleAttempt(attemptTimeoutMs: number): Promise<{ ok: boolean; status: number; text: string; apiError?: string }> {
+      // Check global abort before starting
+      if (aiAbortRef.current?.signal.aborted) {
+        return { ok: false, status: 0, text: "", apiError: "cancelled" };
+      }
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), attemptTimeoutMs);
+      // Link global abort to this attempt's controller
+      const onGlobalAbort = () => controller.abort();
+      aiAbortRef.current?.signal.addEventListener("abort", onGlobalAbort);
       let response: Response;
       try {
         response = await fetch("/api/openrouter/complete", {
@@ -3419,11 +3456,16 @@ function NovelWorkspacePage() {
         });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
+          // Distinguish between user-cancel and timeout
+          if (aiAbortRef.current?.signal.aborted) {
+            return { ok: false, status: 0, text: "", apiError: "cancelled" };
+          }
           return { ok: false, status: 0, text: "", apiError: "timeout" };
         }
         throw error;
       } finally {
         window.clearTimeout(timeoutId);
+        aiAbortRef.current?.signal.removeEventListener("abort", onGlobalAbort);
       }
       const payload = (await response.json().catch(() => null)) as unknown;
       const text =
@@ -3436,6 +3478,8 @@ function NovelWorkspacePage() {
 
     // First attempt
     const first = await singleAttempt(firstBudget);
+    // If cancelled by user, throw immediately
+    if (first.apiError === "cancelled") throw new Error("__CANCELLED__");
 
     // If we got a non-empty successful response, return it
     if (first.ok && first.text) return first.text;
@@ -3447,19 +3491,23 @@ function NovelWorkspacePage() {
     const isTransient = first.text === "" || first.status === 500 || first.status === 502 || first.status === 503;
 
     if (!isAuthError && isTransient && remaining > 12000) {
+      if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
       // Quality-first: allow up to two retries when models are slow/unreliable.
       await new Promise((r) => window.setTimeout(r, 600));
       const secondBudget = Math.max(6000, Math.min(secondPlannedBudget, remaining - 600));
       const second = await singleAttempt(secondBudget);
+      if (second.apiError === "cancelled") throw new Error("__CANCELLED__");
       if (second.ok && second.text) return second.text;
 
       const elapsedAfterSecond = Date.now() - startMs;
       const remainingAfterSecond = totalBudgetMs - elapsedAfterSecond;
       const secondTransient = second.text === "" || second.status === 500 || second.status === 502 || second.status === 503;
       if (secondTransient && remainingAfterSecond > 8000) {
+        if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
         await new Promise((r) => window.setTimeout(r, 800));
         const thirdBudget = Math.max(6000, Math.min(thirdPlannedBudget, remainingAfterSecond - 800));
         const third = await singleAttempt(thirdBudget);
+        if (third.apiError === "cancelled") throw new Error("__CANCELLED__");
         if (third.ok && third.text) return third.text;
         const bestError = third.apiError || second.apiError || first.apiError;
         if (bestError) throw new Error(bestError);
@@ -3625,6 +3673,7 @@ function NovelWorkspacePage() {
     }
 
     // Only retry if we have enough time budget left
+    if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
     const remainingMs = totalBudgetMs - (Date.now() - startMs);
     if (remainingMs < 18000) {
       throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
@@ -3644,6 +3693,7 @@ function NovelWorkspacePage() {
     }
 
     // Third pass: tiny schema lock to salvage slower models that drift.
+    if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
     const remainingAfterSecond = totalBudgetMs - (Date.now() - startMs);
     if (remainingAfterSecond > 12000) {
       const thirdPrompt = [
@@ -3746,6 +3796,7 @@ function NovelWorkspacePage() {
         },
       });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to autofill summary from prompt.");
     } finally {
       setStoryAiBusyAction(null);
@@ -3807,6 +3858,7 @@ function NovelWorkspacePage() {
         timeline: [...(novel.storyBible.timeline ?? []), ...mapped],
       });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate key events.");
     } finally {
       setStoryAiBusyAction(null);
@@ -3856,6 +3908,7 @@ function NovelWorkspacePage() {
         },
       });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to describe writer style.");
     } finally {
       setStoryAiBusyAction(null);
@@ -4038,6 +4091,7 @@ function NovelWorkspacePage() {
         setSelectedV2CharacterId(nextCharacters[0].id);
       }
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate characters.");
     } finally {
       setStoryAiBusyAction(null);
@@ -4184,6 +4238,7 @@ function NovelWorkspacePage() {
 
       updateV2Character(character.id, patch);
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to run character assistant.");
     } finally {
       setStoryAiBusyAction(null);
@@ -4315,6 +4370,7 @@ function NovelWorkspacePage() {
         }
       }
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       console.error("[runSummaryFieldAi] Error:", error);
       setStoryAiError(error instanceof Error ? error.message : "Unable to run assistant action. Check the browser console for details.");
     } finally {
@@ -5090,6 +5146,7 @@ function NovelWorkspacePage() {
         }
       }
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); setPlanGenerateProgressIdx(null); return; }
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
     } finally {
       setStoryAiBusyAction(null);
@@ -5633,7 +5690,25 @@ function NovelWorkspacePage() {
   }
 
   /** Words that indicate the AI echoed our placeholder instead of writing actual revised text */
-  const PLACEHOLDER_JUNK = new Set(["revised", "revised paragraph", "revised text", "revised version"]);
+  const PLACEHOLDER_JUNK = new Set([
+    "revised", "revised paragraph", "revised text", "revised version",
+    "corrected", "corrected paragraph", "corrected text", "fixed", "fixed paragraph",
+    "polished", "polished paragraph", "polished text", "improved", "improved paragraph",
+    "the complete rewritten paragraph text", "the complete revised paragraph text",
+    "the entire revised paragraph", "full revised paragraph",
+  ]);
+  /** Returns true if text looks like AI returned junk instead of actual content */
+  function isPlaceholderJunk(text: string, original: string): boolean {
+    const t = text.toLowerCase().trim();
+    if (PLACEHOLDER_JUNK.has(t)) return true;
+    // Mostly just the word "revised" repeated
+    if (/^(revised\s*)+$/i.test(t)) return true;
+    // Extremely short compared to original — likely placeholder
+    if (text.length < Math.min(20, original.length * 0.1) && text.split(/\s+/).length < 4) return true;
+    // Contains only generic placeholder words
+    if (/^(the\s+)?(revised|corrected|fixed|polished|improved|updated)\s*(paragraph|text|version|content)?\.?$/i.test(t)) return true;
+    return false;
+  }
 
   /** Process a small chunk of paragraphs (one fast AI call) */
   async function editorChunkCall(
@@ -5646,12 +5721,17 @@ function NovelWorkspacePage() {
     const prompt = [
       `${taskLine}`,
       "",
-      "Return ONLY changed paragraphs as a JSON object. For each paragraph you change, include the FULL revised paragraph text — not a summary or placeholder. Omit paragraphs that do not need changes.",
+      "Return ONLY changed paragraphs as a JSON object. Omit paragraphs that need no changes.",
       "",
       "Format (p = paragraph index number from the brackets):",
-      `{"edits":[{"p":<index>,"text":"<the complete rewritten paragraph text>","reason":"<brief explanation of what you changed>"}]}`,
+      `{"edits":[{"p":<index>,"text":"<FULL paragraph with fix applied>","reason":"<what you changed>"}]}`,
       "",
-      "IMPORTANT: The \"text\" field must contain the ENTIRE revised paragraph — every sentence, word for word. Do NOT write placeholder words like 'revised' or 'fixed'. Write the actual corrected paragraph.",
+      "ABSOLUTE REQUIREMENTS FOR THE \"text\" FIELD:",
+      "- It MUST contain the ENTIRE paragraph — every word, every sentence from the original, with ONLY your correction applied",
+      "- It must be hundreds of characters long (same length as the original paragraph)",
+      "- NEVER write just one word like 'revised' or 'corrected' — that is WRONG",
+      "- NEVER summarize — always output the complete paragraph text",
+      "- If you cannot fix it properly, omit that paragraph from edits",
       "If no paragraphs need changes, return: {\"edits\":[]}",
       "",
       numbered,
@@ -5676,9 +5756,7 @@ function NovelWorkspacePage() {
       // Skip if text is unchanged
       if (text === paragraphs[localIdx].trim()) continue;
       // Skip placeholder junk — AI echoed our example instead of writing actual text
-      if (PLACEHOLDER_JUNK.has(text.toLowerCase())) continue;
-      // Skip if the "revised" text is much shorter than original (likely truncated/placeholder)
-      if (text.length < paragraphs[localIdx].trim().length * 0.15 && text.split(/\s+/).length < 5) continue;
+      if (isPlaceholderJunk(text, paragraphs[localIdx])) continue;
       changes.push({
         paragraphIndex: idx,
         original: paragraphs[localIdx],
@@ -5774,26 +5852,28 @@ function NovelWorkspacePage() {
           `You are a professional copy editor for a ${ctx.genreStr} novel.`,
           ctx.brief,
           "",
-          "Fix ONLY genuine grammar, spelling, and style errors:",
-          "1. SPELLING ERRORS — Actual misspellings (not intentional dialect/accent)",
-          "2. PUNCTUATION — Missing or incorrect punctuation, dialogue punctuation errors",
-          "3. TENSE AGREEMENT — Unintentional tense shifts (respect the author's chosen tense)",
-          "4. SENTENCE STRUCTURE — Run-on sentences, fragments that aren't intentional",
-          "5. WORD USAGE — Wrong word, malapropisms, homophones (their/there/they're)",
-          "6. REPETITION — Same word used too many times in close proximity",
-          "7. DIALOGUE FORMATTING — Missing dialogue tags, attribution errors",
+          "Fix ONLY genuine grammar, spelling, and punctuation errors. Make MINIMAL changes — fix the error and leave everything else exactly as-is.",
           "",
-          "CRITICAL RULES:",
-          "- Do NOT change the author's voice or style",
-          "- Do NOT rewrite for preference — only fix actual errors",
-          "- Do NOT change intentional dialect, slang, or character speech patterns",
-          "- Preserve the meaning exactly — only improve the correctness",
-          "- Each change must cite a specific grammatical rule being violated",
+          "What to fix:",
+          "1. SPELLING — Actual misspellings only (not intentional dialect/accent)",
+          "2. PUNCTUATION — Missing or wrong punctuation, dialogue tag errors",
+          "3. TENSE AGREEMENT — Unintentional tense shifts only",
+          "4. WORD USAGE — Wrong word, homophones (their/there/they're)",
+          "5. SUBJECT-VERB AGREEMENT — 'he were' → 'he was' etc",
           "",
-          "OUTPUT FORMAT: Return JSON with edits. Each edit must contain the COMPLETE revised paragraph text — every word, every sentence. Never use placeholders like 'revised' or 'corrected' — always output the full paragraph with your corrections applied.",
+          "ABSOLUTE RULES — NEVER BREAK THESE:",
+          "- Make the SMALLEST possible change to fix the error — change a word or two, not the whole paragraph",
+          "- NEVER rewrite sentences for style, flow, or preference",
+          "- NEVER restructure paragraphs or combine/split sentences",
+          "- NEVER change the author's voice, word choices, or creative decisions",
+          "- NEVER change dialogue speech patterns, dialect, or slang",
+          "- The corrected paragraph must be 95%+ identical to the original — only the error is different",
+          "- If a paragraph has no actual grammar errors, DO NOT include it",
+          "",
+          "OUTPUT: Return JSON with edits. Each edit must contain the COMPLETE paragraph with ONLY the grammar fix applied. The rest of the paragraph must be WORD-FOR-WORD identical to the original. Never use placeholder words like 'revised'.",
         ].join("\n");
 
-        const taskLine = "Fix grammar, spelling, punctuation, and clear errors. Do NOT change style, voice, or creative choices. Cite the specific error for each change. Return the FULL corrected paragraph text for each edit.";
+        const taskLine = "Fix ONLY grammar, spelling, and punctuation errors. Make the SMALLEST possible change — fix the error word(s) and leave EVERYTHING else word-for-word identical. NEVER rewrite or restructure. Return the FULL paragraph text with ONLY the fix applied.";
 
         const allChanges: EditorChange[] = [];
 
@@ -5900,7 +5980,7 @@ function NovelWorkspacePage() {
       `${i + 1}. [${iss.severity}] ${iss.issue}${iss.quote ? ` ("${iss.quote}")` : ""}`
     ).join("\n");
 
-    const sysMsg = `Professional ${ctx.genreStr} editor. Fix ONLY listed issues. Preserve voice. When returning edits in JSON, the "text" field must contain the COMPLETE revised paragraph — every word, every sentence. Never use placeholder words like "revised" or "fixed".`;
+    const sysMsg = `Professional ${ctx.genreStr} editor. Fix ONLY the listed issues below — nothing else. Preserve the author's voice completely. CRITICAL: When returning edits in JSON, the "text" field MUST contain the ENTIRE paragraph text — every single word and sentence, with ONLY the issue fixed. NEVER output placeholder words like "revised", "fixed", "corrected" etc. NEVER output just one word. Always output the FULL paragraph.`;
     const allChanges: EditorChange[] = [];
 
     try {
@@ -5911,11 +5991,16 @@ function NovelWorkspacePage() {
         setEditorLoadingPhase(`Fixing ${c + 1}/${totalChunks}...`);
 
         const prompt = [
-          "Fix ONLY these issues in the paragraphs below.",
+          "Fix ONLY these specific issues in the paragraphs below. Do not change anything else.",
           "",
-          "Return a JSON object with your edits. For each paragraph you change, include the FULL revised paragraph text — not a summary or placeholder word.",
-          `{"edits":[{"p":<index>,"text":"<the complete rewritten paragraph text>","reason":"<which issue this fixes>"}]}`,
-          "IMPORTANT: The \"text\" field must contain the ENTIRE revised paragraph. Do NOT write 'revised' or 'fixed' — write the actual corrected paragraph text.",
+          "Return a JSON object with your edits.",
+          `{"edits":[{"p":<index>,"text":"<FULL paragraph with fix applied>","reason":"<which issue this fixes>"}]}`,
+          "",
+          "ABSOLUTE REQUIREMENTS FOR THE \"text\" FIELD:",
+          "- It MUST contain the ENTIRE paragraph — every word, every sentence, with ONLY the issue fixed",
+          "- It must be hundreds of characters long (same length as the original)",
+          "- NEVER write just one word like 'revised' or 'fixed' — that is WRONG",
+          "- NEVER summarize — always output the complete paragraph text",
           "Omit unchanged paragraphs. If none are affected: {\"edits\":[]}",
           "",
           `Issues to fix:\n${issueList}`,
@@ -5939,8 +6024,7 @@ function NovelWorkspacePage() {
             if (localIdx < 0 || localIdx >= slice.length || !text) continue;
             if (text === slice[localIdx].trim()) continue;
             // Skip placeholder junk
-            if (PLACEHOLDER_JUNK.has(text.toLowerCase())) continue;
-            if (text.length < slice[localIdx].trim().length * 0.15 && text.split(/\s+/).length < 5) continue;
+            if (isPlaceholderJunk(text, slice[localIdx])) continue;
             allChanges.push({
               paragraphIndex: idx, original: slice[localIdx], revised: text,
               reason: typeof e.reason === "string" ? e.reason : "Issue fix",
@@ -6357,6 +6441,7 @@ function NovelWorkspacePage() {
         void saveSingleBoltonToLibrary(updatedBolton);
       }
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen Bolt-On.");
     } finally {
       setStoryAiBusyAction(null);
@@ -6493,6 +6578,7 @@ function NovelWorkspacePage() {
       }
       updateStoryBible({ lore: merged });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate worldbuilding.");
     } finally {
       setStoryAiBusyAction(null);
@@ -6547,6 +6633,7 @@ function NovelWorkspacePage() {
         constraints: parseStringList(data.constraints),
       });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to improve lore entry.");
     } finally {
       setStoryAiBusyAction(null);
@@ -6613,6 +6700,7 @@ function NovelWorkspacePage() {
       const matchedName = payload.name?.trim() || locationName;
       setLocationLookupMessage(`Loaded real-world reference for ${matchedName}${sourceLabel}.`);
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       if (error instanceof DOMException && error.name === "AbortError") {
         setStoryAiError("Location lookup timed out. Please try again.");
       } else {
@@ -6761,6 +6849,7 @@ function NovelWorkspacePage() {
         `Generated ${generatedLocations.length} location${generatedLocations.length === 1 ? "" : "s"} from your Canon.`,
       );
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate locations.");
     } finally {
       setStoryAiBusyAction(null);
@@ -7114,21 +7203,55 @@ function NovelWorkspacePage() {
             )}
             <button type="button" className="btn" style={{ position: "relative" }} onClick={() => {
               if (!novel) return;
-              setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
-              setShareResult(null);
-              setShareError(null);
-              setSharePassword("");
-              setShareExpiryDays(7);
-              setShareRecipientEmail("");
-              setShowShareModal(true);
-              // Fetch existing share links
-              setShareLinksLoading(true);
-              fetch("/api/share").then((r) => r.json()).then((data) => {
-                if (Array.isArray(data)) setShareLinks(data);
-              }).catch(() => {}).finally(() => setShareLinksLoading(false));
-            }} title="Share chapters for feedback">
+              if (pendingFeedbackCount > 0) {
+                // Open feedback review mode
+                setFeedbackLoading(true);
+                setShowFeedbackPanel(true);
+                setFeedbackReviewMode(false);
+                setFeedbackReviewDone(false);
+                setFeedbackReviewIdx(0);
+                setFeedbackReviewAccepted(0);
+                setFeedbackReviewRejected(0);
+                setDismissedAnnotations(new Set());
+                fetch("/api/share/feedback").then((r) => r.json()).then((d) => {
+                  if (Array.isArray(d)) {
+                    setFeedbackData(d);
+                    // Build the review queue from all feedback
+                    const queue: typeof feedbackReviewQueue = [];
+                    for (const fb of d) {
+                      for (const ch of fb.chapters ?? []) {
+                        for (const ann of ch.annotations ?? []) {
+                          queue.push({
+                            fbId: fb.id,
+                            token: fb.token,
+                            readerName: fb.readerName,
+                            chapterId: ch.id,
+                            chapterTitle: ch.title,
+                            chapterContent: ch.content,
+                            ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
+                          });
+                        }
+                      }
+                    }
+                    setFeedbackReviewQueue(queue);
+                  }
+                }).catch(() => {}).finally(() => setFeedbackLoading(false));
+              } else {
+                setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
+                setShareResult(null);
+                setShareError(null);
+                setSharePassword("");
+                setShareExpiryDays(7);
+                setShareRecipientEmail("");
+                setShowShareModal(true);
+                setShareLinksLoading(true);
+                fetch("/api/share").then((r) => r.json()).then((data) => {
+                  if (Array.isArray(data)) setShareLinks(data);
+                }).catch(() => {}).finally(() => setShareLinksLoading(false));
+              }
+            }} title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-              Share
+              {pendingFeedbackCount > 0 ? "Feedback" : "Share"}
               {pendingFeedbackCount > 0 && (
                 <span style={{
                   position: "absolute", top: -4, right: -4,
@@ -7136,7 +7259,7 @@ function NovelWorkspacePage() {
                   background: "#ef4444", color: "#fff",
                   fontSize: 10, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  lineHeight: 1,
+                  lineHeight: 1, animation: "pulse 2s infinite",
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
@@ -8827,10 +8950,32 @@ function NovelWorkspacePage() {
                           <button type="button" className="pw-export-tool-btn" onClick={() => {
                             setShowShareModal(false);
                             setShowFeedbackPanel(true);
+                            setFeedbackReviewMode(false);
+                            setFeedbackReviewDone(false);
+                            setFeedbackReviewIdx(0);
+                            setFeedbackReviewAccepted(0);
+                            setFeedbackReviewRejected(0);
                             setDismissedAnnotations(new Set());
                             setFeedbackLoading(true);
-                            fetch("/api/share/feedback").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setFeedbackData(d); }).catch(() => {}).finally(() => setFeedbackLoading(false));
-                          }} style={{ color: "var(--pw-success, #10b981)" }}>View</button>
+                            fetch("/api/share/feedback").then((r) => r.json()).then((d) => {
+                              if (Array.isArray(d)) {
+                                setFeedbackData(d);
+                                const queue: typeof feedbackReviewQueue = [];
+                                for (const fb of d) {
+                                  for (const ch of fb.chapters ?? []) {
+                                    for (const ann of ch.annotations ?? []) {
+                                      queue.push({
+                                        fbId: fb.id, token: fb.token, readerName: fb.readerName,
+                                        chapterId: ch.id, chapterTitle: ch.title, chapterContent: ch.content,
+                                        ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
+                                      });
+                                    }
+                                  }
+                                }
+                                setFeedbackReviewQueue(queue);
+                              }
+                            }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                          }} style={{ color: "var(--pw-success, #10b981)" }}>Review</button>
                         )}
                         <button type="button" className="pw-export-tool-btn" onClick={async () => {
                           await fetch(`/api/share/${link.token}`, { method: "DELETE" });
@@ -8846,184 +8991,368 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Feedback Panel ── */}
+      {/* ── Feedback Review Panel ── */}
       {showFeedbackPanel && (
-        <div className="pw-modal-overlay" onClick={() => setShowFeedbackPanel(false)}>
-          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, maxHeight: "85vh", overflow: "auto" }}>
-            <div className="pw-export-header">
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 18, width: "auto", opacity: 0.7 }} />
-                <div className="pw-delete-modal-title" style={{ margin: 0 }}>Reader Feedback</div>
-              </div>
-              <p className="pw-delete-modal-copy">Notes and suggestions from your readers. Apply changes with AI or dismiss individual notes.</p>
-            </div>
+        <div className="pw-modal-overlay" onClick={() => { if (!feedbackReviewMode) { setShowFeedbackPanel(false); } }}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620, maxHeight: "85vh", overflow: "auto" }}>
 
-            {feedbackLoading ? (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--pw-text-dim)" }}>Loading feedback...</div>
-            ) : feedbackData.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--pw-text-dim)" }}>No feedback received yet. Share chapters with readers to get started.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 20 }}>
-                {feedbackData.map((fb) => {
-                  const totalAnns = fb.chapters.reduce((sum, ch) => sum + ch.annotations.length, 0);
-                  const visibleAnns = fb.chapters.reduce((sum, ch) => sum + ch.annotations.filter((a) => !dismissedAnnotations.has(a.id)).length, 0);
-                  return (
-                    <div key={fb.id} style={{
-                      borderRadius: 12, border: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
-                      overflow: "hidden",
-                    }}>
-                      {/* Reader header */}
-                      <div style={{
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
-                        padding: "14px 16px",
-                        background: "var(--pw-surface-alt, rgba(255,255,255,0.02))",
-                        borderBottom: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)" }}>
-                            {fb.readerName || "Anonymous Reader"}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
-                            {new Date(fb.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
-                            {" · "}{totalAnns} note{totalAnns !== 1 ? "s" : ""}
-                            {visibleAnns < totalAnns && <span> · {totalAnns - visibleAnns} dismissed</span>}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn"
-                          style={{ fontSize: 11, padding: "5px 14px", fontWeight: 600, color: "var(--pw-success, #10b981)", border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.06)", borderRadius: 8 }}
-                          onClick={async () => {
-                            try {
-                              await fetch(`/api/share/${fb.token}`, { method: "PATCH" });
-                              setFeedbackData((prev) => prev.filter((f) => f.id !== fb.id));
-                              setPendingFeedbackCount((c) => Math.max(0, c - totalAnns));
-                            } catch { /* ignore */ }
-                          }}
-                        >
-                          Mark as Reviewed
-                        </button>
-                      </div>
-
-                      {/* Chapters & annotations */}
-                      <div style={{ padding: "12px 16px" }}>
-                        {fb.chapters.map((ch) => {
-                          const visibleChAnns = ch.annotations.filter((a) => !dismissedAnnotations.has(a.id));
-                          if (visibleChAnns.length === 0 && ch.annotations.length > 0) return null;
-                          return (
-                            <div key={ch.id} style={{ marginBottom: 16 }}>
-                              <p style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)", display: "flex", alignItems: "center", gap: 6 }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                                {ch.title}
-                                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--pw-text-muted)" }}>({visibleChAnns.length})</span>
-                              </p>
-                              {visibleChAnns.length === 0 ? (
-                                <p style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No notes on this chapter.</p>
-                              ) : (
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  {visibleChAnns.map((ann) => (
-                                    <div key={ann.id} style={{
-                                      padding: "12px 14px",
-                                      borderRadius: 10,
-                                      background: ann.type === "issue" ? "rgba(239,68,68,0.05)" : ann.type === "suggestion" ? "rgba(59,130,246,0.05)" : "rgba(139,92,246,0.04)",
-                                      border: `1px solid ${ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.1)"}`,
-                                    }}>
-                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                                        <span style={{
-                                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                                          background: ann.type === "issue" ? "rgba(239,68,68,0.12)" : ann.type === "suggestion" ? "rgba(59,130,246,0.12)" : "rgba(139,92,246,0.12)",
-                                          color: ann.type === "issue" ? "#ef4444" : ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6",
-                                          textTransform: "uppercase",
-                                        }}>
-                                          {ann.type}
-                                        </span>
-                                        <div style={{ display: "flex", gap: 4 }}>
-                                          <button
-                                            type="button"
-                                            className="btn"
-                                            style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, color: "var(--pw-text-muted)", border: "1px solid var(--pw-border, rgba(255,255,255,0.08))" }}
-                                            onClick={() => {
-                                              setDismissedAnnotations((prev) => { const next = new Set(prev); next.add(ann.id); return next; });
-                                            }}
-                                          >
-                                            Dismiss
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="btn"
-                                            style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, fontWeight: 600, color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", background: "rgba(59,130,246,0.06)" }}
-                                            disabled={applyingFeedbackId === ann.id}
-                                            onClick={async () => {
-                                              if (!novel || !activeChapter) {
-                                                alert("Open the chapter you want to apply this feedback to first.");
-                                                return;
-                                              }
-                                              setApplyingFeedbackId(ann.id);
-                                              try {
-                                                const res = await fetch("/api/openrouter/complete", {
-                                                  method: "POST",
-                                                  headers: { "Content-Type": "application/json" },
-                                                  body: JSON.stringify({
-                                                    provider: assistantProvider,
-                                                    apiKey: openRouterKey,
-                                                    baseUrl: assistantBaseUrl,
-                                                    model: openRouterModel || "openai/gpt-4o-mini",
-                                                    systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
-                                                    prompt: `Reader highlighted this text:\n"${ann.selectedText}"\n\nReader's note: "${ann.note}" (type: ${ann.type})\n\nSurrounding context from the chapter:\n${ch.content.slice(Math.max(0, ann.startOffset - 300), ann.endOffset + 300)}\n\nRevise the highlighted passage to address the feedback:`,
-                                                    maxTokens: 1000,
-                                                  }),
-                                                });
-                                                const data = await res.json() as { text?: string; error?: string };
-                                                if (data.text) {
-                                                  const currentContent = activeChapter.content || "";
-                                                  const idx = currentContent.indexOf(ann.selectedText);
-                                                  if (idx !== -1) {
-                                                    const newContent = currentContent.slice(0, idx) + data.text.trim() + currentContent.slice(idx + ann.selectedText.length);
-                                                    updateChapter(activeChapter.id, { content: newContent });
-                                                    setDismissedAnnotations((prev) => { const next = new Set(prev); next.add(ann.id); return next; });
-                                                  } else {
-                                                    alert("Could not find the exact text in your current chapter. The passage may have changed since sharing.");
-                                                  }
-                                                } else {
-                                                  alert(data.error || "AI could not process this feedback.");
-                                                }
-                                              } catch {
-                                                alert("Failed to apply feedback. Check your AI connection.");
-                                              } finally {
-                                                setApplyingFeedbackId(null);
-                                              }
-                                            }}
-                                          >
-                                            {applyingFeedbackId === ann.id ? "Applying..." : "Apply with AI"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                      {/* Highlighted excerpt */}
-                                      <div style={{
-                                        fontSize: 12, color: "var(--pw-text-dim)", fontStyle: "italic", marginBottom: 6, lineHeight: 1.6,
-                                        padding: "6px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)",
-                                        borderLeft: `3px solid ${ann.type === "issue" ? "rgba(239,68,68,0.3)" : ann.type === "suggestion" ? "rgba(59,130,246,0.3)" : "rgba(139,92,246,0.3)"}`,
-                                      }}>
-                                        &ldquo;{ann.selectedText.slice(0, 150)}{ann.selectedText.length > 150 ? "…" : ""}&rdquo;
-                                      </div>
-                                      <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--pw-text)" }}>{ann.note}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Loading state */}
+            {feedbackLoading && (
+              <div style={{ padding: 40, textAlign: "center" }}>
+                <div style={{ width: 28, height: 28, border: "2.5px solid var(--pw-border, rgba(255,255,255,0.08))", borderTopColor: "var(--pw-accent, #3b82f6)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 14px" }} />
+                <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>Loading feedback...</p>
               </div>
             )}
 
-            <div className="pw-delete-modal-actions" style={{ marginTop: 16 }}>
-              <button type="button" className="btn pw-cancel-btn" onClick={() => { setShowFeedbackPanel(false); setPendingFeedbackCount(0); }}>Close</button>
-            </div>
+            {/* No feedback — jump to share modal */}
+            {!feedbackLoading && feedbackReviewQueue.length === 0 && !feedbackReviewDone && (
+              <div style={{ padding: 40, textAlign: "center" }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim, #6b7280)" strokeWidth="1.5" strokeLinecap="round" style={{ margin: "0 auto 14px", display: "block" }}>
+                  <circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/>
+                </svg>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>No Feedback Yet</h3>
+                <p style={{ fontSize: 13, color: "var(--pw-text-muted)", lineHeight: 1.5, marginBottom: 20 }}>
+                  Share chapters with readers to start getting feedback.
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  <button type="button" className="btn pw-cancel-btn" onClick={() => setShowFeedbackPanel(false)}>Close</button>
+                  <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: "8px 20px" }} onClick={() => {
+                    setShowFeedbackPanel(false);
+                    if (novel) {
+                      setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
+                      setShareResult(null);
+                      setShareError(null);
+                      setSharePassword("");
+                      setShareExpiryDays(7);
+                      setShareRecipientEmail("");
+                      setShowShareModal(true);
+                      setShareLinksLoading(true);
+                      fetch("/api/share").then((r) => r.json()).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
+                    }
+                  }}>Share Chapters</button>
+                </div>
+              </div>
+            )}
+
+            {/* Feedback summary — before starting review */}
+            {!feedbackLoading && feedbackReviewQueue.length > 0 && !feedbackReviewMode && !feedbackReviewDone && (() => {
+              const readerNames = [...new Set(feedbackReviewQueue.map((q) => q.readerName || "Anonymous"))];
+              const chapterNames = [...new Set(feedbackReviewQueue.map((q) => q.chapterTitle))];
+              return (
+                <div style={{ padding: "20px 0 0" }}>
+                  <div className="pw-export-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 18, width: "auto", opacity: 0.7 }} />
+                      <div className="pw-delete-modal-title" style={{ margin: 0 }}>Reader Feedback</div>
+                    </div>
+                    <p className="pw-delete-modal-copy">
+                      You have <strong>{feedbackReviewQueue.length}</strong> note{feedbackReviewQueue.length !== 1 ? "s" : ""} from {readerNames.length} reader{readerNames.length !== 1 ? "s" : ""} across {chapterNames.length} chapter{chapterNames.length !== 1 ? "s" : ""}.
+                    </p>
+                  </div>
+
+                  {/* Summary cards per reader */}
+                  <div style={{ padding: "0 20px", marginBottom: 16 }}>
+                    {feedbackData.map((fb) => {
+                      const annCount = fb.chapters.reduce((sum, ch) => sum + ch.annotations.length, 0);
+                      return (
+                        <div key={fb.id} style={{
+                          display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 6,
+                          borderRadius: 10, background: "var(--pw-surface-alt, rgba(255,255,255,0.02))",
+                          border: "1px solid var(--pw-border, rgba(255,255,255,0.06))",
+                        }}>
+                          <div style={{
+                            width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                            background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            color: "#fff", fontSize: 14, fontWeight: 700,
+                          }}>
+                            {(fb.readerName || "A")[0].toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--pw-text)" }}>{fb.readerName || "Anonymous Reader"}</div>
+                            <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 1 }}>
+                              {annCount} note{annCount !== 1 ? "s" : ""} · {new Date(fb.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Chapter breakdown */}
+                  <div style={{ padding: "0 20px", marginBottom: 20 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Chapters with feedback</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {chapterNames.map((name) => {
+                        const count = feedbackReviewQueue.filter((q) => q.chapterTitle === name).length;
+                        return (
+                          <span key={name} style={{
+                            fontSize: 12, padding: "4px 12px", borderRadius: 8,
+                            background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.15)",
+                            color: "var(--pw-accent, #3b82f6)", fontWeight: 500,
+                          }}>
+                            {name} <span style={{ opacity: 0.7 }}>({count})</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pw-delete-modal-actions">
+                    <button type="button" className="btn pw-cancel-btn" onClick={() => setShowFeedbackPanel(false)}>Later</button>
+                    <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 24px", fontWeight: 700 }} onClick={() => {
+                      setFeedbackReviewMode(true);
+                      setFeedbackReviewIdx(0);
+                      setFeedbackReviewAccepted(0);
+                      setFeedbackReviewRejected(0);
+                      // Jump to the first feedback's chapter
+                      const first = feedbackReviewQueue[0];
+                      if (first && novel) {
+                        const matchChapter = novel.chapters.find((c) => c.title === first.chapterTitle);
+                        if (matchChapter) setActiveChapterId(matchChapter.id);
+                      }
+                    }}>
+                      Start Review ({feedbackReviewQueue.length} note{feedbackReviewQueue.length !== 1 ? "s" : ""})
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Active Review Mode: one annotation at a time ── */}
+            {!feedbackLoading && feedbackReviewMode && !feedbackReviewDone && (() => {
+              const item = feedbackReviewQueue[feedbackReviewIdx];
+              if (!item) return null;
+              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6";
+              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(59,130,246,0.08)" : "rgba(139,92,246,0.06)";
+              const progress = ((feedbackReviewIdx) / feedbackReviewQueue.length) * 100;
+
+              return (
+                <div>
+                  {/* Progress bar */}
+                  <div style={{ padding: "16px 20px 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)" }}>
+                        Note {feedbackReviewIdx + 1} of {feedbackReviewQueue.length}
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--pw-text-muted)" }}>
+                        {feedbackReviewAccepted} accepted · {feedbackReviewRejected} skipped
+                      </span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border, rgba(255,255,255,0.06))", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #3b82f6)", borderRadius: 4, transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
+
+                  {/* Chapter & reader info */}
+                  <div style={{ padding: "14px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-muted)" strokeWidth="2" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>{item.chapterTitle}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+                      by {item.readerName || "Anonymous"}
+                    </span>
+                  </div>
+
+                  {/* The annotation card */}
+                  <div style={{ padding: "14px 20px" }}>
+                    <div style={{
+                      borderRadius: 12, border: `1px solid ${typeColor}22`, background: typeBg, padding: "18px 16px",
+                    }}>
+                      {/* Type badge */}
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6,
+                        background: `${typeColor}18`, color: typeColor, textTransform: "uppercase",
+                        display: "inline-block", marginBottom: 12,
+                      }}>
+                        {item.ann.type}
+                      </span>
+
+                      {/* Highlighted text */}
+                      <div style={{
+                        padding: "10px 14px", borderRadius: 8, marginBottom: 14,
+                        background: "rgba(255,255,255,0.03)", borderLeft: `3px solid ${typeColor}55`,
+                      }}>
+                        <p style={{ fontSize: 13, color: "var(--pw-text-dim)", fontStyle: "italic", lineHeight: 1.7, margin: 0 }}>
+                          &ldquo;{item.ann.selectedText.slice(0, 250)}{item.ann.selectedText.length > 250 ? "..." : ""}&rdquo;
+                        </p>
+                      </div>
+
+                      {/* Reader's note */}
+                      <div style={{ marginBottom: 4 }}>
+                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Reader&apos;s Note</p>
+                        <p style={{ fontSize: 14, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{item.ann.note}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div style={{ padding: "0 20px 20px", display: "flex", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{
+                        flex: 1, fontSize: 14, fontWeight: 600, padding: "12px 0", borderRadius: 10,
+                        border: "1px solid var(--pw-border, rgba(255,255,255,0.1))",
+                        background: "transparent", color: "var(--pw-text-muted)",
+                        cursor: "pointer", transition: "all 0.15s",
+                      }}
+                      disabled={feedbackReviewApplying}
+                      onClick={() => {
+                        // Reject / skip — move to next
+                        setFeedbackReviewRejected((c) => c + 1);
+                        const nextIdx = feedbackReviewIdx + 1;
+                        if (nextIdx >= feedbackReviewQueue.length) {
+                          // Mark all feedback as reviewed
+                          const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
+                          for (const t of tokens) {
+                            fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
+                          }
+                          setFeedbackReviewDone(true);
+                          setFeedbackReviewMode(false);
+                          setPendingFeedbackCount(0);
+                        } else {
+                          setFeedbackReviewIdx(nextIdx);
+                          // Jump chapter if needed
+                          const next = feedbackReviewQueue[nextIdx];
+                          if (next && novel && next.chapterTitle !== item.chapterTitle) {
+                            const matchChapter = novel.chapters.find((c) => c.title === next.chapterTitle);
+                            if (matchChapter) setActiveChapterId(matchChapter.id);
+                          }
+                        }
+                      }}
+                    >
+                      Skip
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{
+                        flex: 2, fontSize: 14, fontWeight: 700, padding: "12px 0", borderRadius: 10,
+                        opacity: feedbackReviewApplying ? 0.7 : 1,
+                        cursor: feedbackReviewApplying ? "wait" : "pointer",
+                      }}
+                      disabled={feedbackReviewApplying}
+                      onClick={async () => {
+                        if (!novel) return;
+                        // Find the actual chapter in the novel to apply to
+                        const matchChapter = novel.chapters.find((c) => c.title === item.chapterTitle);
+                        if (!matchChapter) {
+                          alert("Could not find this chapter in your novel.");
+                          return;
+                        }
+                        // Make sure we're on the right chapter
+                        setActiveChapterId(matchChapter.id);
+
+                        setFeedbackReviewApplying(true);
+                        try {
+                          const res = await fetch("/api/openrouter/complete", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              provider: assistantProvider,
+                              apiKey: openRouterKey,
+                              baseUrl: assistantBaseUrl,
+                              model: openRouterModel || "openai/gpt-4o-mini",
+                              systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
+                              prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
+                              maxTokens: 1200,
+                              timeoutMs: 120000,
+                            }),
+                          });
+                          const aiData = await res.json() as { text?: string; error?: string };
+                          if (aiData.text) {
+                            const currentContent = matchChapter.content || "";
+                            const idx = currentContent.indexOf(item.ann.selectedText);
+                            if (idx !== -1) {
+                              const newContent = currentContent.slice(0, idx) + aiData.text.trim() + currentContent.slice(idx + item.ann.selectedText.length);
+                              updateChapter(matchChapter.id, { content: newContent });
+                              setFeedbackReviewAccepted((c) => c + 1);
+                            } else {
+                              alert("Could not find the exact text. The chapter may have changed since sharing. Skipping this note.");
+                            }
+                          } else {
+                            alert(aiData.error || "AI could not process this feedback. Skipping.");
+                          }
+                        } catch {
+                          alert("Failed to apply. Check your AI connection.");
+                        } finally {
+                          setFeedbackReviewApplying(false);
+                        }
+
+                        // Move to next
+                        const nextIdx = feedbackReviewIdx + 1;
+                        if (nextIdx >= feedbackReviewQueue.length) {
+                          const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
+                          for (const t of tokens) {
+                            fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
+                          }
+                          setFeedbackReviewDone(true);
+                          setFeedbackReviewMode(false);
+                          setPendingFeedbackCount(0);
+                        } else {
+                          setFeedbackReviewIdx(nextIdx);
+                          const next = feedbackReviewQueue[nextIdx];
+                          if (next && next.chapterTitle !== item.chapterTitle) {
+                            const mc = novel.chapters.find((c) => c.title === next.chapterTitle);
+                            if (mc) setActiveChapterId(mc.id);
+                          }
+                        }
+                      }}
+                    >
+                      {feedbackReviewApplying ? (
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                          <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          Applying...
+                        </span>
+                      ) : "Accept — Apply with AI"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Review Complete ── */}
+            {feedbackReviewDone && (
+              <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" style={{ margin: "0 auto 16px", display: "block" }}>
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>Feedback Complete</h3>
+                <p style={{ fontSize: 14, color: "var(--pw-text-muted)", lineHeight: 1.6, marginBottom: 24, maxWidth: 340, margin: "0 auto 24px" }}>
+                  All {feedbackReviewQueue.length} note{feedbackReviewQueue.length !== 1 ? "s" : ""} reviewed.
+                  {feedbackReviewAccepted > 0 && <><br/><span style={{ color: "#10b981", fontWeight: 600 }}>{feedbackReviewAccepted} applied</span></>}
+                  {feedbackReviewRejected > 0 && <><span style={{ color: "var(--pw-text-dim)" }}> · {feedbackReviewRejected} skipped</span></>}
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  <button type="button" className="btn pw-cancel-btn" style={{ fontSize: 13, padding: "9px 20px" }} onClick={() => {
+                    setShowFeedbackPanel(false);
+                    setFeedbackReviewDone(false);
+                    setFeedbackReviewMode(false);
+                    setPendingFeedbackCount(0);
+                  }}>Close</button>
+                  <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 20px" }} onClick={() => {
+                    setShowFeedbackPanel(false);
+                    setFeedbackReviewDone(false);
+                    setFeedbackReviewMode(false);
+                    setPendingFeedbackCount(0);
+                    // Open share modal
+                    if (novel) {
+                      setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
+                      setShareResult(null);
+                      setShareError(null);
+                      setSharePassword("");
+                      setShareExpiryDays(7);
+                      setShareRecipientEmail("");
+                      setShowShareModal(true);
+                      setShareLinksLoading(true);
+                      fetch("/api/share").then((r) => r.json()).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
+                    }
+                  }}>Share More Chapters</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -9036,7 +9365,7 @@ function NovelWorkspacePage() {
         return (
           <TheEditor
             open={showEditorModal}
-            onClose={() => { setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
+            onClose={() => { cancelAiWork(); setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
             chapterTitle={activeChapter.title || "Untitled chapter"}
             chapterNumber={chNum}
             totalChapters={chTotal}
