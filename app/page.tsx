@@ -71,6 +71,55 @@ const btnOutline: React.CSSProperties = {
 export default function LandingPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)" }}>
+      {/* ── Mobile responsive overrides ── */}
+      <style>{`
+        @media (max-width: 768px) {
+          .bw-nav-links { display: none !important; }
+          .bw-nav-actions { gap: 8px !important; }
+          .bw-nav-actions .bw-nav-login { display: none !important; }
+          .bw-nav-cta { padding: 8px 16px !important; font-size: 12px !important; }
+          .bw-hero-wrap { padding: 56px 20px 48px !important; }
+          .bw-hero-title { font-size: 32px !important; }
+          .bw-hero-sub { font-size: 15px !important; margin-top: 20px !important; }
+          .bw-hero-btns { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; margin-top: 32px !important; }
+          .bw-hero-btns a { text-align: center; justify-content: center; padding: 14px 24px !important; }
+          .bw-hero-pills { gap: 6px !important; margin-top: 24px !important; }
+          .bw-hero-pills span { font-size: 10px !important; padding: 5px 12px !important; }
+          .bw-trust-grid { grid-template-columns: 1fr 1fr !important; gap: 20px !important; }
+          .bw-ai-banner-card { grid-template-columns: 1fr !important; text-align: center; padding: 24px 20px !important; }
+          .bw-ai-banner-icon { margin: 0 auto 12px !important; }
+          .bw-ai-banner-title { font-size: 15px !important; }
+          .bw-ai-banner-desc { font-size: 13px !important; }
+          .bw-section-title { font-size: 28px !important; }
+          .bw-section-pre { font-size: 10px !important; }
+          .bw-section-sub { font-size: 15px !important; }
+          .bw-stages-grid { gap: 48px !important; }
+          .bw-stage-row { grid-template-columns: 1fr !important; gap: 24px !important; }
+          .bw-stage-text { order: 1 !important; }
+          .bw-stage-img { order: 2 !important; }
+          .bw-stage-subtitle { font-size: 22px !important; }
+          .bw-stage-desc { font-size: 14px !important; }
+          .bw-features-grid { grid-template-columns: 1fr !important; }
+          .bw-features-card { padding: 24px !important; }
+          .bw-advanced-grid { grid-template-columns: 1fr !important; }
+          .bw-advanced-card { padding: 18px 16px !important; }
+          .bw-pricing-grid { grid-template-columns: 1fr !important; max-width: 400px !important; }
+          .bw-price-card { padding: 28px !important; }
+          .bw-price-amount { font-size: 36px !important; }
+          .bw-cta-title { font-size: 28px !important; }
+          .bw-cta-sub { font-size: 15px !important; }
+          .bw-footer-inner { flex-direction: column !important; text-align: center; gap: 16px !important; }
+          .bw-footer-links { justify-content: center !important; gap: 20px !important; }
+          .bw-faq-q { font-size: 14px !important; }
+          .bw-faq-a { font-size: 14px !important; }
+          .bw-section-pad { padding: 56px 0 !important; }
+        }
+        @media (max-width: 480px) {
+          .bw-trust-grid { grid-template-columns: 1fr !important; }
+          .bw-hero-title { font-size: 26px !important; }
+          .bw-hero-pills span { font-size: 9px !important; padding: 4px 10px !important; }
+        }
+      `}</style>
       <Nav />
       <Hero />
       <TrustBar />
@@ -105,7 +154,7 @@ function Nav() {
           <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
         </Link>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 36 }} className="bw-nav-actions">
           <div style={{ display: "flex", gap: 32 }} className="bw-nav-links">
             {[
               { label: "How it works", href: "#how-it-works" },
@@ -126,10 +175,10 @@ function Nav() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <Link href="/login" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
+            <Link href="/login" className="bw-nav-login" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
               Log in
             </Link>
-            <Link href="/subscribe" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 13, borderRadius: 12, background: C.accent, color: C.text, boxShadow: "none" }}>
+            <Link href="/subscribe" className="bw-nav-cta" style={{ ...btnPrimary, padding: "10px 24px", fontSize: 13, borderRadius: 12, background: C.accent, color: C.text, boxShadow: "none" }}>
               Start Free Trial
               <ArrowIcon />
             </Link>
@@ -165,7 +214,7 @@ function Hero() {
         }}
       />
 
-      <div style={{ ...wrap(), textAlign: "center", padding: "96px 28px 88px", position: "relative", zIndex: 1 }}>
+      <div className="bw-hero-wrap" style={{ ...wrap(), textAlign: "center", padding: "96px 28px 88px", position: "relative", zIndex: 1 }}>
         <p style={{
           fontSize: 12,
           fontWeight: 700,
@@ -177,7 +226,7 @@ function Hero() {
           Write Smarter. Finish Faster.
         </p>
 
-        <h1 style={{
+        <h1 className="bw-hero-title" style={{
           fontSize: "clamp(38px, 5.5vw, 64px)",
           fontWeight: 800,
           letterSpacing: "-0.04em",
@@ -191,11 +240,11 @@ function Hero() {
           <span style={{ color: "rgba(255,255,255,0.35)" }}>that actually knows your story.</span>
         </h1>
 
-        <p style={{ fontSize: 18, lineHeight: 1.7, color: "rgba(255,255,255,0.5)", maxWidth: 620, margin: "32px auto 0" }}>
+        <p className="bw-hero-sub" style={{ fontSize: 18, lineHeight: 1.7, color: "rgba(255,255,255,0.5)", maxWidth: 620, margin: "32px auto 0" }}>
           Blocwrite gives you a Canon-aware workspace to plan, draft, edit, and export your novel — with AI that reads your characters, locations, lore, and plot before it writes a single word. Chat with your characters, get line-by-line editing suggestions, and shape every generation with reusable bolt-on directives.
         </p>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 48, flexWrap: "wrap" }}>
+        <div className="bw-hero-btns" style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 48, flexWrap: "wrap" }}>
           <Link
             href="/subscribe"
             style={{
@@ -224,7 +273,7 @@ function Hero() {
           </a>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 40, flexWrap: "wrap" }}>
+        <div className="bw-hero-pills" style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 40, flexWrap: "wrap" }}>
           {["Canon-aware AI drafting", "Talk to your characters", "Line-by-line editing", "AI Co-Author chat", "Writing Packs & Bolt-Ons", "EPUB & DOCX export", "Bring your own AI key", "Toggle AI on or off"].map((t) => (
             <span
               key={t}
@@ -274,7 +323,7 @@ function TrustBar() {
   ];
   return (
     <div style={{ background: C.bg, padding: "36px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
-      <div style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 24 }}>
+      <div className="bw-trust-grid" style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 24 }}>
         {items.map((s) => (
           <div key={s.headline} style={{ textAlign: "center", padding: "0 8px" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>{s.icon}</div>
@@ -292,7 +341,7 @@ function AiBanner() {
   return (
     <section style={{ padding: 0, background: C.bg }}>
       <div style={{ ...wrap(), maxWidth: 920, padding: "48px 28px" }}>
-        <div style={{
+        <div className="bw-ai-banner-card" style={{
           padding: "32px 36px",
           borderRadius: 20,
           background: `linear-gradient(135deg, #16161c 0%, #22222a 100%)`,
@@ -303,7 +352,7 @@ function AiBanner() {
           alignItems: "center",
           boxShadow: "0 12px 48px rgba(0,0,0,0.12)",
         }}>
-          <div style={{
+          <div className="bw-ai-banner-icon" style={{
             width: 60,
             height: 60,
             borderRadius: 18,
@@ -319,10 +368,10 @@ function AiBanner() {
             </svg>
           </div>
           <div>
-            <p style={{ fontSize: 17, fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>
+            <p className="bw-ai-banner-title" style={{ fontSize: 17, fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>
               Bring Your Own AI Key — we never charge for AI
             </p>
-            <p style={{ fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.5)", margin: 0 }}>
+            <p className="bw-ai-banner-desc" style={{ fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.5)", margin: 0 }}>
               Blocwrite does <strong style={{ color: "rgba(255,255,255,0.8)" }}>not</strong> include AI credits. You connect your own API key from{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>OpenRouter</strong> (free models available),{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>Hugging Face</strong>,{" "}
@@ -454,24 +503,25 @@ const STAGES = [
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" style={{ padding: "96px 0 100px" }}>
+    <section id="how-it-works" className="bw-section-pad" style={{ padding: "96px 0 100px" }}>
       <div style={wrap()}>
         <div style={{ textAlign: "center", marginBottom: 72 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+          <p className="bw-section-pre" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             HOW IT WORKS
           </p>
-          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 14px" }}>
+          <h2 className="bw-section-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 14px" }}>
             From idea to finished manuscript.
           </h2>
-          <p style={{ fontSize: 17, color: C.textSoft, maxWidth: 560, margin: "0 auto", lineHeight: 1.6 }}>
+          <p className="bw-section-sub" style={{ fontSize: 17, color: C.textSoft, maxWidth: 560, margin: "0 auto", lineHeight: 1.6 }}>
             Eight stages. Each one feeds the next. Your Canon stays in control throughout.
           </p>
         </div>
 
-        <div style={{ display: "grid", gap: 80 }}>
+        <div className="bw-stages-grid" style={{ display: "grid", gap: 80 }}>
           {STAGES.map((s, i) => (
             <div
               key={s.step}
+              className="bw-stage-row"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
@@ -480,7 +530,7 @@ function HowItWorks() {
               }}
             >
               {/* Text side */}
-              <div style={{ order: i % 2 === 0 ? 1 : 2 }}>
+              <div className="bw-stage-text" style={{ order: i % 2 === 0 ? 1 : 2 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
                   <span style={{
                     display: "inline-flex",
@@ -502,10 +552,10 @@ function HowItWorks() {
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.18, margin: "0 0 16px" }}>
+                <h3 className="bw-stage-subtitle" style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.18, margin: "0 0 16px" }}>
                   {s.subtitle}
                 </h3>
-                <p style={{ fontSize: 15, lineHeight: 1.75, color: C.textSoft, margin: "0 0 24px" }}>
+                <p className="bw-stage-desc" style={{ fontSize: 15, lineHeight: 1.75, color: C.textSoft, margin: "0 0 24px" }}>
                   {s.desc}
                 </p>
 
@@ -537,7 +587,7 @@ function HowItWorks() {
               </div>
 
               {/* Screenshot side */}
-              <div style={{ order: i % 2 === 0 ? 2 : 1 }}>
+              <div className="bw-stage-img" style={{ order: i % 2 === 0 ? 2 : 1 }}>
                 <div style={{
                   borderRadius: 16,
                   overflow: "hidden",
@@ -606,21 +656,22 @@ const FEATURES = [
 
 function FeatureGrid() {
   return (
-    <section id="features" style={{ padding: "96px 0", background: C.bgSoft }}>
+    <section id="features" className="bw-section-pad" style={{ padding: "96px 0", background: C.bgSoft }}>
       <div style={wrap()}>
         <div style={{ textAlign: "center", marginBottom: 64 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+          <p className="bw-section-pre" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             CORE FEATURES
           </p>
-          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
+          <h2 className="bw-section-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
             Everything you need to finish a novel.
           </h2>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+        <div className="bw-features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
           {FEATURES.map((f) => (
             <div
               key={f.title}
+              className="bw-features-card"
               style={{
                 padding: 32,
                 borderRadius: 20,
@@ -732,24 +783,25 @@ const ADVANCED_FEATURES = [
 
 function AdvancedFeatures() {
   return (
-    <section style={{ padding: "96px 0" }}>
+    <section className="bw-section-pad" style={{ padding: "96px 0" }}>
       <div style={wrap()}>
         <div style={{ textAlign: "center", marginBottom: 64 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+          <p className="bw-section-pre" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             INTELLIGENCE LAYER
           </p>
-          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 12px" }}>
+          <h2 className="bw-section-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 12px" }}>
             Features no other writing tool offers.
           </h2>
-          <p style={{ fontSize: 17, color: C.textSoft, maxWidth: 600, margin: "0 auto", lineHeight: 1.6 }}>
+          <p className="bw-section-sub" style={{ fontSize: 17, color: C.textSoft, maxWidth: 600, margin: "0 auto", lineHeight: 1.6 }}>
             Every feature works with your Canon — keeping your story consistent, intentional, and publishable.
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+        <div className="bw-advanced-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
           {ADVANCED_FEATURES.map((f) => (
             <div
               key={f.title}
+              className="bw-advanced-card"
               style={{
                 padding: "24px 28px",
                 borderRadius: 16,
@@ -802,12 +854,12 @@ function AdvancedFeatures() {
 /* ── Pricing ──────────────────────────────────────────── */
 function Pricing() {
   return (
-    <section id="pricing" style={{ padding: "100px 0" }}>
+    <section id="pricing" className="bw-section-pad" style={{ padding: "100px 0" }}>
       <div style={wrap({ textAlign: "center" })}>
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+        <p className="bw-section-pre" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
           PRICING
         </p>
-        <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 10px" }}>
+        <h2 className="bw-section-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 10px" }}>
           Studio access. No AI fees.
         </h2>
         <p style={{ fontSize: 17, color: C.textSoft, marginBottom: 12, lineHeight: 1.6 }}>
@@ -817,7 +869,7 @@ function Pricing() {
           Every plan includes a 7-day free trial. Cancel anytime — no lock-in.
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 720, margin: "0 auto" }}>
+        <div className="bw-pricing-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 720, margin: "0 auto" }}>
           <PriceCard
             name="Monthly"
             price="£12.99"
@@ -850,6 +902,7 @@ function PriceCard({
 }) {
   return (
     <div
+      className="bw-price-card"
       style={{
         padding: 36,
         borderRadius: 24,
@@ -880,7 +933,7 @@ function PriceCard({
       )}
       <p style={{ fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 10 }}>{name}</p>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-        <span style={{ fontSize: 48, fontWeight: 800, letterSpacing: "-0.04em" }}>{price}</span>
+        <span className="bw-price-amount" style={{ fontSize: 48, fontWeight: 800, letterSpacing: "-0.04em" }}>{price}</span>
         <span style={{ fontSize: 14, color: C.textMuted }}>/ {period}</span>
       </div>
       <p style={{ fontSize: 13, color: C.textMuted, marginTop: 4, marginBottom: 28 }}>7-day free trial included</p>
@@ -934,13 +987,13 @@ const FAQ_ITEMS = [
 
 function FAQ() {
   return (
-    <section id="faq" style={{ padding: "100px 0", background: C.bgSoft }}>
+    <section id="faq" className="bw-section-pad" style={{ padding: "100px 0", background: C.bgSoft }}>
       <div style={wrap({ maxWidth: 720 })}>
         <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+          <p className="bw-section-pre" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
             FAQ
           </p>
-          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
+          <h2 className="bw-section-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: 0 }}>
             Common questions.
           </h2>
         </div>
@@ -965,10 +1018,10 @@ function FAQItem({ q, a }: { q: string; a: string }) {
         style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: "none", border: "none", cursor: "pointer", padding: 0,
-          textAlign: "left", fontSize: 16, fontWeight: 600, color: C.text, fontFamily: "inherit",
+          textAlign: "left", fontSize: 16, fontWeight: 600, color: C.text, fontFamily: "inherit", lineHeight: 1.4,
         }}
       >
-        {q}
+        <span className="bw-faq-q">{q}</span>
         <span style={{
           fontSize: 20, color: C.textMuted, transition: "transform 0.2s",
           transform: open ? "rotate(45deg)" : "none",
@@ -976,7 +1029,7 @@ function FAQItem({ q, a }: { q: string; a: string }) {
         }}>+</span>
       </button>
       {open && (
-        <p style={{ fontSize: 15, lineHeight: 1.65, color: C.textSoft, marginTop: 14, marginBottom: 0 }}>{a}</p>
+        <p className="bw-faq-a" style={{ fontSize: 15, lineHeight: 1.65, color: C.textSoft, marginTop: 14, marginBottom: 0 }}>{a}</p>
       )}
     </div>
   );
@@ -1000,10 +1053,10 @@ function CTABanner() {
         pointerEvents: "none",
       }} />
       <div style={{ ...wrap(), textAlign: "center", position: "relative", zIndex: 1 }}>
-        <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", color: "#fff", margin: "0 0 18px" }}>
+        <h2 className="bw-cta-title" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", color: "#fff", margin: "0 0 18px" }}>
           Ready to write something real?
         </h2>
-        <p style={{ fontSize: 17, color: "rgba(255,255,255,0.45)", marginBottom: 48, maxWidth: 540, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+        <p className="bw-cta-sub" style={{ fontSize: 17, color: "rgba(255,255,255,0.45)", marginBottom: 48, maxWidth: 540, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
           Plan your story, draft scene by scene, chat with your characters, polish with The Editor, and export a clean manuscript. Start your free trial today.
         </p>
         <Link
@@ -1033,7 +1086,7 @@ function Footer() {
   };
   return (
     <footer style={{ padding: "52px 0 44px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-      <div style={{ ...wrap(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
+      <div className="bw-footer-inner" style={{ ...wrap(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
           <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
@@ -1041,7 +1094,7 @@ function Footer() {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+        <div className="bw-footer-links" style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
           {[
             { label: "Terms", href: "/terms" },
             { label: "Refund Policy", href: "/refunds" },
