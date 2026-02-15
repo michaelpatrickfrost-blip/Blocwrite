@@ -7207,7 +7207,7 @@ function NovelWorkspacePage() {
       const res = await fetch("/api/share/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: shareResult.token, recipientEmail: shareRecipientEmail.trim() }),
+        body: JSON.stringify({ token: shareResult.token, recipientEmail: shareRecipientEmail.trim(), password: sharePassword.trim() || undefined }),
       });
       const data = await res.json();
       if (res.ok) {
