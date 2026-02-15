@@ -7162,6 +7162,40 @@ function NovelWorkspacePage() {
     setPendingChapterDelete(null);
   }
 
+  /**
+   * Compress & resize a cover image to keep it under ~150KB as a JPEG data URL.
+   * This prevents localStorage quota overflow — raw photos can be 2-5MB+ as base64.
+   */
+  function compressCoverImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        // Max dimensions for a book cover thumbnail
+        const MAX_W = 600;
+        const MAX_H = 900;
+        let { width, height } = img;
+        if (width > MAX_W || height > MAX_H) {
+          const scale = Math.min(MAX_W / width, MAX_H / height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress to JPEG at 0.7 quality — typically results in 50-150KB
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+        resolve(dataUrl);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Failed to load image")); };
+      img.src = url;
+    });
+  }
+
   function handleCoverUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -7170,12 +7204,9 @@ function NovelWorkspacePage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== "string") return;
-      updateNovel({ coverImage: reader.result });
-    };
-    reader.readAsDataURL(file);
+    compressCoverImage(file)
+      .then((dataUrl) => updateNovel({ coverImage: dataUrl }))
+      .catch((err) => console.warn("Cover upload failed:", err));
     event.target.value = "";
   }
 

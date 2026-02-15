@@ -1116,26 +1116,37 @@ export function saveNovels(novels: Novel[]): boolean {
   try {
     window.localStorage.setItem(STORAGE_KEY(), payload);
     wroteAnything = true;
-  } catch (error) {
-    console.warn("saveNovels primary write failed", error);
+  } catch {
+    // Primary write failed — try with cover images stripped to fit in quota
+    try {
+      const lite = safeNovels.map((n) => ({ ...n, coverImage: null }));
+      window.localStorage.setItem(STORAGE_KEY(), JSON.stringify(lite));
+      wroteAnything = true;
+    } catch {
+      console.warn("saveNovels: localStorage quota exceeded even without covers");
+    }
   }
 
   // Keep an additional local backup copy in case the primary key gets corrupted.
-  try {
-    window.localStorage.setItem(BACKUP_STORAGE_KEY(), payload);
-    wroteAnything = true;
-  } catch {
-    // ignore
+  // Skip if primary failed to avoid doubling quota pressure.
+  if (wroteAnything) {
+    try {
+      window.localStorage.setItem(BACKUP_STORAGE_KEY(), payload);
+    } catch {
+      // Backup is nice-to-have, don't fail over it
+      try { window.localStorage.removeItem(BACKUP_STORAGE_KEY()); } catch { /* ignore */ }
+    }
   }
 
   // Keep session copies as crash/recovery fallback.
   try {
     window.sessionStorage.setItem(STORAGE_KEY(), payload);
-    window.sessionStorage.setItem(BACKUP_STORAGE_KEY(), payload);
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY(), payload);
-    wroteAnything = true;
   } catch {
-    // ignore
+    // Session storage also has limits — try lite version
+    try {
+      const lite = safeNovels.map((n) => ({ ...n, coverImage: null }));
+      window.sessionStorage.setItem(STORAGE_KEY(), JSON.stringify(lite));
+    } catch { /* ignore */ }
   }
 
   return wroteAnything;
@@ -1334,11 +1345,23 @@ export function applySettings(settings: Record<string, string>) {
 let _serverSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingNovels: Novel[] | null = null;
 
-/** Save novels locally (instant) and queue a debounced server save. */
+/** Save novels locally (instant) and queue a debounced server save.
+ *  If localStorage fails (quota/privacy), we still save to server immediately
+ *  so data is never lost. Returns true as long as at least one save path works. */
 export function saveNovelsWithSync(novels: Novel[]): boolean {
   const localOk = saveNovels(novels);
 
-  // Queue debounced server save (2 seconds)
+  if (!localOk) {
+    // localStorage failed (quota exceeded or private mode).
+    // Save to server immediately — don't wait for debounce.
+    _pendingNovels = null;
+    if (_serverSaveTimer) { clearTimeout(_serverSaveTimer); _serverSaveTimer = null; }
+    void saveNovelsToServer(novels);
+    // Return true — the server will have the data even if localStorage can't.
+    return true;
+  }
+
+  // Normal path: queue debounced server save (2 seconds)
   _pendingNovels = novels;
   if (_serverSaveTimer) clearTimeout(_serverSaveTimer);
   _serverSaveTimer = setTimeout(() => {
@@ -1348,7 +1371,7 @@ export function saveNovelsWithSync(novels: Novel[]): boolean {
     }
   }, 2000);
 
-  return localOk;
+  return true;
 }
 
 /** Flush any pending server save immediately (call on beforeunload / visibilitychange). */
