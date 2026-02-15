@@ -7274,11 +7274,32 @@ function NovelWorkspacePage() {
               <div className="pw-logo">
                 <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
               </div>
-              <div className="pw-sidebar-foot">Loading...</div>
+              <Link href="/studio" className="pw-back-link">
+                <span>&larr; Back to novels</span>
+              </Link>
+              {/* Skeleton chapter list */}
+              <div style={{ padding: "8px 0", display: "flex", flexDirection: "column", gap: 6 }}>
+                {[1, 2, 3].map((i) => (
+                  <div key={i} style={{
+                    height: 36, borderRadius: 8,
+                    background: "var(--pw-surface-alt, #161616)",
+                    animation: "pw-pulse 1.5s ease-in-out infinite",
+                    animationDelay: `${i * 0.15}s`,
+                  }} />
+                ))}
+              </div>
+              <div className="pw-sidebar-foot" style={{ opacity: 0.4 }}>Loading...</div>
             </aside>
-            <section className="pw-home-main">
-              <div className="pw-empty">
-                <p className="pw-empty-title" style={{ opacity: 0.5 }}>Opening novel...</p>
+            <section className="pw-home-main" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ textAlign: "center", opacity: 0.4 }}>
+                <div style={{
+                  width: 28, height: 28, margin: "0 auto 14px",
+                  border: "2.5px solid var(--pw-border, #333)",
+                  borderTopColor: "var(--pw-accent, #a3e635)",
+                  borderRadius: "50%",
+                  animation: "pw-tk-spin 0.7s linear infinite",
+                }} />
+                <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Opening novel...</p>
               </div>
             </section>
           </div>
@@ -7292,12 +7313,15 @@ function NovelWorkspacePage() {
             <div className="pw-logo">
               <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
             </div>
-            <div className="pw-sidebar-foot">Novel not found.</div>
+            <Link href="/studio" className="pw-back-link">
+              <span>&larr; Back to novels</span>
+            </Link>
+            <div className="pw-sidebar-foot" style={{ opacity: 0.4 }}>Novel not found.</div>
           </aside>
-          <section className="pw-home-main">
-            <div className="pw-empty">
+          <section className="pw-home-main" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ textAlign: "center" }}>
               <p className="pw-empty-title">This novel does not exist.</p>
-              <button type="button" className="btn btn-primary" onClick={() => router.push("/studio")}>
+              <button type="button" className="btn btn-primary" onClick={() => router.push("/studio")} style={{ marginTop: 12 }}>
                 Back to novels
               </button>
             </div>

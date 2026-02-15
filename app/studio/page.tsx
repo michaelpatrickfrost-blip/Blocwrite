@@ -376,7 +376,24 @@ function StudioHomePage() {
         </div>
 
         <section className="pw-home-main">
-          {sortedNovels.length === 0 ? (
+          {!serverLoaded ? (
+            /* Skeleton while loading from server — prevents flash of "No novels" */
+            <div className="pw-novel-grid" style={{ opacity: 0.3 }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="pw-novel-card" style={{
+                  pointerEvents: "none",
+                  animation: "pw-pulse 1.5s ease-in-out infinite",
+                  animationDelay: `${i * 0.12}s`,
+                }}>
+                  <div className="pw-novel-cover" style={{ background: "var(--pw-surface-alt, #161616)" }} />
+                  <div style={{ padding: "10px 12px" }}>
+                    <div style={{ height: 14, borderRadius: 4, background: "var(--pw-border, #333)", marginBottom: 6, width: "70%" }} />
+                    <div style={{ height: 10, borderRadius: 3, background: "var(--pw-border, #333)", width: "40%" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : sortedNovels.length === 0 ? (
             <div className="pw-empty">
               <p className="pw-empty-title">No novels yet.</p>
               <p className="pw-empty-subtitle">Create a novel using the left panel.</p>
@@ -392,15 +409,15 @@ function StudioHomePage() {
                     role="button"
                     tabIndex={0}
                     onMouseEnter={() => setHoveredNovelId(novel.id)}
-                    onClick={async () => {
-                      // Ensure server has the latest before navigating
-                      await saveNovelsToServer(novels);
+                    onClick={() => {
+                      // Save in background — don't block navigation
+                      void saveNovelsToServer(novels);
                       router.push(`/studio/${novel.id}`);
                     }}
-                    onKeyDown={async (event) => {
+                    onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        await saveNovelsToServer(novels);
+                        void saveNovelsToServer(novels);
                         router.push(`/studio/${novel.id}`);
                       }
                     }}
