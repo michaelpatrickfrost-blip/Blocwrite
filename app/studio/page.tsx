@@ -309,52 +309,13 @@ function StudioHomePage() {
 
   return (
     <div className="pw-wallpaper">
-      <div className="pw-window">
+      <div className="pw-window pw-sidebar-collapsed">
         <aside className="pw-sidebar">
           <div className="pw-logo">
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
-          </div>
-
-          <div className="pw-section-title">Create Novel</div>
-          <form className="pw-create-form" onSubmit={(e) => {
-            e.preventDefault();
-            if (!titleDraft.trim()) { setCreateHint("Please enter a title to create your novel."); return; }
-            setCreateHint("");
-            handleCreate(e);
-          }}>
-            <input
-              value={titleDraft}
-              onChange={(event) => { setTitleDraft(event.target.value); if (event.target.value.trim()) setCreateHint(""); }}
-              className="pw-create-input"
-              placeholder="Enter a title for your novel"
-              dir="ltr"
-              disabled={atNovelCap}
-            />
-            <button type="submit" className="btn btn-primary" disabled={atNovelCap}>
-              Create
-            </button>
-          </form>
-          {createHint && (
-            <p style={{ fontSize: 12, color: "#f59e0b", margin: "8px 0 0" }}>{createHint}</p>
-          )}
-          {atNovelCap && (
-            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-              You&apos;ve reached the limit of {MAX_NOVELS_TOTAL} novels. Permanently delete an archived novel to create a new one.
-            </p>
-          )}
-          {!isAdmin && !atNovelCap && novels.length > 0 && (
-            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>
-              {novels.length}/{MAX_NOVELS_TOTAL} novels
-            </p>
-          )}
-          {justCreatedId && (
-            <p style={{ fontSize: 12, color: "var(--pw-accent)", margin: "8px 0 0", fontWeight: 500 }}>
-              Novel created — click it to open.
-            </p>
-          )}
-
-          <div className="pw-sidebar-foot">
-            <span>Hover a novel to see details.</span>
+            <div className="pw-logo-swap">
+              <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
+              <img src={currentTheme === "dark" ? "/blocwrite-icon-dark.png" : "/blocwrite-icon-light.png"} alt="Bw" className="pw-logo-icon-img" />
+            </div>
           </div>
         </aside>
 
@@ -365,6 +326,30 @@ function StudioHomePage() {
             <span className="pw-topbar-muted">{sortedNovels.length} novel{sortedNovels.length !== 1 ? "s" : ""}</span>
           </div>
           <div className="flex items-center gap-3">
+            <form style={{ display: "flex", alignItems: "center", gap: 8 }} onSubmit={(e) => {
+              e.preventDefault();
+              if (!titleDraft.trim()) { setCreateHint("Please enter a title to create your novel."); return; }
+              setCreateHint("");
+              handleCreate(e);
+            }}>
+              <input
+                value={titleDraft}
+                onChange={(event) => { setTitleDraft(event.target.value); if (event.target.value.trim()) setCreateHint(""); }}
+                className="pw-create-input"
+                placeholder="New novel title..."
+                dir="ltr"
+                disabled={atNovelCap}
+                style={{ width: 200, padding: "7px 12px", fontSize: 13 }}
+              />
+              <button type="submit" className="btn btn-primary" disabled={atNovelCap} style={{ padding: "7px 16px", fontSize: 13 }}>
+                + Create
+              </button>
+            </form>
+            {!isAdmin && !atNovelCap && novels.length > 0 && (
+              <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.6 }}>
+                {novels.length}/{MAX_NOVELS_TOTAL}
+              </span>
+            )}
             <button type="button" className="pw-theme-toggle" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
               <span className="pw-theme-icon">{currentTheme === "dark" ? "☀" : "☽"}</span>
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
@@ -374,10 +359,23 @@ function StudioHomePage() {
         </div>
 
         <section className="pw-home-main">
+          {createHint && (
+            <p style={{ fontSize: 12, color: "#f59e0b", margin: "0 0 -8px" }}>{createHint}</p>
+          )}
+          {atNovelCap && (
+            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "0 0 -8px" }}>
+              You&apos;ve reached the limit of {MAX_NOVELS_TOTAL} novels. Permanently delete an archived novel to create a new one.
+            </p>
+          )}
+          {justCreatedId && (
+            <p style={{ fontSize: 12, color: "var(--pw-accent)", margin: "0 0 -8px", fontWeight: 500 }}>
+              Novel created — click it to open.
+            </p>
+          )}
           {sortedNovels.length === 0 ? (
             <div className="pw-empty">
               <p className="pw-empty-title">No novels yet.</p>
-              <p className="pw-empty-subtitle">Create a novel using the left panel.</p>
+              <p className="pw-empty-subtitle">Create a novel using the top bar.</p>
             </div>
           ) : (
             <>
