@@ -1233,6 +1233,37 @@ function NovelWorkspacePage() {
   const [tutorialRect, setTutorialRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const tutorialPrevStep = useRef<number>(-1);
 
+  // ── Admin push alerts ──
+  const [adminAlert, setAdminAlert] = useState<{ id: string; message: string; durationSec: number } | null>(null);
+  const adminAlertDismissed = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/alerts/active");
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          if (data && data.id && !adminAlertDismissed.current.has(data.id)) {
+            setAdminAlert(data);
+          } else {
+            setAdminAlert(null);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    void poll();
+    const interval = setInterval(poll, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+  useEffect(() => {
+    if (!adminAlert) return;
+    const timer = setTimeout(() => {
+      adminAlertDismissed.current.add(adminAlert.id);
+      setAdminAlert(null);
+    }, adminAlert.durationSec * 1000);
+    return () => clearTimeout(timer);
+  }, [adminAlert]);
+
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -15235,6 +15266,44 @@ function NovelWorkspacePage() {
               <button type="button" className="btn btn-primary" onClick={regenConfirm.onConfirm}>Continue</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Admin alert popup ── */}
+      {adminAlert && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)",
+          zIndex: 99990, maxWidth: 520, width: "calc(100% - 32px)",
+          background: "linear-gradient(135deg, #1c1c28 0%, #1a1a24 100%)",
+          border: "1.5px solid rgba(239,68,68,0.4)",
+          borderRadius: 14, padding: "14px 18px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(239,68,68,0.1)",
+          display: "flex", alignItems: "flex-start", gap: 12,
+          animation: "pw-tutorial-enter 0.3s cubic-bezier(0.2,0,0,1)",
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+            background: "rgba(239,68,68,0.12)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#e4e4e7", lineHeight: 1.5 }}>
+              {adminAlert.message}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { adminAlertDismissed.current.add(adminAlert.id); setAdminAlert(null); }}
+            style={{
+              flexShrink: 0, background: "none", border: "none", cursor: "pointer",
+              color: "rgba(255,255,255,0.4)", padding: 4, lineHeight: 1,
+            }}
+            title="Dismiss"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       )}
 

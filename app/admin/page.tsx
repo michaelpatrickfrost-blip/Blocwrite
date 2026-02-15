@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
 type Guest = {
@@ -11,6 +11,26 @@ type Guest = {
   expiresAt: string | null;
   createdAt: string;
   status: "active" | "expired";
+};
+
+type BlogPost = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  content: string;
+  coverImage: string | null;
+  published: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+};
+
+type AdminAlert = {
+  id: string;
+  message: string;
+  durationSec: number;
+  active: boolean;
+  createdAt: string;
 };
 
 type Stats = {
@@ -66,15 +86,38 @@ export default function AdminPage() {
   // Delete confirmation
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+  // ── Blog state ──
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
+  const [blogEditing, setBlogEditing] = useState<BlogPost | null>(null);
+  const [blogTitle, setBlogTitle] = useState("");
+  const [blogExcerpt, setBlogExcerpt] = useState("");
+  const [blogCover, setBlogCover] = useState<string | null>(null);
+  const [blogPublished, setBlogPublished] = useState(false);
+  const [blogSaving, setBlogSaving] = useState(false);
+  const [blogMsg, setBlogMsg] = useState("");
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [blogDeleteId, setBlogDeleteId] = useState<string | null>(null);
+
+  // ── Alert state ──
+  const [alerts, setAlerts] = useState<AdminAlert[]>([]);
+  const [alertMsg, setAlertMsg] = useState("");
+  const [alertDuration, setAlertDuration] = useState(15);
+  const [alertSending, setAlertSending] = useState(false);
+  const [alertStatusMsg, setAlertStatusMsg] = useState("");
+
   async function loadData() {
     setLoading(true);
     try {
-      const [statsRes, guestsRes] = await Promise.all([
+      const [statsRes, guestsRes, blogRes, alertRes] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/admin/guests"),
+        fetch("/api/admin/blog"),
+        fetch("/api/admin/alerts"),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (guestsRes.ok) setGuests(await guestsRes.json());
+      if (blogRes.ok) setBlogPosts(await blogRes.json());
+      if (alertRes.ok) setAlerts(await alertRes.json());
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -118,6 +161,146 @@ export default function AdminPage() {
         body: JSON.stringify({ id }),
       });
       setPendingDeleteId(null);
+      void loadData();
+    } catch { /* ignore */ }
+  }
+
+  // ── Blog helpers ──
+  function startNewPost() {
+    setBlogEditing(null);
+    setBlogTitle("");
+    setBlogExcerpt("");
+    setBlogCover(null);
+    setBlogPublished(false);
+    setBlogMsg("");
+    setTimeout(() => { if (editorRef.current) editorRef.current.innerHTML = ""; }, 50);
+  }
+
+  function editPost(post: BlogPost) {
+    setBlogEditing(post);
+    setBlogTitle(post.title);
+    setBlogExcerpt(post.excerpt || "");
+    setBlogCover(post.coverImage);
+    setBlogPublished(post.published);
+    setBlogMsg("");
+    setTimeout(() => { if (editorRef.current) editorRef.current.innerHTML = post.content; }, 50);
+  }
+
+  async function saveBlogPost() {
+    if (!blogTitle.trim()) { setBlogMsg("Title is required."); return; }
+    setBlogSaving(true);
+    setBlogMsg("");
+    try {
+      const content = editorRef.current?.innerHTML || "";
+      const res = await fetch("/api/admin/blog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: blogEditing?.id,
+          title: blogTitle.trim(),
+          excerpt: blogExcerpt.trim() || null,
+          content,
+          coverImage: blogCover,
+          published: blogPublished,
+        }),
+      });
+      if (res.ok) {
+        setBlogMsg(blogPublished ? "Published!" : "Saved as draft.");
+        startNewPost();
+        void loadData();
+      } else {
+        const d = await res.json();
+        setBlogMsg(d.error || "Save failed.");
+      }
+    } catch { setBlogMsg("Connection error."); }
+    setBlogSaving(false);
+  }
+
+  async function deleteBlogPost(id: string) {
+    try {
+      await fetch("/api/admin/blog", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      setBlogDeleteId(null);
+      void loadData();
+    } catch { /* ignore */ }
+  }
+
+  const handleImageUpload = useCallback(async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/blog/upload", { method: "POST", body: fd });
+      if (res.ok) {
+        const { url } = await res.json();
+        if (editorRef.current) {
+          editorRef.current.focus();
+          document.execCommand("insertImage", false, url);
+        }
+      }
+    };
+    input.click();
+  }, []);
+
+  const handleCoverUpload = useCallback(async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/blog/upload", { method: "POST", body: fd });
+      if (res.ok) {
+        const { url } = await res.json();
+        setBlogCover(url);
+      }
+    };
+    input.click();
+  }, []);
+
+  function execCmd(cmd: string, val?: string) {
+    document.execCommand(cmd, false, val);
+    editorRef.current?.focus();
+  }
+
+  // ── Alert helpers ──
+  async function sendAlert() {
+    if (!alertMsg.trim()) return;
+    setAlertSending(true);
+    setAlertStatusMsg("");
+    try {
+      const res = await fetch("/api/admin/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: alertMsg.trim(), durationSec: alertDuration }),
+      });
+      if (res.ok) {
+        setAlertStatusMsg("Alert sent to all users!");
+        setAlertMsg("");
+        void loadData();
+      } else {
+        setAlertStatusMsg("Failed to send alert.");
+      }
+    } catch { setAlertStatusMsg("Connection error."); }
+    setAlertSending(false);
+  }
+
+  async function dismissAlert(id: string) {
+    try {
+      await fetch("/api/admin/alerts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
       void loadData();
     } catch { /* ignore */ }
   }
@@ -299,7 +482,268 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* ══════════ Section 3: Reporting ══════════ */}
+            {/* ══════════ Section 3: Push Alerts ══════════ */}
+            <div style={{ ...cardStyle, marginBottom: 32 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8, background: "rgba(239,68,68,0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                </div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alert</h2>
+              </div>
+              <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
+                Send an urgent notification to every user&apos;s studio. It will auto-dismiss after the timer or they can close it.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                <div style={{ flex: "1 1 300px" }}>
+                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Message</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Scheduled maintenance at 2am UTC tonight..."
+                    value={alertMsg}
+                    onChange={(e) => setAlertMsg(e.target.value)}
+                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                    maxLength={500}
+                  />
+                </div>
+                <div style={{ flex: "0 0 120px" }}>
+                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Show for (sec)</label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={alertDuration}
+                    onChange={(e) => setAlertDuration(Number(e.target.value) || 15)}
+                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void sendAlert()}
+                  disabled={alertSending || !alertMsg.trim()}
+                  style={{
+                    padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
+                    background: C.danger, color: "#fff", border: "none", cursor: "pointer",
+                    opacity: alertSending ? 0.6 : 1,
+                  }}
+                >
+                  {alertSending ? "Sending..." : "Send Alert"}
+                </button>
+              </div>
+              {alertStatusMsg && (
+                <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>
+              )}
+              {alerts.filter((a) => a.active).length > 0 && (
+                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.dim, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Active Alerts</p>
+                  {alerts.filter((a) => a.active).map((a) => (
+                    <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
+                        <p style={{ fontSize: 11, color: C.dim, margin: "2px 0 0" }}>{a.durationSec}s &middot; {formatDate(a.createdAt)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void dismissAlert(a.id)}
+                        style={{ padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}
+                      >
+                        Deactivate
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ══════════ Section 4: Blog Manager ══════════ */}
+            <div style={{ ...cardStyle, marginBottom: 32 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8, background: C.accentDim,
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </div>
+                  <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>News / Blog</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={startNewPost}
+                  style={{ padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}
+                >
+                  + New Post
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
+                Write blog posts that appear on the /news page of your website.
+              </p>
+
+              {/* ─── Editor ─── */}
+              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                  <div style={{ flex: "1 1 300px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Title</label>
+                    <input
+                      type="text"
+                      placeholder="Post title"
+                      value={blogTitle}
+                      onChange={(e) => setBlogTitle(e.target.value)}
+                      style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div style={{ flex: "1 1 200px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Excerpt (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="Short summary for the listing"
+                      value={blogExcerpt}
+                      onChange={(e) => setBlogExcerpt(e.target.value)}
+                      style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Cover image */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <button type="button" onClick={() => void handleCoverUpload()} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                    {blogCover ? "Change Cover Image" : "Upload Cover Image"}
+                  </button>
+                  {blogCover && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <img src={blogCover} alt="cover" style={{ height: 40, borderRadius: 6, border: `1px solid ${C.border}` }} />
+                      <button type="button" onClick={() => setBlogCover(null)} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, background: "transparent", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Remove</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rich text toolbar */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                  {[
+                    { label: "B", cmd: "bold", style: { fontWeight: 800 } },
+                    { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
+                    { label: "U", cmd: "underline", style: { textDecoration: "underline" } },
+                    { label: "H1", cmd: "formatBlock", val: "h2", style: { fontWeight: 800, fontSize: 11 } },
+                    { label: "H2", cmd: "formatBlock", val: "h3", style: { fontWeight: 700, fontSize: 11 } },
+                    { label: "• List", cmd: "insertUnorderedList", style: { fontSize: 11 } },
+                    { label: "1. List", cmd: "insertOrderedList", style: { fontSize: 11 } },
+                    { label: "Quote", cmd: "formatBlock", val: "blockquote", style: { fontSize: 11 } },
+                  ].map((btn) => (
+                    <button
+                      key={btn.label}
+                      type="button"
+                      onClick={() => execCmd(btn.cmd, btn.val)}
+                      style={{
+                        padding: "4px 10px", borderRadius: 6, fontSize: 12,
+                        background: "rgba(255,255,255,0.06)", color: C.text,
+                        border: `1px solid ${C.border}`, cursor: "pointer", ...btn.style,
+                      }}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => void handleImageUpload()}
+                    style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}
+                  >
+                    📷 Image
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = prompt("Enter link URL:");
+                      if (url) execCmd("createLink", url);
+                    }}
+                    style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}
+                  >
+                    🔗 Link
+                  </button>
+                </div>
+
+                {/* Content editable area */}
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  style={{
+                    minHeight: 200, maxHeight: 500, overflowY: "auto",
+                    padding: "14px 16px", borderRadius: 10,
+                    border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)",
+                    color: C.text, fontSize: 14, lineHeight: 1.7, outline: "none",
+                  }}
+                />
+
+                {/* Actions */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.text, cursor: "pointer" }}>
+                    <input type="checkbox" checked={blogPublished} onChange={(e) => setBlogPublished(e.target.checked)} style={{ accentColor: C.accent }} />
+                    Publish immediately
+                  </label>
+                  <div style={{ flex: 1 }} />
+                  {blogEditing && (
+                    <button type="button" onClick={startNewPost} style={{ padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void saveBlogPost()}
+                    disabled={blogSaving || !blogTitle.trim()}
+                    style={{
+                      padding: "8px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
+                      background: C.accent, color: "#111", border: "none", cursor: "pointer",
+                      opacity: blogSaving ? 0.6 : 1,
+                    }}
+                  >
+                    {blogSaving ? "Saving..." : blogEditing ? "Update Post" : "Save Post"}
+                  </button>
+                </div>
+                {blogMsg && (
+                  <p style={{ fontSize: 12, color: blogMsg.includes("!") ? C.accent : C.danger, margin: "8px 0 0" }}>{blogMsg}</p>
+                )}
+              </div>
+
+              {/* ─── Post list ─── */}
+              {blogPosts.length === 0 ? (
+                <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "16px 0" }}>No posts yet. Write your first one above.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {blogPosts.map((post) => (
+                    <div key={post.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {post.coverImage && <img src={post.coverImage} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}` }} />}
+                          <div>
+                            <p style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.title}</p>
+                            <p style={{ fontSize: 11, color: C.dim, margin: "1px 0 0" }}>
+                              {post.published ? (
+                                <span style={{ color: C.accent }}>Published</span>
+                              ) : (
+                                <span style={{ color: C.warn }}>Draft</span>
+                              )}
+                              {" · "}{formatDate(post.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button type="button" onClick={() => editPost(post)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => setBlogDeleteId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ══════════ Section 5: Reporting ══════════ */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {/* Genre Breakdown */}
               <div style={cardStyle}>
@@ -431,6 +875,41 @@ export default function AdminPage() {
               >
                 Revoke
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Blog delete confirmation modal ── */}
+      {blogDeleteId && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={() => setBlogDeleteId(null)}
+        >
+          <div
+            style={{
+              background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%",
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px",
+              background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Delete this post?</h3>
+            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>
+              This cannot be undone. The post will be permanently removed.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button type="button" onClick={() => setBlogDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={() => void deleteBlogPost(blogDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Delete</button>
             </div>
           </div>
         </div>
