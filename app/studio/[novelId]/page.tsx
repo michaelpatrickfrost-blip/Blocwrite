@@ -8904,66 +8904,6 @@ function NovelWorkspacePage() {
                 Undo
               </button>
             )}
-            {/* Character Chat button */}
-            {!aiOff && storyCharacters.length > 0 && (
-              <div style={{ position: "relative" }}>
-                <button type="button" className="btn"
-                  onClick={() => {
-                    if (charChatOpen) return;
-                    if (storyCharacters.length === 1) {
-                      openCharacterChat(storyCharacters[0]);
-                    } else {
-                      setCharChatPickerOpen(!charChatPickerOpen);
-                    }
-                  }}
-                  style={{ display: "flex", alignItems: "center", gap: 5, position: "relative" }}
-                  title="Talk to a character"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                  Chat
-                  {charChatOpen && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#a3e635", position: "absolute", top: 4, right: 4 }} />}
-                </button>
-                {charChatPickerOpen && (
-                  <>
-                    <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setCharChatPickerOpen(false)} />
-                    <div ref={(el) => {
-                      if (!el) return;
-                      const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
-                      if (trigger) positionDropdown(trigger, el);
-                    }} style={{
-                      position: "fixed", zIndex: 9999,
-                      background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
-                      borderRadius: 12, padding: 6, minWidth: 200, maxHeight: 300, overflow: "auto",
-                      boxShadow: "var(--pw-shadow-popup)",
-                    }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Talk to...</div>
-                      {storyCharacters.map((char) => (
-                        <button key={char.id} type="button"
-                          onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8, width: "100%",
-                            padding: "8px 10px", background: "none", border: "none", borderRadius: 8,
-                            cursor: "pointer", color: "inherit", textAlign: "left", transition: "all 0.1s",
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(163,230,53,0.06)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                        >
-                          <div style={{
-                            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                            background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 12, fontWeight: 800, color: "var(--pw-accent)",
-                          }}>{char.name.charAt(0).toUpperCase()}</div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>{char.name}</div>
-                            <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{char.role}{char.logline ? ` — ${char.logline.slice(0, 30)}${char.logline.length > 30 ? "…" : ""}` : ""}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
             <button type="button" className="btn" onClick={() => setShowNccModal(true)}
               style={{ display: "flex", alignItems: "center", gap: 5 }}
               title="Narrative Control Center — arcs, relationships, tension, threads"
@@ -10308,152 +10248,6 @@ function NovelWorkspacePage() {
                       </p>
                     </div>
                   )}
-                  {/* ── Thematic Consistency (integrated) ── */}
-                  <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--pw-border-light)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-                        <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Thematic Consistency</h4>
-                        {novel.thematicAnalysis && (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
-                            background: novel.thematicAnalysis.overallCohesion >= 7 ? "rgba(163,230,53,0.1)" : novel.thematicAnalysis.overallCohesion >= 5 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)",
-                            color: novel.thematicAnalysis.overallCohesion >= 7 ? "#a3e635" : novel.thematicAnalysis.overallCohesion >= 5 ? "#f59e0b" : "#ef4444",
-                          }}>
-                            {novel.thematicAnalysis.overallCohesion}/10
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={themeScanBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
-                        onClick={() => void runThematicScan()}
-                        style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}
-                        title={aiOff ? "Enable AI in settings" : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2 ? "Need at least 2 chapters with content" : ""}
-                      >
-                        {themeScanBusy ? (
-                          <><span style={{ display: "inline-block", width: 10, height: 10, border: "1.5px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Scanning...</>
-                        ) : novel.thematicAnalysis ? "Rescan" : "Scan Themes"}
-                      </button>
-                    </div>
-
-                    {novel.thematicAnalysis ? (() => {
-                      const ta = novel.thematicAnalysis!;
-                      const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
-                      const strongCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "strong").length;
-                      const contradictedCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "contradicted").length;
-                      return (
-                        <div>
-                          {/* Summary + cohesion bar */}
-                          <div style={{
-                            padding: "10px 12px", borderRadius: 8, marginBottom: 10,
-                            background: "rgba(129,140,248,0.04)", border: "1px solid rgba(129,140,248,0.08)",
-                          }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                              <div style={{ fontSize: 18, fontWeight: 800, color: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444" }}>
-                                {ta.overallCohesion}/10
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ height: 4, borderRadius: 2, background: "var(--pw-overlay-bg-hover)", overflow: "hidden" }}>
-                                  <div style={{ height: "100%", width: `${ta.overallCohesion * 10}%`, borderRadius: 2, background: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444", transition: "width 0.3s" }} />
-                                </div>
-                              </div>
-                            </div>
-                            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: 0 }}>{ta.summary}</p>
-                          </div>
-
-                          {/* Per-theme detail cards */}
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            {ta.themes.map((theme) => (
-                              <div key={theme.id} style={{
-                                borderRadius: 8, padding: "8px 12px",
-                                background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)",
-                              }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: theme.color, flexShrink: 0 }} />
-                                  <span style={{ fontSize: 12, fontWeight: 700 }}>{theme.label}</span>
-                                  <span style={{ fontSize: 9, color: "var(--pw-text-dim)", marginLeft: "auto" }}>
-                                    {strongCount(theme)}/{chapCount} strong
-                                    {contradictedCount(theme) > 0 && <span style={{ color: "#ef4444", marginLeft: 4 }}>{contradictedCount(theme)} contradicted</span>}
-                                  </span>
-                                </div>
-                                {theme.description && (
-                                  <p style={{ fontSize: 10, color: "var(--pw-text-dim)", lineHeight: 1.3, margin: "0 0 4px" }}>{theme.description}</p>
-                                )}
-                                <div style={{ display: "flex", gap: 2, marginBottom: 3 }}>
-                                  {Array.from({ length: chapCount }, (_, i) => {
-                                    const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
-                                    const presence = status?.presence ?? "absent";
-                                    const bg = presence === "strong" ? theme.color
-                                      : presence === "moderate" ? `${theme.color}60`
-                                      : presence === "contradicted" ? "#ef4444"
-: "var(--pw-overlay-bg-hover)";
-                                  return (
-                                      <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
-                                        flex: 1, height: 12, borderRadius: 2, background: bg, minWidth: 0,
-                                        opacity: presence === "absent" ? 0.3 : 1,
-                                      }} />
-                                    );
-                                  })}
-                                </div>
-                                {(() => {
-                                  const notable = theme.chapterMap.filter((cm) => cm.note && (cm.presence === "contradicted" || cm.presence === "strong"));
-                                  return notable.length > 0 ? (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3 }}>
-                                      {notable.slice(0, 4).map((cm) => (
-                                        <span key={cm.chapter} style={{
-                                          fontSize: 9, padding: "1px 5px", borderRadius: 3,
-                                          background: cm.presence === "contradicted" ? "rgba(239,68,68,0.08)" : `${theme.color}12`,
-                                          color: cm.presence === "contradicted" ? "#ef4444" : "var(--pw-text-dim)",
-                                          border: cm.presence === "contradicted" ? "1px solid rgba(239,68,68,0.12)" : "1px solid var(--pw-border-light)",
-                                        }}>
-                                          Ch{cm.chapter}: {cm.note}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : null;
-                                })()}
-                                {theme.driftWarning && (
-                                  <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4, display: "flex", alignItems: "flex-start", gap: 3 }}>
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                    {theme.driftWarning}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Legend */}
-                          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                            {([
-                              { label: "Strong", bg: "var(--pw-accent)" },
-                              { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
-                              { label: "Absent", bg: "var(--pw-overlay-bg-hover)" },
-                              { label: "Contradicted", bg: "#ef4444" },
-                            ]).map((l) => (
-                              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                <div style={{ width: 8, height: 8, borderRadius: 2, background: l.bg }} />
-                                <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
-                              </div>
-                            ))}
-                          </div>
-
-                          <p style={{ fontSize: 9, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.4 }}>
-                            Scanned {new Date(ta.generatedAt).toLocaleString()}
-                          </p>
-                        </div>
-                      );
-                    })() : (
-                      <div style={{ textAlign: "center", padding: "12px 0", opacity: 0.35 }}>
-                        <p style={{ fontSize: 11, margin: 0 }}>
-                          {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
-                            ? "Write at least 2 chapters to scan for themes."
-                            : "Scan your manuscript for thematic consistency across chapters."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
 
                 </div>
               </div>
@@ -14609,12 +14403,9 @@ function NovelWorkspacePage() {
       {/* ── Character Chat Modal (elevated) ── */}
       {charChatOpen && charChatTarget && (
         <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
-          <div style={{
-            background: "var(--pw-bg)", borderRadius: 20,
-            width: "96%", maxWidth: charChatReviewDone ? 820 : 520, maxHeight: "88vh",
-            display: "flex", flexDirection: charChatReviewDone ? "row" : "column",
-            boxShadow: "var(--pw-shadow-modal)", border: "1px solid var(--pw-border)",
-            overflow: "hidden", transition: "max-width 0.3s ease",
+          <div className="pw-chat-modal" style={{
+            maxWidth: charChatReviewDone ? 820 : 520,
+            flexDirection: charChatReviewDone ? "row" : "column",
           }} onClick={(e) => e.stopPropagation()}>
             {/* Chat panel */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -14895,6 +14686,48 @@ function NovelWorkspacePage() {
         </div>
       )}
 
+
+      {/* ── Floating Chat FAB (bottom-right) ── */}
+      {!aiOff && storyCharacters.length > 0 && !charChatOpen && (
+        <div className="pw-chat-fab-wrap">
+          {/* Character picker popup (opens upward from FAB) */}
+          {charChatPickerOpen && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 99996 }} onClick={() => setCharChatPickerOpen(false)} />
+              <div className="pw-chat-fab-picker">
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 8px 6px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Talk to...</div>
+                {storyCharacters.map((char) => (
+                  <button key={char.id} type="button"
+                    onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
+                    className="pw-chat-fab-picker-item"
+                  >
+                    <div className="pw-chat-fab-picker-avatar">{char.name.charAt(0).toUpperCase()}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{char.name}</div>
+                      <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{char.role}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {/* The round FAB button */}
+          <button
+            type="button"
+            className="pw-chat-fab"
+            title="Talk to a character"
+            onClick={() => {
+              if (storyCharacters.length === 1) {
+                openCharacterChat(storyCharacters[0]);
+              } else {
+                setCharChatPickerOpen(!charChatPickerOpen);
+              }
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </button>
+        </div>
+      )}
 
       {/* Busy indicator while prose context action runs */}
       {proseCtxBusy && (

@@ -2006,6 +2006,113 @@ a { color: inherit; text-decoration: none; }
   .pw-ncc-tabs { order: 3; width: 100%; margin-top: 4px; }
 }
 
+/* ── Floating Chat FAB ── */
+.pw-chat-fab-wrap {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99990;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.pw-chat-fab {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--pw-accent);
+  color: var(--pw-btn-primary-text, #000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25), 0 0 0 0 rgba(var(--pw-accent-rgb, 163,230,53), 0);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  animation: pw-fab-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.pw-chat-fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.3), 0 0 0 6px rgba(var(--pw-accent-rgb, 163,230,53), 0.12);
+}
+.pw-chat-fab:active {
+  transform: scale(0.95);
+}
+@keyframes pw-fab-in {
+  from { opacity: 0; transform: scale(0) rotate(-45deg); }
+  to   { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+/* Character picker above FAB */
+.pw-chat-fab-picker {
+  position: absolute;
+  bottom: 62px;
+  right: 0;
+  z-index: 99997;
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border);
+  border-radius: 14px;
+  padding: 6px;
+  min-width: 210px;
+  max-height: 320px;
+  overflow: auto;
+  box-shadow: var(--pw-shadow-popup);
+  animation: pw-picker-up 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pw-picker-up {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pw-chat-fab-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+.pw-chat-fab-picker-item:hover {
+  background: rgba(var(--pw-accent-rgb, 163,230,53), 0.06);
+}
+.pw-chat-fab-picker-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(var(--pw-accent-rgb, 163,230,53), 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--pw-accent);
+}
+
+/* ── Chat Modal ── */
+.pw-chat-modal {
+  background: var(--pw-bg);
+  border-radius: 20px;
+  width: 96%;
+  max-height: 88vh;
+  display: flex;
+  box-shadow: var(--pw-shadow-modal);
+  border: 1px solid var(--pw-border);
+  overflow: hidden;
+  transition: max-width 0.3s ease;
+  animation: pw-chat-modal-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pw-chat-modal-in {
+  from { opacity: 0; transform: translateY(40px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes pw-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pw-modal-in { from { opacity: 0; transform: scale(0.96) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
