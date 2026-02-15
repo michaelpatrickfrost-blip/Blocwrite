@@ -10489,23 +10489,6 @@ function NovelWorkspacePage() {
         </section>
       </div>
 
-      {/* ── Regeneration confirmation modal ── */}
-      {regenConfirm && (
-        <div className="pw-modal-overlay" onClick={() => setRegenConfirm(null)}>
-          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, textAlign: "center" }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, margin: "0 auto 14px", background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Are you sure?</div>
-            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>{regenConfirm.message}</p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setRegenConfirm(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={regenConfirm.onConfirm}>Continue</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Novel management (archive/delete) is handled from the studio dashboard */}
 
       {/* Old overview editor removed — now unified inside showEditorModal block */}
@@ -12489,42 +12472,18 @@ function NovelWorkspacePage() {
                           </p>
                         ) : (
                           storyCharacters.map((c) => (
-                            <div key={c.id} style={{ position: "relative", display: "inline-flex" }}>
-                              <button
-                                type="button"
-                                className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
-                                onClick={() => setSelectedV2CharacterId(c.id)}
-                                style={{ paddingRight: 28 }}
-                              >
-                                <span className="pw-char-name">{c.name || "Untitled"}</span>
-                                <span className="pw-char-role">
-                                  {c.role}
-                                  {c.accent ? ` • ${c.accent}` : ""}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                title={`Remove ${c.name || "character"}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setRegenConfirm({
-                                    message: `Remove "${c.name || "Untitled"}" from your Canon? This cannot be undone.`,
-                                    onConfirm: () => { setRegenConfirm(null); removeV2Character(c.id); },
-                                  });
-                                }}
-                                style={{
-                                  position: "absolute", top: 4, right: 4,
-                                  width: 18, height: 18, borderRadius: "50%",
-                                  background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)",
-                                  color: "#ef4444", fontSize: 11, fontWeight: 700,
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  cursor: "pointer", padding: 0, lineHeight: 1,
-                                  opacity: 0.5, transition: "opacity 0.15s",
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.5"; }}
-                              >×</button>
-                            </div>
+                            <button
+                              key={c.id}
+                              type="button"
+                              className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
+                              onClick={() => setSelectedV2CharacterId(c.id)}
+                            >
+                              <span className="pw-char-name">{c.name || "Untitled"}</span>
+                              <span className="pw-char-role">
+                                {c.role}
+                                {c.accent ? ` • ${c.accent}` : ""}
+                              </span>
+                            </button>
                           ))
                         )}
                       </div>
@@ -12542,12 +12501,37 @@ function NovelWorkspacePage() {
                             return (
                               <div className="pw-character-editor">
                                 <div className="pw-character-panel-head">
-                                  <div>
+                                  <div style={{ flex: 1 }}>
                                     <h4>{character.name || "Character Profile"}</h4>
                                     <p className="pw-character-panel-sub">
                                       Define voice, appearance, behavior, and spoiler-safe secret handling.
                                     </p>
                                   </div>
+                                  <button
+                                    type="button"
+                                    title={`Remove ${character.name || "character"}`}
+                                    onClick={() => {
+                                      setRegenConfirm({
+                                        message: `Remove "${character.name || "Untitled"}" from your Canon? This cannot be undone.`,
+                                        onConfirm: () => {
+                                          setRegenConfirm(null);
+                                          removeV2Character(character.id);
+                                          setSelectedV2CharacterId(null);
+                                        },
+                                      });
+                                    }}
+                                    style={{
+                                      padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                                      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.12)",
+                                      color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                                      transition: "all 0.15s", flexShrink: 0,
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.12)"; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.06)"; }}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                    Remove
+                                  </button>
                                   {!aiOff && (
                                   <div className="pw-character-ai-controls">
                                     <div className="pw-character-ai-mode-grid" role="radiogroup" aria-label="Character assistant mode">
@@ -12892,22 +12876,8 @@ function NovelWorkspacePage() {
                                   )}
                                 </div>
 
-                                <div className="pw-char-footer">
-                                  <div>
-                                    <button
-                                      type="button"
-                                      className="pw-character-delete"
-                                      onClick={() => {
-                                        setRegenConfirm({
-                                          message: `Remove "${character.name || "Untitled"}" from your Canon? This cannot be undone.`,
-                                          onConfirm: () => { setRegenConfirm(null); removeV2Character(character.id); },
-                                        });
-                                      }}
-                                    >
-                                      Remove character
-                                    </button>
-                                  </div>
-                                </div>
+                                {/* Footer spacer */}
+                                <div style={{ height: 8 }} />
                               </div>
                             );
                           })()
@@ -14783,6 +14753,23 @@ function NovelWorkspacePage() {
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>Rewriting&hellip;</div>
             <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>AI is editing your selection</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Regeneration confirmation modal — rendered last so it stacks above all other modals ── */}
+      {regenConfirm && (
+        <div className="pw-modal-overlay" style={{ zIndex: 200 }} onClick={() => setRegenConfirm(null)}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, textAlign: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, margin: "0 auto 14px", background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Are you sure?</div>
+            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>{regenConfirm.message}</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button type="button" className="btn pw-cancel-btn" onClick={() => setRegenConfirm(null)}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={regenConfirm.onConfirm}>Continue</button>
+            </div>
           </div>
         </div>
       )}
