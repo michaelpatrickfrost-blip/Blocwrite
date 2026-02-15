@@ -6276,31 +6276,31 @@ function NovelWorkspacePage() {
     "goal-evolution": {
       label: "Goal Evolution",
       icon: "M13 10V3L4 14h7v7l9-11h-7z",
-      color: "#f59e0b",
+      color: "var(--pw-text-muted, #a1a1aa)",
       hint: "Tracks how the protagonist's goals shift and sharpen across the story.",
     },
     "flaw-growth": {
       label: "Flaw vs Growth",
       icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z",
-      color: "#f472b6",
+      color: "var(--pw-text-muted, #a1a1aa)",
       hint: "Checks whether internal flaws are challenged and growth is earned.",
     },
     "stagnation": {
       label: "Arc Stagnation",
       icon: "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-      color: "#ef4444",
+      color: "var(--pw-text-muted, #a1a1aa)",
       hint: "Detects stretches where the character arc flatlines with no change.",
     },
     "midpoint-shift": {
       label: "Midpoint Shift",
       icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
-      color: "#818cf8",
+      color: "var(--pw-text-muted, #a1a1aa)",
       hint: "Flags whether a clear midpoint turn exists that reframes the story.",
     },
     "third-act-escalation": {
       label: "Third-Act Escalation",
       icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
-      color: "#06b6d4",
+      color: "var(--pw-text-muted, #a1a1aa)",
       hint: "Checks if stakes and tension rise sufficiently toward the climax.",
     },
   };
@@ -6637,7 +6637,7 @@ function NovelWorkspacePage() {
     }
   }
 
-  const THEME_COLORS = ["#ef4444", "#f59e0b", "#a3e635", "#06b6d4", "#818cf8", "#f472b6", "#fb923c", "#2dd4bf"];
+  const THEME_COLORS = ["#a3e635", "#71717a", "#a1a1aa", "#52525b", "#6b7280", "#9ca3af", "#d4d4d8", "#737373"];
 
   async function runThematicScan() {
     if (!novel || !ensureStoryAiReady()) return;
@@ -8091,15 +8091,15 @@ function NovelWorkspacePage() {
 
   /* ─── Knowledge & Reveal Tracker ─── */
   const KNOWLEDGE_TYPES: Array<{ id: KnowledgeEntry["type"]; label: string; color: string; icon: string }> = [
-    { id: "secret", label: "Secret", color: "#ef4444", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
-    { id: "reveal", label: "Reveal", color: "#f59e0b", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" },
-    { id: "clue", label: "Clue", color: "#818cf8", icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },
-    { id: "deception", label: "Deception", color: "#f472b6", icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" },
+    { id: "secret", label: "Secret", color: "#71717a", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
+    { id: "reveal", label: "Reveal", color: "#a1a1aa", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" },
+    { id: "clue", label: "Clue", color: "#9ca3af", icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },
+    { id: "deception", label: "Deception", color: "#6b7280", icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" },
   ];
 
   const STATUS_META: Record<KnowledgeEntry["status"], { label: string; color: string }> = {
-    hidden: { label: "Hidden", color: "#ef4444" },
-    foreshadowed: { label: "Foreshadowed", color: "#f59e0b" },
+    hidden: { label: "Hidden", color: "#71717a" },
+    foreshadowed: { label: "Foreshadowed", color: "#a1a1aa" },
     revealed: { label: "Revealed", color: "#a3e635" },
   };
 
@@ -9312,15 +9312,15 @@ function NovelWorkspacePage() {
                           style={{
                             display: "flex", alignItems: "center", gap: 4,
                             padding: "4px 8px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                            background: chapterRewriteBusy ? "rgba(244,114,182,0.08)" : "var(--pw-overlay-bg)",
+                            background: chapterRewriteBusy ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)" : "var(--pw-overlay-bg)",
                             border: "1px solid var(--pw-border)", cursor: chapterRewriteBusy ? "default" : "pointer",
-                            color: chapterRewriteBusy ? "#f472b6" : "var(--pw-text-dim)",
+                            color: chapterRewriteBusy ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim)",
                             transition: "all 0.12s",
                           }}
                           title="Rewrite entire chapter in a different tone"
                         >
                           {chapterRewriteBusy ? (
-                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(244,114,182,0.3)", borderTopColor: "#f472b6", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
+                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
                           ) : (
                             <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Rewrite</>
                           )}
@@ -9348,7 +9348,7 @@ function NovelWorkspacePage() {
                                     cursor: "pointer", color: "var(--pw-text-dim)", fontSize: 12, fontWeight: 600,
                                     textAlign: "left", transition: "all 0.1s",
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(244,114,182,0.08)"; e.currentTarget.style.color = "#f472b6"; }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)"; e.currentTarget.style.color = "var(--pw-accent)"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
@@ -10660,10 +10660,10 @@ function NovelWorkspacePage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{
                         width: 32, height: 32, borderRadius: 8,
-                        background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(6,182,212,0.15))",
+                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                       </div>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>Arc Intelligence</span>
@@ -10685,9 +10685,9 @@ function NovelWorkspacePage() {
                       title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc analysis"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(129,140,248,0.12)",
-                        color: arcBusy ? "var(--pw-text-dim)" : "#818cf8",
-                        border: "1px solid rgba(129,140,248,0.2)", cursor: arcBusy ? "default" : "pointer",
+                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                        color: arcBusy ? "var(--pw-text-dim)" : "var(--pw-accent, #a3e635)",
+                        border: arcBusy ? "1px solid var(--pw-border)" : "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", cursor: arcBusy ? "default" : "pointer",
                         display: "flex", alignItems: "center", gap: 6,
                       }}
                     >
@@ -10710,7 +10710,7 @@ function NovelWorkspacePage() {
                   {arcBusy && !novel.storyBible.bookPlan?.arcAnalysis && (
                     <div style={{ padding: "24px 18px", textAlign: "center" }}>
                       <div style={{
-                        width: 24, height: 24, border: "2px solid rgba(129,140,248,0.2)", borderTopColor: "#818cf8",
+                        width: 24, height: 24, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)",
                         borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
                       }} />
                       <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>Analysing story arcs across {planChapters.length} chapters...</p>
@@ -10734,7 +10734,7 @@ function NovelWorkspacePage() {
                                 style={{
                                   borderRadius: 10, padding: "12px",
                                   background: isExpanded ? "var(--pw-overlay-bg)" : "var(--pw-overlay-bg)",
-                                  border: `1px solid ${isExpanded ? meta.color + "30" : "var(--pw-border-light)"}`,
+                                  border: `1px solid ${isExpanded ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-border-light)"}`,
                                   cursor: "pointer", transition: "all 0.15s",
                                   gridColumn: isExpanded ? "1 / -1" : undefined,
                                 }}
@@ -10758,7 +10758,7 @@ function NovelWorkspacePage() {
                                     width: `${s.score * 10}%`, transition: "width 0.3s",
                                   }} />
                                 </div>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginBottom: 2 }}>{s.label}</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text)", marginBottom: 2 }}>{s.label}</div>
                                 <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>{s.summary}</div>
 
                                 {/* Expanded issues */}
@@ -10776,8 +10776,8 @@ function NovelWorkspacePage() {
                                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                                           <span style={{
                                             fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4,
-                                            background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
-                                            color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8",
+                                            background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                                            color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "var(--pw-text-muted)",
                                           }}>{issue.severity}</span>
                                           {issue.chapter && <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Chapter {issue.chapter}</span>}
                                         </div>
@@ -10822,7 +10822,7 @@ function NovelWorkspacePage() {
                               )}
                               {(arc.issues.filter((i) => i.severity === "critical").length > 0 || arc.issues.filter((i) => i.severity === "warning").length > 0) && arc.issues.filter((i) => i.severity === "info").length > 0 && " · "}
                               {arc.issues.filter((i) => i.severity === "info").length > 0 && (
-                                <span style={{ color: "#818cf8", fontWeight: 600 }}>
+                                <span style={{ color: "var(--pw-text-muted)", fontWeight: 600 }}>
                                   {arc.issues.filter((i) => i.severity === "info").length} info
                                 </span>
                               )}
@@ -10844,8 +10844,8 @@ function NovelWorkspacePage() {
                     onClick={() => void runArcAnalysis()}
                     style={{
                       padding: "8px 18px", fontSize: 12, fontWeight: 700, borderRadius: 10,
-                      background: "linear-gradient(135deg, rgba(129,140,248,0.12), rgba(6,182,212,0.12))",
-                      color: "#818cf8", border: "1px solid rgba(129,140,248,0.18)",
+                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                      color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
                       cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8,
                     }}
                   >
@@ -11244,8 +11244,8 @@ function NovelWorkspacePage() {
                         style={{
                           padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                           border: shareExpiryDays === d ? "1.5px solid var(--pw-accent)" : "1px solid var(--pw-border)",
-                          background: shareExpiryDays === d ? "rgba(59,130,246,0.12)" : "transparent",
-                          color: shareExpiryDays === d ? "var(--pw-accent, #3b82f6)" : "var(--pw-text-muted)",
+                          background: shareExpiryDays === d ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" : "transparent",
+                          color: shareExpiryDays === d ? "var(--pw-accent, #a3e635)" : "var(--pw-text-muted)",
                           cursor: "pointer",
                         }}
                       >
@@ -11292,7 +11292,7 @@ function NovelWorkspacePage() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      style={{ padding: "7px 16px", fontSize: 12, background: "var(--pw-accent-muted, rgba(59,130,246,0.1))", color: "var(--pw-accent, #3b82f6)", border: "1px solid var(--pw-accent, #3b82f6)" }}
+                      style={{ padding: "7px 16px", fontSize: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}
                       onClick={() => {
                         const novelName = novel.title || "Untitled Novel";
                         const expiry = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -11506,9 +11506,10 @@ function NovelWorkspacePage() {
                         }}>
                           <div style={{
                             width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
-                            background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                            border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            color: "#fff", fontSize: 14, fontWeight: 700,
+                            color: "var(--pw-accent, #a3e635)", fontSize: 14, fontWeight: 700,
                           }}>
                             {(fb.readerName || "A")[0].toUpperCase()}
                           </div>
@@ -11532,8 +11533,8 @@ function NovelWorkspacePage() {
                         return (
                           <span key={name} style={{
                             fontSize: 12, padding: "4px 12px", borderRadius: 8,
-                            background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.15)",
-                            color: "var(--pw-accent, #3b82f6)", fontWeight: 500,
+                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                            color: "var(--pw-text-muted)", fontWeight: 500,
                           }}>
                             {name} <span style={{ opacity: 0.7 }}>({count})</span>
                           </span>
@@ -11570,8 +11571,8 @@ function NovelWorkspacePage() {
             {!feedbackLoading && feedbackReviewMode && !feedbackReviewDone && (() => {
               const item = feedbackReviewQueue[feedbackReviewIdx];
               if (!item) return null;
-              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "#3b82f6" : "#8b5cf6";
-              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(59,130,246,0.08)" : "rgba(139,92,246,0.06)";
+              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "var(--pw-accent, #a3e635)" : "var(--pw-text-muted)";
+              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)" : "rgba(255,255,255,0.03)";
               const progress = ((feedbackReviewIdx) / feedbackReviewQueue.length) * 100;
 
               return (
@@ -11587,7 +11588,7 @@ function NovelWorkspacePage() {
                       </span>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #3b82f6)", borderRadius: 4, transition: "width 0.3s ease" }} />
+                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #a3e635)", borderRadius: 4, transition: "width 0.3s ease" }} />
                     </div>
                   </div>
 
@@ -11639,8 +11640,8 @@ function NovelWorkspacePage() {
                     <div style={{ padding: "0 20px 6px" }}>
                       <div style={{
                         borderRadius: 12,
-                        border: "1px solid rgba(99,102,241,0.15)",
-                        background: "rgba(99,102,241,0.03)",
+                        border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.02)",
                         overflow: "hidden",
                       }}>
                         {/* Header */}
@@ -11649,10 +11650,10 @@ function NovelWorkspacePage() {
                           borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
                           display: "flex", alignItems: "center", gap: 8,
                         }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                           </svg>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "#818cf8", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #a3e635)", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
                         </div>
                         {/* Side-by-side diff */}
                         <div style={{ display: "flex", gap: 0, fontSize: 13, lineHeight: 1.65 }}>
@@ -11745,8 +11746,8 @@ function NovelWorkspacePage() {
                         className="btn"
                         style={{
                           flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
-                          border: "1px solid rgba(99,102,241,0.25)",
-                          background: "rgba(99,102,241,0.06)", color: "#818cf8",
+                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", color: "var(--pw-accent, #a3e635)",
                           cursor: fbPreviewGenerating ? "wait" : "pointer", transition: "all 0.15s",
                           opacity: fbPreviewGenerating ? 0.6 : 1,
                         }}
@@ -11784,7 +11785,7 @@ function NovelWorkspacePage() {
                       >
                         {fbPreviewGenerating ? (
                           <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                            <span style={{ width: 12, height: 12, border: "2px solid rgba(129,140,248,0.3)", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                             Regenerating...
                           </span>
                         ) : (
@@ -13772,10 +13773,10 @@ function NovelWorkspacePage() {
             {/* Arc icon */}
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(6,182,212,0.15))",
+              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
               </svg>
             </div>
@@ -13790,7 +13791,7 @@ function NovelWorkspacePage() {
               {(Object.entries(ARC_DIMENSION_META) as [ArcDimension, typeof ARC_DIMENSION_META[ArcDimension]][]).map(([dim, meta]) => (
                 <span key={dim} style={{
                   fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 8,
-                  background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25`,
+                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
                 }}>
                   {meta.label}
                 </span>
@@ -13817,8 +13818,8 @@ function NovelWorkspacePage() {
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "linear-gradient(135deg, #818cf8, #06b6d4)", color: "#fff", border: "none",
-                  cursor: "pointer", boxShadow: "0 4px 16px rgba(129,140,248,0.3)",
+                  background: "var(--pw-accent, #a3e635)", color: "#111", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
                 }}
               >
                 Analyse Arcs
@@ -14419,8 +14420,8 @@ function NovelWorkspacePage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                         <span style={{
                           fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "2px 6px", borderRadius: 4,
-                          background: rec.type === "chapter_synopsis" ? "rgba(129,140,248,0.12)" : "rgba(244,114,182,0.12)",
-                          color: rec.type === "chapter_synopsis" ? "#818cf8" : "#f472b6",
+                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                          color: "var(--pw-text-muted)",
                           letterSpacing: "0.04em",
                         }}>{rec.type === "chapter_synopsis" ? "Chapter" : "Profile"}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.label}</span>
@@ -14536,7 +14537,7 @@ function NovelWorkspacePage() {
                     <div key={pack.id} style={{
                       borderRadius: 14,
                       background: "var(--pw-overlay-bg)",
-                      border: `1px solid ${justInstalled ? pack.color + "55" : "var(--pw-overlay-bg-hover)"}`,
+                      border: `1px solid ${justInstalled ? "rgba(163,230,53,0.3)" : "var(--pw-overlay-bg-hover)"}`,
                       transition: "all 0.2s",
                       overflow: "hidden",
                     }}>
@@ -14553,15 +14554,15 @@ function NovelWorkspacePage() {
                       >
                         <div style={{
                           width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                          background: `${pack.color}18`,
+                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: `${pack.color}20`, color: pack.color }}>{pack.genre}</span>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
                             {allInstalled && (
                               <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(163,230,53,0.12)", color: "var(--pw-accent)" }}>Installed</span>
                             )}
@@ -14613,18 +14614,18 @@ function NovelWorkspacePage() {
                                   style={{
                                     display: "flex", alignItems: "center", gap: 10,
                                     padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
-                                    background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
-                                    border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
+                                    background: isChecked ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.05)" : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
+                                    border: isChecked ? "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
                                     transition: "all 0.12s",
                                   }}>
                                   <div style={{
                                     width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                    border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid var(--pw-border)",
-                                    background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? `${pack.color}25` : "transparent",
+                                    border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? "1.5px solid var(--pw-accent)" : "1.5px solid var(--pw-border)",
+                                    background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "transparent",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                   }}>
                                     {(alreadyHas || isChecked) && (
-                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                                     )}
                                   </div>
                                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -14645,7 +14646,7 @@ function NovelWorkspacePage() {
                             <div style={{ display: "flex", gap: 6 }}>
                               {hasSelection && (
                                 <button type="button" disabled={slotsLeft <= 0} onClick={() => installWritingPack(pack, packSelectedBoltons)}
-                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: pack.color, color: "var(--pw-btn-primary-text)", transition: "all 0.15s" }}>
+                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent, #a3e635)", color: "#111", transition: "all 0.15s" }}>
                                   Install Selected ({packSelected.length})
                                 </button>
                               )}
@@ -14653,7 +14654,7 @@ function NovelWorkspacePage() {
                                 style={{
                                   padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none",
                                   cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                  background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : pack.color,
+                                  background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : "var(--pw-accent, #a3e635)",
                                   color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
                                   opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1, transition: "all 0.15s",
                                 }}>
