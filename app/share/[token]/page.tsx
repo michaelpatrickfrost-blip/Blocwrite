@@ -32,14 +32,27 @@ type ShareData = {
   chapters: Chapter[];
 };
 
-const TYPE_META: Record<AnnotationType, { label: string; color: string; bg: string; border: string; highlight: string }> = {
-  comment:    { label: "Comment",    color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.18)", highlight: "rgba(148,163,184,0.12)" },
-  suggestion: { label: "Suggestion", color: "#a3e635", bg: "rgba(163,230,53,0.08)",  border: "rgba(163,230,53,0.15)",  highlight: "rgba(163,230,53,0.1)" },
-  issue:      { label: "Issue",      color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.15)", highlight: "rgba(248,113,113,0.1)" },
+type Theme = "dark" | "light";
+
+const TYPE_META: Record<AnnotationType, { label: string; dark: { color: string; bg: string; border: string; highlight: string }; light: { color: string; bg: string; border: string; highlight: string } }> = {
+  comment: {
+    label: "Comment",
+    dark:  { color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.18)", highlight: "rgba(148,163,184,0.12)" },
+    light: { color: "#64748b", bg: "rgba(100,116,139,0.06)", border: "rgba(100,116,139,0.15)", highlight: "rgba(100,116,139,0.08)" },
+  },
+  suggestion: {
+    label: "Suggestion",
+    dark:  { color: "#a3e635", bg: "rgba(163,230,53,0.08)",  border: "rgba(163,230,53,0.15)",  highlight: "rgba(163,230,53,0.1)" },
+    light: { color: "#4d7c0f", bg: "rgba(77,124,15,0.06)",   border: "rgba(77,124,15,0.12)",   highlight: "rgba(77,124,15,0.08)" },
+  },
+  issue: {
+    label: "Issue",
+    dark:  { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.15)", highlight: "rgba(248,113,113,0.1)" },
+    light: { color: "#dc2626", bg: "rgba(220,38,38,0.06)",   border: "rgba(220,38,38,0.12)",   highlight: "rgba(220,38,38,0.08)" },
+  },
 };
 
-/* ── Color palette (matching studio dark theme) ── */
-const C = {
+const DARK = {
   bg: "#1e1c1c",
   surface: "#252323",
   surfaceAlt: "#1a1818",
@@ -50,12 +63,62 @@ const C = {
   textDim: "#666",
   accent: "#a3e635",
   accentMuted: "rgba(163,230,53,0.08)",
+  prose: "#d1d5db",
+  selectionBg: "rgba(163,230,53,0.25)",
+  selectionText: "#fff",
+  headerBg: "rgba(30,28,28,0.88)",
+  logo: "/blocwrite-logo-white.png",
+  hoverBg: "rgba(255,255,255,0.06)",
+  hoverBgSubtle: "rgba(255,255,255,0.03)",
+  overlayBg: "rgba(0,0,0,0.5)",
+  popupBg: "#252323",
+  popupShadow: "0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)",
+  cardShadow: "0 20px 60px rgba(0,0,0,0.4)",
+  inputBg: "#1a1818",
 };
+
+const LIGHT = {
+  bg: "#f8f8f6",
+  surface: "#ffffff",
+  surfaceAlt: "#f2f1ef",
+  border: "#e0dfdb",
+  borderLight: "#eae9e6",
+  text: "#1a1a1a",
+  textMuted: "#6b6b6b",
+  textDim: "#999",
+  accent: "#4d7c0f",
+  accentMuted: "rgba(77,124,15,0.06)",
+  prose: "#374151",
+  selectionBg: "rgba(77,124,15,0.2)",
+  selectionText: "#000",
+  headerBg: "rgba(248,248,246,0.92)",
+  logo: "/blocwrite-logo-black.png",
+  hoverBg: "rgba(0,0,0,0.04)",
+  hoverBgSubtle: "rgba(0,0,0,0.02)",
+  overlayBg: "rgba(0,0,0,0.3)",
+  popupBg: "#ffffff",
+  popupShadow: "0 16px 48px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)",
+  cardShadow: "0 20px 60px rgba(0,0,0,0.08)",
+  inputBg: "#f2f1ef",
+};
+
+const THEME_KEY = "blocwrite-share-theme";
+
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch { /* ignore */ }
+  if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "light";
+  return "dark";
+}
 
 export default function ShareReaderPage() {
   const params = useParams();
   const token = params.token as string;
 
+  const [theme, setTheme] = useState<Theme>("dark");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ShareData | null>(null);
@@ -78,6 +141,19 @@ export default function ShareReaderPage() {
   const [noteType, setNoteType] = useState<AnnotationType>("comment");
   const contentRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setTheme(getInitialTheme()); }, []);
+
+  function toggleTheme() {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const C = theme === "dark" ? DARK : LIGHT;
+  const typeMeta = (t: AnnotationType) => TYPE_META[t][theme];
 
   function loadShareData(d: ShareData) {
     setData(d);
@@ -225,8 +301,8 @@ export default function ShareReaderPage() {
       <div style={{ lineHeight: 1.9 }}>
         {parts.map((p, i) => p.ann ? (
           <mark key={i} title={`${p.ann.type}: ${p.ann.note}`} style={{
-            background: TYPE_META[p.ann.type].highlight,
-            borderBottom: `2px solid ${TYPE_META[p.ann.type].color}`,
+            background: typeMeta(p.ann.type).highlight,
+            borderBottom: `2px solid ${typeMeta(p.ann.type).color}`,
             borderRadius: 2, padding: "1px 0", cursor: "pointer", color: C.text,
           }}>{p.text}</mark>
         ) : <span key={i} style={{ whiteSpace: "pre-wrap" }}>{p.text}</span>)}
@@ -236,36 +312,78 @@ export default function ShareReaderPage() {
 
   const daysRemaining = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
 
+  const themeToggleBtn = (
+    <button
+      onClick={toggleTheme}
+      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      style={{
+        width: 34, height: 34, borderRadius: 10, border: `1px solid ${C.border}`,
+        background: C.surfaceAlt, color: C.textMuted, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "all 0.2s", flexShrink: 0,
+      }}
+    >
+      {theme === "dark" ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      )}
+    </button>
+  );
+
+  const fullCenter: React.CSSProperties = {
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    minHeight: "100vh", background: C.bg, padding: 32, transition: "background 0.3s",
+  };
+  const iconCircle: React.CSSProperties = {
+    width: 52, height: 52, borderRadius: 14,
+    background: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+    border: `1px solid ${C.border}`,
+    display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4,
+  };
+  const titleStyle: React.CSSProperties = {
+    fontSize: 20, fontWeight: 700, color: C.text, marginTop: 16, marginBottom: 0, letterSpacing: "-0.01em",
+  };
+  const subtitleStyle: React.CSSProperties = {
+    color: C.textMuted, marginTop: 8, maxWidth: 380, textAlign: "center", lineHeight: 1.6, fontSize: 15,
+  };
+
   /* ── Full-page states ── */
 
   if (loading) return (
-    <div style={S.fullCenter}>
-      <div style={S.spinner} />
+    <div style={fullCenter}>
+      <div style={{
+        width: 28, height: 28, border: `2.5px solid ${C.border}`,
+        borderTopColor: C.accent, borderRadius: "50%", animation: "shareSpin 0.7s linear infinite",
+      }} />
       <p style={{ color: C.textMuted, marginTop: 16, fontSize: 14 }}>Loading manuscript...</p>
+      <style>{`@keyframes shareSpin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
   if (error) return (
-    <div style={S.fullCenter}>
-      <div style={S.iconCircle}>
+    <div style={fullCenter}>
+      <div style={{ position: "absolute", top: 20, right: 20 }}>{themeToggleBtn}</div>
+      <div style={iconCircle}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
       </div>
-      <h2 style={S.title}>Link Unavailable</h2>
-      <p style={S.subtitle}>{error}</p>
-      <a href="/" style={S.backLink}>Back to Blocwrite</a>
+      <h2 style={titleStyle}>Link Unavailable</h2>
+      <p style={subtitleStyle}>{error}</p>
+      <a href="/" style={{ marginTop: 20, fontSize: 13, color: C.textDim, textDecoration: "none", fontWeight: 500 }}>Back to Blocwrite</a>
     </div>
   );
 
   if (requiresPassword) return (
-    <div style={S.fullCenter}>
+    <div style={fullCenter}>
+      <style>{`@keyframes shareSpin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ position: "absolute", top: 20, right: 20 }}>{themeToggleBtn}</div>
       <div style={{
         background: C.surface, borderRadius: 20, padding: "40px 36px", width: "100%", maxWidth: 400,
-        border: `1px solid ${C.border}`,
-        boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+        border: `1px solid ${C.border}`, boxShadow: C.cardShadow,
       }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 22, marginBottom: 20, opacity: 0.85 }} />
-          <div style={{ ...S.iconCircle, margin: "0 auto 16px" }}>
+          <img src={C.logo} alt="Blocwrite" style={{ height: 22, marginBottom: 20, opacity: 0.85 }} />
+          <div style={{ ...iconCircle, margin: "0 auto 16px" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
             </svg>
@@ -285,7 +403,7 @@ export default function ShareReaderPage() {
             style={{
               width: "100%", padding: "13px 16px", fontSize: 15, borderRadius: 12,
               border: passwordError ? `2px solid #f87171` : `1.5px solid ${C.border}`,
-              background: C.surfaceAlt, color: C.text, fontFamily: "inherit", outline: "none",
+              background: C.inputBg, color: C.text, fontFamily: "inherit", outline: "none",
               boxSizing: "border-box",
             }}
           />
@@ -294,9 +412,8 @@ export default function ShareReaderPage() {
             width: "100%", marginTop: 14, padding: "13px 0", fontSize: 15, fontWeight: 600,
             borderRadius: 12, border: "none", cursor: passwordInput.trim() ? "pointer" : "default",
             background: passwordInput.trim() ? C.accent : C.border,
-            color: passwordInput.trim() ? "#111" : C.textDim,
-            opacity: passwordLoading ? 0.6 : 1, transition: "all 0.2s",
-            fontFamily: "inherit",
+            color: passwordInput.trim() ? (theme === "dark" ? "#111" : "#fff") : C.textDim,
+            opacity: passwordLoading ? 0.6 : 1, transition: "all 0.2s", fontFamily: "inherit",
           }}>
             {passwordLoading ? "Verifying..." : "Unlock"}
           </button>
@@ -306,28 +423,30 @@ export default function ShareReaderPage() {
   );
 
   if (submitted) return (
-    <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 22, marginBottom: 24, opacity: 0.7 }} />
-      <div style={{ ...S.iconCircle, background: "rgba(163,230,53,0.08)", border: `1px solid rgba(163,230,53,0.15)` }}>
+    <div style={fullCenter}>
+      <div style={{ position: "absolute", top: 20, right: 20 }}>{themeToggleBtn}</div>
+      <img src={C.logo} alt="Blocwrite" style={{ height: 22, marginBottom: 24, opacity: 0.7 }} />
+      <div style={{ ...iconCircle, background: theme === "dark" ? "rgba(163,230,53,0.08)" : "rgba(77,124,15,0.06)", border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.12)"}` }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
-      <h2 style={S.title}>Feedback Submitted</h2>
-      <p style={S.subtitle}>
+      <h2 style={titleStyle}>Feedback Submitted</h2>
+      <p style={subtitleStyle}>
         Thank you{readerName ? `, ${readerName}` : ""}! Your notes have been sent to the author.
       </p>
     </div>
   );
 
   if (!data || !hasChapters) return (
-    <div style={S.fullCenter}>
-      <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 22, marginBottom: 24, opacity: 0.7 }} />
-      <div style={S.iconCircle}>
+    <div style={fullCenter}>
+      <div style={{ position: "absolute", top: 20, right: 20 }}>{themeToggleBtn}</div>
+      <img src={C.logo} alt="Blocwrite" style={{ height: 22, marginBottom: 24, opacity: 0.7 }} />
+      <div style={iconCircle}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
         </svg>
       </div>
-      <h2 style={S.title}>No Chapters Available</h2>
-      <p style={S.subtitle}>
+      <h2 style={titleStyle}>No Chapters Available</h2>
+      <p style={subtitleStyle}>
         The author hasn&apos;t shared any chapters with this link yet.<br/>Check back later or contact them for an updated link.
       </p>
       {daysRemaining !== null && (
@@ -343,31 +462,32 @@ export default function ShareReaderPage() {
     <div style={{
       minHeight: "100vh", background: C.bg, color: C.text,
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+      transition: "background 0.3s, color 0.3s",
     }}>
       <style>{`
         @keyframes shareSpin { to { transform: rotate(360deg); } }
         @keyframes shareSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        ::selection { background: rgba(163,230,53,0.25); color: #fff; }
+        ::selection { background: ${C.selectionBg}; color: ${C.selectionText}; }
       `}</style>
 
       {/* ── Top bar ── */}
       <header style={{
         position: "sticky", top: 0, zIndex: 100,
-        background: "rgba(30,28,28,0.88)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-        borderBottom: `1px solid ${C.borderLight}`,
+        background: C.headerBg, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        borderBottom: `1px solid ${C.borderLight}`, transition: "background 0.3s",
       }}>
         <div style={{
           maxWidth: 1100, margin: "0 auto", padding: "0 24px",
-          height: 52, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+          height: 56, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 18, opacity: 0.75, flexShrink: 0 }} />
-            <div style={{ width: 1, height: 14, background: C.border, flexShrink: 0 }} />
+            <img src={C.logo} alt="Blocwrite" style={{ height: 18, opacity: 0.75, flexShrink: 0 }} />
+            <div style={{ width: 1, height: 16, background: C.border, flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: C.textDim, fontWeight: 500, flexShrink: 0 }}>Shared manuscript</span>
             {daysRemaining !== null && (
               <span style={{
                 fontSize: 11, flexShrink: 0, padding: "2px 8px", borderRadius: 6,
-                background: daysRemaining <= 3 ? "rgba(248,113,113,0.1)" : "rgba(255,255,255,0.04)",
+                background: daysRemaining <= 3 ? "rgba(248,113,113,0.1)" : (theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
                 color: daysRemaining <= 3 ? "#f87171" : C.textDim,
                 fontWeight: 600, border: `1px solid ${daysRemaining <= 3 ? "rgba(248,113,113,0.2)" : C.borderLight}`,
               }}>
@@ -381,7 +501,7 @@ export default function ShareReaderPage() {
               <span style={{
                 fontSize: 11, color: C.accent, fontWeight: 600,
                 padding: "3px 10px", borderRadius: 8, background: C.accentMuted,
-                border: `1px solid rgba(163,230,53,0.12)`,
+                border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.12)" : "rgba(77,124,15,0.1)"}`,
               }}>
                 {annotations.length} note{annotations.length !== 1 ? "s" : ""}
               </span>
@@ -395,11 +515,12 @@ export default function ShareReaderPage() {
                 color: C.text, width: 150, outline: "none", fontFamily: "inherit",
               }}
             />
+            {themeToggleBtn}
             <button onClick={submitFeedback} disabled={submitting || annotations.length === 0} style={{
               fontSize: 13, fontWeight: 600, padding: "7px 18px", borderRadius: 8,
               border: "none",
               background: annotations.length === 0 ? C.border : C.accent,
-              color: annotations.length === 0 ? C.textDim : "#111",
+              color: annotations.length === 0 ? C.textDim : (theme === "dark" ? "#111" : "#fff"),
               cursor: annotations.length === 0 ? "default" : "pointer",
               opacity: submitting ? 0.6 : 1, transition: "all 0.2s",
               whiteSpace: "nowrap", fontFamily: "inherit",
@@ -410,13 +531,13 @@ export default function ShareReaderPage() {
         </div>
       </header>
 
-      <div style={{ display: "flex", maxWidth: 1100, margin: "0 auto", minHeight: "calc(100vh - 52px)" }}>
+      <div style={{ display: "flex", maxWidth: 1100, margin: "0 auto", minHeight: "calc(100vh - 56px)" }}>
 
         {/* ── Chapter sidebar ── */}
         {multipleChapters && (
           <aside style={{
             width: 220, padding: "20px 10px", borderRight: `1px solid ${C.borderLight}`,
-            flexShrink: 0, overflowY: "auto", background: C.surfaceAlt,
+            flexShrink: 0, overflowY: "auto", background: C.surfaceAlt, transition: "background 0.3s",
           }}>
             <p style={{
               fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase",
@@ -432,12 +553,12 @@ export default function ShareReaderPage() {
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   width: "100%", textAlign: "left", padding: "9px 12px", borderRadius: 8,
                   border: "none", cursor: "pointer", marginBottom: 2,
-                  background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                  background: active ? C.hoverBg : "transparent",
                   color: active ? C.text : C.textMuted,
                   fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.12s",
                   fontFamily: "inherit",
                 }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = C.hoverBgSubtle; }}
                 onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
                 >
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
@@ -460,7 +581,7 @@ export default function ShareReaderPage() {
         {/* ── Main reading area ── */}
         <main style={{
           flex: 1, padding: "40px 48px", maxWidth: 720, minHeight: "100%",
-          background: C.surface,
+          background: C.surface, transition: "background 0.3s",
         }}>
           {activeChapter ? (
             <>
@@ -482,7 +603,7 @@ export default function ShareReaderPage() {
                 {!submitted && (
                   <div style={{
                     marginTop: 14, padding: "10px 14px", borderRadius: 10,
-                    background: C.accentMuted, border: `1px solid rgba(163,230,53,0.1)`,
+                    background: C.accentMuted, border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.1)" : "rgba(77,124,15,0.08)"}`,
                     display: "flex", alignItems: "center", gap: 10,
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
@@ -499,7 +620,7 @@ export default function ShareReaderPage() {
 
               {activeChapter.content ? (
                 <div ref={contentRef} onMouseUp={handleMouseUp} style={{
-                  fontSize: 16, color: "#d1d5db", userSelect: "text", cursor: "text",
+                  fontSize: 16, color: C.prose, userSelect: "text", cursor: "text",
                   fontFamily: "Georgia, 'Times New Roman', serif",
                   letterSpacing: "0.01em",
                 }}>
@@ -525,7 +646,7 @@ export default function ShareReaderPage() {
                   <div style={{ display: "grid", gap: 8 }}>
                     {chapterAnnotations.map((ann, i) => {
                       const globalIdx = annotations.indexOf(ann);
-                      const meta = TYPE_META[ann.type];
+                      const meta = typeMeta(ann.type);
                       return (
                         <div key={i} style={{
                           padding: "14px 16px", borderRadius: 12,
@@ -538,7 +659,7 @@ export default function ShareReaderPage() {
                               background: meta.bg, color: meta.color, textTransform: "uppercase",
                               letterSpacing: "0.04em", border: `1px solid ${meta.border}`,
                             }}>
-                              {meta.label}
+                              {TYPE_META[ann.type].label}
                             </span>
                             {!submitted && (
                               <button
@@ -581,7 +702,7 @@ export default function ShareReaderPage() {
                     cursor: activeChapterIdx === 0 ? "default" : "pointer",
                     fontFamily: "inherit", transition: "all 0.15s",
                   }}>
-                    ← Previous
+                    &#8592; Previous
                   </button>
                   <button onClick={() => setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1))} disabled={activeChapterIdx === data.chapters.length - 1} style={{
                     fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 8,
@@ -590,7 +711,7 @@ export default function ShareReaderPage() {
                     cursor: activeChapterIdx === data.chapters.length - 1 ? "default" : "pointer",
                     fontFamily: "inherit", transition: "all 0.15s",
                   }}>
-                    Next →
+                    Next &#8594;
                   </button>
                 </div>
               )}
@@ -603,7 +724,7 @@ export default function ShareReaderPage() {
 
           {/* Footer */}
           <div style={{ textAlign: "center", padding: "56px 0 24px" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 14, opacity: 0.15 }} />
+            <img src={C.logo} alt="Blocwrite" style={{ height: 14, opacity: 0.15 }} />
             <p style={{ fontSize: 10, color: C.borderLight, marginTop: 8 }}>&copy; {new Date().getFullYear()} Blocwrite</p>
           </div>
         </main>
@@ -615,10 +736,11 @@ export default function ShareReaderPage() {
           position: "fixed",
           left: Math.min(Math.max(selPopup.x - 180, 16), (typeof window !== "undefined" ? window.innerWidth : 900) - 380),
           top: Math.min(selPopup.y, (typeof window !== "undefined" ? window.innerHeight : 700) - 360),
-          width: 360, background: C.surface, borderRadius: 16,
-          boxShadow: "0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)",
+          width: 360, background: C.popupBg, borderRadius: 16,
+          boxShadow: C.popupShadow,
           padding: "18px 20px", zIndex: 1000,
           animation: "shareSlideIn 0.15s ease",
+          border: `1px solid ${C.borderLight}`,
         }}>
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
@@ -637,7 +759,7 @@ export default function ShareReaderPage() {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: C.textDim, transition: "all 0.12s", flexShrink: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = C.text; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = C.hoverBg; e.currentTarget.style.color = C.text; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = C.textDim; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -648,7 +770,7 @@ export default function ShareReaderPage() {
           <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             {(["comment", "suggestion", "issue"] as AnnotationType[]).map((t) => {
               const active = noteType === t;
-              const meta = TYPE_META[t];
+              const meta = typeMeta(t);
               return (
                 <button key={t} onClick={() => setNoteType(t)} style={{
                   flex: 1, fontSize: 12, fontWeight: 600, padding: "7px 0", borderRadius: 8,
@@ -668,7 +790,7 @@ export default function ShareReaderPage() {
             onChange={(e) => setNoteText(e.target.value)}
             style={{
               width: "100%", minHeight: 80, fontSize: 14, padding: "12px 14px", borderRadius: 10,
-              border: `1.5px solid ${C.border}`, background: C.surfaceAlt,
+              border: `1.5px solid ${C.border}`, background: C.inputBg,
               color: C.text, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6, outline: "none",
               boxSizing: "border-box",
             }}
@@ -693,7 +815,7 @@ export default function ShareReaderPage() {
               fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 8,
               border: "none",
               background: noteText.trim() ? C.accent : C.border,
-              color: noteText.trim() ? "#111" : C.textDim,
+              color: noteText.trim() ? (theme === "dark" ? "#111" : "#fff") : C.textDim,
               cursor: noteText.trim() ? "pointer" : "default",
               fontFamily: "inherit", transition: "all 0.2s",
             }}>Add Note</button>
@@ -703,31 +825,3 @@ export default function ShareReaderPage() {
     </div>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  fullCenter: {
-    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    minHeight: "100vh", background: C.bg, padding: 32,
-  },
-  iconCircle: {
-    width: 52, height: 52, borderRadius: 14,
-    background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 20, fontWeight: 700, color: C.text, marginTop: 16, marginBottom: 0,
-    letterSpacing: "-0.01em",
-  },
-  subtitle: {
-    color: C.textMuted, marginTop: 8, maxWidth: 380, textAlign: "center" as const,
-    lineHeight: 1.6, fontSize: 15,
-  },
-  backLink: {
-    marginTop: 20, fontSize: 13, color: C.textDim, textDecoration: "none", fontWeight: 500,
-  },
-  spinner: {
-    width: 28, height: 28, border: `2.5px solid ${C.border}`,
-    borderTopColor: C.accent, borderRadius: "50%", animation: "shareSpin 0.7s linear infinite",
-  },
-};

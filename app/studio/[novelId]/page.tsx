@@ -29,9 +29,7 @@ import {
   type BoltonCategory,
   type Character,
   type ArcAnalysis,
-  type ArcDimension,
-  type ArcScore,
-  type ArcIssue,
+  type ArcChoice,
   type KnowledgeEntry,
   type KnowledgeScanIssue,
   type ThematicAnalysis,
@@ -865,8 +863,6 @@ function NovelWorkspacePage() {
   const [sharePassword, setSharePassword] = useState("");
   const [shareExpiryDays, setShareExpiryDays] = useState(7);
   const [shareRecipientEmail, setShareRecipientEmail] = useState("");
-  const [sendingShareEmail, setSendingShareEmail] = useState(false);
-  const [shareEmailStatus, setShareEmailStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
@@ -1172,7 +1168,9 @@ function NovelWorkspacePage() {
   const [showArcOfferPopup, setShowArcOfferPopup] = useState(false);
   const [arcBusy, setArcBusy] = useState(false);
   const [arcError, setArcError] = useState<string | null>(null);
-  const [arcExpandedDimension, setArcExpandedDimension] = useState<ArcDimension | null>(null);
+  const [arcExpandedDimension, setArcExpandedDimension] = useState<string | null>(null);
+  const [arcRegenWarning, setArcRegenWarning] = useState(false);
+  const [arcApplyingChoice, setArcApplyingChoice] = useState<number | null>(null);
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -6274,38 +6272,14 @@ function NovelWorkspacePage() {
   }
 
   /* ─── Arc Intelligence Engine ─── */
-  const ARC_DIMENSION_META: Record<ArcDimension, { label: string; icon: string; color: string; hint: string }> = {
-    "goal-evolution": {
-      label: "Goal Evolution",
-      icon: "M13 10V3L4 14h7v7l9-11h-7z",
-      color: "var(--pw-text-muted, #a1a1aa)",
-      hint: "Tracks how the protagonist's goals shift and sharpen across the story.",
-    },
-    "flaw-growth": {
-      label: "Flaw vs Growth",
-      icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z",
-      color: "var(--pw-text-muted, #a1a1aa)",
-      hint: "Checks whether internal flaws are challenged and growth is earned.",
-    },
-    "stagnation": {
-      label: "Arc Stagnation",
-      icon: "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-      color: "var(--pw-text-muted, #a1a1aa)",
-      hint: "Detects stretches where the character arc flatlines with no change.",
-    },
-    "midpoint-shift": {
-      label: "Midpoint Shift",
-      icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
-      color: "var(--pw-text-muted, #a1a1aa)",
-      hint: "Flags whether a clear midpoint turn exists that reframes the story.",
-    },
-    "third-act-escalation": {
-      label: "Third-Act Escalation",
-      icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
-      color: "var(--pw-text-muted, #a1a1aa)",
-      hint: "Checks if stakes and tension rise sufficiently toward the climax.",
-    },
-  };
+
+  function novelHasProse(): boolean {
+    if (!novel) return false;
+    return novel.chapters.some((ch) => {
+      const prose = extractProseFromContent(ch.content).trim();
+      return prose.length > 50;
+    });
+  }
 
   async function runArcAnalysis() {
     if (!novel || aiOff) return;
@@ -6319,7 +6293,6 @@ function NovelWorkspacePage() {
     setArcError(null);
 
     try {
-      // Build the chapter outline for the AI
       const chapterOutline = plan.chapters.map((ch, i) => {
         const chars = (ch.characterIds ?? [])
           .map((id) => novel.storyBible.characters.find((c) => c.id === id)?.name)
@@ -6327,44 +6300,50 @@ function NovelWorkspacePage() {
         return `Chapter ${i + 1}: "${ch.title}"\nSynopsis: ${ch.synopsis || "(empty)"}\nCharacters: ${chars.length > 0 ? chars.join(", ") : "none listed"}`;
       }).join("\n\n");
 
-      // Find the protagonist
       const protagonist = novel.storyBible.characters.find((c) => c.role === "Protagonist");
       const protagonistLine = protagonist
         ? `Protagonist: ${protagonist.name}. ${protagonist.logline || ""} Goals: ${protagonist.goals || "none"}. Fears: ${protagonist.fears || "none"}. Backstory: ${protagonist.backstory || "none"}.`
         : "No protagonist explicitly tagged — analyse the most prominent character.";
 
+      const numChapters = plan.chapters.length;
+
       const systemPrompt = [
-        "You are an expert story structure analyst specialising in narrative arc analysis.",
-        "You evaluate chapter plans against proven story structure principles (three-act structure, Save the Cat, Story Circle, etc.).",
-        "Be specific — reference chapter numbers. Be constructive — give actionable suggestions.",
+        "You are an expert story structure analyst specialising in narrative arc design.",
+        "You evaluate chapter plans and design compelling story arcs using proven structure principles (three-act structure, Save the Cat, Story Circle, Hero's Journey, etc.).",
+        "Be specific. Be creative. Each arc choice must feel genuinely different — not minor variations.",
         "Respond ONLY with valid JSON. No markdown, no commentary outside the JSON.",
       ].join("\n");
 
       const userPrompt = [
         `Novel: "${novel.title}"`,
         `Synopsis: ${novel.synopsis || novel.storyBible.summary.synopsisShort || "(none)"}`,
+        `Genre/tone: ${novel.storyBible.summary.genre || "not specified"}`,
         `Pacing mode: ${plan.pacingMode || "balanced"}`,
         protagonistLine,
         "",
-        "CHAPTER PLAN:",
+        "CURRENT CHAPTER PLAN:",
         chapterOutline,
         "",
-        "Analyse this plan across these 5 arc dimensions. For each, give a score (1-10) and a short summary (1-2 sentences). Then list specific issues found.",
+        `Generate exactly 3 distinct arc path options for this ${numChapters}-chapter novel.`,
+        "Each arc must represent a genuinely different narrative direction — different emotional journeys, different structural approaches, different thematic emphases.",
         "",
-        "Dimensions:",
-        "1. goal-evolution: How well do the protagonist's goals evolve? Do they sharpen, shift, or deepen across chapters?",
-        "2. flaw-growth: Is there a clear internal flaw that gets tested and transformed? Is growth earned through struggle?",
-        "3. stagnation: Are there stretches (3+ consecutive chapters) where the character arc doesn't advance? Flag stagnant zones.",
-        "4. midpoint-shift: Is there a clear midpoint turn (around chapter " + Math.ceil(plan.chapters.length / 2) + ") that reframes the story, raises stakes, or shifts the protagonist from reactive to proactive?",
-        "5. third-act-escalation: Do the final ~25% of chapters show genuine escalation in stakes, tension, and emotional weight toward the climax?",
+        "For each arc choice provide:",
+        '- "name": A compelling 2-5 word name (e.g. "The Reluctant Hero", "Descent Into Darkness", "Shattered Mirror")',
+        '- "description": 2-3 sentences explaining the emotional and structural direction',
+        '- "score": 1-10 rating for narrative strength (how compelling, structurally sound, and emotionally satisfying this arc would be)',
+        '- "rationale": 1-2 sentences explaining the score — what makes this path strong or where it might struggle',
+        `- "chapterSynopses": An array of exactly ${numChapters} strings — one new synopsis per chapter, rewritten to follow this arc direction. Each synopsis should be 2-4 sentences.`,
         "",
-        'Return JSON: { "scores": [{ "dimension": string, "score": number, "label": string, "summary": string }], "issues": [{ "dimension": string, "chapter": number|null, "severity": "info"|"warning"|"critical", "message": string, "suggestion": string }] }',
-        "scores must have exactly 5 entries (one per dimension). issues can be 0-15 entries. label is a 2-4 word label like 'Strong Evolution' or 'Missing Midpoint'.",
+        "IMPORTANT: The chapter synopses must keep the same chapter count and roughly the same world/characters, but reshape the narrative arc, pacing, and emotional beats to match the chosen direction.",
+        "Score the choices honestly — the best arc should score highest. At least one choice should score 8+.",
+        "",
+        `Return JSON: { "choices": [{ "name": string, "description": string, "score": number, "rationale": string, "chapterSynopses": string[${numChapters}] }] }`,
+        "choices must have exactly 3 entries. Sort by score descending (best first).",
       ].join("\n");
 
       const result = await requestOpenRouterJson(
         userPrompt,
-        2000,
+        4000,
         { systemMessage: systemPrompt },
       );
 
@@ -6375,43 +6354,50 @@ function NovelWorkspacePage() {
 
       const res = result as Record<string, unknown>;
 
-      const rawScores: ArcScore[] = Array.isArray(res.scores)
-        ? (res.scores as Record<string, unknown>[])
-            .filter((s) => s && typeof s.dimension === "string")
-            .map((s) => ({
-              dimension: s.dimension as ArcDimension,
-              score: Math.max(1, Math.min(10, Number(s.score) || 5)),
-              label: String(s.label || "").slice(0, 40),
-              summary: String(s.summary || "").slice(0, 300),
+      const rawChoices: ArcChoice[] = Array.isArray(res.choices)
+        ? (res.choices as Record<string, unknown>[])
+            .filter((c) => c && typeof c.name === "string")
+            .slice(0, 3)
+            .map((c) => ({
+              name: String(c.name || "Unnamed Arc").slice(0, 60),
+              description: String(c.description || "").slice(0, 400),
+              score: Math.max(1, Math.min(10, Number(c.score) || 5)),
+              rationale: String(c.rationale || "").slice(0, 300),
+              chapterSynopses: Array.isArray(c.chapterSynopses)
+                ? (c.chapterSynopses as string[]).slice(0, numChapters).map((s) => String(s || "").slice(0, 600))
+                : plan.chapters.map((ch) => ch.synopsis || ""),
             }))
         : [];
 
-      const rawIssues: ArcIssue[] = Array.isArray(res.issues)
-        ? (res.issues as Record<string, unknown>[])
-            .filter((i) => i && typeof i.dimension === "string" && typeof i.message === "string")
-            .map((i) => ({
-              dimension: i.dimension as ArcDimension,
-              chapter: typeof i.chapter === "number" ? i.chapter : undefined,
-              severity: (["info", "warning", "critical"].includes(String(i.severity)) ? String(i.severity) : "info") as ArcIssue["severity"],
-              message: String(i.message).slice(0, 300),
-              suggestion: String(i.suggestion || "").slice(0, 400),
-            }))
-        : [];
+      if (rawChoices.length === 0) {
+        setArcError("AI did not return valid arc choices. Try again.");
+        return;
+      }
 
-      // Ensure all 5 dimensions have scores
-      const allDimensions: ArcDimension[] = ["goal-evolution", "flaw-growth", "stagnation", "midpoint-shift", "third-act-escalation"];
-      const finalScores: ArcScore[] = allDimensions.map((dim) => {
-        const found = rawScores.find((s) => s.dimension === dim);
-        return found || { dimension: dim, score: 5, label: "Not assessed", summary: "AI did not return a score for this dimension." };
-      });
+      while (rawChoices.length < 3) {
+        rawChoices.push({
+          name: `Arc Option ${rawChoices.length + 1}`,
+          description: "Could not generate this option. Try regenerating.",
+          score: 1,
+          rationale: "Incomplete generation.",
+          chapterSynopses: plan.chapters.map((ch) => ch.synopsis || ""),
+        });
+      }
 
-      const overall = Math.round(finalScores.reduce((sum, s) => sum + s.score, 0) / finalScores.length * 10) / 10;
+      for (const choice of rawChoices) {
+        while (choice.chapterSynopses.length < numChapters) {
+          choice.chapterSynopses.push(plan.chapters[choice.chapterSynopses.length]?.synopsis || "");
+        }
+      }
+
+      rawChoices.sort((a, b) => b.score - a.score);
 
       const analysis: ArcAnalysis = {
-        scores: finalScores,
-        issues: rawIssues,
-        overall,
+        scores: [],
+        issues: [],
+        overall: rawChoices[0]?.score ?? 5,
         generatedAt: new Date().toISOString(),
+        choices: rawChoices,
       };
 
       updateBookPlan({ arcAnalysis: analysis });
@@ -6421,6 +6407,56 @@ function NovelWorkspacePage() {
     } finally {
       setArcBusy(false);
     }
+  }
+
+  function applyArcChoice(choiceIndex: number) {
+    if (!novel) return;
+    const plan = novel.storyBible.bookPlan;
+    const analysis = plan?.arcAnalysis;
+    if (!plan || !analysis?.choices || !analysis.choices[choiceIndex]) return;
+
+    if (novelHasProse()) {
+      setArcError("Cannot apply arc changes — one or more chapters already contain prose. Clear your manuscript text first.");
+      return;
+    }
+
+    const choice = analysis.choices[choiceIndex];
+    setArcApplyingChoice(choiceIndex);
+
+    mutateNovel((current) => {
+      const curPlan = current.storyBible.bookPlan;
+      if (!curPlan) return current;
+
+      const updatedPlanChapters = curPlan.chapters.map((ch, i) => ({
+        ...ch,
+        synopsis: choice.chapterSynopses[i] || ch.synopsis,
+      }));
+
+      const updatedChapters = current.chapters.map((ch, i) => ({
+        ...ch,
+        subtitle: choice.chapterSynopses[i] || ch.subtitle,
+        updatedAt: new Date().toISOString(),
+      }));
+
+      return {
+        ...current,
+        chapters: updatedChapters,
+        storyBible: {
+          ...current.storyBible,
+          bookPlan: {
+            ...curPlan,
+            chapters: updatedPlanChapters,
+            arcAnalysis: {
+              ...analysis,
+              selectedChoiceIndex: choiceIndex,
+            },
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      };
+    });
+
+    setTimeout(() => setArcApplyingChoice(null), 600);
   }
 
   async function runRegenPlanChapter(chapterIndex: number) {
@@ -7198,29 +7234,51 @@ function NovelWorkspacePage() {
     });
   }
 
-  /** Send a branded Blocwrite invitation email for the current share link. */
-  async function sendShareInviteEmail() {
-    if (!shareResult || !shareRecipientEmail.trim() || sendingShareEmail) return;
-    setSendingShareEmail(true);
-    setShareEmailStatus(null);
-    try {
-      const res = await fetch("/api/share/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: shareResult.token, recipientEmail: shareRecipientEmail.trim(), password: sharePassword.trim() || undefined }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setShareEmailStatus({ ok: true, message: `Invitation sent to ${shareRecipientEmail.trim()}` });
-        setShareRecipientEmail("");
-      } else {
-        setShareEmailStatus({ ok: false, message: data.error || "Failed to send email." });
-      }
-    } catch {
-      setShareEmailStatus({ ok: false, message: "Network error. Please try again." });
-    } finally {
-      setSendingShareEmail(false);
+  /** Open the user's email client with a branded invitation for the share link. */
+  function openShareEmailInClient() {
+    if (!shareResult || !novel) return;
+    const novelTitle = novel.title || "Untitled Novel";
+    const pw = sharePassword.trim();
+    const expiryDate = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+    const subject = `You're invited to read "${novelTitle}" on Blocwrite`;
+
+    const lines: string[] = [
+      `You've been invited to read "${novelTitle}" on Blocwrite.`,
+      "",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      "",
+      "Open this link to start reading:",
+      shareResult.url,
+      "",
+    ];
+
+    if (pw) {
+      lines.push("Password: " + pw);
+      lines.push("");
+    } else if (shareResult.hasPassword) {
+      lines.push("(A password is required — it will be provided separately.)");
+      lines.push("");
     }
+
+    lines.push(
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      "",
+      "How it works:",
+      "1. Click the link above",
+      pw ? "2. Enter the password when prompted" : "2. The manuscript will open automatically",
+      "3. Read, highlight text, and leave notes",
+      "4. Submit your feedback when you're done",
+      "",
+      `This link expires on ${expiryDate}.`,
+      "",
+      "— Sent via Blocwrite (blocwrite.com)",
+    );
+
+    const body = lines.join("\n");
+    const recipient = shareRecipientEmail.trim();
+    const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailtoUrl, "_blank");
   }
 
   function handleCoverUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -8039,8 +8097,8 @@ function NovelWorkspacePage() {
     requestAnimationFrame(() => {
       const rect = trigger.getBoundingClientRect();
       const ddRect = dropdown.getBoundingClientRect();
-      const ddH = ddRect.height || 260;
-      const ddW = ddRect.width || 240;
+      const ddH = ddRect.height || 280;
+      const ddW = ddRect.width || 270;
       const gap = 6;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
@@ -9470,21 +9528,42 @@ function NovelWorkspacePage() {
                         {chapterBoltonId ? <span className="pw-chapter-bolton-name">{(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}</span> : <span style={{ fontSize: 11, fontWeight: 600 }}>Bolt-Ons</span>}
                       </button>
                       <div className="pw-block-bolton-dropdown">
-                        <div className="pw-bolton-dropdown-head">Chapter Bolt-On</div>
-                        <button type="button" className={`pw-block-bolton-option ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
-                          <span className="pw-block-bolton-option-title">None</span>
-                        </button>
-                        {(novel.storyBible.boltons ?? []).map((b, i) => (
-                          <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                            <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
+                        <div className="pw-bolton-dropdown-head">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                          Chapter Bolt-On
+                        </div>
+                        <div className="pw-bolton-dropdown-body">
+                          <button type="button" className={`pw-block-bolton-option pw-bolton-dropdown-none ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                            <span className="pw-block-bolton-option-icon">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </span>
+                            <span className="pw-block-bolton-option-text">
+                              <span className="pw-block-bolton-option-title">None</span>
+                              <span className="pw-block-bolton-option-cat">No bolt-on applied</span>
+                            </span>
                           </button>
-                        ))}
-                        <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 6px" }} />
-                        <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); setWritingPacksOpen(true); }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                          <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
-                        </button>
+                          {(novel.storyBible.boltons ?? []).map((b, i) => (
+                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                              <span className="pw-block-bolton-option-icon">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                              </span>
+                              <span className="pw-block-bolton-option-text">
+                                <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                <span className="pw-block-bolton-option-cat">{getBoltonCategoryMeta(b.category).label}</span>
+                              </span>
+                            </button>
+                          ))}
+                          <div className="pw-bolton-dropdown-sep" />
+                          <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); setWritingPacksOpen(true); }}>
+                            <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                            </span>
+                            <span className="pw-block-bolton-option-text">
+                              <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
+                              <span className="pw-block-bolton-option-cat">Install from writing packs</span>
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
@@ -9669,42 +9748,63 @@ function NovelWorkspacePage() {
                                           <svg width="13" height="13" viewBox="0 0 24 24" fill={block.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                         </button>
                                         <div className="pw-block-bolton-dropdown">
-                                          <div className="pw-bolton-dropdown-head">Bloc Bolt-On</div>
-                                          <button
-                                            type="button"
-                                            className={`pw-block-bolton-option ${!block.notes ? "active" : ""}`}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
-                                              const next = [...blocks];
-                                              next[idx] = { ...block, notes: "" };
-                                              updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
-                                            }}
-                                          >
-                                            <span className="pw-block-bolton-option-title">None</span>
-                                          </button>
-                                          {(novel.storyBible.boltons ?? []).map((b, i) => (
+                                          <div className="pw-bolton-dropdown-head">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                            Bloc Bolt-On
+                                          </div>
+                                          <div className="pw-bolton-dropdown-body">
                                             <button
-                                              key={b.id}
                                               type="button"
-                                              className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
+                                              className={`pw-block-bolton-option pw-bolton-dropdown-none ${!block.notes ? "active" : ""}`}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
                                                 const next = [...blocks];
-                                                next[idx] = { ...block, notes: b.id };
+                                                next[idx] = { ...block, notes: "" };
                                                 updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
                                               }}
                                             >
-                                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                              <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
+                                              <span className="pw-block-bolton-option-icon">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                              </span>
+                                              <span className="pw-block-bolton-option-text">
+                                                <span className="pw-block-bolton-option-title">None</span>
+                                                <span className="pw-block-bolton-option-cat">No bolt-on applied</span>
+                                              </span>
                                             </button>
-                                          ))}
-                                          <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 6px" }} />
-                                          <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open"); setWritingPacksOpen(true); }}>
-                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                                            <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
-                                          </button>
+                                            {(novel.storyBible.boltons ?? []).map((b, i) => (
+                                              <button
+                                                key={b.id}
+                                                type="button"
+                                                className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                  const next = [...blocks];
+                                                  next[idx] = { ...block, notes: b.id };
+                                                  updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                                }}
+                                              >
+                                                <span className="pw-block-bolton-option-icon">
+                                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                </span>
+                                                <span className="pw-block-bolton-option-text">
+                                                  <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                                  <span className="pw-block-bolton-option-cat">{getBoltonCategoryMeta(b.category).label}</span>
+                                                </span>
+                                              </button>
+                                            ))}
+                                            <div className="pw-bolton-dropdown-sep" />
+                                            <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open"); setWritingPacksOpen(true); }}>
+                                              <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                              </span>
+                                              <span className="pw-block-bolton-option-text">
+                                                <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
+                                                <span className="pw-block-bolton-option-cat">Install from writing packs</span>
+                                              </span>
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
                                     )}
@@ -10740,13 +10840,12 @@ function NovelWorkspacePage() {
                       </div>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>Arc Intelligence</span>
-                        {novel.storyBible.bookPlan?.arcAnalysis && (
+                        {novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
                           <span style={{
                             marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                            background: novel.storyBible.bookPlan.arcAnalysis.overall >= 7 ? "rgba(163,230,53,0.12)" : novel.storyBible.bookPlan.arcAnalysis.overall >= 5 ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
-                            color: novel.storyBible.bookPlan.arcAnalysis.overall >= 7 ? "#a3e635" : novel.storyBible.bookPlan.arcAnalysis.overall >= 5 ? "#f59e0b" : "#ef4444",
+                            background: "rgba(163,230,53,0.12)", color: "#a3e635",
                           }}>
-                            {novel.storyBible.bookPlan.arcAnalysis.overall}/10
+                            Applied
                           </span>
                         )}
                       </div>
@@ -10754,8 +10853,14 @@ function NovelWorkspacePage() {
                     <button
                       type="button"
                       disabled={arcBusy || aiOff}
-                      onClick={() => void runArcAnalysis()}
-                      title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc analysis"}
+                      onClick={() => {
+                        if (novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null) {
+                          setArcRegenWarning(true);
+                        } else {
+                          void runArcAnalysis();
+                        }
+                      }}
+                      title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc choices"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
                         background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
@@ -10765,7 +10870,7 @@ function NovelWorkspacePage() {
                       }}
                     >
                       {arcBusy ? (
-                        <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Analysing...</>
+                        <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Generating Arcs...</>
                       ) : (
                         <>{novel.storyBible.bookPlan?.arcAnalysis ? "Regenerate" : "Run Analysis"}</>
                       )}
@@ -10780,129 +10885,174 @@ function NovelWorkspacePage() {
                   )}
 
                   {/* Busy state */}
-                  {arcBusy && !novel.storyBible.bookPlan?.arcAnalysis && (
+                  {arcBusy && (
                     <div style={{ padding: "24px 18px", textAlign: "center" }}>
                       <div style={{
                         width: 24, height: 24, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)",
                         borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
                       }} />
-                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>Analysing story arcs across {planChapters.length} chapters...</p>
+                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>Generating 3 arc paths for {planChapters.length} chapters...</p>
+                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>This may take a moment — each path includes full chapter synopses</p>
                     </div>
                   )}
 
-                  {/* Results */}
-                  {novel.storyBible.bookPlan?.arcAnalysis && (() => {
+                  {/* Choice cards */}
+                  {!arcBusy && novel.storyBible.bookPlan?.arcAnalysis?.choices && (() => {
                     const arc = novel.storyBible.bookPlan.arcAnalysis!;
+                    const choices = arc.choices!;
+                    const selectedIdx = arc.selectedChoiceIndex;
+                    const hasProse = novelHasProse();
                     return (
                       <div style={{ padding: "14px 18px 18px" }}>
-                        {/* Score cards */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 16 }}>
-                          {arc.scores.map((s) => {
-                            const meta = ARC_DIMENSION_META[s.dimension];
-                            if (!meta) return null;
-                            const isExpanded = arcExpandedDimension === s.dimension;
-                            const relatedIssues = arc.issues.filter((i) => i.dimension === s.dimension);
-                            return (
-                              <div key={s.dimension}
-                                style={{
-                                  borderRadius: 10, padding: "12px",
-                                  background: isExpanded ? "var(--pw-overlay-bg)" : "var(--pw-overlay-bg)",
-                                  border: `1px solid ${isExpanded ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-border-light)"}`,
-                                  cursor: "pointer", transition: "all 0.15s",
-                                  gridColumn: isExpanded ? "1 / -1" : undefined,
-                                }}
-                                onClick={() => setArcExpandedDimension(isExpanded ? null : s.dimension)}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={meta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={meta.icon}/></svg>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", flex: 1 }}>{meta.label}</span>
-                                  <span style={{
-                                    fontSize: 13, fontWeight: 800,
-                                    color: s.score >= 7 ? "#a3e635" : s.score >= 5 ? "#f59e0b" : "#ef4444",
-                                  }}>{s.score}</span>
-                                </div>
-                                <div style={{
-                                  width: "100%", height: 3, borderRadius: 2,
-                                  background: "var(--pw-overlay-bg-hover)", overflow: "hidden", marginBottom: 6,
-                                }}>
-                                  <div style={{
-                                    height: "100%", borderRadius: 2,
-                                    background: s.score >= 7 ? "#a3e635" : s.score >= 5 ? "#f59e0b" : "#ef4444",
-                                    width: `${s.score * 10}%`, transition: "width 0.3s",
-                                  }} />
-                                </div>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text)", marginBottom: 2 }}>{s.label}</div>
-                                <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>{s.summary}</div>
+                        {hasProse && (
+                          <div style={{
+                            padding: "10px 14px", borderRadius: 10, marginBottom: 14,
+                            background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",
+                            display: "flex", alignItems: "center", gap: 10,
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>
+                              Arc paths can only be applied when chapters have no prose. Clear your manuscript text to enable selection.
+                            </span>
+                          </div>
+                        )}
 
-                                {/* Expanded issues */}
-                                {isExpanded && relatedIssues.length > 0 && (
-                                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-text-dim)", marginBottom: 2 }}>
-                                      {relatedIssues.length} issue{relatedIssues.length !== 1 ? "s" : ""} found
-                                    </div>
-                                    {relatedIssues.map((issue, ii) => (
-                                      <div key={ii} style={{
-                                        padding: "8px 10px", borderRadius: 8,
-                                        background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "var(--pw-overlay-bg)",
-                                        border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "var(--pw-border-light)"}`,
-                                      }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        {selectedIdx != null && (
+                          <div style={{
+                            padding: "10px 14px", borderRadius: 10, marginBottom: 14,
+                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.15)",
+                            display: "flex", alignItems: "center", gap: 10,
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                            <span style={{ fontSize: 12, color: "#a3e635", fontWeight: 600 }}>
+                              &ldquo;{choices[selectedIdx]?.name}&rdquo; applied — chapter synopses updated
+                            </span>
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 12, lineHeight: 1.5 }}>
+                          Choose an arc direction. Selecting one will rewrite all chapter synopses to follow that narrative path.
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {choices.map((choice, ci) => {
+                            const isSelected = selectedIdx === ci;
+                            const isApplying = arcApplyingChoice === ci;
+                            const scoreColor = choice.score >= 8 ? "#a3e635" : choice.score >= 6 ? "#f59e0b" : "#ef4444";
+                            const isExpanded = arcExpandedDimension === (`choice-${ci}`);
+                            return (
+                              <div key={ci} style={{
+                                borderRadius: 12, overflow: "hidden",
+                                border: isSelected ? "1px solid rgba(163,230,53,0.3)" : "1px solid var(--pw-border-light)",
+                                background: isSelected ? "rgba(163,230,53,0.04)" : "var(--pw-overlay-bg)",
+                                transition: "all 0.2s",
+                              }}>
+                                <div
+                                  style={{ padding: "14px 16px", cursor: "pointer" }}
+                                  onClick={() => setArcExpandedDimension(isExpanded ? null : `choice-${ci}`)}
+                                >
+                                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                        {ci === 0 && (
                                           <span style={{
-                                            fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4,
-                                            background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
-                                            color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "var(--pw-text-muted)",
-                                          }}>{issue.severity}</span>
-                                          {issue.chapter && <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Chapter {issue.chapter}</span>}
-                                        </div>
-                                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{issue.message}</div>
-                                        {issue.suggestion && (
-                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, fontStyle: "italic" }}>
-                                            Suggestion: {issue.suggestion}
-                                          </div>
+                                            fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em",
+                                            padding: "2px 7px", borderRadius: 5,
+                                            background: "rgba(163,230,53,0.12)", color: "#a3e635",
+                                          }}>Best</span>
+                                        )}
+                                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--pw-text)" }}>{choice.name}</span>
+                                        {isSelected && (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#a3e635" stroke="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                                         )}
                                       </div>
-                                    ))}
+                                      <div style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5 }}>{choice.description}</div>
+                                    </div>
+                                    <div style={{
+                                      minWidth: 48, height: 48, borderRadius: 12,
+                                      background: `${scoreColor}11`,
+                                      border: `1px solid ${scoreColor}33`,
+                                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                                      flexShrink: 0,
+                                    }}>
+                                      <span style={{ fontSize: 18, fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{choice.score}</span>
+                                      <span style={{ fontSize: 8, fontWeight: 700, color: scoreColor, opacity: 0.7, textTransform: "uppercase" }}>/10</span>
+                                    </div>
                                   </div>
-                                )}
-                                {isExpanded && relatedIssues.length === 0 && (
-                                  <div style={{ marginTop: 10, fontSize: 11, color: "var(--pw-text-dim)", fontStyle: "italic" }}>
-                                    No issues detected for this dimension.
+
+                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", fontStyle: "italic", lineHeight: 1.4 }}>
+                                    {choice.rationale}
+                                  </div>
+
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 8 }}>
+                                    <button
+                                      type="button"
+                                      style={{
+                                        fontSize: 10, fontWeight: 600, color: "var(--pw-text-dim)",
+                                        background: "none", border: "none", cursor: "pointer", padding: 0,
+                                        display: "flex", alignItems: "center", gap: 4,
+                                      }}
+                                      onClick={(e) => { e.stopPropagation(); setArcExpandedDimension(isExpanded ? null : `choice-${ci}`); }}
+                                    >
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d={isExpanded ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"}/>
+                                      </svg>
+                                      {isExpanded ? "Hide chapters" : `Preview ${choice.chapterSynopses.length} chapters`}
+                                    </button>
+
+                                    {!isSelected && (
+                                      <button
+                                        type="button"
+                                        disabled={hasProse || isApplying}
+                                        onClick={(e) => { e.stopPropagation(); applyArcChoice(ci); }}
+                                        style={{
+                                          padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                                          background: hasProse ? "var(--pw-overlay-bg)" : isApplying ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                                          color: hasProse ? "var(--pw-text-dim)" : isApplying ? "#111" : "var(--pw-accent, #a3e635)",
+                                          border: hasProse ? "1px solid var(--pw-border)" : "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                                          cursor: hasProse ? "not-allowed" : "pointer",
+                                          transition: "all 0.15s",
+                                        }}
+                                      >
+                                        {isApplying ? "Applying..." : "Apply This Arc"}
+                                      </button>
+                                    )}
+                                    {isSelected && (
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: "#a3e635", display: "flex", alignItems: "center", gap: 4 }}>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                        Applied
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Expanded chapter preview */}
+                                {isExpanded && (
+                                  <div style={{
+                                    borderTop: "1px solid var(--pw-border-light)",
+                                    padding: "12px 16px", background: "rgba(0,0,0,0.1)",
+                                    maxHeight: 320, overflowY: "auto",
+                                  }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--pw-text-dim)", marginBottom: 8 }}>
+                                      Chapter synopses for this arc
+                                    </div>
+                                    {choice.chapterSynopses.map((syn, si) => (
+                                      <div key={si} style={{
+                                        padding: "8px 0",
+                                        borderBottom: si < choice.chapterSynopses.length - 1 ? "1px solid var(--pw-border-light)" : "none",
+                                      }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text)", marginBottom: 3 }}>
+                                          Ch. {si + 1}: {planChapters[si]?.title || `Chapter ${si + 1}`}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.5 }}>{syn}</div>
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                               </div>
                             );
                           })}
                         </div>
-
-                        {/* Issue summary */}
-                        {arc.issues.length > 0 && (
-                          <div style={{
-                            padding: "10px 14px", borderRadius: 10,
-                            background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)",
-                            display: "flex", alignItems: "center", gap: 10,
-                          }}>
-                            <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
-                              {arc.issues.filter((i) => i.severity === "critical").length > 0 && (
-                                <span style={{ color: "#ef4444", fontWeight: 700 }}>
-                                  {arc.issues.filter((i) => i.severity === "critical").length} critical
-                                </span>
-                              )}
-                              {arc.issues.filter((i) => i.severity === "critical").length > 0 && arc.issues.filter((i) => i.severity === "warning").length > 0 && " · "}
-                              {arc.issues.filter((i) => i.severity === "warning").length > 0 && (
-                                <span style={{ color: "#f59e0b", fontWeight: 700 }}>
-                                  {arc.issues.filter((i) => i.severity === "warning").length} warning{arc.issues.filter((i) => i.severity === "warning").length !== 1 ? "s" : ""}
-                                </span>
-                              )}
-                              {(arc.issues.filter((i) => i.severity === "critical").length > 0 || arc.issues.filter((i) => i.severity === "warning").length > 0) && arc.issues.filter((i) => i.severity === "info").length > 0 && " · "}
-                              {arc.issues.filter((i) => i.severity === "info").length > 0 && (
-                                <span style={{ color: "var(--pw-text-muted)", fontWeight: 600 }}>
-                                  {arc.issues.filter((i) => i.severity === "info").length} info
-                                </span>
-                              )}
-                              <span style={{ marginLeft: 6, opacity: 0.5 }}>— click a dimension card to see details</span>
-                            </span>
-                          </div>
-                        )}
                       </div>
                     );
                   })()}
@@ -11392,14 +11542,14 @@ function NovelWorkspacePage() {
                   </p>
                 </div>
 
-                {/* Send branded email invitation */}
+                {/* Send invitation via email client */}
                 <div style={{
                   marginTop: 10, padding: "12px 14px", borderRadius: 10,
                   background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
                 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    Send invitation email
+                    Send invitation
                   </p>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input
@@ -11411,7 +11561,7 @@ function NovelWorkspacePage() {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && shareRecipientEmail.trim()) {
                           e.preventDefault();
-                          sendShareInviteEmail();
+                          openShareEmailInClient();
                         }
                       }}
                       style={{ flex: 1, fontSize: 13 }}
@@ -11419,23 +11569,22 @@ function NovelWorkspacePage() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={!shareRecipientEmail.trim() || sendingShareEmail}
-                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap" }}
-                      onClick={sendShareInviteEmail}
+                      disabled={!shareRecipientEmail.trim()}
+                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}
+                      onClick={openShareEmailInClient}
                     >
-                      {sendingShareEmail ? "Sending..." : "Send"}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      Open in Email
                     </button>
                   </div>
-                  {shareEmailStatus && (
-                    <p style={{
-                      fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4,
-                      color: shareEmailStatus.ok ? "var(--pw-success, #10b981)" : "var(--pw-danger, #ef4444)",
-                    }}>
-                      {shareEmailStatus.message}
+                  {shareResult.hasPassword && sharePassword.trim() && (
+                    <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #a3e635)", display: "flex", alignItems: "center", gap: 5 }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                      Password will be included in the email
                     </p>
                   )}
                   <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4, marginBottom: 0 }}>
-                    Sends a branded Blocwrite email with a direct link to your manuscript.
+                    Opens your email app with a pre-written invitation, link{shareResult.hasPassword && sharePassword.trim() ? ", and password" : ""}.
                   </p>
                 </div>
 
@@ -13886,7 +14035,6 @@ function NovelWorkspacePage() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Arc icon */}
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
               background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
@@ -13899,17 +14047,18 @@ function NovelWorkspacePage() {
 
             <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Arc Intelligence</h3>
             <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 20px", lineHeight: 1.5 }}>
-              Your plan is ready. Want to analyse your story arcs? Arc Intelligence checks goal evolution, character growth, stagnation, midpoint shifts, and third-act escalation.
+              Your plan is ready. Arc Intelligence will generate 3 distinct narrative arc paths — each scored for best outcome. Pick one and it rewrites your chapter synopses to match.
             </p>
 
-            {/* Dimension pills */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 22 }}>
-              {(Object.entries(ARC_DIMENSION_META) as [ArcDimension, typeof ARC_DIMENSION_META[ArcDimension]][]).map(([dim, meta]) => (
-                <span key={dim} style={{
+            <div style={{
+              display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 22,
+            }}>
+              {["3 Arc Paths", "Scored & Ranked", "One-Click Apply"].map((pill) => (
+                <span key={pill} style={{
                   fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 8,
                   background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
                 }}>
-                  {meta.label}
+                  {pill}
                 </span>
               ))}
             </div>
@@ -13938,7 +14087,75 @@ function NovelWorkspacePage() {
                   cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
                 }}
               >
-                Analyse Arcs
+                Generate Arc Paths
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Arc regeneration warning modal ── */}
+      {arcRegenWarning && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10001,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          animation: "pw-fade-in 0.2s ease-out",
+        }}
+          onClick={() => setArcRegenWarning(false)}
+        >
+          <div
+            style={{
+              background: "var(--pw-bg)",
+              border: "1px solid var(--pw-border)",
+              borderRadius: 20, width: "92%", maxWidth: 400,
+              padding: "32px 28px 28px",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
+              textAlign: "center",
+              animation: "pw-content-in 0.25s ease-out",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              width: 48, height: 48, borderRadius: 14, margin: "0 auto 14px",
+              background: "rgba(245,158,11,0.1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 9v2m0 4h.01M10.29 3.86l-8.6 14.86A2 2 0 003.43 21h17.14a2 2 0 001.74-2.98l-8.6-14.86a2 2 0 00-3.42 0z"/>
+              </svg>
+            </div>
+
+            <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 800 }}>Regenerate Arc Paths?</h3>
+            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 22px", lineHeight: 1.5 }}>
+              You already have an applied arc. Regenerating will create 3 new arc options and clear your current selection. Your existing chapter synopses will remain until you apply a new choice.
+            </p>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={() => setArcRegenWarning(false)}
+                style={{
+                  padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10,
+                  background: "var(--pw-overlay-bg-hover)", color: "var(--pw-text)", border: "1px solid var(--pw-border)",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setArcRegenWarning(false);
+                  void runArcAnalysis();
+                }}
+                style={{
+                  padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
+                  background: "#f59e0b", color: "#111", border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Regenerate
               </button>
             </div>
           </div>
