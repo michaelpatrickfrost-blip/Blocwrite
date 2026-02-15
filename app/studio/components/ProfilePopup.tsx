@@ -99,6 +99,7 @@ type ProfilePopupProps = {
   onLogout?: () => void;
   onSettingsChange?: () => void;
   onStartTutorial?: () => void;
+  initialTab?: SettingsTab;
 };
 
 export function ProfilePopup({
@@ -112,8 +113,14 @@ export function ProfilePopup({
   onLogout,
   onSettingsChange,
   onStartTutorial,
+  initialTab,
 }: ProfilePopupProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+
+  // Allow parent to control which tab opens
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab);
+  }, [open, initialTab]);
   const [appLanguage, setAppLanguage] = useState<ProfileLanguageCode>(() => getProfileLanguage());
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const [assistantProvider, setAssistantProvider] = useState<AssistantProviderId>(() => getStoredProvider());
@@ -492,7 +499,7 @@ export function ProfilePopup({
 
           {/* ─── AI Provider tab ─── */}
           {activeTab === "ai" && (
-            <div className="pw-settings-section">
+            <div className="pw-settings-section" data-tutorial="settings-ai">
               <div className="pw-settings-group">
                 <div className="pw-settings-group-title">Provider</div>
                 <div className="pw-settings-provider-cards">

@@ -160,6 +160,7 @@ function Nav() {
               { label: "How it works", href: "#how-it-works" },
               { label: "Features", href: "#features" },
               { label: "Pricing", href: "#pricing" },
+              { label: "News", href: "/news" },
               { label: "FAQ", href: "#faq" },
             ].map((l) => (
               <a
@@ -1123,6 +1124,7 @@ function Footer() {
 
         <div className="bw-footer-links" style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
           {[
+            { label: "News", href: "/news" },
             { label: "Terms", href: "/terms" },
             { label: "Refund Policy", href: "/refunds" },
             { label: "Contact", href: "/contact" },
