@@ -631,6 +631,22 @@ function NovelWorkspacePage() {
   const [charChatInput, setCharChatInput] = useState("");
   const [charChatLoading, setCharChatLoading] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
+  const [charChatPickerOpen, setCharChatPickerOpen] = useState(false);
+  // Chat review system
+  type ChatRecommendation = {
+    id: string;
+    type: "chapter_synopsis" | "character_profile";
+    label: string;
+    detail: string;
+    targetId: string; // plan chapter id or character id
+    field?: string;   // character field to update
+    currentValue?: string;
+    newValue: string;
+    accepted: boolean | null; // null = pending
+  };
+  const [charChatReviewing, setCharChatReviewing] = useState(false);
+  const [charChatRecommendations, setCharChatRecommendations] = useState<ChatRecommendation[]>([]);
+  const [charChatReviewDone, setCharChatReviewDone] = useState(false);
   // ── Narrative Control Center ──
   const [showNccModal, setShowNccModal] = useState(false);
   const [nccBusy, setNccBusy] = useState(false);
@@ -1700,7 +1716,139 @@ function NovelWorkspacePage() {
     setCharChatMessages([]);
     setCharChatInput("");
     setCharChatLoading(false);
+    setCharChatReviewDone(false);
+    setCharChatRecommendations([]);
     setCharChatOpen(true);
+  }
+
+  async function endChatAndReview() {
+    if (!novel || !charChatTarget || charChatMessages.length < 2 || !ensureStoryAiReady()) return;
+    setCharChatReviewing(true);
+
+    const chatTranscript = charChatMessages
+      .map((m) => `${m.role === "user" ? "Author" : charChatTarget.name}: ${m.text}`)
+      .join("\n\n");
+
+    // Gather plan chapters without prose
+    const planChapters = novel.storyBible.bookPlan.chapters.map((pc, idx) => {
+      const manuscript = novel.chapters.find((c) => c.id === pc.manuscriptChapterId);
+      const hasProse = manuscript && (manuscript.content ?? "").trim().length > 100;
+      return { ...pc, idx, hasProse };
+    }).filter((pc) => !pc.hasProse && pc.synopsis.trim());
+
+    const charProfile = charChatTarget;
+
+    const systemPrompt = [
+      "You are a story development analyst. You just observed a conversation between an author and their character.",
+      "Based on what was revealed in the conversation, recommend SPECIFIC changes to:",
+      "1. Future chapter synopses (where prose hasn't been written yet) — if the conversation revealed new motivations, plot directions, or character dynamics",
+      "2. The character's profile — if the conversation revealed new personality traits, fears, goals, backstory, or secrets not yet captured",
+      "Be specific and actionable. Only recommend changes that are clearly supported by the conversation.",
+      "If nothing meaningful was revealed, return empty arrays.",
+      "Return ONLY valid JSON.",
+    ].join("\n");
+
+    const userPrompt = [
+      `Character being interviewed: ${charProfile.name} (${charProfile.role})`,
+      charProfile.logline ? `Logline: ${charProfile.logline}` : "",
+      charProfile.goals ? `Current goals: ${charProfile.goals}` : "",
+      charProfile.fears ? `Current fears: ${charProfile.fears}` : "",
+      charProfile.backstory ? `Current backstory: ${charProfile.backstory}` : "",
+      charProfile.secrets ? `Current secrets: ${charProfile.secrets}` : "",
+      charProfile.personality ? `Current personality: ${charProfile.personality}` : "",
+      "",
+      `CONVERSATION TRANSCRIPT:`,
+      chatTranscript,
+      "",
+      planChapters.length > 0 ? `FUTURE CHAPTERS (no prose yet):\n${planChapters.map((pc) => `Ch${pc.idx + 1} (id: "${pc.id}"): ${pc.synopsis}`).join("\n")}` : "No future chapters without prose.",
+      "",
+      `Return JSON with two arrays:`,
+      `{"chapterChanges": [{"chapterId": string, "chapterTitle": string, "currentSynopsis": string, "newSynopsis": string, "reason": string}],`,
+      ` "profileChanges": [{"field": "goals"|"fears"|"backstory"|"secrets"|"personality"|"logline", "currentValue": string, "newValue": string, "reason": string}]}`,
+      `Only include changes that are directly supported by what ${charProfile.name} revealed in conversation.`,
+    ].filter(Boolean).join("\n");
+
+    try {
+      const result = await requestOpenRouterJson(userPrompt, 2000, { systemMessage: systemPrompt }) as Record<string, unknown> | null;
+      if (!result) { setCharChatReviewing(false); setCharChatReviewDone(true); return; }
+
+      const recs: ChatRecommendation[] = [];
+
+      // Process chapter changes
+      if (Array.isArray(result.chapterChanges)) {
+        for (const ch of result.chapterChanges as Record<string, unknown>[]) {
+          if (!ch.chapterId || !ch.newSynopsis) continue;
+          recs.push({
+            id: `ch-${ch.chapterId}`,
+            type: "chapter_synopsis",
+            label: `Chapter: ${String(ch.chapterTitle || ch.chapterId)}`,
+            detail: String(ch.reason || "Based on conversation insights"),
+            targetId: String(ch.chapterId),
+            currentValue: String(ch.currentSynopsis || ""),
+            newValue: String(ch.newSynopsis).slice(0, 500),
+            accepted: null,
+          });
+        }
+      }
+
+      // Process profile changes
+      if (Array.isArray(result.profileChanges)) {
+        for (const pc of result.profileChanges as Record<string, unknown>[]) {
+          if (!pc.field || !pc.newValue) continue;
+          const field = String(pc.field);
+          if (!["goals", "fears", "backstory", "secrets", "personality", "logline"].includes(field)) continue;
+          recs.push({
+            id: `prof-${field}`,
+            type: "character_profile",
+            label: `${charChatTarget.name}'s ${field.charAt(0).toUpperCase() + field.slice(1)}`,
+            detail: String(pc.reason || "Based on conversation insights"),
+            targetId: charChatTarget.id,
+            field,
+            currentValue: String(pc.currentValue || ""),
+            newValue: String(pc.newValue).slice(0, 500),
+            accepted: null,
+          });
+        }
+      }
+
+      setCharChatRecommendations(recs);
+    } catch { /* ignore */ } finally {
+      setCharChatReviewing(false);
+      setCharChatReviewDone(true);
+    }
+  }
+
+  function applyCharChatRecommendation(recId: string) {
+    if (!novel) return;
+    const rec = charChatRecommendations.find((r) => r.id === recId);
+    if (!rec) return;
+
+    if (rec.type === "chapter_synopsis") {
+      // Update plan chapter synopsis
+      const updatedPlan = {
+        ...novel.storyBible.bookPlan,
+        chapters: novel.storyBible.bookPlan.chapters.map((pc) =>
+          pc.id === rec.targetId ? { ...pc, synopsis: rec.newValue } : pc
+        ),
+      };
+      updateStoryBible({ bookPlan: updatedPlan });
+    } else if (rec.type === "character_profile" && rec.field) {
+      // Update character profile field
+      const updatedCharacters = novel.storyBible.characters.map((c) =>
+        c.id === rec.targetId ? { ...c, [rec.field!]: rec.newValue } : c
+      );
+      updateStoryBible({ characters: updatedCharacters });
+    }
+
+    setCharChatRecommendations((prev) =>
+      prev.map((r) => r.id === recId ? { ...r, accepted: true } : r)
+    );
+  }
+
+  function dismissCharChatRecommendation(recId: string) {
+    setCharChatRecommendations((prev) =>
+      prev.map((r) => r.id === recId ? { ...r, accepted: false } : r)
+    );
   }
 
   function normalizeCharacterRole(value: unknown): CharacterRole {
@@ -8505,6 +8653,62 @@ function NovelWorkspacePage() {
                 Undo
               </button>
             )}
+            {/* Character Chat button */}
+            {!aiOff && storyCharacters.length > 0 && (
+              <div style={{ position: "relative" }}>
+                <button type="button" className="btn"
+                  onClick={() => {
+                    if (charChatOpen) return;
+                    if (storyCharacters.length === 1) {
+                      openCharacterChat(storyCharacters[0]);
+                    } else {
+                      setCharChatPickerOpen(!charChatPickerOpen);
+                    }
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 5, position: "relative" }}
+                  title="Talk to a character"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                  Chat
+                  {charChatOpen && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#a3e635", position: "absolute", top: 4, right: 4 }} />}
+                </button>
+                {charChatPickerOpen && (
+                  <>
+                    <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setCharChatPickerOpen(false)} />
+                    <div style={{
+                      position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 9999,
+                      background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 12, padding: 6, minWidth: 200, maxHeight: 300, overflow: "auto",
+                      boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Talk to...</div>
+                      {storyCharacters.map((char) => (
+                        <button key={char.id} type="button"
+                          onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 8, width: "100%",
+                            padding: "8px 10px", background: "none", border: "none", borderRadius: 8,
+                            cursor: "pointer", color: "inherit", textAlign: "left", transition: "all 0.1s",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(163,230,53,0.06)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                        >
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                            background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 12, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                          }}>{char.name.charAt(0).toUpperCase()}</div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{char.name}</div>
+                            <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{char.role}{char.logline ? ` — ${char.logline.slice(0, 30)}${char.logline.length > 30 ? "…" : ""}` : ""}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <button type="button" className="btn" onClick={() => setShowNccModal(true)}
               style={{ display: "flex", alignItems: "center", gap: 5 }}
               title="Narrative Control Center — arcs, relationships, tension, threads"
@@ -14466,77 +14670,287 @@ function NovelWorkspacePage() {
       )}
 
       {/* ── Talk to Character Chat Modal ── */}
+      {/* ── Character Chat Modal (elevated) ── */}
       {charChatOpen && charChatTarget && (
-        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); saveNow(); }}>
-          <div className="pw-char-chat-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="pw-char-chat-header">
-              <div className="pw-char-chat-avatar">
-                {charChatTarget.name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="pw-char-chat-name">{charChatTarget.name}</h3>
-                <p className="pw-char-chat-role">{charChatTarget.role}{charChatTarget.logline ? ` — ${charChatTarget.logline}` : ""}</p>
-              </div>
-              <button type="button" className="pw-plan-modal-close" onClick={() => setCharChatOpen(false)} aria-label="Close">&times;</button>
-            </div>
-            <div className="pw-char-chat-messages">
-              {charChatMessages.length === 0 && (
-                <div className="pw-char-chat-empty">
-                  <div className="pw-char-chat-empty-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  </div>
-                  <p className="pw-char-chat-empty-title">Talk to {charChatTarget.name}</p>
-                  <p className="pw-char-chat-empty-sub">
-                    Ask them anything — how they feel about another character, what they&apos;d do in a situation, or just chat. They&apos;ll respond in their own voice based on everything you&apos;ve written in their profile.
-                  </p>
-                  <div className="pw-char-chat-starters">
-                    {[
-                      `What's your earliest memory?`,
-                      `What are you most afraid of?`,
-                      `Tell me about someone you care about.`,
-                      `What do you want more than anything?`,
-                    ].map((q) => (
-                      <button key={q} type="button" className="pw-char-chat-starter" onClick={() => { setCharChatInput(q); }}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
+        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
+          <div style={{
+            background: "var(--pw-bg, #18181b)", borderRadius: 20,
+            width: "96%", maxWidth: charChatReviewDone ? 820 : 520, maxHeight: "88vh",
+            display: "flex", flexDirection: charChatReviewDone ? "row" : "column",
+            boxShadow: "0 32px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)",
+            overflow: "hidden", transition: "max-width 0.3s ease",
+          }} onClick={(e) => e.stopPropagation()}>
+            {/* Chat panel */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+              {/* Header */}
+              <div style={{
+                padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(163,230,53,0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 15, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{charChatTarget.name}</h3>
+                  <p style={{ margin: 0, fontSize: 11, color: "var(--pw-text-dim)" }}>{charChatTarget.role}{charChatTarget.logline ? ` — ${charChatTarget.logline}` : ""}</p>
                 </div>
-              )}
-              {charChatMessages.map((msg, idx) => (
-                <div key={idx} className={`pw-char-chat-msg ${msg.role}`}>
-                  {msg.role === "character" && (
-                    <div className="pw-char-chat-msg-avatar">{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {/* End & Review button */}
+                  {charChatMessages.length >= 2 && !charChatReviewDone && (
+                    <button type="button" disabled={charChatReviewing}
+                      onClick={() => void endChatAndReview()}
+                      style={{
+                        padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                        background: charChatReviewing ? "rgba(163,230,53,0.05)" : "rgba(163,230,53,0.1)",
+                        color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(163,230,53,0.2)",
+                        cursor: charChatReviewing ? "default" : "pointer",
+                        display: "flex", alignItems: "center", gap: 5,
+                      }}
+                    >
+                      {charChatReviewing ? (
+                        <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(163,230,53,0.3)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...</>
+                      ) : (
+                        <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> End &amp; Review</>
+                      )}
+                    </button>
                   )}
-                  <div className="pw-char-chat-msg-bubble">
-                    <p>{msg.text}</p>
-                  </div>
+                  {/* Switch character */}
+                  {storyCharacters.length > 1 && !charChatReviewDone && (
+                    <div style={{ position: "relative" }}>
+                      <button type="button" onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
+                        style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600 }}
+                        title="Switch character"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                      </button>
+                      {charChatPickerOpen && (
+                        <>
+                          <div style={{ position: "fixed", inset: 0, zIndex: 100 }} onClick={() => setCharChatPickerOpen(false)} />
+                          <div style={{
+                            position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 101,
+                            background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: 10, padding: 4, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                          }}>
+                            {storyCharacters.filter((c) => c.id !== charChatTarget.id).map((char) => (
+                              <button key={char.id} type="button"
+                                onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
+                                style={{
+                                  display: "flex", alignItems: "center", gap: 8, width: "100%",
+                                  padding: "6px 8px", background: "none", border: "none", borderRadius: 6,
+                                  cursor: "pointer", color: "inherit", fontSize: 12, textAlign: "left",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(163,230,53,0.06)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                              >
+                                <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent, #a3e635)" }}>{char.name.charAt(0).toUpperCase()}</div>
+                                {char.name}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <button type="button" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }} style={{
+                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                  }}>&times;</button>
                 </div>
-              ))}
-              {charChatLoading && (
-                <div className="pw-char-chat-msg character">
-                  <div className="pw-char-chat-msg-avatar">{charChatTarget.name.charAt(0).toUpperCase()}</div>
-                  <div className="pw-char-chat-msg-bubble pw-char-chat-typing">
-                    <span /><span /><span />
+              </div>
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+                {charChatMessages.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "40px 16px" }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.3 }}><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                    <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Talk to {charChatTarget.name}</p>
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, maxWidth: 340, margin: "0 auto 16px" }}>
+                      Interview your character. What they reveal can shape future chapters and update their profile.
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                      {[
+                        `What's your earliest memory?`,
+                        `What are you most afraid of?`,
+                        `Tell me about someone you care about.`,
+                        `What do you want more than anything?`,
+                      ].map((q) => (
+                        <button key={q} type="button" onClick={() => setCharChatInput(q)}
+                          style={{
+                            padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
+                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
+                            color: "var(--pw-accent, #a3e635)", cursor: "pointer", transition: "all 0.1s",
+                          }}
+                        >{q}</button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              <div ref={charChatEndRef} />
+                )}
+                {charChatMessages.map((msg, idx) => (
+                  <div key={idx} style={{
+                    display: "flex", gap: 8, marginBottom: 12,
+                    flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                  }}>
+                    {msg.role === "character" && (
+                      <div style={{
+                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                        background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 800, color: "var(--pw-accent, #a3e635)",
+                      }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                    )}
+                    <div style={{
+                      maxWidth: "75%", padding: "10px 14px", borderRadius: 14,
+                      background: msg.role === "user" ? "rgba(163,230,53,0.1)" : "rgba(255,255,255,0.04)",
+                      border: msg.role === "user" ? "1px solid rgba(163,230,53,0.15)" : "1px solid rgba(255,255,255,0.05)",
+                    }}>
+                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>{msg.text}</p>
+                    </div>
+                  </div>
+                ))}
+                {charChatLoading && (
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent, #a3e635)" }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                    <div style={{ padding: "12px 16px", borderRadius: 14, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0s" }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.2s" }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.4s" }} />
+                    </div>
+                  </div>
+                )}
+                <div ref={charChatEndRef} />
+              </div>
+
+              {/* Input */}
+              <form onSubmit={(e) => { e.preventDefault(); void sendCharacterChat(); }} style={{
+                padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)",
+                display: "flex", gap: 8,
+              }}>
+                <input
+                  type="text"
+                  placeholder={charChatReviewDone ? "Chat ended — review recommendations" : `Say something to ${charChatTarget.name}...`}
+                  value={charChatInput}
+                  onChange={(e) => setCharChatInput(e.target.value)}
+                  disabled={charChatLoading || charChatReviewDone}
+                  autoFocus
+                  style={{
+                    flex: 1, padding: "10px 14px", borderRadius: 10,
+                    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                    color: "inherit", fontSize: 13, outline: "none",
+                  }}
+                />
+                <button type="submit" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone}
+                  style={{
+                    width: 38, height: 38, borderRadius: 10, border: "none", flexShrink: 0,
+                    background: charChatInput.trim() ? "var(--pw-accent, #a3e635)" : "rgba(255,255,255,0.06)",
+                    color: charChatInput.trim() ? "#111" : "var(--pw-text-dim)",
+                    cursor: charChatInput.trim() ? "pointer" : "default",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </form>
             </div>
-            <form className="pw-char-chat-input-area" onSubmit={(e) => { e.preventDefault(); void sendCharacterChat(); }}>
-              <input
-                type="text"
-                className="pw-char-chat-input"
-                placeholder={`Say something to ${charChatTarget.name}...`}
-                value={charChatInput}
-                onChange={(e) => setCharChatInput(e.target.value)}
-                disabled={charChatLoading}
-                autoFocus
-              />
-              <button type="submit" className="pw-char-chat-send" disabled={!charChatInput.trim() || charChatLoading}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              </button>
-            </form>
+
+            {/* Recommendations panel — appears after End & Review */}
+            {charChatReviewDone && (
+              <div style={{
+                width: 300, borderLeft: "1px solid rgba(255,255,255,0.06)",
+                display: "flex", flexDirection: "column", flexShrink: 0,
+              }}>
+                <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Story Insights</h4>
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>
+                    {charChatRecommendations.length === 0
+                      ? "No changes recommended — the conversation didn't reveal anything new."
+                      : `${charChatRecommendations.length} recommendation${charChatRecommendations.length !== 1 ? "s" : ""} based on your chat with ${charChatTarget.name}.`}
+                  </p>
+                </div>
+                <div style={{ flex: 1, overflow: "auto", padding: "10px 12px" }}>
+                  {charChatRecommendations.length === 0 && (
+                    <div style={{ textAlign: "center", padding: "30px 12px", opacity: 0.35 }}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 8px", display: "block" }}><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      <p style={{ fontSize: 12, fontWeight: 600 }}>All good</p>
+                      <p style={{ fontSize: 11 }}>Try a deeper conversation next time.</p>
+                    </div>
+                  )}
+                  {charChatRecommendations.map((rec) => (
+                    <div key={rec.id} style={{
+                      marginBottom: 8, borderRadius: 10, padding: "10px 12px",
+                      background: rec.accepted === true ? "rgba(163,230,53,0.04)" : rec.accepted === false ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${rec.accepted === true ? "rgba(163,230,53,0.15)" : rec.accepted === false ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.06)"}`,
+                      opacity: rec.accepted === false ? 0.4 : 1, transition: "all 0.2s",
+                    }}>
+                      {/* Type badge */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "2px 6px", borderRadius: 4,
+                          background: rec.type === "chapter_synopsis" ? "rgba(129,140,248,0.12)" : "rgba(244,114,182,0.12)",
+                          color: rec.type === "chapter_synopsis" ? "#818cf8" : "#f472b6",
+                          letterSpacing: "0.04em",
+                        }}>{rec.type === "chapter_synopsis" ? "Chapter" : "Profile"}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.label}</span>
+                        {rec.accepted === true && <span style={{ fontSize: 9, color: "var(--pw-accent, #a3e635)", fontWeight: 700 }}>Applied</span>}
+                        {rec.accepted === false && <span style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 600 }}>Dismissed</span>}
+                      </div>
+                      {/* Reason */}
+                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 6px", lineHeight: 1.4, fontStyle: "italic" }}>{rec.detail}</p>
+                      {/* Current vs new */}
+                      {rec.currentValue && (
+                        <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginBottom: 4, opacity: 0.6 }}>
+                          <strong>Current:</strong> {rec.currentValue.slice(0, 80)}{rec.currentValue.length > 80 ? "…" : ""}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", lineHeight: 1.4, marginBottom: 6 }}>
+                        {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
+                      </div>
+                      {/* Actions */}
+                      {rec.accepted === null && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button type="button" onClick={() => applyCharChatRecommendation(rec.id)}
+                            style={{
+                              flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, borderRadius: 6,
+                              background: "rgba(163,230,53,0.1)", border: "1px solid rgba(163,230,53,0.2)",
+                              color: "var(--pw-accent, #a3e635)", cursor: "pointer",
+                            }}
+                          >Accept</button>
+                          <button type="button" onClick={() => dismissCharChatRecommendation(rec.id)}
+                            style={{
+                              flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
+                              color: "var(--pw-text-dim)", cursor: "pointer",
+                            }}
+                          >Dismiss</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {/* Apply all / done */}
+                {charChatRecommendations.some((r) => r.accepted === null) && (
+                  <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                    <button type="button" onClick={() => charChatRecommendations.filter((r) => r.accepted === null).forEach((r) => applyCharChatRecommendation(r.id))}
+                      style={{
+                        width: "100%", padding: "8px 0", fontSize: 12, fontWeight: 700, borderRadius: 8,
+                        background: "var(--pw-accent, #a3e635)", border: "none", color: "#111", cursor: "pointer",
+                      }}
+                    >Accept All ({charChatRecommendations.filter((r) => r.accepted === null).length})</button>
+                  </div>
+                )}
+                {charChatRecommendations.length > 0 && !charChatRecommendations.some((r) => r.accepted === null) && (
+                  <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>
+                      {charChatRecommendations.filter((r) => r.accepted === true).length} applied, {charChatRecommendations.filter((r) => r.accepted === false).length} dismissed
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
