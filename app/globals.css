@@ -247,17 +247,17 @@ a { color: inherit; text-decoration: none; }
   align-items: stretch;
   justify-content: center;
   color: var(--pw-text);
-  padding: 0;
+  padding: var(--pw-space-6);
 }
 
 .pw-window {
   width: 100%;
-  max-width: none;
-  height: 100vh;
+  max-width: 1520px;
+  height: calc(100vh - 48px);
   background: var(--pw-surface);
-  border-radius: 0;
-  box-shadow: none;
-  border: none;
+  border-radius: var(--pw-radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--pw-border);
   overflow: hidden;
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -3977,13 +3977,13 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   .pw-novel-detail-stat { border-right: none; border-bottom: 1px solid var(--pw-border-light); flex-direction: row; justify-content: space-between; align-items: center; }
   .pw-novel-detail-stat:last-child { border-bottom: none; }
   .pw-novel-detail-stat-value { font-size: 16px; }
-  .pw-wallpaper { padding: 0; }
+  .pw-wallpaper { padding: var(--pw-space-3); }
   .pw-window {
     width: 100%;
     min-height: 0;
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
-    border-radius: 0;
+    border-radius: var(--pw-radius-xl);
   }
   .pw-sidebar {
     grid-row: auto;
