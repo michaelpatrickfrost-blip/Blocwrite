@@ -889,12 +889,13 @@ function NovelWorkspacePage() {
   const [editorError, setEditorError] = useState<string | null>(null);
   const [editorOriginalParagraphs, setEditorOriginalParagraphs] = useState<string[]>([]);
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
-  // ── Talk to Your Characters ──
+  // ── Chat (Characters + Co-Author) ──
   const [charChatOpen, setCharChatOpen] = useState(false);
   const [charChatTarget, setCharChatTarget] = useState<Character | null>(null);
   const [charChatMessages, setCharChatMessages] = useState<Array<{ role: "user" | "character"; text: string }>>([]);
   const [charChatInput, setCharChatInput] = useState("");
   const [charChatLoading, setCharChatLoading] = useState(false);
+  const [coAuthorMode, setCoAuthorMode] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
   const [charChatPickerOpen, setCharChatPickerOpen] = useState(false);
   // Chat review system
@@ -1998,6 +1999,7 @@ function NovelWorkspacePage() {
   }
 
   function openCharacterChat(char: Character) {
+    setCoAuthorMode(false);
     setCharChatTarget(char);
     setCharChatMessages([]);
     setCharChatInput("");
@@ -2005,6 +2007,79 @@ function NovelWorkspacePage() {
     setCharChatReviewDone(false);
     setCharChatRecommendations([]);
     setCharChatOpen(true);
+  }
+
+  function openCoAuthorChat() {
+    setCoAuthorMode(true);
+    setCharChatTarget(null);
+    setCharChatMessages([]);
+    setCharChatInput("");
+    setCharChatLoading(false);
+    setCharChatReviewDone(false);
+    setCharChatRecommendations([]);
+    setCharChatOpen(true);
+  }
+
+  async function sendCoAuthorChat() {
+    if (!novel || !charChatInput.trim() || charChatLoading) return;
+    const userMsg = charChatInput.trim();
+    setCharChatInput("");
+    setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setCharChatLoading(true);
+    try {
+      // Build context about the current state
+      const chapterCtx = activeChapter
+        ? `The author is currently working on Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1}: "${activeChapter.title || "Untitled"}". Chapter content (excerpt): ${extractProseFromContent(activeChapter.content ?? "").slice(0, 800)}`
+        : `The author is on the novel overview.`;
+
+      const charNames = novel.storyBible.characters.slice(0, 6).map((c) => `${c.name} (${c.role})`).join(", ");
+      const chapList = novel.chapters.map((ch, i) => `Ch${i + 1}: ${ch.title || "Untitled"}`).join(", ");
+
+      const systemPrompt = [
+        `You are The Co-Author — a sharp, knowledgeable writing partner for the novel "${novel.title}".`,
+        `Genre: ${novel.storyBible.genre || "general fiction"}.`,
+        `Characters: ${charNames || "None yet"}.`,
+        `Chapters: ${chapList || "None yet"}.`,
+        chapterCtx,
+        `You know the story intimately. Answer questions about plot, characters, structure, prose, or give creative suggestions.`,
+        `Be concise, specific, and useful — like a real co-author in a writing room. Not an essay. Not a lecture.`,
+        `If asked about a character, reference what you know. If asked for ideas, make them specific to THIS story.`,
+      ].join("\n");
+
+      // Include conversation history
+      let contextPrompt = "";
+      if (charChatMessages.length > 0) {
+        const recent = charChatMessages.slice(-10);
+        contextPrompt = recent.map((m) => `${m.role === "user" ? "Author" : "Co-Author"}: ${m.text}`).join("\n\n") + "\n\n";
+      }
+      contextPrompt += `Author: ${userMsg}\n\nCo-Author:`;
+
+      const res = await fetch("/api/openrouter/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: assistantProvider,
+          apiKey: normalizeClientApiKey(openRouterKey),
+          baseUrl: assistantBaseUrl.trim(),
+          model: openRouterModel || getProviderOption(assistantProvider).defaultModel,
+          system: systemPrompt,
+          prompt: contextPrompt,
+          maxTokens: 1000,
+          temperature: 0.75,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      const reply = (data.text || "").trim();
+      if (reply) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: reply }]);
+      } else {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: data.error || "…" }]);
+      }
+    } catch {
+      setCharChatMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
+    } finally {
+      setCharChatLoading(false);
+    }
   }
 
   async function endChatAndReview() {
@@ -12670,17 +12745,6 @@ function NovelWorkspacePage() {
                                       Remove character
                                     </button>
                                   </div>
-                                  {!aiOff && character.name && (
-                                    <button
-                                      type="button"
-                                      className="pw-talk-to-char-btn"
-                                      onClick={() => openCharacterChat(character)}
-                                      title={`Have a conversation with ${character.name}`}
-                                    >
-                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                                      Talk to {character.name}
-                                    </button>
-                                  )}
                                 </div>
                               </div>
                             );
@@ -14222,34 +14286,42 @@ function NovelWorkspacePage() {
         </>
       )}
 
-      {/* ── Talk to Character Chat Modal ── */}
-      {/* ── Character Chat Modal (elevated) ── */}
-      {charChatOpen && charChatTarget && (
-        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
+      {/* ── Chat Modal (Co-Author + Character) ── */}
+      {charChatOpen && (coAuthorMode || charChatTarget) && (
+        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); setCoAuthorMode(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }}>
           <div className="pw-chat-modal" style={{
-            maxWidth: charChatReviewDone ? 820 : 520,
-            flexDirection: charChatReviewDone ? "row" : "column",
+            maxWidth: charChatReviewDone && !coAuthorMode ? 820 : 520,
+            flexDirection: charChatReviewDone && !coAuthorMode ? "row" : "column",
           }} onClick={(e) => e.stopPropagation()}>
             {/* Chat panel */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
               {/* Header */}
               <div style={{
-                padding: "16px 20px", borderBottom: "1px solid var(--pw-border-light)",
-                display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 16px", borderBottom: "1px solid var(--pw-border-light)",
+                display: "flex", alignItems: "center", gap: 10,
               }}>
+                {/* Avatar / icon */}
                 <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: "rgba(163,230,53,0.12)",
+                  width: 36, height: 36, borderRadius: coAuthorMode ? 10 : 10, flexShrink: 0,
+                  background: coAuthorMode ? "rgba(var(--pw-accent-rgb,163,230,53),0.15)" : "rgba(163,230,53,0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 15, fontWeight: 800, color: "var(--pw-accent)",
-                }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{charChatTarget.name}</h3>
-                  <p style={{ margin: 0, fontSize: 11, color: "var(--pw-text-dim)" }}>{charChatTarget.role}{charChatTarget.logline ? ` — ${charChatTarget.logline}` : ""}</p>
+                }}>
+                  {coAuthorMode ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  ) : charChatTarget!.name.charAt(0).toUpperCase()}
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {/* End & Review button */}
-                  {charChatMessages.length >= 2 && !charChatReviewDone && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}>
+                    {coAuthorMode ? "The Co-Author" : charChatTarget!.name}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 11, color: "var(--pw-text-dim)" }}>
+                    {coAuthorMode ? (activeChapter ? `Chapter ${novel!.chapters.findIndex(c => c.id === activeChapter.id) + 1}` : "Novel overview") : `${charChatTarget!.role}${charChatTarget!.logline ? ` — ${charChatTarget!.logline}` : ""}`}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                  {/* End & Review (character chat only) */}
+                  {!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && (
                     <button type="button" disabled={charChatReviewing}
                       onClick={() => void endChatAndReview()}
                       style={{
@@ -14267,14 +14339,14 @@ function NovelWorkspacePage() {
                       )}
                     </button>
                   )}
-                  {/* Switch character */}
-                  {storyCharacters.length > 1 && !charChatReviewDone && (
+                  {/* Switch chat target dropdown */}
+                  {!charChatReviewDone && (
                     <div style={{ position: "relative" }}>
                       <button type="button" onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
-                        style={{ background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600 }}
-                        title="Switch character"
+                        className="pw-chat-switch-btn"
+                        title="Switch"
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
                       </button>
                       {charChatPickerOpen && (
                         <>
@@ -14283,24 +14355,27 @@ function NovelWorkspacePage() {
                             if (!el) return;
                             const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
                             if (trigger) positionDropdown(trigger, el);
-                          }} style={{
-                            position: "fixed", zIndex: 101,
-                            background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
-                            borderRadius: 10, padding: 4, minWidth: 180, boxShadow: "var(--pw-shadow-elevated)",
-                          }}>
-                            {storyCharacters.filter((c) => c.id !== charChatTarget.id).map((char) => (
+                          }} className="pw-chat-switch-dropdown">
+                            {/* Co-Author option */}
+                            {!coAuthorMode && (
+                              <button type="button"
+                                onClick={() => { setCharChatPickerOpen(false); openCoAuthorChat(); }}
+                                className="pw-chat-switch-item"
+                              >
+                                <div style={{ width: 24, height: 24, borderRadius: 7, background: "rgba(var(--pw-accent-rgb,163,230,53),0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                </div>
+                                <span style={{ fontWeight: 700 }}>The Co-Author</span>
+                              </button>
+                            )}
+                            {/* Characters */}
+                            {storyCharacters.filter(c => !charChatTarget || c.id !== charChatTarget.id).map((char) => (
                               <button key={char.id} type="button"
                                 onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
-                                style={{
-                                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                                  padding: "6px 8px", background: "none", border: "none", borderRadius: 6,
-                                  cursor: "pointer", color: "inherit", fontSize: 12, textAlign: "left",
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(163,230,53,0.06)"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                                className="pw-chat-switch-item"
                               >
-                                <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent)" }}>{char.name.charAt(0).toUpperCase()}</div>
-                                {char.name}
+                                <div style={{ width: 24, height: 24, borderRadius: 7, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--pw-accent)" }}>{char.name.charAt(0).toUpperCase()}</div>
+                                <span>{char.name}</span>
                               </button>
                             ))}
                           </div>
@@ -14308,7 +14383,7 @@ function NovelWorkspacePage() {
                       )}
                     </div>
                   )}
-                  <button type="button" onClick={() => { setCharChatOpen(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }} style={{
+                  <button type="button" onClick={() => { setCharChatOpen(false); setCoAuthorMode(false); setCharChatReviewDone(false); setCharChatRecommendations([]); saveNow(); }} style={{
                     background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                     width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                     color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
@@ -14318,7 +14393,32 @@ function NovelWorkspacePage() {
 
               {/* Messages */}
               <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
-                {charChatMessages.length === 0 && (
+                {charChatMessages.length === 0 && coAuthorMode && (
+                  <div style={{ textAlign: "center", padding: "40px 16px" }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.4 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>The Co-Author</p>
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, maxWidth: 340, margin: "0 auto 16px" }}>
+                      Your AI writing partner. Ask about plot, characters, structure — or brainstorm ideas together.
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                      {[
+                        `What's the strongest theme so far?`,
+                        `How could I raise the stakes here?`,
+                        `Suggest a plot twist for this chapter.`,
+                        `Where does the pacing feel off?`,
+                      ].map((q) => (
+                        <button key={q} type="button" onClick={() => setCharChatInput(q)}
+                          style={{
+                            padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
+                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
+                            color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
+                          }}
+                        >{q}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {charChatMessages.length === 0 && !coAuthorMode && charChatTarget && (
                   <div style={{ textAlign: "center", padding: "40px 16px" }}>
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.3 }}><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                     <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Talk to {charChatTarget.name}</p>
@@ -14336,7 +14436,7 @@ function NovelWorkspacePage() {
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
                             background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
-                            color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.1s",
+                            color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
                           }}
                         >{q}</button>
                       ))}
@@ -14351,9 +14451,14 @@ function NovelWorkspacePage() {
                     {msg.role === "character" && (
                       <div style={{
                         width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                        background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
+                        background: coAuthorMode ? "rgba(var(--pw-accent-rgb,163,230,53),0.15)" : "rgba(163,230,53,0.1)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 11, fontWeight: 800, color: "var(--pw-accent)",
-                      }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                      }}>
+                        {coAuthorMode ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        ) : charChatTarget!.name.charAt(0).toUpperCase()}
+                      </div>
                     )}
                     <div style={{
                       maxWidth: "75%", padding: "10px 14px", borderRadius: 14,
@@ -14366,7 +14471,11 @@ function NovelWorkspacePage() {
                 ))}
                 {charChatLoading && (
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>
+                      {coAuthorMode ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      ) : charChatTarget ? charChatTarget.name.charAt(0).toUpperCase() : "?"}
+                    </div>
                     <div style={{ padding: "12px 16px", borderRadius: 14, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-overlay-border-light)", display: "flex", gap: 4, alignItems: "center" }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0s" }} />
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.2s" }} />
@@ -14378,13 +14487,13 @@ function NovelWorkspacePage() {
               </div>
 
               {/* Input */}
-              <form onSubmit={(e) => { e.preventDefault(); void sendCharacterChat(); }} style={{
+              <form onSubmit={(e) => { e.preventDefault(); coAuthorMode ? void sendCoAuthorChat() : void sendCharacterChat(); }} style={{
                 padding: "12px 16px", borderTop: "1px solid var(--pw-border-light)",
                 display: "flex", gap: 8,
               }}>
                 <input
                   type="text"
-                  placeholder={charChatReviewDone ? "Chat ended — review recommendations" : `Say something to ${charChatTarget.name}...`}
+                  placeholder={charChatReviewDone ? "Chat ended — review recommendations" : coAuthorMode ? "Ask your co-author anything…" : `Say something to ${charChatTarget!.name}...`}
                   value={charChatInput}
                   onChange={(e) => setCharChatInput(e.target.value)}
                   disabled={charChatLoading || charChatReviewDone}
@@ -14422,7 +14531,7 @@ function NovelWorkspacePage() {
                   <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>
                     {charChatRecommendations.length === 0
                       ? "No changes recommended — the conversation didn't reveal anything new."
-                      : `${charChatRecommendations.length} recommendation${charChatRecommendations.length !== 1 ? "s" : ""} based on your chat with ${charChatTarget.name}.`}
+                      : `${charChatRecommendations.length} recommendation${charChatRecommendations.length !== 1 ? "s" : ""} based on your chat with ${charChatTarget?.name ?? "the character"}.`}
                   </p>
                 </div>
                 <div style={{ flex: 1, overflow: "auto", padding: "10px 12px" }}>
@@ -14510,17 +14619,37 @@ function NovelWorkspacePage() {
       )}
 
 
-      {/* ── Floating Chat FAB (bottom-right) ── */}
-      {!aiOff && storyCharacters.length > 0 && !charChatOpen
+      {/* ── Floating Chat FAB (bottom-left) ── */}
+      {!aiOff && !charChatOpen
         && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
         && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showNccModal && !showEditorModal && (
         <div className="pw-chat-fab-wrap">
-          {/* Character picker popup (opens upward from FAB) */}
+          {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 99996 }} onClick={() => setCharChatPickerOpen(false)} />
               <div className="pw-chat-fab-picker">
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 8px 6px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Talk to...</div>
+                {/* Co-Author option always first */}
+                <button type="button"
+                  onClick={() => { setCharChatPickerOpen(false); openCoAuthorChat(); }}
+                  className="pw-chat-fab-picker-item pw-chat-fab-picker-coauthor"
+                >
+                  <div className="pw-chat-fab-picker-avatar pw-coauthor-avatar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>The Co-Author</div>
+                    <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>AI writing partner</div>
+                  </div>
+                </button>
+                {/* Separator */}
+                {storyCharacters.length > 0 && (
+                  <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 8px" }} />
+                )}
+                {/* Characters */}
+                {storyCharacters.length > 0 && (
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 10px 2px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Characters</div>
+                )}
                 {storyCharacters.map((char) => (
                   <button key={char.id} type="button"
                     onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
@@ -14540,14 +14669,8 @@ function NovelWorkspacePage() {
           <button
             type="button"
             className="pw-chat-fab"
-            title="Talk to a character"
-            onClick={() => {
-              if (storyCharacters.length === 1) {
-                openCharacterChat(storyCharacters[0]);
-              } else {
-                setCharChatPickerOpen(!charChatPickerOpen);
-              }
-            }}
+            title="Chat"
+            onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           </button>
