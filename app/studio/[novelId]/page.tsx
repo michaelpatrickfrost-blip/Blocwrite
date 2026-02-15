@@ -8826,19 +8826,7 @@ function NovelWorkspacePage() {
                     autoComplete="off"
                   />
                 </div>
-                {/* Email */}
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Email link to recipient <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}>(optional)</span></label>
-                  <input
-                    className="pw-settings-input"
-                    type="email"
-                    placeholder="reader@example.com"
-                    value={shareRecipientEmail}
-                    onChange={(e) => setShareRecipientEmail(e.target.value)}
-                    style={{ width: "100%", fontSize: 13 }}
-                    autoComplete="off"
-                  />
-                </div>
+                {/* Email hint — shown after link is created */}
               </div>
             </div>
 
@@ -8860,10 +8848,26 @@ function NovelWorkspacePage() {
                       style={{ flex: 1, fontSize: 12, fontFamily: "monospace" }}
                     />
                     <button type="button" className="btn btn-primary" style={{ padding: "7px 16px", fontSize: 12 }} onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>Copy</button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ padding: "7px 16px", fontSize: 12, background: "var(--pw-accent-muted, rgba(59,130,246,0.1))", color: "var(--pw-accent, #3b82f6)", border: "1px solid var(--pw-accent, #3b82f6)" }}
+                      onClick={() => {
+                        const novelName = novel.title || "Untitled Novel";
+                        const expiry = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+                        const subject = encodeURIComponent(`You've been invited to review "${novelName}" on Blocwrite`);
+                        const body = encodeURIComponent(
+                          `I'd like you to review my work on Blocwrite.\n\nOpen the link below to read, highlight text, and leave notes:\n${shareResult.url}\n\n${shareResult.hasPassword ? "You'll need a password to open it — I'll send it separately.\n\n" : ""}This link expires on ${expiry}.\n\nThanks!`
+                        );
+                        window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      Email
+                    </button>
                   </div>
                   <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6, marginBottom: 0 }}>
                     Link expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                    {shareResult.emailSent && <span style={{ marginLeft: 8, color: "var(--pw-success, #10b981)" }}>Email sent</span>}
                   </p>
                 </div>
                 <div style={{
@@ -8901,7 +8905,6 @@ function NovelWorkspacePage() {
                       novelTitle: novel.title || "Untitled Novel",
                     };
                     if (sharePassword.trim()) payload.password = sharePassword.trim();
-                    if (shareRecipientEmail.trim()) payload.recipientEmail = shareRecipientEmail.trim();
                     const res = await fetch("/api/share", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
