@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ThreadKeeper, ThreadKeeperLogo, type ThreadKeeperCategoryId, type ThreadKeeperIssue } from "./ThreadKeeper";
+import { ThreadKeeper, type ThreadKeeperCategoryId, type ThreadKeeperIssue } from "./ThreadKeeper";
 import type { StoryBible, Chapter } from "../studio-store";
 
 /* ─── Types ─── */
@@ -68,9 +68,9 @@ const EDITOR_TABS: Array<{
 }> = [
   {
     id: "threadkeeper",
-    label: "ThreadKeeper",
+    label: "Continuity",
     desc: "Canon violations, state drift, timeline errors, relationship breaks, knowledge violations, and more",
-    icon: "M6 26L22 10", // placeholder — logo rendered separately
+    icon: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
     mode: "report",
     isThreadKeeper: true,
   },
@@ -329,24 +329,16 @@ export function TheEditor({
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "12px 16px",
                 fontSize: 13, fontWeight: activeTab === tab.id ? 650 : 500,
-                color: activeTab === tab.id
-                  ? (tab.isThreadKeeper ? "#a78bfa" : "var(--pw-accent, #a3e635)")
-                  : "var(--pw-text-dim, #888)",
+                color: activeTab === tab.id ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim, #888)",
                 background: "none", border: "none", cursor: loading ? "default" : "pointer",
-                borderBottom: activeTab === tab.id
-                  ? `2px solid ${tab.isThreadKeeper ? "#a78bfa" : "var(--pw-accent, #a3e635)"}`
-                  : "2px solid transparent",
+                borderBottom: activeTab === tab.id ? "2px solid var(--pw-accent, #a3e635)" : "2px solid transparent",
                 transition: "all 0.15s",
                 opacity: loading && activeTab !== tab.id ? 0.4 : 1,
               }}
             >
-              {tab.isThreadKeeper ? (
-                <ThreadKeeperLogo size={16} />
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={tab.icon} />
-                </svg>
-              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d={tab.icon} />
+              </svg>
               {tab.label}
             </button>
           ))}
