@@ -8033,23 +8033,37 @@ function NovelWorkspacePage() {
     });
   }
 
-  /** Position a fixed-position dropdown so it stays fully within the viewport */
+  /** Position a fixed-position dropdown so it stays fully within the viewport.
+   *  Uses rAF to wait for the browser to lay out the dropdown before measuring. */
   function positionDropdown(trigger: HTMLElement, dropdown: HTMLElement) {
-    const rect = trigger.getBoundingClientRect();
-    const ddRect = dropdown.getBoundingClientRect();
-    const ddH = ddRect.height || 260;
-    const ddW = ddRect.width || 240;
-    const gap = 4;
-    // Prefer above trigger
-    let top = rect.top - ddH - gap;
-    if (top < 8) top = rect.bottom + gap; // flip below if not enough room
-    if (top + ddH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - ddH - 8);
-    // Align right edge to trigger's right edge
-    let left = rect.right - ddW;
-    if (left < 8) left = 8;
-    if (left + ddW > window.innerWidth - 8) left = window.innerWidth - ddW - 8;
-    dropdown.style.top = `${top}px`;
-    dropdown.style.left = `${left}px`;
+    requestAnimationFrame(() => {
+      const rect = trigger.getBoundingClientRect();
+      const ddRect = dropdown.getBoundingClientRect();
+      const ddH = ddRect.height || 260;
+      const ddW = ddRect.width || 240;
+      const gap = 6;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const pad = 12; // minimum distance from viewport edges
+
+      // Prefer below trigger (more natural)
+      let top = rect.bottom + gap;
+      // If not enough room below, try above
+      if (top + ddH > vh - pad) {
+        top = rect.top - ddH - gap;
+      }
+      // If above also clips, clamp to viewport
+      if (top < pad) top = pad;
+      if (top + ddH > vh - pad) top = vh - ddH - pad;
+
+      // Align left edge to trigger's left edge, then clamp
+      let left = rect.left;
+      if (left + ddW > vw - pad) left = vw - ddW - pad;
+      if (left < pad) left = pad;
+
+      dropdown.style.top = `${Math.round(top)}px`;
+      dropdown.style.left = `${Math.round(left)}px`;
+    });
   }
 
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {

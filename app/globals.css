@@ -1184,10 +1184,12 @@ a { color: inherit; text-decoration: none; }
 .pw-block-bolton-trigger:hover, .pw-chapter-bolton-trigger:hover { border-color: var(--pw-accent); color: var(--pw-accent); background: var(--pw-accent-muted); }
 .pw-block-bolton-trigger.pw-bolton-active, .pw-chapter-bolton-trigger.pw-bolton-active { border-color: var(--pw-accent); color: var(--pw-accent); background: var(--pw-accent-muted); }
 .pw-block-bolton-dropdown {
-  display: none; position: fixed; min-width: 200px; max-width: 260px; max-height: 50vh; overflow-y: auto;
+  display: none; position: fixed; min-width: 220px; max-width: 280px; max-height: min(50vh, 340px); overflow-y: auto;
   background: var(--pw-surface); border: 1px solid var(--pw-border); border-radius: 10px;
   box-shadow: var(--pw-shadow-popup); padding: 6px; z-index: 10000;
   scrollbar-width: thin;
+  /* Ensure it never goes off-screen */
+  margin: 0; inset: auto;
 }
 .pw-block-bolton-dropdown::-webkit-scrollbar { width: 4px; }
 .pw-block-bolton-dropdown::-webkit-scrollbar-thumb { background: var(--pw-border); border-radius: 4px; }
