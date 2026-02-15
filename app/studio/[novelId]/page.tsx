@@ -293,6 +293,272 @@ const WRITING_PACKS: WritingPack[] = [
       { title: "Jargon Economy", category: "voice-style", description: "Invented terms should be rare, self-explanatory, and consistent.", prompt: "Limit invented jargon to 3-4 terms maximum. Each should be obvious in context. 'Mindlink' is better than 'Cerebral Neural Interface Protocol'. If the reader needs a glossary, you've failed." },
     ],
   },
+  {
+    id: "mystery-detective",
+    name: "Mystery & Detective Kit",
+    tagline: "Clues, red herrings, and that satisfying moment when it all clicks",
+    genre: "Mystery",
+    icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+    color: "#8b5cf6",
+    boltons: [
+      { title: "Fair-Play Clues", category: "plot-structure", description: "Plant every clue the reader needs — hide them in plain sight.", prompt: "Every clue must appear before the reveal. Hide it in a throwaway detail, a character's nervous habit, or a piece of scenery the narrator barely notices. The reader should be able to solve it — but only if they were paying very close attention." },
+      { title: "Red Herring Craft", category: "pacing-tension", description: "Misdirect without cheating. Red herrings should feel plausible even after the reveal.", prompt: "Red herrings must serve the story even after they're debunked. A suspicious character wasn't the murderer — but they were hiding something real and interesting. Never waste a red herring on pure misdirection; give it its own subplot value." },
+      { title: "Interrogation Subtext", category: "dialogue-subtext", description: "Questions reveal as much about the asker as the answers do.", prompt: "In interview and interrogation scenes, let the detective's questions reveal their theory while the suspect's answers reveal their character. Neither party is fully honest. The truth emerges from the gap between questions and answers." },
+      { title: "The Ticking Revelation", category: "pacing-tension", description: "Each scene should reframe what came before.", prompt: "Every reveal should make the reader mentally replay earlier scenes. 'Wait — that means when she said X, she actually meant...' Build your mystery so each new piece of information transforms the meaning of old information." },
+    ],
+  },
+  {
+    id: "historical-immersion",
+    name: "Historical Immersion Pack",
+    tagline: "Transport readers to another era without it reading like a textbook",
+    genre: "Historical",
+    icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#d97706",
+    boltons: [
+      { title: "Period Through Senses", category: "description-sensory", description: "Smell the era. Feel the cobblestones. Hear the market cries.", prompt: "Establish historical setting through sensory experience, not facts. Don't tell us it's 1885 — show us the gas lamps hissing, the horse dung in the streets, the weight of wool against skin. Use textures, smells, and sounds that a modern reader wouldn't expect." },
+      { title: "Era-Appropriate Thought", category: "voice-style", description: "Characters think with the assumptions of their time, not ours.", prompt: "Characters must think with the values and assumptions of their era. A medieval peasant doesn't question divine right. A Victorian woman feels genuine shame, not modern indignation. Avoid imposing modern morality on historical characters — their worldview IS the story." },
+      { title: "Invisible Research", category: "world-atmosphere", description: "Your research should be invisible. The iceberg principle.", prompt: "Show 10% of your research, know the other 90%. A character doesn't think 'In this era, we use tallow candles' — they reach for the candle instinctively. Worldbuilding is behaviour, not exposition. If a detail feels researched, cut it." },
+      { title: "Speech Without Archaic Parody", category: "dialogue-subtext", description: "Dialogue that feels historical without being a Renaissance fair.", prompt: "Historical dialogue should feel different from modern speech without being a costume. Avoid 'thee' and 'forsooth'. Instead, adjust sentence structure: longer constructions, different idioms, formal address. The rhythm should feel old; the words should remain clear." },
+    ],
+  },
+  {
+    id: "dark-academia",
+    name: "Dark Academia Kit",
+    tagline: "Obsession, intellectual rivalry, and beauty that costs something",
+    genre: "Dark Academia",
+    icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+    color: "#78716c",
+    boltons: [
+      { title: "Intellectual Seduction", category: "dialogue-subtext", description: "Ideas as foreplay. Knowledge as power. Debate as intimacy.", prompt: "Write intellectual exchanges as a form of intimacy — characters testing each other's minds, impressed despite themselves, drawn to brilliance. A perfectly quoted line of poetry is more seductive than any physical description. Knowledge is the currency of attraction." },
+      { title: "Beautiful Decay", category: "description-sensory", description: "Old libraries, crumbling facades, beauty that's half-ruined.", prompt: "Describe settings with a keen eye for beautiful deterioration: leather bindings cracked with age, marble stairs worn concave by centuries of footsteps, ivy consuming a stone wall. Beauty should feel earned by time, not manufactured. The aesthetic is old money, never new." },
+      { title: "Moral Erosion", category: "emotion-psychology", description: "Characters cross lines gradually — each step feels justified at the time.", prompt: "Show moral compromise as a slow process. The first transgression is small and justified. The second is slightly larger. By the time the character does something truly terrible, they've built an entire philosophy to support it. The reader should understand every step even as they're horrified." },
+      { title: "Obsessive Narration", category: "voice-style", description: "The narrator notices too much, thinks too deeply, can't let go.", prompt: "Write with an obsessive narrative voice: the narrator fixates on details, spirals into analysis, returns to the same images. Sentences should feel overly precise, as if the narrator is trying to control reality through language. This is not unreliable narration — it's narration that tries too hard to be reliable." },
+    ],
+  },
+  {
+    id: "cozy-warmth",
+    name: "Cozy & Comfort Pack",
+    tagline: "Warm kitchens, found families, and the quiet courage of kindness",
+    genre: "Cozy",
+    icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+    color: "#fb923c",
+    boltons: [
+      { title: "Sensory Comfort", category: "description-sensory", description: "The smell of baking, the warmth of tea, the weight of a good blanket.", prompt: "Lean into comforting sensory details: the steam from a mug, bread cooling on a rack, rain against windows while you're warm inside, a cat settling into a lap. Make the reader feel physically comforted by the prose. These details are the point, not decoration." },
+      { title: "Low-Stakes, High-Heart", category: "pacing-tension", description: "The tension of a soufflé falling or a friendship misunderstanding.", prompt: "Create tension from things that matter emotionally but aren't life-threatening: will the garden grow in time for the fête? Did the neighbour take offence? Can they finish the quilt before the baby arrives? Treat small stakes with the same narrative respect as high ones." },
+      { title: "Community Voice", category: "voice-style", description: "Everyone knows everyone. Stories overlap and interweave.", prompt: "Write community as a web of overlapping stories. Characters reference each other casually: 'Mrs Henderson says the same thing.' 'Oh, that's just like what happened to Tom at the post office.' Make the reader feel like they know the whole village." },
+      { title: "Gentle Resolution", category: "emotion-psychology", description: "Conflicts resolve through understanding, not confrontation.", prompt: "Resolve conflicts through conversation, empathy, and small gestures rather than dramatic confrontation. A character leaves fresh eggs on a doorstep instead of apologising aloud. A misunderstanding dissolves when someone finally listens. Kindness is the protagonist's superpower." },
+    ],
+  },
+  {
+    id: "unreliable-narrator",
+    name: "Unreliable Narrator Toolkit",
+    tagline: "Trust nothing. Question everything. The narrator is lying — or are they?",
+    genre: "Psychological",
+    icon: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#e879f9",
+    boltons: [
+      { title: "Subtle Contradictions", category: "voice-style", description: "The narrator says one thing but the details say another.", prompt: "Plant small contradictions between what the narrator claims and what they describe. They say they're fine, but notice every exit in the room. They say they trust someone, but describe their smile as 'practised'. Let the reader catch the lies through observation, not explanation." },
+      { title: "Memory Gaps", category: "plot-structure", description: "What the narrator doesn't remember is more important than what they do.", prompt: "Leave deliberate gaps in the narrator's account. They skip over certain moments, change the subject abruptly, describe arriving somewhere without remembering the journey. These gaps should form a pattern that the reader can decode." },
+      { title: "Over-Justification", category: "dialogue-subtext", description: "People who are telling the truth don't explain why they're telling the truth.", prompt: "Have the narrator over-explain their innocence, their motives, their version of events. 'I need you to understand that I had no choice' is more suspicious than simply describing the choice. Guilty narrators justify; innocent ones describe." },
+      { title: "Reality Slippage", category: "description-sensory", description: "Small sensory details that don't quite add up.", prompt: "Introduce subtle sensory impossibilities: a sound that shouldn't be there, a detail that changes between descriptions, a person the narrator describes differently each time. Never announce these — let them accumulate. The reader should feel uneasy before they can articulate why." },
+    ],
+  },
+  {
+    id: "dialogue-masterclass",
+    name: "Dialogue Masterclass",
+    tagline: "Every line of dialogue should do at least two things at once",
+    genre: "All Genres",
+    icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+    color: "#34d399",
+    boltons: [
+      { title: "Distinct Voices", category: "dialogue-subtext", description: "Cover the names and you should still know who's speaking.", prompt: "Every character should speak differently: sentence length, vocabulary level, verbal tics, what they avoid saying. A professor uses subclauses; a teenager fragments. A liar qualifies everything; an honest person is blunt. Cover the dialogue tags — the reader should still identify the speaker." },
+      { title: "Interruption & Overlap", category: "pacing-tension", description: "Real conversations don't take turns politely.", prompt: "Write dialogue that interrupts, talks past, and overlaps. Characters don't wait for each other to finish. They mishear, answer a different question, and change the subject when uncomfortable. Use em-dashes for interruptions. Let characters talk at cross-purposes." },
+      { title: "The Unsaid", category: "emotion-psychology", description: "The most powerful line of dialogue is the one nobody says.", prompt: "In every important conversation, identify what each character CANNOT say. The father who can't say 'I'm proud of you.' The lover who can't say 'Don't go.' Write around the unsaid — the reader fills in the silence, and that's more powerful than words." },
+      { title: "Dialogue as Action", category: "plot-structure", description: "Conversations should change things. If nothing shifts, cut the scene.", prompt: "Every dialogue scene must shift something: a relationship, a plan, a power dynamic, a belief. If two characters end a conversation in the same state they started it, the scene has no purpose. Track what changes. If nothing does, the conversation is exposition in disguise." },
+    ],
+  },
+  {
+    id: "action-choreography",
+    name: "Action Choreography Pack",
+    tagline: "Fights, chases, and set pieces that feel kinetic, not choreographed",
+    genre: "Action",
+    icon: "M13 10V3L4 14h7v7l9-11h-7z",
+    color: "#ef4444",
+    boltons: [
+      { title: "Clarity Over Spectacle", category: "description-sensory", description: "The reader should always know where everyone is and what's happening.", prompt: "In action scenes, spatial clarity is everything. Establish where characters are relative to each other, what they can see, and where the exits are. Use short, concrete sentences. The reader's mental camera should never lose its subject. Confusion is not the same as excitement." },
+      { title: "Emotional Stakes First", category: "emotion-psychology", description: "We don't care about the punch. We care about why it matters.", prompt: "Before any action sequence, establish what's at stake emotionally. The reader needs to care before the first blow lands. A fight between strangers is boring. A fight between former friends is devastating. Anchor every action beat to a feeling." },
+      { title: "Sensory Impact", category: "description-sensory", description: "The crack of bone, the taste of blood, the ringing ears after a blast.", prompt: "Write action through the senses: the metallic taste of adrenaline, the shock of cold water, the way a punch sounds more than it hurts. Use unexpected sensory details — the smell of gunpowder is a cliché, but the ringing silence after a shot is visceral." },
+      { title: "Rhythm & Breath", category: "pacing-tension", description: "Short sentences hit hard. Then give the reader a moment to breathe.", prompt: "Vary sentence length dramatically in action scenes. Short sentences for impact. Fragments for speed. Then a longer sentence when the character catches their breath and the reader catches theirs. Action prose should have the rhythm of a heartbeat: fast, fast, fast, pause, fast." },
+    ],
+  },
+  {
+    id: "coming-of-age",
+    name: "Coming of Age Pack",
+    tagline: "That ache of growing up — first losses, first freedoms, first selves",
+    genre: "Coming of Age",
+    icon: "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z",
+    color: "#fbbf24",
+    boltons: [
+      { title: "Hyper-Awareness", category: "voice-style", description: "Everything feels like it means something. Because at that age, it does.", prompt: "Write with the heightened perception of youth: every glance feels loaded, every slight feels permanent, every new experience feels like the first and last. The intensity is not melodrama — it's authentic. At that age, everything IS as big as it feels." },
+      { title: "Adult World Glimpses", category: "world-atmosphere", description: "The moment you realise adults don't have it figured out either.", prompt: "Show moments where the young character glimpses adult reality: a parent crying when they think no one's watching, a teacher who's clearly exhausted, an overheard argument that wasn't meant for young ears. These moments should shift the character's understanding without anyone explaining anything." },
+      { title: "Friendship as Everything", category: "emotion-psychology", description: "Before romantic love, there's the fierce loyalty of best friends.", prompt: "Write young friendships with the intensity they deserve: the fierce loyalty, the devastating betrayals, the inside jokes that are funnier than anything will ever be again. Young friendship is not a lesser form of love — it's often more consuming than romantic love will ever be." },
+      { title: "The Last Time", category: "pacing-tension", description: "You never know it's the last time until it's too late.", prompt: "Weave in 'last time' moments without announcing them: the last summer all the friends are together, the last time the character climbs the backyard tree, the last dinner before everything changes. The narrator may not recognise these as endings — but the reader should feel the ache." },
+    ],
+  },
+  {
+    id: "villain-depth",
+    name: "Villain & Antagonist Forge",
+    tagline: "Villains who terrify because they almost make sense",
+    genre: "All Genres",
+    icon: "M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z",
+    color: "#dc2626",
+    boltons: [
+      { title: "Sympathetic Logic", category: "emotion-psychology", description: "The villain is the hero of their own story. Make us understand why.", prompt: "Write antagonists who believe they're right. Their logic should be internally consistent — even compelling. The reader should have a moment of thinking 'they have a point' before recoiling. A villain you understand is more terrifying than one you don't." },
+      { title: "Competence as Menace", category: "pacing-tension", description: "The scariest villains are the ones who are genuinely good at what they do.", prompt: "Show the antagonist succeeding. Let them outthink the protagonist, anticipate their moves, execute their plans flawlessly. A competent villain raises stakes automatically. The reader fears them because they've seen them win." },
+      { title: "Human Moments", category: "dialogue-subtext", description: "The villain who loves their dog is scarier than the one who kicks it.", prompt: "Give antagonists genuine human moments: tenderness with a child, a joke that's actually funny, a moment of real grief. Don't use these to excuse their actions — use them to make the reader uncomfortable about how much they relate to someone who does terrible things." },
+      { title: "Mirror to Hero", category: "plot-structure", description: "The best villain is the hero if they'd made one different choice.", prompt: "Construct your antagonist as a dark mirror of your protagonist: same wound, different response. Where the hero chose hope, the villain chose control. Where the hero accepted loss, the villain refused it. The reader should see how easily the hero could have become the villain." },
+    ],
+  },
+  {
+    id: "magical-realism",
+    name: "Magical Realism Pack",
+    tagline: "The extraordinary treated as ordinary — matter-of-fact miracles",
+    genre: "Magical Realism",
+    icon: "M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z",
+    color: "#c084fc",
+    boltons: [
+      { title: "Casual Impossibility", category: "voice-style", description: "Narrate the miraculous with the same tone you'd use for making breakfast.", prompt: "When magical events occur, describe them with the same matter-of-fact tone as mundane events. A woman sprouts wings — she adjusts them like a coat collar. A ghost joins the family dinner — someone sets an extra place. The magic is real; the characters' acceptance of it makes it more powerful, not less." },
+      { title: "Emotional Metaphor Made Real", category: "emotion-psychology", description: "Grief that literally weighs you down. Love that literally makes you float.", prompt: "Turn emotional states into physical reality: a heartbroken woman's tears flood the house, a lonely man's shadow detaches and walks away, a liar's words turn to ash in the air. The magic should be a literalisation of emotional truth. Never explain the symbolism — let it exist." },
+      { title: "Grounded Specificity", category: "description-sensory", description: "The more magical the event, the more concrete the surrounding details.", prompt: "Surround magical events with hyper-specific real-world details: the brand of coffee on the counter, the exact shade of peeling paint, the bus route number. The mundane anchors the magical. If everything is dreamlike, nothing is. Reality makes the impossible believable." },
+      { title: "Generational Memory", category: "world-atmosphere", description: "Stories that carry the weight of family history and cultural memory.", prompt: "Embed magical events in family and cultural history: 'The women in this family have always known things.' 'It started when your great-grandmother made a promise to the river.' Magic should feel inherited, not invented. It carries the weight of generations and the specificity of place." },
+    ],
+  },
+  {
+    id: "dystopian-resistance",
+    name: "Dystopian Resistance Kit",
+    tagline: "Oppressive systems, small rebellions, and the cost of resistance",
+    genre: "Dystopian",
+    icon: "M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z",
+    color: "#64748b",
+    boltons: [
+      { title: "System as Character", category: "world-atmosphere", description: "The oppressive system should feel as real and complex as any character.", prompt: "Write the dystopian system with internal logic: it works for some people, it has true believers, it solves real problems (badly). Show why people comply — not because they're stupid, but because the system offers something (safety, order, belonging). The most terrifying dystopia is one that's comfortable." },
+      { title: "Small Rebellions", category: "pacing-tension", description: "Revolution starts with a whispered word, a hidden book, a refused order.", prompt: "Show resistance as small, daily acts: a teacher who includes a forbidden book, a worker who 'accidentally' misfiles a record, a mother who tells her child the real history at bedtime. Grand rebellion grows from tiny defiances. Make each small act feel as dangerous as it is." },
+      { title: "Complicity & Cost", category: "emotion-psychology", description: "Everyone in a dystopia is complicit. Including the protagonist.", prompt: "Show your protagonist's complicity in the system before their resistance. They benefited from it, enforced it, looked away. Resistance should cost them something real — relationships, safety, certainty. Don't make rebellion free. The weight of what they lose makes what they gain meaningful." },
+      { title: "Language of Control", category: "voice-style", description: "The system controls thought by controlling language.", prompt: "Show how the regime shapes language: euphemisms for violence ('restructuring' for execution), banned words, mandatory phrases. Characters who resist start to notice the language — and choosing a forbidden word becomes an act of rebellion. Language IS power in dystopian fiction." },
+    ],
+  },
+  {
+    id: "gothic-atmosphere",
+    name: "Gothic Atmosphere Pack",
+    tagline: "Crumbling estates, family secrets, and the past that refuses to stay buried",
+    genre: "Gothic",
+    icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+    color: "#6b21a8",
+    boltons: [
+      { title: "The House as Character", category: "world-atmosphere", description: "The setting should feel alive, watchful, and full of memory.", prompt: "Write the house/estate as a character: it groans, settles, breathes. Rooms are described in terms of mood, not just furnishings. The house responds to emotional states — doors stick when characters are trapped, corridors lengthen when they're lost. The architecture reflects psychology." },
+      { title: "Family as Trap", category: "plot-structure", description: "Inheritance is never free. Family legacy comes with chains.", prompt: "Frame family connections as binding: inherited debts (financial, moral, supernatural), expectations that suffocate, secrets that implicate. Characters can't simply leave — they're bound by blood, guilt, duty, or curse. The family is both home and prison." },
+      { title: "Doubling & Mirrors", category: "emotion-psychology", description: "Characters see themselves reflected — in portraits, in relatives, in the madness they fear.", prompt: "Use doubling throughout: the protagonist resembles a dead ancestor, a reflection doesn't quite match, two characters are opposites who complete each other. Gothic fiction is about the self divided. Show characters confronting versions of themselves they're afraid to become." },
+      { title: "Ornate Dread", category: "voice-style", description: "Beautiful prose about terrible things. The language itself should feel excessive.", prompt: "Write with deliberate linguistic excess: longer sentences, richer vocabulary, descriptions that border on overwhelming. The prose style should mirror the overstuffed, decaying world. This is not minimalism — it's prose that, like the gothic setting, is beautiful and suffocating." },
+    ],
+  },
+  {
+    id: "war-combat",
+    name: "War & Conflict Realism",
+    tagline: "The chaos, boredom, and moral weight of people in extreme situations",
+    genre: "War",
+    icon: "M3 21h18M9 8h1m4 0h1m-5 4h1m4 0h1M5 21V3h14v18",
+    color: "#71717a",
+    boltons: [
+      { title: "Boredom & Waiting", category: "pacing-tension", description: "War is 90% waiting and 10% terror. Write both.", prompt: "Show the tedium between action: cleaning equipment, writing letters, bad jokes, endless waiting. These quiet moments are where character is built. The contrast between boredom and violence is what makes war fiction devastating. Don't skip to the explosions." },
+      { title: "Moral Grey Zones", category: "emotion-psychology", description: "There are no clean hands in war. Every decision costs something.", prompt: "Present moral dilemmas with no clean answer: save one person or complete the mission, follow an unjust order or endanger your unit, kill a child soldier or die. Don't judge your characters — show the impossible choices and let the reader sit with the discomfort." },
+      { title: "Small Unit Intimacy", category: "dialogue-subtext", description: "The bonds formed under fire are unlike any other.", prompt: "Write unit relationships with the intensity they carry: nicknames, running jokes, unspoken agreements, knowing someone's habits better than their spouse does. These bonds form fast under pressure. Show the casual intimacy of people who depend on each other for survival." },
+      { title: "Aftermath & Body", category: "description-sensory", description: "Violence has consequences. Show what happens after the shooting stops.", prompt: "Don't skip the aftermath: shaking hands, ringing ears, the inability to eat, the strange calm of shock. Show the physical reality of violence without glorifying it. Characters should carry wounds — physical and psychological — into every subsequent scene." },
+    ],
+  },
+  {
+    id: "epistolary-found",
+    name: "Epistolary & Found Documents",
+    tagline: "Letters, journals, transcripts — stories told through fragments",
+    genre: "All Genres",
+    icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
+    color: "#0ea5e9",
+    boltons: [
+      { title: "Voice-Per-Document", category: "voice-style", description: "Each document type should sound completely different.", prompt: "Match voice to document type: a diary is intimate and unpolished, an official report is clipped and evasive, a letter to a lover is raw, a text message is fragmented. The format shapes the honesty — people write differently depending on who's reading." },
+      { title: "Gaps as Story", category: "plot-structure", description: "What's missing from the archive is the real mystery.", prompt: "Leave deliberate gaps in the document trail: missing pages, redacted sections, a letter that references one we never see. The reader should notice what's absent and build theories. The gaps between documents are where the most important events happened." },
+      { title: "Contradicting Accounts", category: "pacing-tension", description: "Two people describe the same event differently. Who's right?", prompt: "Present the same event from multiple document perspectives that don't quite agree: a diary entry, a police report, a letter to a friend. The contradictions should be subtle enough that the reader has to work to spot them. Truth emerges from the spaces between accounts." },
+      { title: "Editorial Presence", category: "dialogue-subtext", description: "Someone assembled these documents. Their choices tell a story too.", prompt: "Imply a curator/editor who selected and arranged these documents. Their choices reveal a perspective: what they included, what order they chose, what they footnoted. The arrangement is itself an argument. Let the reader wonder about the invisible hand behind the collection." },
+    ],
+  },
+  {
+    id: "noir-hardboiled",
+    name: "Noir & Hardboiled Pack",
+    tagline: "Rain-slicked streets, moral compromise, and prose that hits like a fist",
+    genre: "Noir",
+    icon: "M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z",
+    color: "#475569",
+    boltons: [
+      { title: "Hardboiled Voice", category: "voice-style", description: "Clipped, cynical, and surprisingly poetic when you're not expecting it.", prompt: "Write in short, punchy sentences with a cynical edge. The narrator notices everything and trusts nothing. Similes should be original and slightly dark: 'She had a smile like a crack in a wall.' Mix toughness with unexpected poetry — hardboiled prose is secretly lyrical." },
+      { title: "Moral Quicksand", category: "emotion-psychology", description: "Every character is compromised. The hero is just less compromised than the rest.", prompt: "No one is clean in noir. The detective takes money they shouldn't. The femme fatale has genuine reasons for her betrayals. The cop is corrupt but loves their kid. Write moral complexity without judgment — in noir, everyone is trying to survive a system that's already broken." },
+      { title: "City as Mood", category: "world-atmosphere", description: "The city at night: neon, rain, shadows, and the people who live in them.", prompt: "Write the city as a character with moods: predatory at night, indifferent at dawn, seductive in rain. Use weather and light as emotional cues. Neon reflects in puddles. Alleys swallow light. Every setting should feel like it's been up too late and seen too much." },
+      { title: "Economical Menace", category: "pacing-tension", description: "Threats should be quiet. The most dangerous people speak softly.", prompt: "Write menace through understatement: a quiet voice is scarier than a shout, a gentle request more threatening than an order. The most dangerous character in the room is the one who seems relaxed. Violence should arrive suddenly, without preamble, and be over fast." },
+    ],
+  },
+  {
+    id: "satire-comedy",
+    name: "Satire & Dark Comedy Kit",
+    tagline: "Funny because it's true. Devastating because it's funny",
+    genre: "Satire",
+    icon: "M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#84cc16",
+    boltons: [
+      { title: "Deadpan Delivery", category: "voice-style", description: "The funniest horror is described without any indication that it's funny.", prompt: "Describe absurd, terrible, or hilarious situations in a completely neutral, matter-of-fact tone. The narrator doesn't seem to notice anything unusual. The contrast between the content and the delivery IS the comedy. Never signal that something is meant to be funny." },
+      { title: "Escalating Absurdity", category: "plot-structure", description: "Start plausible. End somewhere impossible. Make every step between them feel logical.", prompt: "Begin with a reasonable situation and escalate it through perfectly logical steps into complete absurdity. Each individual step should make sense — it's only when the reader looks back at the full chain that they realise how far they've come from normal. Logic is the engine of absurdity." },
+      { title: "Institutional Madness", category: "world-atmosphere", description: "Bureaucracy, corporations, and systems that nobody controls.", prompt: "Write institutions as self-perpetuating machines: nobody is in charge, everyone is following rules that nobody wrote, the system produces outcomes nobody intended. Show characters trying to navigate a system that is simultaneously powerful and completely irrational. The satire should feel uncomfortably familiar." },
+      { title: "Sympathy Under Satire", category: "emotion-psychology", description: "Mock the system, not the person trapped in it.", prompt: "Even in satire, give characters genuine emotions and real stakes. The bureaucrat enforcing absurd rules is also trying to keep their job and feed their family. The reader should laugh AND empathise. Pure mockery is easy; satire that makes you care is devastating." },
+    ],
+  },
+  {
+    id: "dual-timeline",
+    name: "Dual Timeline Architect",
+    tagline: "Past and present in conversation — two stories that illuminate each other",
+    genre: "All Genres",
+    icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
+    color: "#f97316",
+    boltons: [
+      { title: "Thematic Rhyming", category: "plot-structure", description: "Past and present scenes should echo each other without being identical.", prompt: "Structure timeline switches so scenes rhyme thematically: a betrayal in the past echoes a betrayal in the present, but with different stakes. The timelines should illuminate each other — what we learn in one reframes what we're reading in the other. Juxtaposition is your primary tool." },
+      { title: "Distinct Period Voices", category: "voice-style", description: "Each timeline should have its own rhythm, vocabulary, and pace.", prompt: "Give each timeline a distinct prose style: the past might be more formal, slower, more sensory; the present might be clipped and urgent. The reader should feel the shift in era through language alone, before any context clues. Voice is the first signal of 'when'." },
+      { title: "Delayed Revelations", category: "pacing-tension", description: "Information in one timeline answers questions posed in the other.", prompt: "Plant questions in the present timeline that only the past can answer — and vice versa. A mysterious scar in the present; the injury scene arrives three chapters later in the past. Time the reveals so the reader gets a burst of understanding at the exact moment both timelines converge." },
+      { title: "Convergence Point", category: "emotion-psychology", description: "The timelines should build toward a moment where they emotionally merge.", prompt: "Build both timelines toward a convergence point where their emotional climaxes align. The character in the past makes a decision whose consequences the present character finally understands. The reader experiences both the cause and the effect simultaneously." },
+    ],
+  },
+  {
+    id: "first-person-deep",
+    name: "Deep First Person Pack",
+    tagline: "Inside one head completely — biased, vivid, and utterly compelling",
+    genre: "All Genres",
+    icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
+    color: "#f472b6",
+    boltons: [
+      { title: "Thought as Voice", category: "voice-style", description: "The narrator's thoughts should have a distinctive rhythm that's theirs alone.", prompt: "Write interior monologue with a voice as distinct as spoken dialogue: does this character think in fragments or run-on sentences? Do they spiral or stay linear? Do they lie to themselves? The thought patterns should feel like overhearing a specific person's brain, not a generic narrator." },
+      { title: "Selective Perception", category: "description-sensory", description: "We only see what this character would notice. Everything else doesn't exist.", prompt: "Filter ALL description through this character's specific attention: a chef notices food and smells everywhere; a soldier clocks exits and threats; a new mother hears every baby cry in a crowd. What the character notices reveals who they are. What they miss creates dramatic irony." },
+      { title: "Emotional Colouring", category: "world-atmosphere", description: "The world looks different depending on how the narrator feels.", prompt: "Let the narrator's emotional state colour every description: when happy, the rain is 'fresh'; when depressed, the same rain is 'relentless'. The same room feels cozy in one scene and suffocating in another. The world is not objective — it's filtered through feeling." },
+      { title: "Self-Deception", category: "emotion-psychology", description: "The narrator lies to themselves — and the reader catches it.", prompt: "Show the narrator constructing comfortable narratives about themselves: 'I didn't care anyway,' they think, while their hands shake. 'It wasn't my fault,' they insist, while describing exactly how it was. The reader should see through the narrator even when the narrator can't see through themselves." },
+    ],
+  },
+  {
+    id: "tension-suspense",
+    name: "Tension & Suspense Engine",
+    tagline: "The art of making readers physically unable to put the book down",
+    genre: "All Genres",
+    icon: "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#f43f5e",
+    boltons: [
+      { title: "Micro-Tension", category: "pacing-tension", description: "Every single page should have a question the reader needs answered.", prompt: "Embed small tensions in every paragraph: an unanswered question, a word that doesn't fit, a reaction that seems wrong, a detail that nags. The reader doesn't need a bomb to keep reading — they need to wonder why someone glanced at the clock, or what's behind the locked door." },
+      { title: "Dramatic Irony", category: "plot-structure", description: "When the reader knows something the character doesn't, every scene becomes tense.", prompt: "Give the reader information the character doesn't have: we know the call is coming from inside the house; the character picks up the phone. We know the friend is a traitor; the character confides in them. The gap between what we know and what the character knows creates unbearable tension." },
+      { title: "False Safety", category: "world-atmosphere", description: "The most dangerous moment is when everyone relaxes.", prompt: "Create moments of apparent safety before danger strikes: the characters laugh, share a meal, make plans for the future. Lull the reader into comfort. Then shatter it. The contrast between safety and threat is what makes suspense work. Constant danger is just noise." },
+      { title: "Chapter Hooks", category: "pacing-tension", description: "End every chapter on a question, a threat, or a door opening.", prompt: "End chapters at the moment of maximum tension, not resolution: the phone rings but we don't hear the answer, a character opens a door and we cut away, someone says 'There's something I need to tell you' and the chapter ends. The reader MUST turn the page." },
+    ],
+  },
 ];
 
 const BOLTON_PLUGIN_CATEGORIES: Array<{ id: BoltonCategory; label: string; hint: string }> = [
@@ -8963,7 +9229,7 @@ function NovelWorkspacePage() {
                         )}
                       </div>
                     )}
-                    {((novel.storyBible.boltons ?? []).length > 0 || WRITING_PACKS.length > 0) && (
+                    {(novel.storyBible.boltons ?? []).length > 0 && (
                       <div className="pw-chapter-bolton-wrap">
                         <button
                           type="button"
@@ -8991,36 +9257,6 @@ function NovelWorkspacePage() {
                               <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                             </button>
                           ))}
-                          {/* Writing Packs section */}
-                          <div style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 4 }}>
-                            <div className="pw-bolton-dropdown-head" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                              Packs
-                            </div>
-                            {WRITING_PACKS.map((pack) => {
-                              const installed = getPackInstalledCount(pack);
-                              const allInstalled = installed === pack.boltons.length;
-                              return (
-                                <button key={pack.id} type="button" className="pw-block-bolton-option"
-                                  disabled={allInstalled}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    installWritingPack(pack);
-                                    e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open");
-                                  }}
-                                  style={{ opacity: allInstalled ? 0.4 : 1 }}
-                                >
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
-                                  <div>
-                                    <span className="pw-block-bolton-option-title" style={{ fontSize: 11 }}>{pack.name}</span>
-                                    <div style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 400, marginTop: 1 }}>
-                                      {allInstalled ? "Installed" : `${pack.boltons.length} bolt-ons · ${pack.genre}`}
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
                         </div>
                       </div>
                     )}
@@ -9224,36 +9460,6 @@ function NovelWorkspacePage() {
                                                 <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                                               </button>
                                             ))}
-                                            {/* Writing Packs */}
-                                            <div style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 4 }}>
-                                              <div className="pw-bolton-dropdown-head" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                                                Packs
-                                              </div>
-                                              {WRITING_PACKS.map((pack) => {
-                                                const installed = getPackInstalledCount(pack);
-                                                const allInstalled = installed === pack.boltons.length;
-                                                return (
-                                                  <button key={pack.id} type="button" className="pw-block-bolton-option"
-                                                    disabled={allInstalled}
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      installWritingPack(pack);
-                                                      e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
-                                                    }}
-                                                    style={{ opacity: allInstalled ? 0.4 : 1 }}
-                                                  >
-                                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
-                                                    <div>
-                                                      <span className="pw-block-bolton-option-title" style={{ fontSize: 11 }}>{pack.name}</span>
-                                                      <div style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 400, marginTop: 1 }}>
-                                                        {allInstalled ? "Installed" : `${pack.boltons.length} bolt-ons · ${pack.genre}`}
-                                                      </div>
-                                                    </div>
-                                                  </button>
-                                                );
-                                              })}
-                                            </div>
                                           </div>
                                         </div>
                                       )
