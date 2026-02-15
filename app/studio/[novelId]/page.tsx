@@ -14511,7 +14511,9 @@ function NovelWorkspacePage() {
 
 
       {/* ── Floating Chat FAB (bottom-right) ── */}
-      {!aiOff && storyCharacters.length > 0 && !charChatOpen && (
+      {!aiOff && storyCharacters.length > 0 && !charChatOpen
+        && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
+        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showNccModal && !showEditorModal && (
         <div className="pw-chat-fab-wrap">
           {/* Character picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
