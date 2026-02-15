@@ -785,7 +785,6 @@ function StudioHomePage() {
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
       />
-      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.1)", textAlign: "center", padding: "16px 0 8px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
     </div>
   );
 }
