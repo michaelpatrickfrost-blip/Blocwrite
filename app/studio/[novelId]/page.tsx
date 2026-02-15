@@ -179,6 +179,112 @@ const GENRE_OPTIONS = [
 const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
 const PLAN_CHAPTER_MAX = 40;
 const BOLTON_LIBRARY_KEY = "pilotwriter.boltons.library.v1";
+
+/* ─── Writing Packs Marketplace ─── */
+type WritingPackBolton = {
+  title: string;
+  category: BoltonCategory;
+  description: string;
+  prompt: string;
+};
+
+type WritingPack = {
+  id: string;
+  name: string;
+  tagline: string;
+  genre: string;
+  icon: string; // SVG path
+  color: string;
+  boltons: WritingPackBolton[];
+};
+
+const WRITING_PACKS: WritingPack[] = [
+  {
+    id: "romance-plot-kit",
+    name: "Romance Plot Kit",
+    tagline: "Tension, chemistry, and emotional beats that make readers swoon",
+    genre: "Romance",
+    icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z",
+    color: "#f472b6",
+    boltons: [
+      { title: "Slow Burn Chemistry", category: "emotion-psychology", description: "Build romantic tension through lingering glances, accidental touches, and loaded silence. Never rush the confession.", prompt: "Write romantic tension as slow-building: charged silences, awareness of physical proximity, interrupted moments. Avoid love-at-first-sight. Build longing through restraint. Characters should fight their attraction before surrendering to it." },
+      { title: "Banter & Verbal Sparring", category: "dialogue-subtext", description: "Sharp, witty dialogue where attraction hides behind teasing and challenge.", prompt: "Write romantic dialogue as verbal sparring — quick, playful, with underlying attraction. Each line should reveal character while building chemistry. Include callbacks to earlier conversations. Banter should feel earned, not forced." },
+      { title: "Emotional Vulnerability", category: "emotion-psychology", description: "The moments when walls come down and characters reveal their true selves.", prompt: "Write vulnerability scenes with restraint: a cracked voice, a confession that surprises even the speaker, hands that tremble. Show the cost of openness. Make the reader feel the risk of being honest." },
+      { title: "Sensory Romance", category: "description-sensory", description: "Heightened sensory awareness when attraction is present.", prompt: "When characters are attracted to each other, heighten sensory detail: the warmth of proximity, the scent of their hair, the texture of skin. Make the reader feel the electricity. Use specific, unexpected sensory details rather than clichés." },
+    ],
+  },
+  {
+    id: "fantasy-world-builder",
+    name: "Fantasy World Builder",
+    tagline: "Rich, immersive worldbuilding that feels lived-in, not lecture-y",
+    genre: "Fantasy",
+    icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#818cf8",
+    boltons: [
+      { title: "Show-Don't-Lecture World", category: "world-atmosphere", description: "Weave worldbuilding into action and character perspective, never info-dump.", prompt: "Reveal world details through character interaction, not exposition. A character doesn't think 'In our kingdom, we have three moons' — they notice the triple moonlight on their blade. Worldbuilding should feel discovered, not explained." },
+      { title: "Magic System Consistency", category: "world-atmosphere", description: "Keep magic rules consistent and show costs and limitations.", prompt: "Every use of magic must have a visible cost or limitation. Show the strain, the price, the rule that can't be broken. If magic is easy, it's boring. Consistency builds trust with the reader." },
+      { title: "Lived-In Details", category: "description-sensory", description: "Small, grounding details that make a fantasy world feel real.", prompt: "Include mundane, lived-in details: the smell of the market, how coins change hands, what people eat, how doors lock. Fantasy worlds feel real through specificity, not through grandeur." },
+      { title: "Cultural Voice", category: "voice-style", description: "Different cultures should sound and think differently in the prose.", prompt: "When writing characters from different cultures, adjust their metaphors, priorities, and speech patterns. A sailor thinks in tides and knots. A scholar thinks in arguments and evidence. Culture shapes thought." },
+    ],
+  },
+  {
+    id: "thriller-dialogue-gen",
+    name: "Thriller Dialogue Engine",
+    tagline: "Tight, tense exchanges that keep readers on the edge",
+    genre: "Thriller",
+    icon: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
+    color: "#f59e0b",
+    boltons: [
+      { title: "Interrogation Dynamics", category: "dialogue-subtext", description: "Power shifts in conversation — who controls the exchange and when it flips.", prompt: "Write dialogue as a power game. Track who has the upper hand and shift it mid-conversation. Use pauses, subject changes, and refusals to answer as weapons. The most dangerous lines are often the quietest." },
+      { title: "Ticking Clock Pacing", category: "pacing-tension", description: "Build urgency through time pressure and escalating stakes.", prompt: "Create urgency: shorter sentences as tension rises, time references that compress, interruptions that cut off safety. The reader should feel time running out. Cut any line that releases pressure too early." },
+      { title: "Unreliable Information", category: "plot-structure", description: "Characters lie, omit, and misdirect — readers must stay sharp.", prompt: "Characters should withhold truth strategically. Not every lie is dramatic — some are small omissions that compound. Let the reader catch lies before the protagonist does. Trust is currency in thrillers." },
+      { title: "Controlled Reveal", category: "pacing-tension", description: "Meter out information to maximise impact and sustain mystery.", prompt: "Never reveal everything at once. Give the reader one piece of the puzzle per scene. End scenes on new questions, not answers. The reveal should reframe everything that came before." },
+    ],
+  },
+  {
+    id: "literary-fiction-craft",
+    name: "Literary Fiction Craft",
+    tagline: "Prose that earns its place on the page — precise, resonant, surprising",
+    genre: "Literary",
+    icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
+    color: "#a78bfa",
+    boltons: [
+      { title: "Precise Language", category: "voice-style", description: "Every word earns its place. No filler, no approximation.", prompt: "Choose the exact word, not the almost-right word. 'Trudged' not 'walked slowly'. 'Crimson' not 'red' — but only when the specificity matters. Cut adverbs. Let strong verbs do the work." },
+      { title: "Subtext Over Statement", category: "dialogue-subtext", description: "Characters say one thing and mean another. The real story is beneath.", prompt: "Characters rarely say what they mean. A mother asking 'Have you eaten?' means 'I'm worried about you.' Show the gap between what's said and what's felt. Trust the reader to read between lines." },
+      { title: "Resonant Imagery", category: "description-sensory", description: "Images that carry emotional weight and connect to theme.", prompt: "Use imagery that does double duty: describe the world AND the character's inner state. A cracked mirror isn't just a cracked mirror — it reflects a fractured self-image. But be subtle. Never explain the metaphor." },
+      { title: "Interior Complexity", category: "emotion-psychology", description: "Characters think in contradictions, hold opposing feelings simultaneously.", prompt: "Real people feel multiple contradictory things at once: relief and guilt, love and resentment, hope and dread. Show this complexity. A character can miss someone they're glad is gone." },
+    ],
+  },
+  {
+    id: "horror-atmosphere",
+    name: "Horror Atmosphere Pack",
+    tagline: "Dread, unease, and the feeling that something is deeply wrong",
+    genre: "Horror",
+    icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
+    color: "#ef4444",
+    boltons: [
+      { title: "Wrongness Detector", category: "world-atmosphere", description: "Something is off — the reader can feel it before they can name it.", prompt: "Build dread through wrongness: familiar things slightly altered, sounds that shouldn't be there, a smile that lasts too long. Horror isn't jump scares — it's the growing certainty that something is fundamentally wrong." },
+      { title: "Isolation & Claustrophobia", category: "pacing-tension", description: "Shrink the world around the character. Cut off escape routes.", prompt: "Systematically remove safety: phones die, doors lock, allies disappear, night falls. Each scene should close one more exit. The character's world should shrink until there's nowhere left to go." },
+      { title: "Body as Betrayal", category: "description-sensory", description: "Physical responses to fear — the body knows before the mind.", prompt: "Show fear through the body first: cold sweat, a stomach that drops, hairs that rise, breathing that won't steady. The body reacts before the mind processes. Use involuntary physical responses, not thoughts about being scared." },
+      { title: "Normality as Weapon", category: "voice-style", description: "The most unsettling moments are surrounded by the mundane.", prompt: "Contrast horror with normality: breakfast cereal, a child's laughter, sunlight on a kitchen floor. The mundane makes the terrible more terrible. Don't let the prose become gothic — keep it grounded and matter-of-fact." },
+    ],
+  },
+  {
+    id: "sci-fi-world-engine",
+    name: "Sci-Fi World Engine",
+    tagline: "Technology, society, and ideas that feel inevitable, not invented",
+    genre: "Sci-Fi",
+    icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z",
+    color: "#06b6d4",
+    boltons: [
+      { title: "Technology as Texture", category: "world-atmosphere", description: "Tech should feel used and lived-with, not explained.", prompt: "Don't explain technology — show people using it casually. Nobody explains how a phone works. Characters should interact with future tech as naturally as we use light switches. Frustration with tech is more realistic than awe." },
+      { title: "Social Extrapolation", category: "plot-structure", description: "Follow one change to its logical social consequences.", prompt: "Every technological change has social consequences. If communication is instant, privacy is different. If death is curable, grief changes. Follow the implications honestly — the best sci-fi is social commentary." },
+      { title: "Human Scale", category: "emotion-psychology", description: "Big ideas, intimate emotions. The cosmic filtered through the personal.", prompt: "Frame cosmic-scale events through personal, human moments: a parent worried about a child, a couple arguing about dinner, someone missing home. The vastness of space means nothing without intimate human stakes." },
+      { title: "Jargon Economy", category: "voice-style", description: "Invented terms should be rare, self-explanatory, and consistent.", prompt: "Limit invented jargon to 3-4 terms maximum. Each should be obvious in context. 'Mindlink' is better than 'Cerebral Neural Interface Protocol'. If the reader needs a glossary, you've failed." },
+    ],
+  },
+];
+
 const BOLTON_PLUGIN_CATEGORIES: Array<{ id: BoltonCategory; label: string; hint: string }> = [
   { id: "voice-style", label: "Voice & Style", hint: "Diction, rhythm, sentence style." },
   { id: "pacing-tension", label: "Pacing & Tension", hint: "Scene speed, suspense, urgency." },
@@ -560,6 +666,9 @@ function NovelWorkspacePage() {
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
   const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
   const [boltonLibraryOpen, setBoltonLibraryOpen] = useState(false);
+  const [writingPacksOpen, setWritingPacksOpen] = useState(false);
+  const [expandedPack, setExpandedPack] = useState<string | null>(null);
+  const [packInstallFlash, setPackInstallFlash] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
@@ -6838,6 +6947,44 @@ function NovelWorkspacePage() {
     updateStoryBible({ boltons: merged });
   }
 
+  /** Install all boltons from a writing pack into the current novel (skips duplicates, respects 10 limit) */
+  function installWritingPack(pack: WritingPack) {
+    if (!novel) return;
+    const existing = novel.storyBible.boltons ?? [];
+    let added = 0;
+    const merged = [...existing];
+    for (const pb of pack.boltons) {
+      if (merged.length >= 10) break;
+      const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+      const already = merged.some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
+      if (already) continue;
+      merged.push({
+        id: createEntityId("bolton"),
+        title: pb.title,
+        category: pb.category,
+        description: pb.description,
+        prompt: pb.prompt,
+        createdAt: new Date().toISOString(),
+      });
+      added++;
+    }
+    if (added > 0) {
+      updateStoryBible({ boltons: merged });
+      setPackInstallFlash(pack.id);
+      setTimeout(() => setPackInstallFlash(null), 2000);
+    }
+  }
+
+  /** Check how many boltons from a pack are already installed */
+  function getPackInstalledCount(pack: WritingPack): number {
+    if (!novel) return 0;
+    const existing = novel.storyBible.boltons ?? [];
+    return pack.boltons.filter((pb) => {
+      const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+      return existing.some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
+    }).length;
+  }
+
   async function saveBoltonLibrary() {
     if (!novel || typeof window === "undefined") return;
     const source = (novel.storyBible.boltons ?? [])
@@ -11149,7 +11296,17 @@ function NovelWorkspacePage() {
                           Tell the AI how to write. Type an instruction, hit Build, and the AI turns it into a craft directive. Bolt-ons auto-save to your library.
                         </p>
                       </div>
-                      <div className="pw-bible-inline-actions">
+                      <div className="pw-bible-inline-actions" style={{ display: "flex", gap: 6 }}>
+                        <button
+                          type="button"
+                          className="pw-bolton-add-btn"
+                          onClick={() => setWritingPacksOpen(true)}
+                          title="Browse pre-made writing packs"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2 }}><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                          Packs
+                        </button>
                         <button
                           type="button"
                           className="pw-bolton-add-btn"
@@ -11276,6 +11433,186 @@ function NovelWorkspacePage() {
                               </div>
                             );
                           })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Writing Packs modal ── */}
+                    {writingPacksOpen && (
+                      <div style={{
+                        position: "fixed", inset: 0, zIndex: 9999,
+                        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}
+                        onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }}
+                      >
+                        <div
+                          style={{
+                            background: "var(--pw-bg, #18181b)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: 20, width: "94%", maxWidth: 560, maxHeight: "80vh",
+                            display: "flex", flexDirection: "column",
+                            boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Header */}
+                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Writing Packs</h3>
+                              </div>
+                              <button type="button" onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }} style={{
+                                background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                                width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                                color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                              }}>&times;</button>
+                            </div>
+                            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
+                              Pre-made craft kits — install bolt-ons built by genre experts with one click.
+                            </p>
+                          </div>
+
+                          {/* Pack list */}
+                          <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {WRITING_PACKS.map((pack) => {
+                                const installed = getPackInstalledCount(pack);
+                                const allInstalled = installed === pack.boltons.length;
+                                const isExpanded = expandedPack === pack.id;
+                                const justInstalled = packInstallFlash === pack.id;
+                                const slotsLeft = 10 - (novel?.storyBible.boltons ?? []).length;
+                                return (
+                                  <div key={pack.id} style={{
+                                    borderRadius: 14,
+                                    background: "rgba(255,255,255,0.025)",
+                                    border: `1px solid ${justInstalled ? pack.color + "55" : "rgba(255,255,255,0.06)"}`,
+                                    transition: "all 0.2s",
+                                    overflow: "hidden",
+                                  }}>
+                                    {/* Pack header — clickable to expand */}
+                                    <div
+                                      style={{
+                                        display: "flex", alignItems: "center", gap: 14,
+                                        padding: "14px 16px", cursor: "pointer",
+                                        transition: "background 0.15s",
+                                      }}
+                                      onClick={() => setExpandedPack(isExpanded ? null : pack.id)}
+                                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                                    >
+                                      {/* Genre icon */}
+                                      <div style={{
+                                        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                                        background: `${pack.color}18`,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                      }}>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                                      </div>
+
+                                      {/* Name + tagline */}
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
+                                          <span style={{
+                                            fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
+                                            background: `${pack.color}20`, color: pack.color,
+                                          }}>{pack.genre}</span>
+                                          {allInstalled && (
+                                            <span style={{
+                                              fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
+                                              background: "rgba(163,230,53,0.12)", color: "var(--pw-accent, #a3e635)",
+                                            }}>Installed</span>
+                                          )}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>
+                                          {pack.tagline}
+                                        </div>
+                                      </div>
+
+                                      {/* Expand chevron */}
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                                        style={{ flexShrink: 0, transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
+                                      ><path d="M6 9l6 6 6-6"/></svg>
+                                    </div>
+
+                                    {/* Expanded detail */}
+                                    {isExpanded && (
+                                      <div style={{
+                                        borderTop: "1px solid rgba(255,255,255,0.05)",
+                                        padding: "12px 16px 16px",
+                                      }}>
+                                        <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                          {pack.boltons.length} bolt-ons included
+                                        </p>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                          {pack.boltons.map((pb, i) => {
+                                            const catLabel = BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === pb.category)?.label || "Custom";
+                                            const alreadyHas = (novel?.storyBible.boltons ?? []).some((b) => {
+                                              const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+                                              return `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key;
+                                            });
+                                            return (
+                                              <div key={i} style={{
+                                                display: "flex", alignItems: "flex-start", gap: 10,
+                                                padding: "8px 10px", borderRadius: 8,
+                                                background: alreadyHas ? "rgba(163,230,53,0.04)" : "rgba(255,255,255,0.015)",
+                                                border: alreadyHas ? "1px solid rgba(163,230,53,0.12)" : "1px solid rgba(255,255,255,0.04)",
+                                              }}>
+                                                <div style={{
+                                                  width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 5,
+                                                  background: alreadyHas ? "var(--pw-accent, #a3e635)" : pack.color,
+                                                  opacity: alreadyHas ? 1 : 0.5,
+                                                }} />
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                                                    {pb.title}
+                                                    {alreadyHas && <span style={{ fontSize: 10, color: "var(--pw-accent, #a3e635)", marginLeft: 6, fontWeight: 500 }}>installed</span>}
+                                                  </div>
+                                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>
+                                                    {pb.description}
+                                                  </div>
+                                                  <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 3, opacity: 0.6 }}>
+                                                    {catLabel}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+
+                                        {/* Install button */}
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+                                          <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+                                            {installed > 0 && !allInstalled && `${installed}/${pack.boltons.length} already installed`}
+                                            {allInstalled && "All bolt-ons installed"}
+                                            {installed === 0 && `${pack.boltons.length} bolt-ons ready`}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={allInstalled || slotsLeft <= 0}
+                                            onClick={() => installWritingPack(pack)}
+                                            title={allInstalled ? "Already installed" : slotsLeft <= 0 ? "Bolt-on limit reached (10 max)" : `Install ${pack.boltons.length - installed} bolt-on${pack.boltons.length - installed > 1 ? "s" : ""}`}
+                                            style={{
+                                              padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
+                                              border: "none", cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
+                                              background: allInstalled ? "rgba(163,230,53,0.1)" : slotsLeft <= 0 ? "rgba(255,255,255,0.04)" : pack.color,
+                                              color: allInstalled ? "var(--pw-accent, #a3e635)" : slotsLeft <= 0 ? "var(--pw-text-dim)" : "#111",
+                                              opacity: allInstalled || slotsLeft <= 0 ? 0.6 : 1,
+                                              transition: "all 0.15s",
+                                            }}
+                                          >
+                                            {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : installed > 0 ? "Install Remaining" : "Install Pack"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       </div>
