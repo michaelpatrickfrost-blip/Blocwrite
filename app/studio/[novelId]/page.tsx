@@ -10201,7 +10201,7 @@ function NovelWorkspacePage() {
                   />
                   <textarea
                     className="pw-overview-synopsis"
-                    value={novel.synopsis}
+                    value={novel.synopsis || novel.storyBible?.summary?.synopsisShort || ""}
                     onChange={(event) => updateNovel({ synopsis: event.target.value })}
                     placeholder="Write your full synopsis here — this is the foundation the AI uses for every generation..."
                     rows={8}
