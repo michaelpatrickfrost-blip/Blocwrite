@@ -1311,6 +1311,7 @@ export function gatherSettings(): Record<string, string> {
       "pilotwriter.profile.aiOff",
       "pilotwriter.assistant.provider",
       "pilotwriter.boltons.library.v1",
+      "pilotwriter.tutorial.complete",
       "bw-theme",
     ];
     // Also grab per-provider settings

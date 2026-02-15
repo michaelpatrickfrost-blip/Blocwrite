@@ -1171,6 +1171,24 @@ function NovelWorkspacePage() {
   const [arcExpandedDimension, setArcExpandedDimension] = useState<string | null>(null);
   const [arcRegenWarning, setArcRegenWarning] = useState(false);
   const [arcApplyingChoice, setArcApplyingChoice] = useState<number | null>(null);
+
+  // ── Tutorial walkthrough ──
+  const TUTORIAL_STEPS: Array<{ target: string; title: string; desc: string }> = [
+    { target: "sidebar", title: "Your Manuscript", desc: "Your chapters live here. Click any chapter to start writing, or hit \u2018+ New chapter\u2019 to add one. The sidebar auto-collapses while you write to give you more space." },
+    { target: "overview", title: "Novel Overview", desc: "Your novel\u2019s command centre. See the cover, synopsis, word count dashboard, and every tool in one view. Click here anytime to return to the big picture." },
+    { target: "plan", title: "The Plan", desc: "Generate a full chapter outline from your synopsis and Canon. Each chapter gets a title, synopsis, characters, and locations. Arc Intelligence then scores three story directions for you." },
+    { target: "canon", title: "The Canon", desc: "Your story\u2019s single source of truth \u2014 characters, locations, lore, voice rules, and bolt-on directives. Every AI feature reads the Canon first so nothing drifts from your world." },
+    { target: "editor", title: "The Editor", desc: "One button, two modes. In a chapter: 11 continuity checks covering canon traits, timeline, voice drift, and more. In the overview: full-manuscript sentence-level rewrites with accept/dismiss diffs." },
+    { target: "health", title: "Manuscript Health", desc: "AI scores your novel on pacing, dialogue, clarity, and engagement \u2014 out of 10. Per-chapter breakdowns with specific, actionable tips to strengthen your writing." },
+    { target: "share", title: "Share & Export", desc: "Generate password-protected, time-limited links for beta readers. They highlight text and leave annotations in a branded reader view. Export to EPUB or DOCX when ready." },
+    { target: "chat", title: "Chat & Co-Author", desc: "Interview any character from your Canon \u2014 they answer in voice using their backstory and personality. Or open the Co-Author for a writing partner who knows your entire novel." },
+    { target: "theme", title: "Dark & Light Mode", desc: "Switch themes to suit your preference. Your choice saves automatically and syncs across devices." },
+    { target: "settings", title: "Settings", desc: "Set up your AI provider and API key, change language, manage your subscription \u2014 or restart this tutorial anytime from the General tab." },
+  ];
+  const [tutorialActive, setTutorialActive] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [tutorialRect, setTutorialRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
   const [grammarChecking, setGrammarChecking] = useState(false);
   const [grammarError, setGrammarError] = useState<string | null>(null);
@@ -1524,6 +1542,52 @@ function NovelWorkspacePage() {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Tutorial: auto-trigger on first visit ──
+  function startTutorial() {
+    setActiveChapterId(null);
+    setTutorialStep(0);
+    setTutorialActive(true);
+  }
+  function completeTutorial() {
+    setTutorialActive(false);
+    setTutorialStep(0);
+    try {
+      window.localStorage.setItem("pilotwriter.tutorial.complete", "1");
+      void saveSettingsToServer(gatherSettings());
+    } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    if (!novelSyncDone || !novel) return;
+    try {
+      if (!window.localStorage.getItem("pilotwriter.tutorial.complete")) {
+        const t = setTimeout(() => startTutorial(), 900);
+        return () => clearTimeout(t);
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [novelSyncDone]);
+
+  // ── Tutorial: recompute spotlight rect on step change ──
+  useEffect(() => {
+    if (!tutorialActive) { setTutorialRect(null); return; }
+    const step = TUTORIAL_STEPS[tutorialStep];
+    if (!step) return;
+    const measure = () => {
+      const el = document.querySelector(`[data-tutorial="${step.target}"]`) as HTMLElement | null;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      } else {
+        setTutorialRect(null);
+      }
+    };
+    const t = setTimeout(measure, 80);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => { clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorialActive, tutorialStep]);
 
   useEffect(() => {
     const flushNow = () => {
@@ -9154,7 +9218,7 @@ function NovelWorkspacePage() {
   return (
     <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
       <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}`}>
-        <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
+        <aside className="pw-sidebar" data-tutorial="sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
             <div className="pw-logo-swap">
               <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
@@ -9224,12 +9288,12 @@ function NovelWorkspacePage() {
           <div className="pw-toolbar">
             <span className="pw-project-title">{novel.title || "Untitled Novel"}</span>
             <span className="pw-dot" />
-            <button type="button" className="pw-mode-btn" onClick={() => setActiveChapterId(null)}>
+            <button type="button" className="pw-mode-btn" data-tutorial="overview" onClick={() => setActiveChapterId(null)}>
               Overview
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <button type="button" className="pw-theme-toggle" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
+            <button type="button" className="pw-theme-toggle" data-tutorial="theme" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
               <span className="pw-theme-icon">{currentTheme === "dark" ? "☀" : "☽"}</span>
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
             </button>
@@ -9250,13 +9314,14 @@ function NovelWorkspacePage() {
             <button type="button" className="btn pw-proofread-btn"
               style={{ display: "flex", alignItems: "center", gap: 5 }}
               title="The Editor — AI manuscript analysis"
+              data-tutorial="editor"
               onClick={() => setShowEditorModal(true)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               The Editor
             </button>
             )}
-            <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
+            <button type="button" className="btn btn-primary" data-tutorial="plan" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
             <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }} onClick={() => {
@@ -9307,7 +9372,7 @@ function NovelWorkspacePage() {
                   if (Array.isArray(data)) setShareLinks(data);
                 }).catch(() => {}).finally(() => setShareLinksLoading(false));
               }
-            }} title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
+            }} data-tutorial="share" title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               {pendingFeedbackCount > 0 && (
                 <span style={{
@@ -9320,7 +9385,7 @@ function NovelWorkspacePage() {
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
-            <ProfileButton onClick={() => setProfileOpen(true)} />
+            <span data-tutorial="settings"><ProfileButton onClick={() => setProfileOpen(true)} /></span>
             {isAdmin && (
               <Link
                 href="/admin"
@@ -10317,7 +10382,7 @@ function NovelWorkspacePage() {
                       <h3>Canon</h3>
                       <p className="pw-overview-sub">Your story&apos;s source of truth — characters, world, and voice.</p>
                     </div>
-                    <button type="button" className="btn btn-primary" onClick={() => setShowStoryBibleModal(true)}>
+                    <button type="button" className="btn btn-primary" data-tutorial="canon" onClick={() => setShowStoryBibleModal(true)}>
                       Open Canon
                     </button>
                   </div>
@@ -10426,7 +10491,7 @@ function NovelWorkspacePage() {
 
               {/* ── Manuscript Health Score ── */}
               <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
-                <div className="pw-overview-card">
+                <div className="pw-overview-card" data-tutorial="health">
                   <div className="pw-overview-card-head">
                     <div>
                       <h3>Manuscript Health</h3>
@@ -14309,6 +14374,7 @@ function NovelWorkspacePage() {
           window.location.href = "/";
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
+        onStartTutorial={() => startTutorial()}
       />
 
       {/* ── Smart Rewrite floating toolbar ── */}
@@ -15011,7 +15077,7 @@ function NovelWorkspacePage() {
       {!aiOff && !charChatOpen
         && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
         && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showEditorModal && (
-        <div className="pw-chat-fab-wrap">
+        <div className="pw-chat-fab-wrap" data-tutorial="chat">
           {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
             <>
@@ -15105,6 +15171,66 @@ function NovelWorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* ── Tutorial overlay ── */}
+      {tutorialActive && (() => {
+        const step = TUTORIAL_STEPS[tutorialStep];
+        if (!step) return null;
+        const isFirst = tutorialStep === 0;
+        const isLast = tutorialStep === TUTORIAL_STEPS.length - 1;
+        const pad = 8;
+        const cardW = 320;
+        const cardH = 280;
+        let cardStyle: React.CSSProperties = {};
+        if (tutorialRect) {
+          const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+          const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+          if (vw - tutorialRect.left - tutorialRect.width > cardW + 24) {
+            cardStyle = { top: Math.max(16, Math.min(tutorialRect.top, vh - cardH - 16)), left: tutorialRect.left + tutorialRect.width + 16 };
+          } else if (tutorialRect.left > cardW + 24) {
+            cardStyle = { top: Math.max(16, Math.min(tutorialRect.top, vh - cardH - 16)), left: tutorialRect.left - cardW - 16 };
+          } else if (vh - tutorialRect.top - tutorialRect.height > cardH + 24) {
+            cardStyle = { top: tutorialRect.top + tutorialRect.height + 16, left: Math.max(16, Math.min(tutorialRect.left, vw - cardW - 16)) };
+          } else {
+            cardStyle = { top: Math.max(16, tutorialRect.top - cardH - 16), left: Math.max(16, Math.min(tutorialRect.left, vw - cardW - 16)) };
+          }
+        } else {
+          cardStyle = { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+        }
+        return (
+          <div className="pw-tutorial-overlay" onClick={completeTutorial}>
+            {tutorialRect && (
+              <div className="pw-tutorial-spotlight" style={{
+                top: tutorialRect.top - pad,
+                left: tutorialRect.left - pad,
+                width: tutorialRect.width + pad * 2,
+                height: tutorialRect.height + pad * 2,
+              }} />
+            )}
+            <div className="pw-tutorial-card" key={tutorialStep} style={cardStyle} onClick={(e) => e.stopPropagation()}>
+              <div className="pw-tutorial-step-num">Step {tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
+              <h4 className="pw-tutorial-title">{step.title}</h4>
+              <p className="pw-tutorial-desc">{step.desc}</p>
+              <div className="pw-tutorial-dots">
+                {TUTORIAL_STEPS.map((_, i) => (
+                  <span key={i} className={`pw-tutorial-dot${i === tutorialStep ? " active" : i < tutorialStep ? " done" : ""}`} />
+                ))}
+              </div>
+              <div className="pw-tutorial-actions">
+                <button type="button" className="pw-tutorial-skip" onClick={completeTutorial}>Skip</button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {!isFirst && (
+                    <button type="button" className="pw-tutorial-back" onClick={() => setTutorialStep((s) => s - 1)}>Back</button>
+                  )}
+                  <button type="button" className="pw-tutorial-next" onClick={() => isLast ? completeTutorial() : setTutorialStep((s) => s + 1)}>
+                    {isLast ? "Finish" : "Next"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Novel counter — bottom-right */}
       <div style={{
