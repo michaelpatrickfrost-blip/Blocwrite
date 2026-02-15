@@ -34,6 +34,9 @@ import {
   type ArcIssue,
   type KnowledgeEntry,
   type KnowledgeScanIssue,
+  type ThematicAnalysis,
+  type ThemeEntry,
+  type ThemePresence,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -5884,6 +5887,10 @@ function NovelWorkspacePage() {
   // ── Manuscript Health Score ──
   const [healthScoreBusy, setHealthScoreBusy] = useState(false);
 
+  // ── Thematic Consistency Scanner ──
+  const [themeScanBusy, setThemeScanBusy] = useState(false);
+  const [themeScanExpanded, setThemeScanExpanded] = useState(false);
+
   async function generateHealthScore() {
     if (!novel || !ensureStoryAiReady()) return;
     setHealthScoreBusy(true);
@@ -5956,6 +5963,94 @@ function NovelWorkspacePage() {
       console.error("Health score generation failed:", err);
     } finally {
       setHealthScoreBusy(false);
+    }
+  }
+
+  const THEME_COLORS = ["#ef4444", "#f59e0b", "#a3e635", "#06b6d4", "#818cf8", "#f472b6", "#fb923c", "#2dd4bf"];
+
+  async function runThematicScan() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const chapters = novel.chapters.filter((ch) => (ch.content ?? "").trim().length > 50);
+    if (chapters.length < 2) return;
+
+    setThemeScanBusy(true);
+
+    try {
+      // Build chapter prose samples (trim each to keep prompt manageable)
+      const chapterSamples = chapters.map((ch, i) => {
+        const prose = extractProseFromContent(ch.content ?? "").slice(0, 600);
+        const words = countWords(prose);
+        return `Chapter ${i + 1} ("${ch.title || `Ch ${i + 1}`}", ~${words} words):\n${prose}`;
+      }).join("\n\n---\n\n");
+
+      const systemPrompt = [
+        "You are an expert literary analyst specializing in thematic consistency across novels.",
+        "You identify core themes from early chapters, then track their presence, absence, or contradiction through later chapters.",
+        "Be specific — reference chapter numbers. Rate presence honestly.",
+        "Respond ONLY with valid JSON.",
+      ].join("\n");
+
+      const userPrompt = [
+        `Novel: "${novel.title}"`,
+        `Genre: ${novel.storyBible.genre || "not specified"}`,
+        `Total chapters: ${chapters.length}`,
+        "",
+        "CHAPTER SAMPLES:",
+        chapterSamples,
+        "",
+        "TASK:",
+        "1. Extract 3-6 core themes established in the first ~25% of chapters (e.g. betrayal, freedom, sacrifice, redemption, identity, power, loss).",
+        "2. For EACH theme, scan EVERY chapter and classify its presence as: 'strong' (theme actively explored), 'moderate' (theme present but not central), 'absent' (theme not present), or 'contradicted' (text undermines the theme without purpose).",
+        "3. If a theme is absent for 3+ consecutive chapters, note it as drift.",
+        "4. Give an overall cohesion score (1-10) and a 1-2 sentence summary.",
+        "",
+        'Return JSON: { "themes": [{ "id": string (short kebab-case), "label": string (1-2 words), "description": string (how this theme manifests in this novel, 1 sentence), "chapterMap": [{ "chapter": number (1-based), "presence": "strong"|"moderate"|"absent"|"contradicted", "note": string (optional, 5-10 words) }], "driftWarning": string|null }], "overallCohesion": number (1-10), "summary": string }',
+        "chapterMap must have one entry per chapter. themes should have 3-6 entries.",
+      ].join("\n");
+
+      const result = await requestOpenRouterJson(
+        userPrompt,
+        3000,
+        { systemMessage: systemPrompt },
+      );
+
+      const res = result as Record<string, unknown> | null;
+      if (!res) { setThemeScanBusy(false); return; }
+
+      const rawThemes = Array.isArray(res.themes) ? (res.themes as Record<string, unknown>[]) : [];
+      const themes: ThemeEntry[] = rawThemes
+        .filter((t) => t && typeof t.label === "string")
+        .slice(0, 6)
+        .map((t, i) => {
+          const chapterMap = Array.isArray(t.chapterMap)
+            ? (t.chapterMap as Record<string, unknown>[])
+                .filter((cm) => cm && typeof cm.chapter === "number")
+                .map((cm) => ({
+                  chapter: Number(cm.chapter),
+                  presence: (["strong", "moderate", "absent", "contradicted"].includes(String(cm.presence)) ? String(cm.presence) : "absent") as ThemePresence,
+                  note: typeof cm.note === "string" ? cm.note.slice(0, 60) : undefined,
+                }))
+            : [];
+          return {
+            id: typeof t.id === "string" ? t.id : `theme-${i}`,
+            label: String(t.label).slice(0, 30),
+            description: typeof t.description === "string" ? String(t.description).slice(0, 200) : "",
+            color: THEME_COLORS[i % THEME_COLORS.length],
+            chapterMap,
+            driftWarning: typeof t.driftWarning === "string" && t.driftWarning ? t.driftWarning.slice(0, 200) : undefined,
+          };
+        });
+
+      const analysis: ThematicAnalysis = {
+        themes,
+        overallCohesion: Math.max(1, Math.min(10, Math.round(Number(res.overallCohesion) || 5))),
+        summary: typeof res.summary === "string" ? res.summary.slice(0, 400) : "",
+        generatedAt: new Date().toISOString(),
+      };
+
+      updateNovel({ thematicAnalysis: analysis });
+    } catch { /* ignore */ } finally {
+      setThemeScanBusy(false);
     }
   }
 
@@ -9391,6 +9486,186 @@ function NovelWorkspacePage() {
                           : totalWords < 100
                           ? "Write at least 100 words to run the assessment."
                           : "Click \"Run Assessment\" to get your manuscript health report."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Thematic Consistency Scanner ── */}
+              <div className="pw-overview-grid">
+                <div className="pw-overview-card">
+                  {/* Card header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{
+                        width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                        background: "linear-gradient(135deg, rgba(129,140,248,0.15), rgba(244,114,182,0.15))",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Thematic Consistency</h4>
+                        {novel.thematicAnalysis && (
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, marginLeft: 0,
+                            color: novel.thematicAnalysis.overallCohesion >= 7 ? "#a3e635" : novel.thematicAnalysis.overallCohesion >= 5 ? "#f59e0b" : "#ef4444",
+                          }}>
+                            Cohesion: {novel.thematicAnalysis.overallCohesion}/10
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={novel.thematicAnalysis ? "btn" : "btn btn-primary"}
+                      disabled={themeScanBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
+                      onClick={() => void runThematicScan()}
+                      style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+                      title={aiOff ? "Enable AI in settings" : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2 ? "Need at least 2 chapters with content" : ""}
+                    >
+                      {themeScanBusy ? (
+                        <>
+                          <span style={{
+                            display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.2)",
+                            borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite",
+                          }} />
+                          Scanning...
+                        </>
+                      ) : novel.thematicAnalysis ? "Rescan" : "Scan Themes"}
+                    </button>
+                  </div>
+
+                  {/* Results */}
+                  {novel.thematicAnalysis ? (() => {
+                    const ta = novel.thematicAnalysis!;
+                    const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
+                    const driftThemes = ta.themes.filter((t) => t.driftWarning);
+                    return (
+                      <div>
+                        {/* Summary */}
+                        <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 14px" }}>
+                          {ta.summary}
+                        </p>
+
+                        {/* Theme heatmap grid */}
+                        <div style={{ marginBottom: 14 }}>
+                          {/* Chapter number header */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4, paddingLeft: 90 }}>
+                            {Array.from({ length: chapCount }, (_, i) => (
+                              <div key={i} style={{
+                                flex: 1, textAlign: "center", fontSize: 9, color: "var(--pw-text-dim)",
+                                fontWeight: 600, minWidth: 0,
+                              }}>
+                                {i + 1}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Theme rows */}
+                          {ta.themes.map((theme) => (
+                            <div key={theme.id} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3 }}>
+                              {/* Theme label */}
+                              <div style={{
+                                width: 86, flexShrink: 0, fontSize: 11, fontWeight: 600,
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                color: theme.color, paddingRight: 4,
+                              }} title={theme.description}>
+                                {theme.label}
+                              </div>
+
+                              {/* Chapter cells */}
+                              {Array.from({ length: chapCount }, (_, i) => {
+                                const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
+                                const presence = status?.presence ?? "absent";
+                                const bg = presence === "strong" ? theme.color
+                                  : presence === "moderate" ? `${theme.color}60`
+                                  : presence === "contradicted" ? "#ef4444"
+                                  : "rgba(255,255,255,0.04)";
+                                const opacity = presence === "absent" ? 0.3 : 1;
+                                return (
+                                  <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
+                                    flex: 1, height: 18, minWidth: 0,
+                                    background: bg, opacity,
+                                    borderRadius: 2, margin: "0 1px",
+                                    transition: "all 0.15s",
+                                    cursor: "default",
+                                  }} />
+                                );
+                              })}
+                            </div>
+                          ))}
+
+                          {/* Legend */}
+                          <div style={{ display: "flex", gap: 12, marginTop: 8, paddingLeft: 90 }}>
+                            {([
+                              { label: "Strong", bg: "var(--pw-accent, #a3e635)" },
+                              { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
+                              { label: "Absent", bg: "rgba(255,255,255,0.06)" },
+                              { label: "Contradicted", bg: "#ef4444" },
+                            ]).map((l) => (
+                              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 2, background: l.bg }} />
+                                <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Drift warnings */}
+                        {driftThemes.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            <div
+                              style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                cursor: "pointer", padding: "8px 12px", borderRadius: 10,
+                                background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.12)",
+                              }}
+                              onClick={() => setThemeScanExpanded(!themeScanExpanded)}
+                            >
+                              <span style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>
+                                {driftThemes.length} theme{driftThemes.length !== 1 ? "s" : ""} drifting
+                              </span>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                                style={{ transform: themeScanExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
+                              ><path d="M6 9l6 6 6-6"/></svg>
+                            </div>
+                            {themeScanExpanded && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                                {driftThemes.map((theme) => (
+                                  <div key={theme.id} style={{
+                                    padding: "8px 12px", borderRadius: 8,
+                                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+                                  }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: theme.color }} />
+                                      <span style={{ fontSize: 12, fontWeight: 700 }}>{theme.label}</span>
+                                    </div>
+                                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: 0 }}>
+                                      {theme.driftWarning}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Timestamp */}
+                        <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.5 }}>
+                          Scanned {new Date(ta.generatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                    );
+                  })() : (
+                    <div style={{ textAlign: "center", padding: "16px 0", opacity: 0.4 }}>
+                      <p style={{ fontSize: 12, margin: 0 }}>
+                        {aiOff
+                          ? "Enable AI in settings to scan for thematic consistency."
+                          : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
+                          ? "Write at least 2 chapters to scan for themes."
+                          : "Extract themes from your manuscript and track their consistency across chapters."}
                       </p>
                     </div>
                   )}

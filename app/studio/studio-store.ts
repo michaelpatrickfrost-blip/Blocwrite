@@ -262,6 +262,31 @@ export type StoryBible = {
   updatedAt: string;
 };
 
+/* ─── Thematic Consistency Scanner ─── */
+export type ThemePresence = "strong" | "moderate" | "absent" | "contradicted";
+
+export type ThemeChapterStatus = {
+  chapter: number;       // 1-based
+  presence: ThemePresence;
+  note?: string;         // short AI observation
+};
+
+export type ThemeEntry = {
+  id: string;
+  label: string;         // e.g. "Betrayal", "Freedom", "Sacrifice"
+  description: string;   // how the theme manifests in this novel
+  color: string;         // display color
+  chapterMap: ThemeChapterStatus[];
+  driftWarning?: string; // summary of any drift detected
+};
+
+export type ThematicAnalysis = {
+  themes: ThemeEntry[];
+  overallCohesion: number;  // 1-10
+  summary: string;          // overall assessment
+  generatedAt: string;
+};
+
 /** Manuscript health score — AI-generated publishing readiness report */
 export type ManuscriptHealthScore = {
   pacing: number;        // 1–10
@@ -286,6 +311,7 @@ export type Novel = {
   updatedAt: string;
   archived?: boolean;
   healthScore?: ManuscriptHealthScore | null;
+  thematicAnalysis?: ThematicAnalysis | null;
 };
 
 // ─── User-scoped localStorage keys ────────────────────────────────────────────
