@@ -915,8 +915,7 @@ function NovelWorkspacePage() {
   const [charChatReviewing, setCharChatReviewing] = useState(false);
   const [charChatRecommendations, setCharChatRecommendations] = useState<ChatRecommendation[]>([]);
   const [charChatReviewDone, setCharChatReviewDone] = useState(false);
-  // ── The Editor (overview — sentence-level edits) ──
-  const [showNccModal, setShowNccModal] = useState(false);
+  // ── The Editor (overview — sentence-level edits — unified under showEditorModal) ──
   const [nccBusy, setNccBusy] = useState(false);
   const [editorFindings, setEditorFindings] = useState<Array<{
     id: string;
@@ -1600,11 +1599,7 @@ function NovelWorkspacePage() {
         setCharChatOpen(false);
         return;
       }
-      if (showNccModal) {
-        setShowNccModal(false);
-        saveNow();
-        return;
-      }
+      // overview editor now unified under showEditorModal — handled above
       if (showStoryBibleModal) {
         setShowStoryBibleModal(false);
         saveNow();
@@ -1630,7 +1625,6 @@ function NovelWorkspacePage() {
     showPlanModal,
     showEditorModal,
     charChatOpen,
-    showNccModal,
     showStoryBibleModal,
     profileOpen,
     focusBlockIndex,
@@ -9092,13 +9086,7 @@ function NovelWorkspacePage() {
             <button type="button" className="btn pw-proofread-btn"
               style={{ display: "flex", alignItems: "center", gap: 5 }}
               title="The Editor — AI manuscript analysis"
-              onClick={() => {
-                if (activeChapter) {
-                  setShowEditorModal(true);
-                } else {
-                  setShowNccModal(true);
-                }
-              }}
+              onClick={() => setShowEditorModal(true)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               The Editor
@@ -10440,216 +10428,7 @@ function NovelWorkspacePage() {
         </section>
       </div>
 
-      {/* ── The Editor Modal (Overview — sentence-level edits) ── */}
-      {showNccModal && novel && (
-        <div className="pw-modal-overlay" onClick={() => setShowNccModal(false)}>
-          <div className="pw-editor-modal" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="pw-editor-modal-header">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>The Editor</h2>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>
-                  {`Full manuscript — ${novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters`}
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <button type="button"
-                  disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 1}
-                  onClick={() => void runEditorScan()}
-                  className="pw-editor-scan-btn"
-                >
-                  {nccBusy ? (
-                    <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
-                  ) : editorFindings.length > 0 ? "Re-scan" : "Scan Manuscript"}
-                </button>
-                <button type="button" onClick={() => setShowNccModal(false)} style={{
-                  background: "var(--pw-overlay-bg)", border: "none", borderRadius: 8,
-                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
-                }}>&times;</button>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="pw-editor-modal-body">
-              {/* Empty state */}
-              {editorFindings.length === 0 && !nccBusy && !editorApplyDone && (
-                <div style={{ textAlign: "center", padding: "48px 20px" }}>
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.25 }}>
-                    <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                  </svg>
-                  <p style={{ fontWeight: 700, fontSize: 14, margin: "0 0 4px" }}>Ready to edit your manuscript</p>
-                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, maxWidth: 340, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-                    Scans every chapter and suggests specific rewrites — showing you exactly what to change and why.
-                  </p>
-                </div>
-              )}
-
-              {/* Scanning state */}
-              {nccBusy && (
-                <div style={{ textAlign: "center", padding: "48px 20px" }}>
-                  <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
-                  <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Reading your manuscript...</p>
-                  {editorApplyProgress && (
-                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>{editorApplyProgress}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Summary bar */}
-              {editorSummary && !nccBusy && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "10px 14px", borderRadius: 10,
-                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)",
-                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
-                  marginBottom: 12,
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.4, flex: 1 }}>{editorSummary}</p>
-                  {editorScannedAt && <span style={{ fontSize: 9, color: "var(--pw-text-dim)", flexShrink: 0 }}>{new Date(editorScannedAt).toLocaleTimeString()}</span>}
-                </div>
-              )}
-
-              {/* Progress bar */}
-              {editorFindings.length > 0 && !nccBusy && !editorApplyDone && (() => {
-                const total = editorFindings.length;
-                const done = editorFindings.filter((f) => f.status !== "pending").length;
-                const accepted = editorFindings.filter((f) => f.status === "accepted").length;
-                return (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)" }}>{done}/{total} reviewed</span>
-                      <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{accepted} accepted</span>
-                    </div>
-                    <div style={{ height: 3, borderRadius: 2, background: "var(--pw-overlay-bg-hover)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${(done / total) * 100}%`, borderRadius: 2, background: "var(--pw-accent)", transition: "width 0.3s ease" }} />
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Edits list — before / after cards */}
-              {editorFindings.length > 0 && !nccBusy && (
-                <div className="pw-overview-edits">
-                  {/* Batch actions */}
-                  {editorFindings.some((f) => f.status === "pending") && (
-                    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                      <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "accepted" } : f))}
-                        style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb,163,230,53),0.08)", border: "1px solid rgba(var(--pw-accent-rgb,163,230,53),0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
-                        Accept all
-                      </button>
-                      <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "dismissed" } : f))}
-                        style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "var(--pw-text-dim)", cursor: "pointer" }}>
-                        Dismiss all
-                      </button>
-                    </div>
-                  )}
-
-                  {editorFindings.map((edit) => {
-                    const isDone = edit.status !== "pending";
-                    return (
-                      <div key={edit.id} className={`pw-ov-edit-card${isDone ? " done" : ""}`}>
-                        {/* Chapter label + status */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                          <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--pw-text-dim)", background: "var(--pw-overlay-bg-hover)", padding: "2px 6px", borderRadius: 4 }}>
-                            Ch {edit.chapter}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--pw-text-dim)" }}>
-                            {edit.chapterTitle}
-                          </span>
-                          {isDone && (
-                            <span style={{ fontSize: 10, fontWeight: 700, color: edit.status === "accepted" ? "var(--pw-accent)" : "var(--pw-text-dim)" }}>
-                              {edit.status === "accepted" ? "Accepted" : "Dismissed"}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Reason */}
-                        <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 8px", fontStyle: "italic", lineHeight: 1.4 }}>
-                          {edit.reason}
-                        </p>
-
-                        {/* Before / After */}
-                        <div className="pw-ov-edit-diff">
-                          <div className="pw-ov-edit-before">
-                            <span className="pw-ov-edit-label pw-ov-edit-label-before">Current</span>
-                            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{edit.original}</p>
-                          </div>
-                          <div className="pw-ov-edit-after">
-                            <span className="pw-ov-edit-label pw-ov-edit-label-after">Suggested</span>
-                            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{edit.revised}</p>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        {!isDone && (
-                          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                            <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === edit.id ? { ...f, status: "accepted" } : f))}
-                              className="pw-ov-edit-accept">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                              Accept
-                            </button>
-                            <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === edit.id ? { ...f, status: "dismissed" } : f))}
-                              className="pw-ov-edit-dismiss">
-                              Dismiss
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Apply accepted changes */}
-              {editorFindings.length > 0 && !editorFindings.some((f) => f.status === "pending") && !editorApplyDone && !nccBusy && (() => {
-                const acceptedCount = editorFindings.filter((f) => f.status === "accepted").length;
-                if (acceptedCount === 0) return (
-                  <div style={{ textAlign: "center", padding: "16px", opacity: 0.5 }}>
-                    <p style={{ fontSize: 12, margin: 0 }}>All edits dismissed — nothing to apply.</p>
-                  </div>
-                );
-                return (
-                  <div style={{ padding: "16px 0 8px", textAlign: "center" }}>
-                    {!editorApplying ? (
-                      <button type="button" onClick={() => applyOverviewEdits()} className="pw-editor-apply-btn" style={{ margin: "0 auto" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        Apply {acceptedCount} Edit{acceptedCount !== 1 ? "s" : ""} to Manuscript
-                      </button>
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-                        <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>Applying...</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Done message */}
-              {editorApplyDone && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10,
-                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.05)",
-                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
-                  marginTop: 8,
-                }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-accent)" }}>
-                      {editorApplyCount} edit{editorApplyCount !== 1 ? "s" : ""} applied
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 1 }}>
-                      Changes written directly to your chapters. Use Undo to revert.
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Old overview editor removed — now unified inside showEditorModal block */}
 
       {/* ── The Plan Modal ── */}
       {showPlanModal && (
@@ -12126,47 +11905,250 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {showEditorModal && activeChapter && (() => {
-        const edCtx = getEditorContext();
-        const chNum = edCtx?.chapterNumber ?? (novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1);
-        const chTotal = edCtx?.totalChapters ?? novel.chapters.length;
-        const chWc = edCtx?.wordCount ?? 0;
-        const chIdx = novel.chapters.findIndex((c) => c.id === activeChapter.id);
-        const bpChapters = novel.storyBible.bookPlan?.chapters ?? [];
-        const bpMatch = bpChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id);
-        const tkCharIds = bpMatch?.characterIds ?? [];
-        const tkLocIds = bpMatch?.locationIds ?? [];
-        const chProse = extractProseFromContent(activeChapter.content);
+      {showEditorModal && novel && (() => {
+        if (activeChapter) {
+          // ── Chapter mode: use the tabbed TheEditor component ──
+          const edCtx = getEditorContext();
+          const chNum = edCtx?.chapterNumber ?? (novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1);
+          const chTotal = edCtx?.totalChapters ?? novel.chapters.length;
+          const chWc = edCtx?.wordCount ?? 0;
+          const chIdx = novel.chapters.findIndex((c) => c.id === activeChapter.id);
+          const bpChapters = novel.storyBible.bookPlan?.chapters ?? [];
+          const bpMatch = bpChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id);
+          const tkCharIds = bpMatch?.characterIds ?? [];
+          const tkLocIds = bpMatch?.locationIds ?? [];
+          const chProse = extractProseFromContent(activeChapter.content);
+          return (
+            <TheEditor
+              open={showEditorModal}
+              onClose={() => { cancelAiWork(); setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); saveNow(); }}
+              chapterTitle={activeChapter.title || "Untitled chapter"}
+              chapterNumber={chNum}
+              totalChapters={chTotal}
+              charactersInChapter={edCtx?.charNames ?? []}
+              locationsInChapter={edCtx?.locNames ?? []}
+              wordCount={chWc}
+              loadingPhase={editorLoadingPhase}
+              error={editorError}
+              result={editorResult}
+              originalParagraphs={editorOriginalParagraphs}
+              onRun={runEditorPass}
+              onResultUpdate={setEditorResult}
+              onFixIssues={runEditorFixIssues}
+              onApply={(revisedText) => {
+                if (!activeChapter) return;
+                updateChapter(activeChapter.id, { content: revisedText });
+                setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
+              }}
+              chapterProse={chProse}
+              storyBible={novel.storyBible}
+              allChapters={novel.chapters}
+              currentChapterIndex={chIdx >= 0 ? chIdx : 0}
+              planCharacterIds={tkCharIds}
+              planLocationIds={tkLocIds}
+              onThreadKeeperAiCheck={runThreadKeeperAiCheck}
+            />
+          );
+        }
+
+        // ── Overview mode: sentence-level manuscript edits ──
+        const closeOverview = () => { setShowEditorModal(false); saveNow(); };
         return (
-          <TheEditor
-            open={showEditorModal}
-            onClose={() => { cancelAiWork(); setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); saveNow(); }}
-            chapterTitle={activeChapter.title || "Untitled chapter"}
-            chapterNumber={chNum}
-            totalChapters={chTotal}
-            charactersInChapter={edCtx?.charNames ?? []}
-            locationsInChapter={edCtx?.locNames ?? []}
-            wordCount={chWc}
-            loadingPhase={editorLoadingPhase}
-            error={editorError}
-            result={editorResult}
-            originalParagraphs={editorOriginalParagraphs}
-            onRun={runEditorPass}
-            onResultUpdate={setEditorResult}
-            onFixIssues={runEditorFixIssues}
-            onApply={(revisedText) => {
-              if (!activeChapter) return;
-              updateChapter(activeChapter.id, { content: revisedText });
-              setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
-            }}
-            chapterProse={chProse}
-            storyBible={novel.storyBible}
-            allChapters={novel.chapters}
-            currentChapterIndex={chIdx >= 0 ? chIdx : 0}
-            planCharacterIds={tkCharIds}
-            planLocationIds={tkLocIds}
-            onThreadKeeperAiCheck={runThreadKeeperAiCheck}
-          />
+          <div className="pw-modal-overlay" onClick={closeOverview}>
+            <div className="pw-chapter-review-modal" onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 680, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              {/* Header — same style as chapter editor */}
+              <div style={{ flexShrink: 0, padding: "20px 24px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>The Editor</h2>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
+                      background: "var(--pw-accent-muted, rgba(163,230,53,0.1))",
+                      color: "var(--pw-accent, #a3e635)",
+                      textTransform: "uppercase", letterSpacing: "0.06em",
+                    }}>
+                      Full Manuscript
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13, opacity: 0.5, margin: 0 }}>
+                    {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters with content
+                  </p>
+                </div>
+                <button type="button" className="pw-bible-close" onClick={closeOverview} aria-label="Close" style={{ marginTop: -4 }}>&times;</button>
+              </div>
+
+              {/* Context bar */}
+              <div style={{
+                display: "flex", gap: 12, padding: "12px 24px",
+                fontSize: 11, color: "var(--pw-text-dim, #888)",
+                flexWrap: "wrap", alignItems: "center",
+                borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                  <span>{novel.chapters.length} chapters</span>
+                </div>
+                {novel.storyBible.characters.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>{novel.storyBible.characters.length} characters</span>
+                  </div>
+                )}
+                <div style={{ marginLeft: "auto" }}>
+                  <button type="button"
+                    disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 1}
+                    onClick={() => void runEditorScan()}
+                    style={{
+                      padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                      color: "var(--pw-accent)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                      cursor: nccBusy ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5,
+                      transition: "all 0.15s",
+                      opacity: nccBusy ? 0.5 : 1,
+                    }}
+                  >
+                    {nccBusy ? (
+                      <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
+                    ) : editorFindings.length > 0 ? "Re-scan" : "Scan Manuscript"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, overflow: "auto", padding: "16px 24px 24px" }}>
+                {/* Empty state */}
+                {editorFindings.length === 0 && !nccBusy && !editorApplyDone && (
+                  <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.25 }}>
+                      <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                    <p style={{ fontWeight: 700, fontSize: 14, margin: "0 0 4px" }}>Ready to edit your manuscript</p>
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, maxWidth: 340, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
+                      Scans every chapter and suggests specific rewrites — showing you exactly what to change and why.
+                    </p>
+                  </div>
+                )}
+
+                {/* Scanning */}
+                {nccBusy && (
+                  <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                    <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+                    <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Reading your manuscript...</p>
+                    {editorApplyProgress && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>{editorApplyProgress}</p>}
+                  </div>
+                )}
+
+                {/* Summary */}
+                {editorSummary && !nccBusy && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)", marginBottom: 12 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.4, flex: 1 }}>{editorSummary}</p>
+                  </div>
+                )}
+
+                {/* Progress */}
+                {editorFindings.length > 0 && !nccBusy && !editorApplyDone && (() => {
+                  const total = editorFindings.length;
+                  const done = editorFindings.filter((f) => f.status !== "pending").length;
+                  const accepted = editorFindings.filter((f) => f.status === "accepted").length;
+                  return (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)" }}>{done}/{total} reviewed</span>
+                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{accepted} accepted</span>
+                      </div>
+                      <div style={{ height: 3, borderRadius: 2, background: "var(--pw-overlay-bg-hover)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${(done / total) * 100}%`, borderRadius: 2, background: "var(--pw-accent)", transition: "width 0.3s ease" }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Edits list */}
+                {editorFindings.length > 0 && !nccBusy && (
+                  <div className="pw-overview-edits">
+                    {editorFindings.some((f) => f.status === "pending") && (
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                        <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "accepted" } : f))}
+                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb,163,230,53),0.08)", border: "1px solid rgba(var(--pw-accent-rgb,163,230,53),0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
+                          Accept all
+                        </button>
+                        <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "dismissed" } : f))}
+                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "var(--pw-text-dim)", cursor: "pointer" }}>
+                          Dismiss all
+                        </button>
+                      </div>
+                    )}
+                    {editorFindings.map((edit) => {
+                      const isDone = edit.status !== "pending";
+                      return (
+                        <div key={edit.id} className={`pw-ov-edit-card${isDone ? " done" : ""}`}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                            <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--pw-text-dim)", background: "var(--pw-overlay-bg-hover)", padding: "2px 6px", borderRadius: 4 }}>Ch {edit.chapter}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--pw-text-dim)" }}>{edit.chapterTitle}</span>
+                            {isDone && <span style={{ fontSize: 10, fontWeight: 700, color: edit.status === "accepted" ? "var(--pw-accent)" : "var(--pw-text-dim)" }}>{edit.status === "accepted" ? "Accepted" : "Dismissed"}</span>}
+                          </div>
+                          <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 8px", fontStyle: "italic", lineHeight: 1.4 }}>{edit.reason}</p>
+                          <div className="pw-ov-edit-diff">
+                            <div className="pw-ov-edit-before">
+                              <span className="pw-ov-edit-label pw-ov-edit-label-before">Current</span>
+                              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{edit.original}</p>
+                            </div>
+                            <div className="pw-ov-edit-after">
+                              <span className="pw-ov-edit-label pw-ov-edit-label-after">Suggested</span>
+                              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{edit.revised}</p>
+                            </div>
+                          </div>
+                          {!isDone && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                              <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === edit.id ? { ...f, status: "accepted" } : f))} className="pw-ov-edit-accept">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                Accept
+                              </button>
+                              <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === edit.id ? { ...f, status: "dismissed" } : f))} className="pw-ov-edit-dismiss">Dismiss</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Apply */}
+                {editorFindings.length > 0 && !editorFindings.some((f) => f.status === "pending") && !editorApplyDone && !nccBusy && (() => {
+                  const acceptedCount = editorFindings.filter((f) => f.status === "accepted").length;
+                  if (acceptedCount === 0) return <div style={{ textAlign: "center", padding: "16px", opacity: 0.5 }}><p style={{ fontSize: 12, margin: 0 }}>All edits dismissed — nothing to apply.</p></div>;
+                  return (
+                    <div style={{ padding: "16px 0 8px", textAlign: "center" }}>
+                      {!editorApplying ? (
+                        <button type="button" onClick={() => applyOverviewEdits()} className="pw-editor-apply-btn" style={{ margin: "0 auto" }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          Apply {acceptedCount} Edit{acceptedCount !== 1 ? "s" : ""} to Manuscript
+                        </button>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+                          <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>Applying...</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Done */}
+                {editorApplyDone && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.05)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)", marginTop: 8 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-accent)" }}>{editorApplyCount} edit{editorApplyCount !== 1 ? "s" : ""} applied</div>
+                      <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 1 }}>Changes written directly to your chapters. Use Undo to revert.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         );
       })()}
 
@@ -14610,7 +14592,7 @@ function NovelWorkspacePage() {
       {/* ── Floating Chat FAB (bottom-left) ── */}
       {!aiOff && !charChatOpen
         && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
-        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showNccModal && !showEditorModal && (
+        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showEditorModal && (
         <div className="pw-chat-fab-wrap">
           {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
