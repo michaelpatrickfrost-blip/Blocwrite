@@ -258,7 +258,7 @@ function TrustBar() {
     {
       icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>,
       headline: "You own your AI key",
-      sub: "Connect OpenRouter — we never charge for AI",
+      sub: "Connect OpenRouter, Hugging Face & more — we never charge for AI",
     },
     {
       icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>,
@@ -324,6 +324,7 @@ function AiBanner() {
             <p style={{ fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,0.5)", margin: 0 }}>
               Blocwrite does <strong style={{ color: "rgba(255,255,255,0.8)" }}>not</strong> include AI credits. You connect your own API key from{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>OpenRouter</strong> (free models available),{" "}
+              <strong style={{ color: "rgba(255,255,255,0.8)" }}>Hugging Face</strong>,{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>Infermatic</strong>, or{" "}
               <strong style={{ color: "rgba(255,255,255,0.8)" }}>LM Studio</strong> (local, 100% free). You choose your model, you control your costs. Don&apos;t want AI? Just toggle it off — every feature works without it. The subscription covers the studio workspace only.
             </p>
@@ -570,7 +571,7 @@ const FEATURES = [
   },
   {
     title: "Bring your own AI — or don't",
-    desc: "Use OpenRouter, Infermatic, or LM Studio. We never charge for AI. Don't want AI? Toggle it off and write entirely by hand.",
+    desc: "Use OpenRouter, Hugging Face, Infermatic, or LM Studio. We never charge for AI. Don't want AI? Toggle it off and write entirely by hand.",
     color: "#4d6a00",
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
   },

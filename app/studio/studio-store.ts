@@ -1098,7 +1098,7 @@ export function gatherSettings(): Record<string, string> {
       keys.push(`pilotwriter.assistant.${provider}.${field}`);
     }
     // Grab other providers too
-    for (const p of ["openrouter", "infermatic", "lmstudio"]) {
+    for (const p of ["openrouter", "infermatic", "lmstudio", "huggingface"]) {
       for (const field of ["key", "model", "baseUrl"]) {
         const k = `pilotwriter.assistant.${p}.${field}`;
         if (!keys.includes(k)) keys.push(k);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type ProviderId = "openrouter" | "infermatic" | "lmstudio";
+type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 type OpenRouterModel = {
   id?: string;
   name?: string;
@@ -28,15 +28,16 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
+  huggingface: "https://router.huggingface.co/v1",
 };
 const MODELS_TIMEOUT_MS = 15000;
 
 function providerLabel(provider: ProviderId) {
-  return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : "LM Studio";
+  return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : "LM Studio";
 }
 
 function normalizeProvider(raw: string | null): ProviderId {
-  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio") return raw;
+  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface") return raw;
   return "openrouter";
 }
 
@@ -62,6 +63,10 @@ function cleanBaseUrl(raw: string | null, provider: ProviderId) {
     const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
     if (fixed.endsWith("/v1")) return fixed;
     return `${fixed}/v1`;
+  }
+  if (provider === "huggingface") {
+    if (normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/v1`;
   }
   return normalized;
 }
@@ -101,7 +106,7 @@ export async function GET(request: Request) {
     const provider = normalizeProvider(request.headers.get("x-provider"));
     const apiKey = normalizeApiKey(request.headers.get("x-provider-key") || request.headers.get("x-openrouter-key"));
     const baseUrl = cleanBaseUrl(request.headers.get("x-provider-base-url"), provider);
-    const requiresKey = provider === "openrouter" || provider === "infermatic";
+    const requiresKey = provider === "openrouter" || provider === "infermatic" || provider === "huggingface";
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });
     }

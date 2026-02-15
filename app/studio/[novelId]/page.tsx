@@ -51,7 +51,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio";
+type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -207,6 +207,13 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     requiresKey: false,
     defaultBaseUrl: "http://127.0.0.1:1234/v1",
     defaultModel: "local-model",
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    requiresKey: true,
+    defaultBaseUrl: "https://router.huggingface.co/v1",
+    defaultModel: "deepseek-ai/DeepSeek-R1",
   },
 ];
 
