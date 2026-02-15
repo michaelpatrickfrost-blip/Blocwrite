@@ -10466,82 +10466,40 @@ function NovelWorkspacePage() {
       {/* ── Narrative Control Center Modal ── */}
       {showNccModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowNccModal(false)}>
-          <div style={{
-            background: "var(--pw-bg)", borderRadius: 20,
-            width: "96%", maxWidth: 900, maxHeight: "88vh",
-            display: "flex", flexDirection: "column",
-            boxShadow: "var(--pw-shadow-modal)", border: "1px solid var(--pw-border)",
-          }} onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div style={{
-              padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                </div>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Narrative Control Center</h2>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--pw-text-dim)" }}>
-                    Your story at a glance — arcs, relationships, tension, and threads.
-                  </p>
-                </div>
+          <div className="pw-ncc-modal" onClick={(e) => e.stopPropagation()}>
+            {/* Compact header */}
+            <div className="pw-ncc-header">
+              <h2 className="pw-ncc-title">NCC</h2>
+              <div className="pw-ncc-tabs">
+                {NCC_TABS.map((tab) => (
+                  <button key={tab.id} type="button" onClick={() => setNccTab(tab.id)}
+                    className={`pw-ncc-tab${nccTab === tab.id ? " active" : ""}`}
+                    style={{ "--tab-color": tab.color } as React.CSSProperties}>
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto", flexShrink: 0 }}>
                 <button type="button" disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
-                  onClick={() => void runNccAnalysis()}
-                  style={{
-                    padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                    background: nccBusy ? "var(--pw-overlay-bg)" : "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
-                    color: nccBusy ? "var(--pw-text-dim)" : "#a3e635",
-                    border: "1px solid rgba(163,230,53,0.2)", cursor: nccBusy ? "default" : "pointer",
-                    display: "flex", alignItems: "center", gap: 6,
-                  }}
-                >
-                  {nccBusy ? <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Analysing...</> : novel.narrativeControl ? "Regenerate" : "Analyse Novel"}
+                  onClick={() => void runNccAnalysis()} className="pw-ncc-analyse-btn">
+                  {nccBusy ? <><span className="pw-plan-spinner" style={{ width: 10, height: 10 }} /> Analysing</> : novel.narrativeControl ? "↻ Re-scan" : "Analyse"}
                 </button>
-                <button type="button" onClick={() => setShowNccModal(false)} style={{
-                  background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
-                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
-                }}>&times;</button>
+                <button type="button" onClick={() => setShowNccModal(false)} className="pw-ncc-close">&times;</button>
               </div>
-            </div>
-
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: 2, padding: "12px 24px 0", borderBottom: "1px solid var(--pw-border-light)", overflow: "auto" }}>
-              {NCC_TABS.map((tab) => (
-                <button key={tab.id} type="button" onClick={() => setNccTab(tab.id)} style={{
-                  padding: "8px 14px", fontSize: 12, fontWeight: nccTab === tab.id ? 700 : 500,
-                  borderRadius: "8px 8px 0 0", border: "none", cursor: "pointer",
-                  background: nccTab === tab.id ? "var(--pw-overlay-bg-hover)" : "transparent",
-                  color: nccTab === tab.id ? tab.color : "var(--pw-text-dim)",
-                  borderBottom: nccTab === tab.id ? `2px solid ${tab.color}` : "2px solid transparent",
-                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", transition: "all 0.15s",
-                }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={tab.icon}/></svg>
-                  {tab.label}
-                </button>
-              ))}
             </div>
 
             {/* Content */}
-            <div style={{ flex: 1, overflow: "auto", padding: "18px 24px 24px" }}>
+            <div className="pw-ncc-body">
               {!novel.narrativeControl && !nccBusy ? (
-                <div style={{ textAlign: "center", padding: "60px 20px", opacity: 0.4 }}>
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block" }}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                  <p style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>No analysis yet</p>
-                  <p style={{ fontSize: 12 }}>Click &quot;Analyse Novel&quot; to generate your narrative dashboard. Needs at least 2 chapters.</p>
+                <div className="pw-ncc-empty">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  <p style={{ fontWeight: 700, fontSize: 14, margin: "12px 0 4px" }}>No analysis yet</p>
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0 }}>Click Analyse to scan your manuscript. Needs 2+ chapters.</p>
                 </div>
               ) : nccBusy && !novel.narrativeControl ? (
-                <div style={{ textAlign: "center", padding: "60px 20px" }}>
-                  <div style={{ width: 28, height: 28, border: "2px solid rgba(163,230,53,0.2)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
-                  <p style={{ fontSize: 13, color: "var(--pw-text-dim)" }}>Analysing {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters...</p>
+                <div className="pw-ncc-empty">
+                  <div style={{ width: 24, height: 24, border: "2px solid rgba(163,230,53,0.2)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "12px 0 0" }}>Scanning {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters...</p>
                 </div>
               ) : novel.narrativeControl && (() => {
                 const nc = novel.narrativeControl!;
@@ -10550,30 +10508,25 @@ function NovelWorkspacePage() {
                   <>
                     {/* ── Character Arcs ── */}
                     {nccTab === "arcs" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                        {nc.characterArcs.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No character arcs detected.</p> : nc.characterArcs.map((arc, ai) => (
-                          <div key={ai} style={{ borderRadius: 12, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", padding: "14px 16px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                              <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#a3e635" }}>
-                                {arc.name.charAt(0)}
-                              </div>
-                              <span style={{ fontWeight: 700, fontSize: 14 }}>{arc.name}</span>
+                      <div className="pw-ncc-cards">
+                        {nc.characterArcs.length === 0 ? <p className="pw-ncc-no-data">No character arcs detected.</p> : nc.characterArcs.map((arc, ai) => (
+                          <div key={ai} className="pw-ncc-card">
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                              <span style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#a3e635", flexShrink: 0 }}>{arc.name.charAt(0)}</span>
+                              <span style={{ fontWeight: 700, fontSize: 13 }}>{arc.name}</span>
                             </div>
-                            {/* Arc timeline */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 0, marginBottom: 6 }}>
                               {arc.arcPhases.map((phase, pi) => (
-                                <div key={pi} style={{ flex: 1, textAlign: "center", position: "relative" }}>
-                                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#a3e635", margin: "0 auto 6px", position: "relative", zIndex: 1 }} />
-                                  {pi < arc.arcPhases.length - 1 && (
-                                    <div style={{ position: "absolute", top: 4, left: "50%", width: "100%", height: 2, background: "rgba(163,230,53,0.2)", zIndex: 0 }} />
-                                  )}
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: "#a3e635" }}>Ch {phase.chapter}</div>
-                                  <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2 }}>{phase.phase}</div>
-                                  {phase.note && <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>{phase.note}</div>}
+                                <div key={pi} style={{ flex: 1, textAlign: "center", position: "relative", minWidth: 0 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#a3e635", margin: "0 auto 4px", position: "relative", zIndex: 1 }} />
+                                  {pi < arc.arcPhases.length - 1 && <div style={{ position: "absolute", top: 3, left: "50%", width: "100%", height: 2, background: "rgba(163,230,53,0.15)", zIndex: 0 }} />}
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: "#a3e635" }}>Ch {phase.chapter}</div>
+                                  <div style={{ fontSize: 10, fontWeight: 600, marginTop: 1 }}>{phase.phase}</div>
+                                  {phase.note && <div style={{ fontSize: 9, color: "var(--pw-text-dim)", marginTop: 1 }}>{phase.note}</div>}
                                 </div>
                               ))}
                             </div>
-                            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, fontStyle: "italic" }}>{arc.overallArc}</p>
+                            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontStyle: "italic" }}>{arc.overallArc}</p>
                           </div>
                         ))}
                       </div>
@@ -10581,25 +10534,20 @@ function NovelWorkspacePage() {
 
                     {/* ── Relationships ── */}
                     {nccTab === "relationships" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        {nc.relationships.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No relationship evolutions detected.</p> : nc.relationships.map((rel, ri) => (
-                          <div key={ri} style={{ borderRadius: 12, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", padding: "14px 16px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                              <span style={{ fontWeight: 700, fontSize: 13, color: "#f472b6" }}>{rel.fromName}</span>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f472b6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                              <span style={{ fontWeight: 700, fontSize: 13, color: "#f472b6" }}>{rel.toName}</span>
-                              <span style={{ fontSize: 11, color: "var(--pw-text-dim)", marginLeft: "auto", fontStyle: "italic" }}>Now: {rel.currentState}</span>
+                      <div className="pw-ncc-cards">
+                        {nc.relationships.length === 0 ? <p className="pw-ncc-no-data">No relationship evolutions detected.</p> : nc.relationships.map((rel, ri) => (
+                          <div key={ri} className="pw-ncc-card">
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 12, color: "#f472b6" }}>{rel.fromName}</span>
+                              <span style={{ color: "var(--pw-text-dim)", fontSize: 10 }}>→</span>
+                              <span style={{ fontWeight: 700, fontSize: 12, color: "#f472b6" }}>{rel.toName}</span>
+                              <span style={{ fontSize: 10, color: "var(--pw-text-dim)", marginLeft: "auto", fontStyle: "italic" }}>{rel.currentState}</span>
                             </div>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                               {rel.evolution.map((ev, ei) => (
-                                <div key={ei} style={{
-                                  padding: "4px 10px", borderRadius: 8, fontSize: 11,
-                                  background: "rgba(244,114,182,0.08)", border: "1px solid rgba(244,114,182,0.15)",
-                                  display: "flex", alignItems: "center", gap: 4,
-                                }}>
-                                  <span style={{ fontWeight: 700, color: "#f472b6" }}>Ch{ev.chapter}</span>
-                                  <span style={{ color: "var(--pw-text-dim)" }}>{ev.state}</span>
-                                </div>
+                                <span key={ei} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, background: "rgba(244,114,182,0.06)", border: "1px solid rgba(244,114,182,0.12)" }}>
+                                  <b style={{ color: "#f472b6" }}>Ch{ev.chapter}</b> {ev.state}
+                                </span>
                               ))}
                             </div>
                           </div>
@@ -10610,49 +10558,31 @@ function NovelWorkspacePage() {
                     {/* ── Tension Curve ── */}
                     {nccTab === "tension" && (
                       <div>
-                        {nc.tensionCurve.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No tension data.</p> : (
+                        {nc.tensionCurve.length === 0 ? <p className="pw-ncc-no-data">No tension data.</p> : (
                           <>
-                            {/* SVG tension graph */}
-                            <div style={{ background: "var(--pw-overlay-bg)", borderRadius: 12, border: "1px solid var(--pw-border-light)", padding: "16px 16px 8px", marginBottom: 12 }}>
-                              <svg width="100%" height="180" viewBox={`0 0 ${Math.max(nc.tensionCurve.length * 60, 300)} 180`} style={{ display: "block" }}>
-                                {/* Grid lines */}
-                                {[2, 4, 6, 8, 10].map((v) => (
-                                  <line key={v} x1="30" y1={160 - (v / 10) * 140} x2={nc.tensionCurve.length * 60} y2={160 - (v / 10) * 140}
-                                    stroke="var(--pw-border-light)" strokeWidth="1" />
-                                ))}
-                                {/* Y-axis labels */}
-                                {[2, 5, 8, 10].map((v) => (
-                                  <text key={v} x="22" y={164 - (v / 10) * 140} fill="var(--pw-text-dim)" fontSize="9" textAnchor="end">{v}</text>
-                                ))}
-                                {/* Area fill */}
-                                <path d={
-                                  `M30,160 ` +
-                                  nc.tensionCurve.map((t, i) => `L${30 + i * 55},${160 - (t.tension / 10) * 140}`).join(" ") +
-                                  ` L${30 + (nc.tensionCurve.length - 1) * 55},160 Z`
-                                } fill="rgba(245,158,11,0.08)" />
-                                {/* Line */}
-                                <polyline points={nc.tensionCurve.map((t, i) => `${30 + i * 55},${160 - (t.tension / 10) * 140}`).join(" ")}
-                                  fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                                {/* Points */}
+                            <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
+                              <svg width="100%" height="140" viewBox={`0 0 ${Math.max(nc.tensionCurve.length * 60, 300)} 140`} style={{ display: "block" }}>
+                                {[2, 5, 8].map((v) => <line key={v} x1="30" y1={125 - (v / 10) * 110} x2={nc.tensionCurve.length * 60} y2={125 - (v / 10) * 110} stroke="var(--pw-border-light)" strokeWidth="1" />)}
+                                {[2, 5, 8].map((v) => <text key={v} x="22" y={129 - (v / 10) * 110} fill="var(--pw-text-dim)" fontSize="8" textAnchor="end">{v}</text>)}
+                                <path d={`M30,125 ${nc.tensionCurve.map((t, i) => `L${30 + i * 55},${125 - (t.tension / 10) * 110}`).join(" ")} L${30 + (nc.tensionCurve.length - 1) * 55},125 Z`} fill="rgba(245,158,11,0.06)" />
+                                <polyline points={nc.tensionCurve.map((t, i) => `${30 + i * 55},${125 - (t.tension / 10) * 110}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                 {nc.tensionCurve.map((t, i) => (
                                   <g key={i}>
-                                    <circle cx={30 + i * 55} cy={160 - (t.tension / 10) * 140} r="4" fill="#f59e0b" />
-                                    <text x={30 + i * 55} y="175" fill="var(--pw-text-dim)" fontSize="9" textAnchor="middle">Ch{t.chapter}</text>
+                                    <circle cx={30 + i * 55} cy={125 - (t.tension / 10) * 110} r="3.5" fill="#f59e0b" />
+                                    <text x={30 + i * 55} y="138" fill="var(--pw-text-dim)" fontSize="8" textAnchor="middle">Ch{t.chapter}</text>
                                   </g>
                                 ))}
                               </svg>
                             </div>
-                            {/* Chapter tension labels */}
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                               {nc.tensionCurve.map((t, i) => (
-                                <div key={i} style={{
-                                  padding: "6px 10px", borderRadius: 8, fontSize: 11,
-                                  background: t.tension >= 8 ? "rgba(239,68,68,0.08)" : t.tension >= 5 ? "rgba(245,158,11,0.08)" : "var(--pw-overlay-bg)",
-                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.15)" : t.tension >= 5 ? "rgba(245,158,11,0.15)" : "var(--pw-border-light)"}`,
+                                <span key={i} style={{
+                                  padding: "3px 8px", borderRadius: 6, fontSize: 10,
+                                  background: t.tension >= 8 ? "rgba(239,68,68,0.06)" : t.tension >= 5 ? "rgba(245,158,11,0.06)" : "var(--pw-overlay-bg)",
+                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.12)" : t.tension >= 5 ? "rgba(245,158,11,0.12)" : "var(--pw-border-light)"}`,
                                 }}>
-                                  <span style={{ fontWeight: 700, color: t.tension >= 8 ? "#ef4444" : t.tension >= 5 ? "#f59e0b" : "var(--pw-text-dim)" }}>Ch{t.chapter}: {t.tension}/10</span>
-                                  <span style={{ color: "var(--pw-text-dim)", marginLeft: 6 }}>{t.label}</span>
-                                </div>
+                                  <b style={{ color: t.tension >= 8 ? "#ef4444" : t.tension >= 5 ? "#f59e0b" : "var(--pw-text-dim)" }}>Ch{t.chapter} {t.tension}/10</b> <span style={{ color: "var(--pw-text-dim)" }}>{t.label}</span>
+                                </span>
                               ))}
                             </div>
                           </>
@@ -10663,70 +10593,53 @@ function NovelWorkspacePage() {
                     {/* ── Plot Threads ── */}
                     {nccTab === "threads" && (
                       <div>
-                        {nc.plotThreads.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No plot threads detected.</p> : (
-                          <>
-                            {/* Thread timeline */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                              {nc.plotThreads.map((thread, ti) => {
-                                const statusColor = thread.status === "resolved" ? "#a3e635" : thread.status === "progressing" ? "#f59e0b" : thread.status === "abandoned" ? "#ef4444" : "#818cf8";
-                                const startPct = Math.max(0, ((thread.introducedChapter - 1) / chapCount) * 100);
-                                const endPct = thread.resolvedChapter ? Math.min(100, (thread.resolvedChapter / chapCount) * 100) : 100;
-                                return (
-                                  <div key={ti} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-                                    <div style={{ width: 140, flexShrink: 0 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{thread.label}</div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-                                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4, background: `${statusColor}18`, color: statusColor }}>{thread.status}</span>
-                                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Ch{thread.introducedChapter}{thread.resolvedChapter ? `–${thread.resolvedChapter}` : "+"}</span>
-                                      </div>
-                                    </div>
-                                    {/* Bar */}
-                                    <div style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--pw-overlay-bg)", position: "relative" }}>
-                                      <div style={{
-                                        position: "absolute", top: 0, left: `${startPct}%`, width: `${endPct - startPct}%`, height: "100%",
-                                        borderRadius: 4, background: statusColor, opacity: 0.6,
-                                      }} />
+                        {nc.plotThreads.length === 0 ? <p className="pw-ncc-no-data">No plot threads detected.</p> : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {nc.plotThreads.map((thread, ti) => {
+                              const statusColor = thread.status === "resolved" ? "#a3e635" : thread.status === "progressing" ? "#f59e0b" : thread.status === "abandoned" ? "#ef4444" : "#818cf8";
+                              const startPct = Math.max(0, ((thread.introducedChapter - 1) / chapCount) * 100);
+                              const endPct = thread.resolvedChapter ? Math.min(100, (thread.resolvedChapter / chapCount) * 100) : 100;
+                              return (
+                                <div key={ti} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                                  <div style={{ width: 120, flexShrink: 0 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{thread.label}</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 1 }}>
+                                      <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 4px", borderRadius: 3, background: `${statusColor}15`, color: statusColor }}>{thread.status}</span>
+                                      <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>Ch{thread.introducedChapter}{thread.resolvedChapter ? `–${thread.resolvedChapter}` : "+"}</span>
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                            {/* Notes */}
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
-                              {nc.plotThreads.filter((t) => t.note).map((thread, ti) => (
-                                <div key={ti} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", maxWidth: 280 }}>
-                                  <span style={{ fontWeight: 600 }}>{thread.label}:</span> <span style={{ color: "var(--pw-text-dim)" }}>{thread.note}</span>
+                                  <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--pw-overlay-bg)", position: "relative" }}>
+                                    <div style={{ position: "absolute", top: 0, left: `${startPct}%`, width: `${endPct - startPct}%`, height: "100%", borderRadius: 3, background: statusColor, opacity: 0.5 }} />
+                                  </div>
                                 </div>
-                              ))}
-                            </div>
-                          </>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     )}
 
                     {/* ── Canon Conflicts ── */}
                     {nccTab === "conflicts" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div className="pw-ncc-cards">
                         {nc.canonConflicts.length === 0 ? (
-                          <div style={{ textAlign: "center", padding: "30px 0", opacity: 0.5 }}>
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 10px", display: "block" }}><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            <p style={{ fontWeight: 700, fontSize: 13, color: "#a3e635" }}>No canon conflicts detected</p>
+                          <div className="pw-ncc-empty" style={{ padding: "24px 0" }}>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <p style={{ fontWeight: 700, fontSize: 12, color: "#a3e635", margin: "8px 0 0" }}>No canon conflicts</p>
                           </div>
                         ) : nc.canonConflicts.map((conflict, ci) => (
-                          <div key={ci} style={{
-                            padding: "10px 14px", borderRadius: 10,
-                            background: conflict.severity === "critical" ? "rgba(239,68,68,0.06)" : conflict.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
-                            border: `1px solid ${conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
+                          <div key={ci} className="pw-ncc-card" style={{
+                            borderColor: conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : undefined,
                           }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
                               <span style={{
-                                fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 6px", borderRadius: 4,
-                                background: conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
+                                fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 3,
+                                background: conflict.severity === "critical" ? "rgba(239,68,68,0.12)" : conflict.severity === "warning" ? "rgba(245,158,11,0.12)" : "rgba(129,140,248,0.1)",
                                 color: conflict.severity === "critical" ? "#ef4444" : conflict.severity === "warning" ? "#f59e0b" : "#818cf8",
                               }}>{conflict.severity}</span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)" }}>{conflict.type} — Chapter {conflict.chapter}</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: "var(--pw-text-dim)" }}>{conflict.type} — Ch {conflict.chapter}</span>
                             </div>
-                            <div style={{ fontSize: 12 }}>{conflict.message}</div>
+                            <div style={{ fontSize: 11 }}>{conflict.message}</div>
                           </div>
                         ))}
                       </div>
@@ -10735,40 +10648,28 @@ function NovelWorkspacePage() {
                     {/* ── Theme Presence ── */}
                     {nccTab === "themes" && (
                       <div>
-                        {nc.themePresence.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No themes detected.</p> : (
+                        {nc.themePresence.length === 0 ? <p className="pw-ncc-no-data">No themes detected.</p> : (
                           <div>
-                            {/* Chapter header */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4, paddingLeft: 100 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3, paddingLeft: 90 }}>
                               {Array.from({ length: chapCount }, (_, i) => (
-                                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 600, minWidth: 0 }}>{i + 1}</div>
+                                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 8, color: "var(--pw-text-dim)", fontWeight: 600, minWidth: 0 }}>{i + 1}</div>
                               ))}
                             </div>
-                            {/* Theme rows */}
                             {nc.themePresence.map((theme, ti) => (
-                              <div key={ti} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4 }}>
-                                <div style={{ width: 96, flexShrink: 0, fontSize: 11, fontWeight: 600, color: theme.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 4 }}>
-                                  {theme.label}
-                                </div>
+                              <div key={ti} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3 }}>
+                                <div style={{ width: 86, flexShrink: 0, fontSize: 10, fontWeight: 600, color: theme.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 4 }}>{theme.label}</div>
                                 {Array.from({ length: chapCount }, (_, i) => {
                                   const entry = theme.chapters.find((c) => c.chapter === i + 1);
                                   const strength = entry?.strength ?? 0;
-                                  const opacities = [0.05, 0.25, 0.55, 1];
-                                  return (
-                                    <div key={i} style={{
-                                      flex: 1, height: 20, minWidth: 0, margin: "0 1px", borderRadius: 3,
-                                      background: theme.color, opacity: opacities[strength] ?? 0.05,
-                                      transition: "opacity 0.2s",
-                                    }} title={`Ch${i + 1}: ${["Absent", "Subtle", "Moderate", "Strong"][strength]}`} />
-                                  );
+                                  return <div key={i} style={{ flex: 1, height: 16, minWidth: 0, margin: "0 1px", borderRadius: 2, background: theme.color, opacity: [0.04, 0.2, 0.5, 1][strength] ?? 0.04 }} title={`Ch${i + 1}: ${["Absent", "Subtle", "Moderate", "Strong"][strength]}`} />;
                                 })}
                               </div>
                             ))}
-                            {/* Legend */}
-                            <div style={{ display: "flex", gap: 12, marginTop: 10, paddingLeft: 100 }}>
+                            <div style={{ display: "flex", gap: 10, marginTop: 8, paddingLeft: 90 }}>
                               {["Absent", "Subtle", "Moderate", "Strong"].map((l, i) => (
-                                <div key={l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                  <div style={{ width: 10, height: 10, borderRadius: 2, background: "#818cf8", opacity: [0.05, 0.25, 0.55, 1][i] }} />
-                                  <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l}</span>
+                                <div key={l} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: 2, background: "#818cf8", opacity: [0.04, 0.2, 0.5, 1][i] }} />
+                                  <span style={{ fontSize: 8, color: "var(--pw-text-dim)" }}>{l}</span>
                                 </div>
                               ))}
                             </div>
@@ -10777,9 +10678,8 @@ function NovelWorkspacePage() {
                       </div>
                     )}
 
-                    {/* Timestamp */}
-                    <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: "16px 0 0", opacity: 0.4 }}>
-                      Generated {new Date(nc.generatedAt).toLocaleString()}
+                    <p style={{ fontSize: 9, color: "var(--pw-text-dim)", margin: "14px 0 0", opacity: 0.35 }}>
+                      {new Date(nc.generatedAt).toLocaleString()}
                     </p>
                   </>
                 );
