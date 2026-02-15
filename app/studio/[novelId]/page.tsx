@@ -24,8 +24,10 @@ import {
   clearNovelStorage,
   type Novel,
   type Relationship,
+  extractProseFromContent,
   type Bolton,
   type BoltonCategory,
+  type Character,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -501,6 +503,19 @@ function NovelWorkspacePage() {
   const [editorError, setEditorError] = useState<string | null>(null);
   const [editorOriginalParagraphs, setEditorOriginalParagraphs] = useState<string[]>([]);
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
+  // ── Talk to Your Characters ──
+  const [charChatOpen, setCharChatOpen] = useState(false);
+  const [charChatTarget, setCharChatTarget] = useState<Character | null>(null);
+  const [charChatMessages, setCharChatMessages] = useState<Array<{ role: "user" | "character"; text: string }>>([]);
+  const [charChatInput, setCharChatInput] = useState("");
+  const [charChatLoading, setCharChatLoading] = useState(false);
+  const charChatEndRef = useRef<HTMLDivElement | null>(null);
+  // ── Manuscript Insights ──
+  const [showInsightsModal, setShowInsightsModal] = useState(false);
+  // Auto-scroll character chat to bottom
+  useEffect(() => {
+    charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [charChatMessages, charChatLoading]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<AssistantProviderId>(() => getStoredProvider());
@@ -1086,6 +1101,14 @@ function NovelWorkspacePage() {
         setShowEditorModal(false);
         return;
       }
+      if (charChatOpen) {
+        setCharChatOpen(false);
+        return;
+      }
+      if (showInsightsModal) {
+        setShowInsightsModal(false);
+        return;
+      }
       if (showStoryBibleModal) {
         setShowStoryBibleModal(false);
         return;
@@ -1108,6 +1131,8 @@ function NovelWorkspacePage() {
     showFeedbackPanel,
     showPlanModal,
     showEditorModal,
+    charChatOpen,
+    showInsightsModal,
     showStoryBibleModal,
     profileOpen,
     focusBlockIndex,
@@ -1415,6 +1440,131 @@ function NovelWorkspacePage() {
       pickMessage(record.message) ??
       (Array.isArray(record.detail) ? record.detail.map((item) => String(item)).join("; ").trim() : null),
     );
+  }
+
+  // ── Talk to Your Characters ──────────────────────────
+  function buildCharacterSystemPrompt(char: Character): string {
+    const parts: string[] = [];
+    parts.push(`You ARE ${char.name}. You are being interviewed by the author of the story you exist in.`);
+    parts.push(`Stay completely in character at all times. Respond as ${char.name} would — using their vocabulary, speech patterns, emotional tendencies, and worldview.`);
+    parts.push(`Never break character. Never say you are an AI. You are ${char.name}.`);
+    if (char.role) parts.push(`Role in the story: ${char.role}.`);
+    if (char.pronouns) parts.push(`Pronouns: ${char.pronouns}.`);
+    if (char.personality) parts.push(`Personality: ${char.personality}`);
+    if (char.backstory) parts.push(`Backstory: ${char.backstory}`);
+    if (char.goals) parts.push(`Goals and motivations: ${char.goals}`);
+    if (char.fears) parts.push(`Fears: ${char.fears}`);
+    if (char.accent) parts.push(`Accent/dialect: ${char.accent}`);
+    if (char.speakingStyle) parts.push(`Speaking style: ${char.speakingStyle}`);
+    if (char.voiceNotes) parts.push(`Voice notes: ${char.voiceNotes}`);
+    if (char.reactionPattern) parts.push(`How they typically react: ${char.reactionPattern}`);
+    if (char.secrets) parts.push(`Secrets they carry (they may hint at but not reveal directly unless pressed): ${char.secrets}`);
+    if (char.appearance) parts.push(`Physical appearance: ${char.appearance}`);
+    if (char.logline) parts.push(`One-line description: ${char.logline}`);
+    const relationships = char.relationships?.filter((r) => r.targetCharacterId) ?? [];
+    if (relationships.length > 0) {
+      const relLines = relationships.map((r) => {
+        const target = storyCharacters.find((c) => c.id === r.targetCharacterId);
+        return target ? `${target.name}: ${r.type || r.description || "connected"}` : null;
+      }).filter(Boolean);
+      if (relLines.length) parts.push(`Key relationships: ${relLines.join("; ")}`);
+    }
+    parts.push(`Keep responses concise and natural — like real dialogue, not essays. Show personality through word choice, rhythm, and attitude.`);
+    return parts.join("\n\n");
+  }
+
+  async function sendCharacterChat() {
+    if (!charChatTarget || !charChatInput.trim() || charChatLoading) return;
+    const userMsg = charChatInput.trim();
+    setCharChatInput("");
+    setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setCharChatLoading(true);
+    try {
+      const systemPrompt = buildCharacterSystemPrompt(charChatTarget);
+      // Build conversation history for context
+      const conversationHistory = charChatMessages.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.text,
+      }));
+      // Include recent messages in the prompt for context
+      let contextPrompt = "";
+      if (conversationHistory.length > 0) {
+        const recent = conversationHistory.slice(-10);
+        contextPrompt = recent.map((m) => `${m.role === "user" ? "Author" : charChatTarget.name}: ${m.content}`).join("\n\n") + "\n\n";
+      }
+      contextPrompt += `Author: ${userMsg}\n\n${charChatTarget.name}:`;
+
+      const res = await fetch("/api/openrouter/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: assistantProvider,
+          apiKey: normalizeClientApiKey(openRouterKey),
+          baseUrl: assistantBaseUrl.trim(),
+          model: openRouterModel || getProviderOption(assistantProvider).defaultModel,
+          system: systemPrompt,
+          prompt: contextPrompt,
+          maxTokens: 800,
+          temperature: 0.85,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      const reply = (data.text || "").trim();
+      if (reply) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: reply }]);
+      } else {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: data.error || "…" }]);
+      }
+    } catch {
+      setCharChatMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
+    } finally {
+      setCharChatLoading(false);
+    }
+  }
+
+  function openCharacterChat(char: Character) {
+    setCharChatTarget(char);
+    setCharChatMessages([]);
+    setCharChatInput("");
+    setCharChatLoading(false);
+    setCharChatOpen(true);
+  }
+
+  // ── Manuscript Insights helpers ──────────────────────
+  function computeInsights() {
+    if (!novel) return null;
+    const chapters = novel.chapters ?? [];
+    const chapterStats = chapters.map((ch) => {
+      const words = countChapterWords(ch);
+      const prose = extractProseFromContent(ch.content);
+      const sentences = prose.split(/[.!?]+/).filter((s) => s.trim().length > 0).length;
+      const paragraphs = prose.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length;
+      // Dialogue detection — count text within quotes
+      const dialogueMatches = prose.match(/[""\u201C\u201D][^""\u201C\u201D]{2,}[""\u201C\u201D]/g) ?? [];
+      const dialogueWords = dialogueMatches.reduce((sum, m) => sum + countWords(m), 0);
+      return { id: ch.id, title: ch.title || "Untitled", words, sentences, paragraphs, dialogueWords };
+    });
+    const totalWords = chapterStats.reduce((s, c) => s + c.words, 0);
+    const totalSentences = chapterStats.reduce((s, c) => s + c.sentences, 0);
+    const totalDialogueWords = chapterStats.reduce((s, c) => s + c.dialogueWords, 0);
+    const totalParagraphs = chapterStats.reduce((s, c) => s + c.paragraphs, 0);
+    const avgWordsPerChapter = chapters.length > 0 ? Math.round(totalWords / chapters.length) : 0;
+    const avgSentenceLength = totalSentences > 0 ? Math.round(totalWords / totalSentences) : 0;
+    const readingTimeMinutes = Math.max(1, Math.round(totalWords / 250));
+    const estimatedPages = Math.max(1, Math.round(totalWords / 275));
+    const dialoguePercent = totalWords > 0 ? Math.round((totalDialogueWords / totalWords) * 100) : 0;
+    const longestChapter = chapterStats.length > 0 ? chapterStats.reduce((a, b) => a.words > b.words ? a : b) : null;
+    const shortestChapter = chapterStats.filter((c) => c.words > 0).length > 0 ? chapterStats.filter((c) => c.words > 0).reduce((a, b) => a.words < b.words ? a : b) : null;
+    const maxChapterWords = longestChapter?.words ?? 1;
+    const characterCount = storyCharacters.length;
+    const locationCount = storyLocations.length;
+    return {
+      totalWords, totalSentences, totalParagraphs, totalDialogueWords,
+      chapterCount: chapters.length, avgWordsPerChapter, avgSentenceLength,
+      readingTimeMinutes, estimatedPages, dialoguePercent,
+      longestChapter, shortestChapter, maxChapterWords,
+      chapterStats, characterCount, locationCount,
+    };
   }
 
   function normalizeCharacterRole(value: unknown): CharacterRole {
@@ -7278,6 +7428,15 @@ function NovelWorkspacePage() {
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: "6px 8px", minWidth: 0 }}
+              onClick={() => setShowInsightsModal(true)}
+              title="Manuscript Insights"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </button>
             <ProfileButton onClick={() => setProfileOpen(true)} />
             {isAdmin && (
               <Link
@@ -10043,6 +10202,17 @@ function NovelWorkspacePage() {
                                       Remove character
                                     </button>
                                   </div>
+                                  {!aiOff && character.name && (
+                                    <button
+                                      type="button"
+                                      className="pw-talk-to-char-btn"
+                                      onClick={() => openCharacterChat(character)}
+                                      title={`Have a conversation with ${character.name}`}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                      Talk to {character.name}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -11121,6 +11291,197 @@ function NovelWorkspacePage() {
           </div>
         </>
       )}
+
+      {/* ── Talk to Character Chat Modal ── */}
+      {charChatOpen && charChatTarget && (
+        <div className="pw-modal-overlay" onClick={() => setCharChatOpen(false)}>
+          <div className="pw-char-chat-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pw-char-chat-header">
+              <div className="pw-char-chat-avatar">
+                {charChatTarget.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="pw-char-chat-name">{charChatTarget.name}</h3>
+                <p className="pw-char-chat-role">{charChatTarget.role}{charChatTarget.logline ? ` — ${charChatTarget.logline}` : ""}</p>
+              </div>
+              <button type="button" className="pw-plan-modal-close" onClick={() => setCharChatOpen(false)} aria-label="Close">&times;</button>
+            </div>
+            <div className="pw-char-chat-messages">
+              {charChatMessages.length === 0 && (
+                <div className="pw-char-chat-empty">
+                  <div className="pw-char-chat-empty-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </div>
+                  <p className="pw-char-chat-empty-title">Talk to {charChatTarget.name}</p>
+                  <p className="pw-char-chat-empty-sub">
+                    Ask them anything — how they feel about another character, what they&apos;d do in a situation, or just chat. They&apos;ll respond in their own voice based on everything you&apos;ve written in their profile.
+                  </p>
+                  <div className="pw-char-chat-starters">
+                    {[
+                      `What's your earliest memory?`,
+                      `What are you most afraid of?`,
+                      `Tell me about someone you care about.`,
+                      `What do you want more than anything?`,
+                    ].map((q) => (
+                      <button key={q} type="button" className="pw-char-chat-starter" onClick={() => { setCharChatInput(q); }}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {charChatMessages.map((msg, idx) => (
+                <div key={idx} className={`pw-char-chat-msg ${msg.role}`}>
+                  {msg.role === "character" && (
+                    <div className="pw-char-chat-msg-avatar">{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                  )}
+                  <div className="pw-char-chat-msg-bubble">
+                    <p>{msg.text}</p>
+                  </div>
+                </div>
+              ))}
+              {charChatLoading && (
+                <div className="pw-char-chat-msg character">
+                  <div className="pw-char-chat-msg-avatar">{charChatTarget.name.charAt(0).toUpperCase()}</div>
+                  <div className="pw-char-chat-msg-bubble pw-char-chat-typing">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              )}
+              <div ref={charChatEndRef} />
+            </div>
+            <form className="pw-char-chat-input-area" onSubmit={(e) => { e.preventDefault(); void sendCharacterChat(); }}>
+              <input
+                type="text"
+                className="pw-char-chat-input"
+                placeholder={`Say something to ${charChatTarget.name}...`}
+                value={charChatInput}
+                onChange={(e) => setCharChatInput(e.target.value)}
+                disabled={charChatLoading}
+                autoFocus
+              />
+              <button type="submit" className="pw-char-chat-send" disabled={!charChatInput.trim() || charChatLoading}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Manuscript Insights Modal ── */}
+      {showInsightsModal && novel && (() => {
+        const insights = computeInsights();
+        if (!insights) return null;
+        return (
+          <div className="pw-modal-overlay" onClick={() => setShowInsightsModal(false)}>
+            <div className="pw-insights-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="pw-insights-header">
+                <div>
+                  <h3 className="pw-insights-title">Manuscript Insights</h3>
+                  <p className="pw-insights-sub">{novel.title || "Untitled Novel"}</p>
+                </div>
+                <button type="button" className="pw-plan-modal-close" onClick={() => setShowInsightsModal(false)} aria-label="Close">&times;</button>
+              </div>
+              <div className="pw-insights-body">
+                <div className="pw-insights-stats-grid">
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.totalWords.toLocaleString()}</div>
+                    <div className="pw-insights-stat-label">Total Words</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.chapterCount}</div>
+                    <div className="pw-insights-stat-label">Chapters</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.estimatedPages}</div>
+                    <div className="pw-insights-stat-label">Est. Pages</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.readingTimeMinutes < 60 ? `${insights.readingTimeMinutes}m` : `${Math.floor(insights.readingTimeMinutes / 60)}h ${insights.readingTimeMinutes % 60}m`}</div>
+                    <div className="pw-insights-stat-label">Reading Time</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.avgWordsPerChapter.toLocaleString()}</div>
+                    <div className="pw-insights-stat-label">Avg Words / Chapter</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.avgSentenceLength}</div>
+                    <div className="pw-insights-stat-label">Avg Sentence Length</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.dialoguePercent}%</div>
+                    <div className="pw-insights-stat-label">Dialogue</div>
+                  </div>
+                  <div className="pw-insights-stat">
+                    <div className="pw-insights-stat-value">{insights.characterCount}</div>
+                    <div className="pw-insights-stat-label">Characters</div>
+                  </div>
+                </div>
+
+                {insights.longestChapter && insights.shortestChapter && (
+                  <div className="pw-insights-extremes">
+                    <div className="pw-insights-extreme">
+                      <span className="pw-insights-extreme-label">Longest chapter</span>
+                      <span className="pw-insights-extreme-name">{insights.longestChapter.title}</span>
+                      <span className="pw-insights-extreme-value">{insights.longestChapter.words.toLocaleString()} words</span>
+                    </div>
+                    <div className="pw-insights-extreme">
+                      <span className="pw-insights-extreme-label">Shortest chapter</span>
+                      <span className="pw-insights-extreme-name">{insights.shortestChapter.title}</span>
+                      <span className="pw-insights-extreme-value">{insights.shortestChapter.words.toLocaleString()} words</span>
+                    </div>
+                  </div>
+                )}
+
+                {insights.chapterStats.length > 0 && (
+                  <div className="pw-insights-chart-section">
+                    <h4 className="pw-insights-chart-title">Chapter Length</h4>
+                    <div className="pw-insights-chart">
+                      {insights.chapterStats.map((ch, idx) => (
+                        <div key={ch.id} className="pw-insights-bar-row">
+                          <span className="pw-insights-bar-label" title={ch.title}>Ch {idx + 1}</span>
+                          <div className="pw-insights-bar-track">
+                            <div
+                              className="pw-insights-bar-fill"
+                              style={{ width: `${Math.max(2, (ch.words / insights.maxChapterWords) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="pw-insights-bar-value">{ch.words.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {insights.chapterStats.length > 0 && (
+                  <div className="pw-insights-chart-section">
+                    <h4 className="pw-insights-chart-title">Dialogue vs Prose</h4>
+                    <div className="pw-insights-chart">
+                      {insights.chapterStats.filter((ch) => ch.words > 0).map((ch, idx) => {
+                        const dp = ch.words > 0 ? Math.round((ch.dialogueWords / ch.words) * 100) : 0;
+                        return (
+                          <div key={ch.id} className="pw-insights-bar-row">
+                            <span className="pw-insights-bar-label" title={ch.title}>Ch {idx + 1}</span>
+                            <div className="pw-insights-bar-track">
+                              <div className="pw-insights-bar-fill pw-dialogue" style={{ width: `${Math.max(dp > 0 ? 2 : 0, dp)}%` }} />
+                              <div className="pw-insights-bar-fill pw-prose" style={{ width: `${Math.max(2, 100 - dp)}%` }} />
+                            </div>
+                            <span className="pw-insights-bar-value">{dp}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="pw-insights-legend">
+                      <span className="pw-insights-legend-item"><span className="pw-insights-dot pw-dialogue" /> Dialogue</span>
+                      <span className="pw-insights-legend-item"><span className="pw-insights-dot pw-prose" /> Prose</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Busy indicator while prose context action runs */}
       {proseCtxBusy && (
