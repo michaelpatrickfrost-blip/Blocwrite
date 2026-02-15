@@ -1728,23 +1728,28 @@ function NovelWorkspacePage() {
     // Enter current step
     if (step.onEnter) step.onEnter();
     // Measure with delay so modals/DOM have time to render
-    const delay = step.onEnter ? 350 : 80;
+    const delay = step.onEnter ? 500 : 120;
     const measure = () => {
       const el = document.querySelector(`[data-tutorial="${step.target}"]`) as HTMLElement | null;
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        // Double rAF to ensure scroll + layout is settled before measuring
         requestAnimationFrame(() => {
-          const r = el.getBoundingClientRect();
-          setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+          requestAnimationFrame(() => {
+            const r = el.getBoundingClientRect();
+            setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+          });
         });
       } else {
         setTutorialRect(null);
       }
     };
     const t = setTimeout(measure, delay);
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => { clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
+    // Re-measure on resize/scroll for the spotlight to follow
+    const throttledMeasure = () => requestAnimationFrame(measure);
+    window.addEventListener("resize", throttledMeasure);
+    window.addEventListener("scroll", throttledMeasure, true);
+    return () => { clearTimeout(t); window.removeEventListener("resize", throttledMeasure); window.removeEventListener("scroll", throttledMeasure, true); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tutorialActive, tutorialStep]);
 
@@ -15433,18 +15438,19 @@ function NovelWorkspacePage() {
 
         return (
           <div className="pw-tutorial-overlay" onClick={completeTutorial}>
-            {tutorialRect && (
-              <div className="pw-tutorial-spotlight" style={{
-                top: tutorialRect.top - pad,
-                left: tutorialRect.left - pad,
-                width: tutorialRect.width + pad * 2,
-                height: tutorialRect.height + pad * 2,
-              }} />
-            )}
-            <div className="pw-tutorial-card" key={tutorialStep} style={cardStyle} onClick={(e) => e.stopPropagation()}>
-              <div className="pw-tutorial-step-num">{tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
-              <h4 className="pw-tutorial-title">{step.title}</h4>
-              <p className="pw-tutorial-desc">{step.desc}</p>
+            <div className="pw-tutorial-spotlight" style={{
+              top: tutorialRect ? tutorialRect.top - pad : window.innerHeight / 2,
+              left: tutorialRect ? tutorialRect.left - pad : window.innerWidth / 2,
+              width: tutorialRect ? tutorialRect.width + pad * 2 : 0,
+              height: tutorialRect ? tutorialRect.height + pad * 2 : 0,
+              opacity: tutorialRect ? 1 : 0,
+            }} />
+            <div className={`pw-tutorial-card${tutorialStep === 0 ? " pw-tutorial-entering" : ""}`} style={cardStyle} onClick={(e) => e.stopPropagation()}>
+              <div className="pw-tutorial-content" key={tutorialStep}>
+                <div className="pw-tutorial-step-num">{tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
+                <h4 className="pw-tutorial-title">{step.title}</h4>
+                <p className="pw-tutorial-desc">{step.desc}</p>
+              </div>
               <div className="pw-tutorial-dots">
                 {TUTORIAL_STEPS.map((_, i) => (
                   <span key={i} className={`pw-tutorial-dot${i === tutorialStep ? " active" : i < tutorialStep ? " done" : ""}`} />

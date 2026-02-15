@@ -4604,8 +4604,9 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   position: fixed;
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.78);
-  transition: top 0.35s cubic-bezier(0.4,0,0.2,1), left 0.35s cubic-bezier(0.4,0,0.2,1),
-              width 0.35s cubic-bezier(0.4,0,0.2,1), height 0.35s cubic-bezier(0.4,0,0.2,1);
+  transition: top 0.45s cubic-bezier(0.4,0,0.2,1), left 0.45s cubic-bezier(0.4,0,0.2,1),
+              width 0.45s cubic-bezier(0.4,0,0.2,1), height 0.45s cubic-bezier(0.4,0,0.2,1),
+              opacity 0.3s ease;
   z-index: 100001;
   pointer-events: none;
 }
@@ -4633,12 +4634,23 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   padding: 28px 26px 22px;
   box-shadow: 0 24px 80px rgba(0,0,0,0.7), 0 0 40px rgba(163,230,53,0.06);
   z-index: 100002;
-  animation: pw-tutorial-enter 0.3s cubic-bezier(0.2,0,0,1);
+  transition: top 0.45s cubic-bezier(0.4,0,0.2,1), left 0.45s cubic-bezier(0.4,0,0.2,1),
+              transform 0.45s cubic-bezier(0.4,0,0.2,1);
+}
+.pw-tutorial-card.pw-tutorial-entering {
+  animation: pw-tutorial-enter 0.35s cubic-bezier(0.2,0,0,1);
 }
 [data-theme="light"] .pw-tutorial-card { background: #fff; border-color: rgba(163,230,53,0.4); box-shadow: 0 24px 80px rgba(0,0,0,0.2), 0 0 40px rgba(163,230,53,0.08); }
 @keyframes pw-tutorial-enter {
   from { opacity: 0; transform: translateY(8px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pw-tutorial-content {
+  animation: pw-tutorial-fade 0.3s ease;
+}
+@keyframes pw-tutorial-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .pw-tutorial-step-num {
   font-size: 11px;
