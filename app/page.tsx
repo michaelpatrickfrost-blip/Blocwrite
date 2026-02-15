@@ -529,30 +529,16 @@ const STAGES = [
   },
   {
     step: "11",
-    title: "Chat with Characters",
-    subtitle: "Interview your own creations.",
-    desc: "Open a live AI chat with any character in your Canon. Ask about their secrets, fears, earliest memories — they answer in voice, drawing on their backstory, goals, and personality. When the conversation ends, Story Insights recommends changes to their profile based on what was revealed.",
+    title: "Chat with Characters & AI Co-Author",
+    subtitle: "Interview your characters. Brainstorm with a partner who knows your whole novel.",
+    desc: "Open a live AI chat with any character — they answer in voice, drawing on their Canon backstory, goals, and personality. Story Insights recommends profile changes based on what's revealed. Switch to Co-Author mode for a collaborator who's read every chapter: ask about plot holes, brainstorm twists, get pacing feedback, or talk through a scene that isn't working.",
     details: [
-      "In-character responses",
-      "Built from Canon backstory and voice",
+      "In-character responses from Canon",
       "Story Insights after each chat",
-      "Accept or dismiss profile changes",
+      "Co-Author knows your full manuscript",
+      "Plot, structure, and character advice",
     ],
     color: "#fb923c",
-    screenshot: "/screenshots/character-chat.png?v=3",
-  },
-  {
-    step: "12",
-    title: "AI Co-Author",
-    subtitle: "A writing partner who knows your whole novel.",
-    desc: "Not generic writing advice — a collaborator who\u2019s read every chapter, knows every character, and understands your story\u2019s structure. Ask about plot holes, brainstorm twists, get feedback on pacing, or talk through a scene that isn\u2019t working. Always available.",
-    details: [
-      "Knows your full manuscript",
-      "Specific to your story, not generic",
-      "Plot, structure, and character advice",
-      "Like a real co-author in the room",
-    ],
-    color: "#06b6d4",
     screenshot: "/screenshots/character-chat.png?v=3",
   },
 ];
@@ -569,7 +555,7 @@ function HowItWorks() {
             From idea to finished manuscript.
           </h2>
           <p className="bw-section-sub" style={{ fontSize: 17, color: C.textSoft, maxWidth: 560, margin: "0 auto", lineHeight: 1.6 }}>
-            Twelve stages. Each one feeds the next. Your Canon stays in control throughout.
+            Eleven stages. Each one feeds the next. Your Canon stays in control throughout.
           </p>
         </div>
 
