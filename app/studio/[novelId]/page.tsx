@@ -15246,13 +15246,14 @@ function NovelWorkspacePage() {
         const isLast = tutorialStep === TUTORIAL_STEPS.length - 1;
         const pad = 10;
         const cardW = 340;
-        const margin = 12;
+        const cardH = 420;
+        const gap = 16;
         const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
         const vh = typeof window !== "undefined" ? window.innerHeight : 800;
 
         const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(val, max));
 
-        let cardTop = vh / 2 - 150;
+        let cardTop = vh / 2 - cardH / 2;
         let cardLeft = vw / 2 - cardW / 2;
         let centered = true;
 
@@ -15262,23 +15263,27 @@ function NovelWorkspacePage() {
           const spaceRight = vw - r.left - r.width;
           const spaceLeft = r.left;
           const spaceBelow = vh - r.top - r.height;
+          const spaceAbove = r.top;
 
-          if (spaceRight > cardW + 24) {
-            cardLeft = r.left + r.width + 18;
-            cardTop = r.top;
-          } else if (spaceLeft > cardW + 24) {
-            cardLeft = r.left - cardW - 18;
-            cardTop = r.top;
-          } else if (spaceBelow > 200) {
-            cardTop = r.top + r.height + 18;
+          if (spaceRight > cardW + gap * 2) {
+            cardLeft = r.left + r.width + gap;
+            cardTop = r.top + r.height / 2 - cardH / 2;
+          } else if (spaceLeft > cardW + gap * 2) {
+            cardLeft = r.left - cardW - gap;
+            cardTop = r.top + r.height / 2 - cardH / 2;
+          } else if (spaceBelow > cardH + gap) {
+            cardTop = r.top + r.height + gap;
+            cardLeft = r.left + r.width / 2 - cardW / 2;
+          } else if (spaceAbove > cardH + gap) {
+            cardTop = r.top - cardH - gap;
             cardLeft = r.left + r.width / 2 - cardW / 2;
           } else {
-            cardTop = r.top - 300;
-            cardLeft = r.left + r.width / 2 - cardW / 2;
+            cardTop = vh / 2 - cardH / 2;
+            cardLeft = vw / 2 - cardW / 2;
           }
 
-          cardLeft = clamp(cardLeft, margin, vw - cardW - margin);
-          cardTop = clamp(cardTop, margin, vh - 120);
+          cardLeft = clamp(cardLeft, gap, vw - cardW - gap);
+          cardTop = clamp(cardTop, gap, vh - cardH - gap);
         }
 
         const cardStyle: React.CSSProperties = centered
