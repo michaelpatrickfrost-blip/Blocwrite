@@ -498,6 +498,10 @@ function NovelWorkspacePage() {
   const [feedbackReviewDone, setFeedbackReviewDone] = useState(false);
   const [feedbackReviewAccepted, setFeedbackReviewAccepted] = useState(0);
   const [feedbackReviewRejected, setFeedbackReviewRejected] = useState(0);
+  // AI preview state for feedback review
+  const [fbPreviewOriginal, setFbPreviewOriginal] = useState<string | null>(null);
+  const [fbPreviewRevised, setFbPreviewRevised] = useState<string | null>(null);
+  const [fbPreviewGenerating, setFbPreviewGenerating] = useState(false);
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
   const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
@@ -9409,6 +9413,9 @@ function NovelWorkspacePage() {
                       setFeedbackReviewIdx(0);
                       setFeedbackReviewAccepted(0);
                       setFeedbackReviewRejected(0);
+                      setFbPreviewOriginal(null);
+                      setFbPreviewRevised(null);
+                      setFbPreviewGenerating(false);
                       // Jump to the first feedback's chapter
                       const first = feedbackReviewQueue[0];
                       if (first && novel) {
@@ -9491,24 +9498,90 @@ function NovelWorkspacePage() {
                     </div>
                   </div>
 
-                  {/* Action buttons */}
+                  {/* ─── AI Preview Diff ─── */}
+                  {fbPreviewOriginal !== null && fbPreviewRevised !== null && (
+                    <div style={{ padding: "0 20px 6px" }}>
+                      <div style={{
+                        borderRadius: 12,
+                        border: "1px solid rgba(99,102,241,0.15)",
+                        background: "rgba(99,102,241,0.03)",
+                        overflow: "hidden",
+                      }}>
+                        {/* Header */}
+                        <div style={{
+                          padding: "10px 14px",
+                          borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
+                          display: "flex", alignItems: "center", gap: 8,
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                          </svg>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#818cf8", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
+                        </div>
+                        {/* Side-by-side diff */}
+                        <div style={{ display: "flex", gap: 0, fontSize: 13, lineHeight: 1.65 }}>
+                          {/* Before */}
+                          <div style={{
+                            flex: 1, padding: "12px 14px",
+                            borderRight: "1px solid var(--pw-border-light, #2a2a2a)",
+                            background: "rgba(239,68,68,0.02)",
+                          }}>
+                            <div style={{
+                              fontSize: 9, textTransform: "uppercase", opacity: 0.35,
+                              marginBottom: 6, letterSpacing: "0.08em", fontWeight: 700,
+                            }}>
+                              Before
+                            </div>
+                            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", opacity: 0.6, fontStyle: "italic" }}>
+                              {fbPreviewOriginal}
+                            </div>
+                          </div>
+                          {/* After */}
+                          <div style={{
+                            flex: 1, padding: "12px 14px",
+                            background: "rgba(163,230,53,0.02)",
+                          }}>
+                            <div style={{
+                              fontSize: 9, textTransform: "uppercase", opacity: 0.35,
+                              marginBottom: 6, letterSpacing: "0.08em", fontWeight: 700,
+                            }}>
+                              After
+                            </div>
+                            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              {fbPreviewRevised}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ─── Action buttons ─── */}
                   <div style={{ padding: "0 20px 20px", display: "flex", gap: 10 }}>
+                    {/* Skip / Reject */}
                     <button
                       type="button"
                       className="btn"
                       style={{
-                        flex: 1, fontSize: 14, fontWeight: 600, padding: "12px 0", borderRadius: 10,
+                        flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
                         border: "1px solid var(--pw-border, rgba(255,255,255,0.1))",
                         background: "transparent", color: "var(--pw-text-muted)",
                         cursor: "pointer", transition: "all 0.15s",
                       }}
-                      disabled={feedbackReviewApplying}
+                      disabled={feedbackReviewApplying || fbPreviewGenerating}
                       onClick={() => {
-                        // Reject / skip — move to next
+                        // If rejecting a preview, just clear it and stay on this item
+                        if (fbPreviewRevised !== null) {
+                          setFbPreviewOriginal(null);
+                          setFbPreviewRevised(null);
+                          return;
+                        }
+                        // Skip — move to next
                         setFeedbackReviewRejected((c) => c + 1);
+                        setFbPreviewOriginal(null);
+                        setFbPreviewRevised(null);
                         const nextIdx = feedbackReviewIdx + 1;
                         if (nextIdx >= feedbackReviewQueue.length) {
-                          // Mark all feedback as reviewed
                           const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
                           for (const t of tokens) {
                             fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
@@ -9518,7 +9591,6 @@ function NovelWorkspacePage() {
                           setPendingFeedbackCount(0);
                         } else {
                           setFeedbackReviewIdx(nextIdx);
-                          // Jump chapter if needed
                           const next = feedbackReviewQueue[nextIdx];
                           if (next && novel && next.chapterTitle !== item.chapterTitle) {
                             const matchChapter = novel.chapters.find((c) => c.title === next.chapterTitle);
@@ -9527,80 +9599,153 @@ function NovelWorkspacePage() {
                         }
                       }}
                     >
-                      Skip
+                      {fbPreviewRevised !== null ? "Reject" : "Skip"}
                     </button>
+
+                    {/* Regenerate — only visible when a preview exists */}
+                    {fbPreviewRevised !== null && (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{
+                          flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
+                          border: "1px solid rgba(99,102,241,0.25)",
+                          background: "rgba(99,102,241,0.06)", color: "#818cf8",
+                          cursor: fbPreviewGenerating ? "wait" : "pointer", transition: "all 0.15s",
+                          opacity: fbPreviewGenerating ? 0.6 : 1,
+                        }}
+                        disabled={fbPreviewGenerating}
+                        onClick={async () => {
+                          // Re-generate — call AI again
+                          setFbPreviewGenerating(true);
+                          try {
+                            const res = await fetch("/api/openrouter/complete", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                provider: assistantProvider,
+                                apiKey: openRouterKey,
+                                baseUrl: assistantBaseUrl,
+                                model: openRouterModel || "openai/gpt-4o-mini",
+                                systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary. Be creative — produce a fresh variation.",
+                                prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
+                                maxTokens: 1200,
+                                timeoutMs: 120000,
+                              }),
+                            });
+                            const aiData = await res.json() as { text?: string; error?: string };
+                            if (aiData.text) {
+                              setFbPreviewRevised(aiData.text.trim());
+                            } else {
+                              alert(aiData.error || "AI could not regenerate. Try again.");
+                            }
+                          } catch {
+                            alert("Failed to regenerate. Check your AI connection.");
+                          } finally {
+                            setFbPreviewGenerating(false);
+                          }
+                        }}
+                      >
+                        {fbPreviewGenerating ? (
+                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(129,140,248,0.3)", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            Regenerating...
+                          </span>
+                        ) : (
+                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+                            Regenerate
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Generate / Accept */}
                     <button
                       type="button"
                       className="btn btn-primary"
                       style={{
-                        flex: 2, fontSize: 14, fontWeight: 700, padding: "12px 0", borderRadius: 10,
-                        opacity: feedbackReviewApplying ? 0.7 : 1,
-                        cursor: feedbackReviewApplying ? "wait" : "pointer",
+                        flex: 2, fontSize: 13, fontWeight: 700, padding: "12px 0", borderRadius: 10,
+                        opacity: (feedbackReviewApplying || fbPreviewGenerating) ? 0.7 : 1,
+                        cursor: (feedbackReviewApplying || fbPreviewGenerating) ? "wait" : "pointer",
                       }}
-                      disabled={feedbackReviewApplying}
+                      disabled={feedbackReviewApplying || fbPreviewGenerating}
                       onClick={async () => {
                         if (!novel) return;
-                        // Find the actual chapter in the novel to apply to
                         const matchChapter = novel.chapters.find((c) => c.title === item.chapterTitle);
                         if (!matchChapter) {
                           alert("Could not find this chapter in your novel.");
                           return;
                         }
-                        // Make sure we're on the right chapter
                         setActiveChapterId(matchChapter.id);
 
-                        setFeedbackReviewApplying(true);
-                        try {
-                          const res = await fetch("/api/openrouter/complete", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              provider: assistantProvider,
-                              apiKey: openRouterKey,
-                              baseUrl: assistantBaseUrl,
-                              model: openRouterModel || "openai/gpt-4o-mini",
-                              systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
-                              prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
-                              maxTokens: 1200,
-                              timeoutMs: 120000,
-                            }),
-                          });
-                          const aiData = await res.json() as { text?: string; error?: string };
-                          if (aiData.text) {
+                        if (fbPreviewRevised !== null) {
+                          /* ═══ ACCEPT — apply the previewed revision ═══ */
+                          setFeedbackReviewApplying(true);
+                          try {
                             const currentContent = matchChapter.content || "";
                             const idx = currentContent.indexOf(item.ann.selectedText);
                             if (idx !== -1) {
-                              const newContent = currentContent.slice(0, idx) + aiData.text.trim() + currentContent.slice(idx + item.ann.selectedText.length);
+                              const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + item.ann.selectedText.length);
                               updateChapter(matchChapter.id, { content: newContent });
                               setFeedbackReviewAccepted((c) => c + 1);
                             } else {
-                              alert("Could not find the exact text. The chapter may have changed since sharing. Skipping this note.");
+                              alert("Could not find the exact text. The chapter may have changed since sharing. Skipping.");
                             }
+                          } finally {
+                            setFeedbackReviewApplying(false);
+                          }
+                          // Clear preview and move to next
+                          setFbPreviewOriginal(null);
+                          setFbPreviewRevised(null);
+                          const nextIdx = feedbackReviewIdx + 1;
+                          if (nextIdx >= feedbackReviewQueue.length) {
+                            const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
+                            for (const t of tokens) {
+                              fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
+                            }
+                            setFeedbackReviewDone(true);
+                            setFeedbackReviewMode(false);
+                            setPendingFeedbackCount(0);
                           } else {
-                            alert(aiData.error || "AI could not process this feedback. Skipping.");
+                            setFeedbackReviewIdx(nextIdx);
+                            const next = feedbackReviewQueue[nextIdx];
+                            if (next && next.chapterTitle !== item.chapterTitle) {
+                              const mc = novel.chapters.find((c) => c.title === next.chapterTitle);
+                              if (mc) setActiveChapterId(mc.id);
+                            }
                           }
-                        } catch {
-                          alert("Failed to apply. Check your AI connection.");
-                        } finally {
-                          setFeedbackReviewApplying(false);
-                        }
-
-                        // Move to next
-                        const nextIdx = feedbackReviewIdx + 1;
-                        if (nextIdx >= feedbackReviewQueue.length) {
-                          const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
-                          for (const t of tokens) {
-                            fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
-                          }
-                          setFeedbackReviewDone(true);
-                          setFeedbackReviewMode(false);
-                          setPendingFeedbackCount(0);
                         } else {
-                          setFeedbackReviewIdx(nextIdx);
-                          const next = feedbackReviewQueue[nextIdx];
-                          if (next && next.chapterTitle !== item.chapterTitle) {
-                            const mc = novel.chapters.find((c) => c.title === next.chapterTitle);
-                            if (mc) setActiveChapterId(mc.id);
+                          /* ═══ GENERATE — call AI and show preview ═══ */
+                          setFbPreviewGenerating(true);
+                          setFbPreviewOriginal(item.ann.selectedText);
+                          try {
+                            const res = await fetch("/api/openrouter/complete", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                provider: assistantProvider,
+                                apiKey: openRouterKey,
+                                baseUrl: assistantBaseUrl,
+                                model: openRouterModel || "openai/gpt-4o-mini",
+                                systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
+                                prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
+                                maxTokens: 1200,
+                                timeoutMs: 120000,
+                              }),
+                            });
+                            const aiData = await res.json() as { text?: string; error?: string };
+                            if (aiData.text) {
+                              setFbPreviewRevised(aiData.text.trim());
+                            } else {
+                              setFbPreviewOriginal(null);
+                              alert(aiData.error || "AI could not generate a revision. Try again.");
+                            }
+                          } catch {
+                            setFbPreviewOriginal(null);
+                            alert("Failed to generate. Check your AI connection.");
+                          } finally {
+                            setFbPreviewGenerating(false);
                           }
                         }
                       }}
@@ -9610,7 +9755,17 @@ function NovelWorkspacePage() {
                           <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                           Applying...
                         </span>
-                      ) : "Accept — Apply with AI"}
+                      ) : fbPreviewGenerating ? (
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                          <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          Generating...
+                        </span>
+                      ) : fbPreviewRevised !== null ? (
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                          Accept Change
+                        </span>
+                      ) : "Generate AI Fix"}
                     </button>
                   </div>
                 </div>
