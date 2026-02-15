@@ -248,7 +248,7 @@ a { color: inherit; text-decoration: none; }
   justify-content: center;
   color: var(--pw-text);
   padding: var(--pw-space-6);
-  animation: pw-fade-in 0.25s ease-out;
+  /* No entrance animation — the loading.tsx skeleton provides visual continuity */
 }
 
 .pw-window {
@@ -265,32 +265,29 @@ a { color: inherit; text-decoration: none; }
   grid-template-rows: auto 1fr;
   position: relative;
   color: var(--pw-text);
-  animation: pw-fade-in 0.2s ease-out;
+  /* No entrance animation — kept stable for seamless transitions */
 }
 
 @keyframes pw-fade-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.998); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @keyframes pw-content-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/* ── Exit transition ── */
+/* ── Exit transition (page navigation) ── */
 .pw-exit {
-  animation: pw-fade-out 0.12s ease-in forwards !important;
+  animation: pw-fade-out 0.1s ease-in forwards !important;
+  pointer-events: none;
 }
 .pw-exit .pw-window {
-  animation: pw-window-exit 0.12s ease-in forwards !important;
+  animation: pw-fade-out 0.1s ease-in forwards !important;
 }
 @keyframes pw-fade-out {
   from { opacity: 1; }
   to   { opacity: 0; }
-}
-@keyframes pw-window-exit {
-  from { opacity: 1; transform: scale(1); }
-  to   { opacity: 0; transform: scale(0.985); }
 }
 
 /* ── Sidebar ── */
@@ -470,7 +467,7 @@ a { color: inherit; text-decoration: none; }
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--pw-surface);
-  animation: pw-content-in 0.2s ease-out 0.05s both;
+  animation: pw-content-in 0.15s ease-out both;
   min-height: 0;
 }
 
@@ -614,7 +611,7 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   gap: var(--pw-space-6);
   padding: var(--pw-space-6);
-  animation: pw-content-in 0.2s ease-out 0.05s both;
+  animation: pw-content-in 0.15s ease-out both;
   padding-top: var(--pw-space-8);
   overflow-x: hidden;
   overflow-y: auto;

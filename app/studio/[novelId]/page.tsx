@@ -1083,6 +1083,7 @@ function NovelWorkspacePage() {
       }
       if (showPlanGenerateModal) {
         setShowPlanGenerateModal(false);
+        saveNow();
         return;
       }
       if (showExportModal) {
@@ -1095,14 +1096,17 @@ function NovelWorkspacePage() {
       }
       if (showFeedbackPanel) {
         setShowFeedbackPanel(false);
+        saveNow();
         return;
       }
       if (showPlanModal) {
         setShowPlanModal(false);
+        saveNow();
         return;
       }
       if (showEditorModal) {
         setShowEditorModal(false);
+        saveNow();
         return;
       }
       if (charChatOpen) {
@@ -1111,10 +1115,12 @@ function NovelWorkspacePage() {
       }
       if (showStoryBibleModal) {
         setShowStoryBibleModal(false);
+        saveNow();
         return;
       }
       if (profileOpen) {
         setProfileOpen(false);
+        saveNow();
         return;
       }
       if (focusBlockIndex !== null) {
@@ -5414,6 +5420,12 @@ function NovelWorkspacePage() {
     autoSizeEditorInput(editorInputRef.current);
   }, [activeChapter?.id, activeChapter?.content]);
 
+  /** Force an immediate save (local + server flush) — call when any panel/modal closes */
+  function saveNow() {
+    saveNovels(novels);
+    flushServerSave();
+  }
+
   function mutateNovel(mutator: (current: Novel) => Novel, options?: { skipSync?: boolean }) {
     if (!novelId) return;
     setNovels((current) => {
@@ -7372,8 +7384,11 @@ function NovelWorkspacePage() {
           </div>
           <Link href="/studio" prefetch={true} className="pw-back-link" onClick={(e) => {
             e.preventDefault();
+            // Save everything before navigating away
+            saveNovels(novels);
+            flushServerSave();
             setNavigatingAway(true);
-            setTimeout(() => router.push("/studio"), 80);
+            setTimeout(() => router.push("/studio"), 60);
           }}>
             <span>← Back to novels</span>
           </Link>
@@ -8508,7 +8523,7 @@ function NovelWorkspacePage() {
 
       {/* ── The Plan Modal ── */}
       {showPlanModal && (
-        <div className="pw-modal-overlay" onClick={() => setShowPlanModal(false)}>
+        <div className="pw-modal-overlay" onClick={() => { setShowPlanModal(false); saveNow(); }}>
           <div
             className="pw-plan-modal"
             onClick={(e) => e.stopPropagation()}
@@ -8565,7 +8580,7 @@ function NovelWorkspacePage() {
                 <button
                   type="button"
                   className="pw-plan-modal-close"
-                  onClick={() => setShowPlanModal(false)}
+                  onClick={() => { setShowPlanModal(false); saveNow(); }}
                   aria-label="Close"
                 >
                   &times;
@@ -9253,7 +9268,7 @@ function NovelWorkspacePage() {
 
       {/* ── Feedback Review Panel ── */}
       {showFeedbackPanel && (
-        <div className="pw-modal-overlay" onClick={() => { if (!feedbackReviewMode) { setShowFeedbackPanel(false); } }}>
+        <div className="pw-modal-overlay" onClick={() => { if (!feedbackReviewMode) { setShowFeedbackPanel(false); saveNow(); } }}>
           <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620, maxHeight: "85vh", overflow: "auto" }}>
 
             {/* Loading state */}
@@ -9359,7 +9374,7 @@ function NovelWorkspacePage() {
                   </div>
 
                   <div className="pw-delete-modal-actions">
-                    <button type="button" className="btn pw-cancel-btn" onClick={() => setShowFeedbackPanel(false)}>Later</button>
+                    <button type="button" className="btn pw-cancel-btn" onClick={() => { setShowFeedbackPanel(false); saveNow(); }}>Later</button>
                     <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 24px", fontWeight: 700 }} onClick={() => {
                       setFeedbackReviewMode(true);
                       setFeedbackReviewIdx(0);
@@ -9742,12 +9757,14 @@ function NovelWorkspacePage() {
                     setFeedbackReviewDone(false);
                     setFeedbackReviewMode(false);
                     setPendingFeedbackCount(0);
+                    saveNow();
                   }}>Close</button>
                   <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: "9px 20px" }} onClick={() => {
                     setShowFeedbackPanel(false);
                     setFeedbackReviewDone(false);
                     setFeedbackReviewMode(false);
                     setPendingFeedbackCount(0);
+                    saveNow();
                     // Open share modal
                     if (novel) {
                       setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
@@ -9782,7 +9799,7 @@ function NovelWorkspacePage() {
         return (
           <TheEditor
             open={showEditorModal}
-            onClose={() => { cancelAiWork(); setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); }}
+            onClose={() => { cancelAiWork(); setShowEditorModal(false); setEditorResult(null); setEditorError(null); setEditorLoadingPhase(null); saveNow(); }}
             chapterTitle={activeChapter.title || "Untitled chapter"}
             chapterNumber={chNum}
             totalChapters={chTotal}
@@ -9813,7 +9830,7 @@ function NovelWorkspacePage() {
       })()}
 
       {showStoryBibleModal && novel && (
-        <div className="pw-modal-overlay" onClick={() => setShowStoryBibleModal(false)}>
+        <div className="pw-modal-overlay" onClick={() => { setShowStoryBibleModal(false); saveNow(); }}>
           <div className="pw-bible-modal" onClick={(event) => event.stopPropagation()}>
             <div className="pw-bible-modal-head">
               <div>
@@ -9827,7 +9844,7 @@ function NovelWorkspacePage() {
                 <button type="button" className="pw-link-btn" onClick={() => setProfileOpen(true)}>
                   Settings
                 </button>
-                <button type="button" className="pw-bible-close" onClick={() => setShowStoryBibleModal(false)} aria-label="Close">
+                <button type="button" className="pw-bible-close" onClick={() => { setShowStoryBibleModal(false); saveNow(); }} aria-label="Close">
                   ×
                 </button>
               </div>
@@ -11436,7 +11453,7 @@ function NovelWorkspacePage() {
 
       <ProfilePopup
         open={profileOpen}
-        onClose={() => setProfileOpen(false)}
+        onClose={() => { setProfileOpen(false); saveNow(); }}
         novel={novel}
         onGrammarLocaleChange={(code) => setGrammarLocale(code)}
         onUpdateStoryBible={(patch) => {
@@ -11543,7 +11560,7 @@ function NovelWorkspacePage() {
 
       {/* ── Talk to Character Chat Modal ── */}
       {charChatOpen && charChatTarget && (
-        <div className="pw-modal-overlay" onClick={() => setCharChatOpen(false)}>
+        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); saveNow(); }}>
           <div className="pw-char-chat-modal" onClick={(e) => e.stopPropagation()}>
             <div className="pw-char-chat-header">
               <div className="pw-char-chat-avatar">

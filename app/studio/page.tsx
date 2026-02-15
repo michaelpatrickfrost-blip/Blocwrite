@@ -178,12 +178,13 @@ function StudioHomePage() {
 
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
-  /** Navigate to a novel with a smooth exit transition */
+  /** Navigate to a novel with a smooth exit transition + save */
   const navigateToNovel = useCallback((novelId: string) => {
+    saveNovels(novels);
     void saveNovelsToServer(novels);
     setNavigatingAway(true);
-    // Tiny delay to let exit fade start before the route changes
-    setTimeout(() => router.push(`/studio/${novelId}`), 80);
+    // Short delay — just long enough for opacity to start fading
+    setTimeout(() => router.push(`/studio/${novelId}`), 60);
   }, [novels, router]);
 
   const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
