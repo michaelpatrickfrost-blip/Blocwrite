@@ -37,6 +37,7 @@ import {
   type ThematicAnalysis,
   type ThemeEntry,
   type ThemePresence,
+  type NarrativeControlData,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -630,6 +631,10 @@ function NovelWorkspacePage() {
   const [charChatInput, setCharChatInput] = useState("");
   const [charChatLoading, setCharChatLoading] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
+  // ── Narrative Control Center ──
+  const [showNccModal, setShowNccModal] = useState(false);
+  const [nccBusy, setNccBusy] = useState(false);
+  const [nccTab, setNccTab] = useState<"arcs" | "relationships" | "tension" | "threads" | "conflicts" | "themes">("arcs");
   // Auto-scroll character chat to bottom
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -678,6 +683,7 @@ function NovelWorkspacePage() {
   const [writingPacksOpen, setWritingPacksOpen] = useState(false);
   const [expandedPack, setExpandedPack] = useState<string | null>(null);
   const [packInstallFlash, setPackInstallFlash] = useState<string | null>(null);
+  const [packSelectedBoltons, setPackSelectedBoltons] = useState<Set<string>>(new Set());
   const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
   const [knowledgeScanBusy, setKnowledgeScanBusy] = useState(false);
   const [knowledgeScanError, setKnowledgeScanError] = useState<string | null>(null);
@@ -736,6 +742,8 @@ function NovelWorkspacePage() {
     fullContent: string;
   } | null>(null);
   const rewriteSelectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [chapterRewriteBusy, setChapterRewriteBusy] = useState(false);
+  const [chapterRewriteMenuOpen, setChapterRewriteMenuOpen] = useState(false);
 
   const EDITOR_FONT_OPTIONS = [
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
@@ -1267,6 +1275,11 @@ function NovelWorkspacePage() {
         setCharChatOpen(false);
         return;
       }
+      if (showNccModal) {
+        setShowNccModal(false);
+        saveNow();
+        return;
+      }
       if (showStoryBibleModal) {
         setShowStoryBibleModal(false);
         saveNow();
@@ -1292,6 +1305,7 @@ function NovelWorkspacePage() {
     showPlanModal,
     showEditorModal,
     charChatOpen,
+    showNccModal,
     showStoryBibleModal,
     profileOpen,
     focusBlockIndex,
@@ -2836,11 +2850,17 @@ function NovelWorkspacePage() {
         setRewriteSelection(null);
         return;
       }
-      // Position the toolbar above the cursor
-      const rect = el.getBoundingClientRect();
-      // Approximate x/y from click position, clamped inside viewport
-      const x = Math.min(Math.max(e.clientX - 120, 16), window.innerWidth - 280);
-      const y = Math.max(e.clientY - 52, 16);
+      // Position the toolbar above the cursor, clamped to stay fully on-screen
+      const toolbarW = 520; // approx width of the rewrite toolbar
+      const toolbarH = 44;  // approx height
+      let x = e.clientX - toolbarW / 2;
+      let y = e.clientY - toolbarH - 12;
+      // Clamp horizontal: keep fully visible
+      if (x + toolbarW > window.innerWidth - 12) x = window.innerWidth - toolbarW - 12;
+      if (x < 12) x = 12;
+      // Clamp vertical: if too close to top, show below selection instead
+      if (y < 12) y = e.clientY + 16;
+      if (y + toolbarH > window.innerHeight - 12) y = window.innerHeight - toolbarH - 12;
       setRewriteSelection({
         x, y,
         blockIdx,
@@ -2959,6 +2979,42 @@ function NovelWorkspacePage() {
       fullContent: rewritePreview.fullContent,
     });
     setRewritePreview(null);
+  }
+
+  async function runChapterRewrite(modeId: string) {
+    if (!novel || !activeChapter || !ensureStoryAiReady()) return;
+    const content = activeChapter.content ?? "";
+    const prose = extractProseFromContent(content);
+    if (!prose.trim() || prose.trim().length < 20) return;
+
+    setChapterRewriteBusy(true);
+    setChapterRewriteMenuOpen(false);
+    const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
+    const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
+
+    const systemMsg = `You are a literary rewrite assistant. The user wants their chapter rewritten in a "${mode.label}" style: ${mode.desc}. Genre: ${novelGenre}. Keep the same plot events, characters, and structure. Only change tone, word choice, and sentence rhythm. Return ONLY the rewritten prose, nothing else.`;
+    const userMsg = `Rewrite this chapter prose to be "${mode.label}" (${mode.desc}):\n\n${prose.slice(0, 6000)}`;
+
+    try {
+      const result = await requestOpenRouterText(userMsg, Math.max(2000, Math.round(countWords(prose) * 1.5)), 180000, systemMsg);
+      if (result && result.trim()) {
+        const { blocks, hasBlocks } = parseChapterBlocks(content);
+        if (hasBlocks && blocks.length > 0) {
+          // Distribute rewritten prose across blocks proportionally
+          const parts = result.trim().split(/\n\n+/);
+          const partsPerBlock = Math.max(1, Math.ceil(parts.length / blocks.length));
+          const updated = blocks.map((b, i) => ({
+            ...b,
+            prose: parts.slice(i * partsPerBlock, (i + 1) * partsPerBlock).join("\n\n"),
+          }));
+          updateChapter(activeChapter.id, { content: serializeChapterBlocks(updated) });
+        } else {
+          updateChapter(activeChapter.id, { content: result.trim() });
+        }
+      }
+    } catch { /* ignore */ } finally {
+      setChapterRewriteBusy(false);
+    }
   }
 
   function evaluateProseResult(
@@ -5947,59 +6003,43 @@ function NovelWorkspacePage() {
   const [themeScanBusy, setThemeScanBusy] = useState(false);
   const [themeScanExpanded, setThemeScanExpanded] = useState(false);
 
+  const [healthChapterIdx, setHealthChapterIdx] = useState(0);
+
   async function generateHealthScore() {
     if (!novel || !ensureStoryAiReady()) return;
     setHealthScoreBusy(true);
 
-    // Collect prose samples from across the novel
-    const allProse = novel.chapters.map((ch) => extractProseFromContent(ch.content)).filter(Boolean);
-    if (allProse.length === 0) { setHealthScoreBusy(false); return; }
-
-    // Take samples from start, middle, and end to give a balanced assessment
-    const sampleSize = 2000;
-    const samples: string[] = [];
-    if (allProse.length === 1) {
-      samples.push(allProse[0].slice(0, sampleSize * 2));
-    } else {
-      samples.push(allProse[0].slice(0, sampleSize)); // first chapter
-      const midIdx = Math.floor(allProse.length / 2);
-      samples.push(allProse[midIdx].slice(0, sampleSize)); // middle chapter
-      samples.push(allProse[allProse.length - 1].slice(0, sampleSize)); // last chapter
-    }
+    const chaptersWithProse = novel.chapters
+      .map((ch, i) => ({ idx: i, title: ch.title || `Chapter ${i + 1}`, prose: extractProseFromContent(ch.content) }))
+      .filter((c) => c.prose.trim().length > 30);
+    if (chaptersWithProse.length === 0) { setHealthScoreBusy(false); return; }
 
     const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
-    const totalWords = countNovelWords(novel);
+    const tw = countNovelWords(novel);
 
     const systemMsg = [
-      `You are a professional manuscript assessor evaluating a ${novelGenre} novel (${totalWords.toLocaleString()} words, ${novel.chapters.length} chapters).`,
-      `Score each category from 1 to 10 (10 = publishable quality). Be honest but constructive.`,
-      `Return ONLY valid JSON, nothing else.`,
+      `You are a professional manuscript assessor evaluating a ${novelGenre} novel (${tw.toLocaleString()} words, ${novel.chapters.length} chapters).`,
+      `Score each category 1-10 (10 = publishable). Be honest but constructive.`,
+      `Provide overall scores AND per-chapter breakdowns with specific, actionable tips.`,
+      `Return ONLY valid JSON.`,
     ].join(" ");
 
+    const chapterSamples = chaptersWithProse.map((c) =>
+      `--- Ch${c.idx + 1}: "${c.title}" ---\n${c.prose.slice(0, 800)}`
+    ).join("\n\n");
+
     const prompt = [
-      `Assess this manuscript based on prose samples from beginning, middle, and end.`,
-      ``,
-      `PROSE SAMPLES:`,
-      ...samples.map((s, i) => `--- Sample ${i + 1} ---\n${s}\n`),
-      ``,
-      `Score each category 1-10:`,
-      `- pacing: How well does the story flow? Are scenes the right length? Does momentum build?`,
-      `- dialogue: Does dialogue sound natural? Is it distinct per character? Does it advance plot?`,
-      `- clarity: Is the writing clear? Can the reader follow what's happening?`,
-      `- engagement: Does the prose pull the reader in? Would they want to keep reading?`,
-      ``,
-      `Also provide 3-5 specific, actionable tips to improve the manuscript.`,
-      ``,
-      `Return ONLY this JSON format:`,
-      `{"pacing":7,"dialogue":6,"clarity":8,"engagement":7,"tips":["Tip 1","Tip 2","Tip 3"]}`,
+      `Assess this manuscript using the chapter samples below.`,
+      `\nCHAPTERS:\n${chapterSamples}`,
+      `\nScore each category 1-10: pacing, dialogue, clarity, engagement.`,
+      `Provide: 1) Overall scores + 3-5 actionable tips for the whole manuscript`,
+      `2) Per-chapter breakdowns: for each chapter, all 4 scores + 2-3 specific tips`,
+      `\nReturn JSON: {"pacing":7,"dialogue":6,"clarity":8,"engagement":7,"tips":["Tip 1"],`,
+      `"chapters":[{"chapterTitle":"Chapter 1","pacing":7,"dialogue":6,"clarity":8,"engagement":7,"tips":["Specific tip"]}]}`,
     ].join("\n");
 
     try {
-      const data = await requestOpenRouterJson<{
-        pacing?: number; dialogue?: number; clarity?: number; engagement?: number;
-        tips?: string[];
-      }>(prompt, 400, { timeoutMs: 120000, systemMessage: systemMsg });
-
+      const data = await requestOpenRouterJson(prompt, 2500, { timeoutMs: 120000, systemMessage: systemMsg }) as Record<string, unknown> | null;
       if (!data) { setHealthScoreBusy(false); return; }
 
       const clamp = (v: unknown) => Math.max(1, Math.min(10, Math.round(Number(v) || 5)));
@@ -6009,12 +6049,22 @@ function NovelWorkspacePage() {
       const engagement = clamp(data.engagement);
       const overall = Math.round((pacing + dialogue + clarity + engagement) / 4);
       const tips = Array.isArray(data.tips)
-        ? data.tips.filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 5)
+        ? (data.tips as string[]).filter((t) => typeof t === "string" && t.trim().length > 0).slice(0, 5)
+        : [];
+
+      const chapterBreakdowns = Array.isArray(data.chapters)
+        ? (data.chapters as Record<string, unknown>[]).slice(0, 30).map((ch) => ({
+            chapterTitle: String(ch.chapterTitle || ""),
+            pacing: clamp(ch.pacing), dialogue: clamp(ch.dialogue),
+            clarity: clamp(ch.clarity), engagement: clamp(ch.engagement),
+            tips: Array.isArray(ch.tips) ? (ch.tips as string[]).filter((t) => typeof t === "string").slice(0, 4) : [],
+          }))
         : [];
 
       updateNovel({
-        healthScore: { pacing, dialogue, clarity, engagement, overall, tips, generatedAt: new Date().toISOString() },
+        healthScore: { pacing, dialogue, clarity, engagement, overall, tips, chapterBreakdowns, generatedAt: new Date().toISOString() },
       });
+      setHealthChapterIdx(0);
     } catch (err) {
       console.error("Health score generation failed:", err);
     } finally {
@@ -6107,6 +6157,108 @@ function NovelWorkspacePage() {
       updateNovel({ thematicAnalysis: analysis });
     } catch { /* ignore */ } finally {
       setThemeScanBusy(false);
+    }
+  }
+
+  /* ─── Narrative Control Center ─── */
+  const NCC_TABS: Array<{ id: typeof nccTab; label: string; icon: string; color: string }> = [
+    { id: "arcs", label: "Character Arcs", icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", color: "#a3e635" },
+    { id: "relationships", label: "Relationships", icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z", color: "#f472b6" },
+    { id: "tension", label: "Tension Curve", icon: "M13 10V3L4 14h7v7l9-11h-7z", color: "#f59e0b" },
+    { id: "threads", label: "Plot Threads", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", color: "#818cf8" },
+    { id: "conflicts", label: "Canon Conflicts", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "#ef4444" },
+    { id: "themes", label: "Theme Presence", icon: "M4 6h16M4 12h16M4 18h7", color: "#06b6d4" },
+  ];
+
+  async function runNccAnalysis() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const chapters = novel.chapters.filter((ch) => (ch.content ?? "").trim().length > 50);
+    if (chapters.length < 2) return;
+
+    setNccBusy(true);
+    try {
+      const charSummaries = novel.storyBible.characters.slice(0, 8).map((c) => {
+        const rels = (c.relationships ?? []).map((r) => {
+          const target = novel.storyBible.characters.find((t) => t.id === r.targetCharacterId);
+          return target ? `${r.type} with ${target.name}` : null;
+        }).filter(Boolean);
+        return `${c.name} (${c.role}): ${c.logline || ""}${rels.length > 0 ? `. Relationships: ${rels.join(", ")}` : ""}`;
+      }).join("\n");
+
+      const chapterSamples = chapters.map((ch, i) => {
+        const prose = extractProseFromContent(ch.content ?? "").slice(0, 500);
+        return `Ch${i + 1} "${ch.title || `Chapter ${i + 1}`}": ${prose}`;
+      }).join("\n---\n");
+
+      const systemPrompt = "You are a narrative analyst. Analyse novel chapters and return structured JSON about story arcs, relationships, tension, plot threads, conflicts, and themes. Be specific with chapter numbers. Return ONLY valid JSON.";
+
+      const userPrompt = [
+        `Novel: "${novel.title}". ${chapters.length} chapters.`,
+        `Characters:\n${charSummaries || "None defined"}`,
+        `\nChapter content:\n${chapterSamples}`,
+        "\nAnalyse and return JSON with ALL of these fields:",
+        '1. "characterArcs": array of { "characterId": string, "name": string, "arcPhases": [{ "chapter": number, "phase": string (2-4 words like "Denial", "Reluctant ally", "Full commitment"), "note": string (10 words max) }], "overallArc": string (1 sentence) } — for top 3-5 characters',
+        '2. "relationships": array of { "from": string (characterId), "to": string (characterId), "fromName": string, "toName": string, "evolution": [{ "chapter": number, "state": string (2-4 words like "Hostile strangers", "Grudging respect") }], "currentState": string } — for 3-6 key relationships',
+        '3. "tensionCurve": array of { "chapter": number, "tension": number (1-10), "label": string (3-5 words) } — one per chapter',
+        '4. "plotThreads": array of { "id": string, "label": string, "status": "open"|"progressing"|"resolved"|"abandoned", "introducedChapter": number, "resolvedChapter": number|null, "note": string } — 4-10 threads',
+        '5. "canonConflicts": array of { "type": string (e.g. "Timeline", "Character trait", "Location"), "chapter": number, "message": string, "severity": "info"|"warning"|"critical" } — 0-8 conflicts found',
+        '6. "themePresence": array of { "label": string (1-2 words), "color": string (hex), "chapters": [{ "chapter": number, "strength": number (0=absent, 1=subtle, 2=moderate, 3=strong) }] } — 3-6 themes, one entry per chapter per theme',
+        `\nCharacter IDs: ${novel.storyBible.characters.slice(0, 8).map((c) => `${c.id}="${c.name}"`).join(", ")}`,
+      ].join("\n");
+
+      const result = await requestOpenRouterJson(userPrompt, 4000, { systemMessage: systemPrompt });
+      const res = result as Record<string, unknown> | null;
+      if (!res) { setNccBusy(false); return; }
+
+      const data: NarrativeControlData = {
+        characterArcs: Array.isArray(res.characterArcs) ? (res.characterArcs as Record<string, unknown>[]).slice(0, 6).map((a) => ({
+          characterId: String(a.characterId || ""),
+          name: String(a.name || ""),
+          arcPhases: Array.isArray(a.arcPhases) ? (a.arcPhases as Record<string, unknown>[]).map((p) => ({
+            chapter: Number(p.chapter) || 1, phase: String(p.phase || ""), note: String(p.note || "").slice(0, 60),
+          })) : [],
+          overallArc: String(a.overallArc || "").slice(0, 200),
+        })) : [],
+        relationships: Array.isArray(res.relationships) ? (res.relationships as Record<string, unknown>[]).slice(0, 8).map((r) => ({
+          from: String(r.from || ""), to: String(r.to || ""),
+          fromName: String(r.fromName || ""), toName: String(r.toName || ""),
+          evolution: Array.isArray(r.evolution) ? (r.evolution as Record<string, unknown>[]).map((e) => ({
+            chapter: Number(e.chapter) || 1, state: String(e.state || "").slice(0, 40),
+          })) : [],
+          currentState: String(r.currentState || "").slice(0, 60),
+        })) : [],
+        tensionCurve: Array.isArray(res.tensionCurve) ? (res.tensionCurve as Record<string, unknown>[]).map((t) => ({
+          chapter: Number(t.chapter) || 1,
+          tension: Math.max(1, Math.min(10, Number(t.tension) || 5)),
+          label: String(t.label || "").slice(0, 40),
+        })) : [],
+        plotThreads: Array.isArray(res.plotThreads) ? (res.plotThreads as Record<string, unknown>[]).slice(0, 12).map((p) => ({
+          id: String(p.id || ""), label: String(p.label || "").slice(0, 50),
+          status: (["open", "progressing", "resolved", "abandoned"].includes(String(p.status)) ? String(p.status) : "open") as "open" | "progressing" | "resolved" | "abandoned",
+          introducedChapter: Number(p.introducedChapter) || 1,
+          resolvedChapter: typeof p.resolvedChapter === "number" ? p.resolvedChapter : undefined,
+          note: String(p.note || "").slice(0, 100),
+        })) : [],
+        canonConflicts: Array.isArray(res.canonConflicts) ? (res.canonConflicts as Record<string, unknown>[]).slice(0, 10).map((c) => ({
+          type: String(c.type || "").slice(0, 30),
+          chapter: Number(c.chapter) || 1,
+          message: String(c.message || "").slice(0, 200),
+          severity: (["info", "warning", "critical"].includes(String(c.severity)) ? String(c.severity) : "info") as "info" | "warning" | "critical",
+        })) : [],
+        themePresence: Array.isArray(res.themePresence) ? (res.themePresence as Record<string, unknown>[]).slice(0, 6).map((t) => ({
+          label: String(t.label || "").slice(0, 30),
+          color: typeof t.color === "string" && t.color.startsWith("#") ? t.color : "#818cf8",
+          chapters: Array.isArray(t.chapters) ? (t.chapters as Record<string, unknown>[]).map((c) => ({
+            chapter: Number(c.chapter) || 1,
+            strength: Math.max(0, Math.min(3, Number(c.strength) || 0)),
+          })) : [],
+        })) : [],
+        generatedAt: new Date().toISOString(),
+      };
+
+      updateNovel({ narrativeControl: data });
+    } catch { /* ignore */ } finally {
+      setNccBusy(false);
     }
   }
 
@@ -7268,12 +7420,15 @@ function NovelWorkspacePage() {
   }
 
   /** Install all boltons from a writing pack into the current novel (skips duplicates, respects 10 limit) */
-  function installWritingPack(pack: WritingPack) {
+  function installWritingPack(pack: WritingPack, selectedOnly?: Set<string>) {
     if (!novel) return;
     const existing = novel.storyBible.boltons ?? [];
     let added = 0;
     const merged = [...existing];
-    for (const pb of pack.boltons) {
+    const toInstall = selectedOnly
+      ? pack.boltons.filter((_, i) => selectedOnly.has(`${pack.id}-${i}`))
+      : pack.boltons;
+    for (const pb of toInstall) {
       if (merged.length >= 10) break;
       const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
       const already = merged.some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
@@ -7291,6 +7446,7 @@ function NovelWorkspacePage() {
     if (added > 0) {
       updateStoryBible({ boltons: merged });
       setPackInstallFlash(pack.id);
+      setPackSelectedBoltons(new Set());
       setTimeout(() => setPackInstallFlash(null), 2000);
     }
   }
@@ -8349,6 +8505,13 @@ function NovelWorkspacePage() {
                 Undo
               </button>
             )}
+            <button type="button" className="btn" onClick={() => setShowNccModal(true)}
+              style={{ display: "flex", alignItems: "center", gap: 5 }}
+              title="Narrative Control Center — arcs, relationships, tension, threads"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              NCC
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
@@ -8547,6 +8710,61 @@ function NovelWorkspacePage() {
                     );
                   })()}
                   <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Chapter-level rewrite */}
+                    {!aiOff && activeChapter && (activeChapter.content ?? "").trim().length > 20 && (
+                      <div style={{ position: "relative" }}>
+                        <button type="button"
+                          disabled={chapterRewriteBusy}
+                          onClick={() => setChapterRewriteMenuOpen(!chapterRewriteMenuOpen)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            padding: "4px 8px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                            background: chapterRewriteBusy ? "rgba(244,114,182,0.08)" : "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.08)", cursor: chapterRewriteBusy ? "default" : "pointer",
+                            color: chapterRewriteBusy ? "#f472b6" : "var(--pw-text-dim)",
+                            transition: "all 0.12s",
+                          }}
+                          title="Rewrite entire chapter in a different tone"
+                        >
+                          {chapterRewriteBusy ? (
+                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(244,114,182,0.3)", borderTopColor: "#f472b6", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
+                          ) : (
+                            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Rewrite</>
+                          )}
+                        </button>
+                        {chapterRewriteMenuOpen && (
+                          <>
+                            <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setChapterRewriteMenuOpen(false)} />
+                            <div style={{
+                              position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 9999,
+                              background: "var(--pw-surface, #1c1c20)", border: "1px solid rgba(255,255,255,0.08)",
+                              borderRadius: 10, padding: 4, minWidth: 180,
+                              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                            }}>
+                              {REWRITE_MODES.map((mode) => (
+                                <button key={mode.id} type="button"
+                                  onClick={() => void runChapterRewrite(mode.id)}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                                    padding: "7px 10px", background: "none", border: "none", borderRadius: 7,
+                                    cursor: "pointer", color: "var(--pw-text-dim)", fontSize: 12, fontWeight: 600,
+                                    textAlign: "left", transition: "all 0.1s",
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(244,114,182,0.08)"; e.currentTarget.style.color = "#f472b6"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
+                                  <div>
+                                    <div style={{ fontSize: 12, fontWeight: 600 }}>{mode.label}</div>
+                                    <div style={{ fontSize: 10, opacity: 0.5, fontWeight: 400 }}>{mode.desc}</div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                     {(novel.storyBible.boltons ?? []).length > 0 && (
                       <div className="pw-chapter-bolton-wrap">
                         <button
@@ -9513,10 +9731,10 @@ function NovelWorkspacePage() {
                     <button
                       type="button"
                       className={novel.healthScore ? "btn" : "btn btn-primary"}
-                      disabled={healthScoreBusy || aiOff || totalWords < 100}
+                      disabled={healthScoreBusy || totalWords < 100}
                       onClick={() => void generateHealthScore()}
                       style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
-                      title={aiOff ? "Enable AI in settings to use this feature" : totalWords < 100 ? "Write at least 100 words first" : "Generate health report"}
+                      title={totalWords < 100 ? "Write at least 100 words first" : "Generate health report"}
                     >
                       {healthScoreBusy ? (
                         <>
@@ -9608,7 +9826,7 @@ function NovelWorkspacePage() {
                           ))}
                         </div>
 
-                        {/* Tips */}
+                        {/* Overall Tips */}
                         {hs.tips.length > 0 && (
                           <div style={{
                             padding: "12px 14px", borderRadius: 8, marginTop: 2,
@@ -9616,7 +9834,7 @@ function NovelWorkspacePage() {
                             border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
                           }}>
                             <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent, #a3e635)" }}>
-                              Actionable Tips
+                              Overall Tips
                             </div>
                             <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: 12, lineHeight: 1.7, opacity: 0.8 }}>
                               {hs.tips.map((tip, i) => (
@@ -9625,6 +9843,78 @@ function NovelWorkspacePage() {
                             </ul>
                           </div>
                         )}
+
+                        {/* Per-chapter breakdown with left/right navigation */}
+                        {hs.chapterBreakdowns && hs.chapterBreakdowns.length > 0 && (() => {
+                          const chIdx = Math.min(healthChapterIdx, hs.chapterBreakdowns!.length - 1);
+                          const chb = hs.chapterBreakdowns![chIdx];
+                          const chCategories = [
+                            { label: "Pacing", value: chb.pacing },
+                            { label: "Dialogue", value: chb.dialogue },
+                            { label: "Clarity", value: chb.clarity },
+                            { label: "Engagement", value: chb.engagement },
+                          ];
+                          return (
+                            <div style={{
+                              marginTop: 10, borderRadius: 10, padding: "14px 16px",
+                              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+                            }}>
+                              {/* Chapter nav header */}
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                                <button type="button" disabled={chIdx <= 0}
+                                  onClick={() => setHealthChapterIdx((p) => Math.max(0, p - 1))}
+                                  style={{
+                                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 6,
+                                    width: 26, height: 26, cursor: chIdx <= 0 ? "default" : "pointer",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    opacity: chIdx <= 0 ? 0.25 : 0.7, color: "inherit",
+                                  }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                                </button>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700 }}>{chb.chapterTitle || `Chapter ${chIdx + 1}`}</div>
+                                  <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>{chIdx + 1} of {hs.chapterBreakdowns!.length}</div>
+                                </div>
+                                <button type="button" disabled={chIdx >= hs.chapterBreakdowns!.length - 1}
+                                  onClick={() => setHealthChapterIdx((p) => Math.min(hs.chapterBreakdowns!.length - 1, p + 1))}
+                                  style={{
+                                    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 6,
+                                    width: 26, height: 26, cursor: chIdx >= hs.chapterBreakdowns!.length - 1 ? "default" : "pointer",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    opacity: chIdx >= hs.chapterBreakdowns!.length - 1 ? 0.25 : 0.7, color: "inherit",
+                                  }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                                </button>
+                              </div>
+                              {/* Chapter scores */}
+                              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                                {chCategories.map((cat) => (
+                                  <div key={cat.label} style={{
+                                    flex: 1, padding: "6px 0", textAlign: "center", borderRadius: 6,
+                                    background: "rgba(255,255,255,0.03)",
+                                  }}>
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: scoreColor(cat.value) }}>{cat.value}</div>
+                                    <div style={{ fontSize: 9, color: "var(--pw-text-dim)", marginTop: 1 }}>{cat.label}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {/* Chapter tips */}
+                              {chb.tips.length > 0 && (
+                                <ul style={{ margin: 0, padding: "0 0 0 14px", fontSize: 11, lineHeight: 1.7, opacity: 0.75 }}>
+                                  {chb.tips.map((tip, ti) => <li key={ti} style={{ marginBottom: 2 }}>{tip}</li>)}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Clear button */}
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                          <button type="button" onClick={() => updateNovel({ healthScore: null })}
+                            style={{ background: "none", border: "none", fontSize: 10, color: "var(--pw-text-dim)", cursor: "pointer", opacity: 0.5, padding: "4px 8px" }}>
+                            Clear report
+                          </button>
+                        </div>
                       </>
                     );
                   })() : (
@@ -9634,9 +9924,7 @@ function NovelWorkspacePage() {
                       </svg>
                       <p style={{ fontSize: 13, margin: "0 0 4px" }}>No health score yet</p>
                       <p style={{ fontSize: 11, maxWidth: 280, margin: "0 auto", lineHeight: 1.5 }}>
-                        {aiOff
-                          ? "Enable AI in settings to run the manuscript assessment."
-                          : totalWords < 100
+                        {totalWords < 100
                           ? "Write at least 100 words to run the assessment."
                           : "Click \"Run Assessment\" to get your manuscript health report."}
                       </p>
@@ -9695,115 +9983,106 @@ function NovelWorkspacePage() {
                     const ta = novel.thematicAnalysis!;
                     const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
                     const driftThemes = ta.themes.filter((t) => t.driftWarning);
+                    const strongCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "strong").length;
+                    const contradictedCount = (theme: typeof ta.themes[0]) => theme.chapterMap.filter((cm) => cm.presence === "contradicted").length;
                     return (
                       <div>
-                        {/* Summary */}
-                        <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 14px" }}>
-                          {ta.summary}
-                        </p>
-
-                        {/* Theme heatmap grid */}
-                        <div style={{ marginBottom: 14 }}>
-                          {/* Chapter number header */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4, paddingLeft: 90 }}>
-                            {Array.from({ length: chapCount }, (_, i) => (
-                              <div key={i} style={{
-                                flex: 1, textAlign: "center", fontSize: 9, color: "var(--pw-text-dim)",
-                                fontWeight: 600, minWidth: 0,
-                              }}>
-                                {i + 1}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Theme rows */}
-                          {ta.themes.map((theme) => (
-                            <div key={theme.id} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3 }}>
-                              {/* Theme label */}
-                              <div style={{
-                                width: 86, flexShrink: 0, fontSize: 11, fontWeight: 600,
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                color: theme.color, paddingRight: 4,
-                              }} title={theme.description}>
-                                {theme.label}
-                              </div>
-
-                              {/* Chapter cells */}
-                              {Array.from({ length: chapCount }, (_, i) => {
-                                const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
-                                const presence = status?.presence ?? "absent";
-                                const bg = presence === "strong" ? theme.color
-                                  : presence === "moderate" ? `${theme.color}60`
-                                  : presence === "contradicted" ? "#ef4444"
-                                  : "rgba(255,255,255,0.04)";
-                                const opacity = presence === "absent" ? 0.3 : 1;
-                                return (
-                                  <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
-                                    flex: 1, height: 18, minWidth: 0,
-                                    background: bg, opacity,
-                                    borderRadius: 2, margin: "0 1px",
-                                    transition: "all 0.15s",
-                                    cursor: "default",
-                                  }} />
-                                );
-                              })}
+                        {/* Summary + cohesion bar */}
+                        <div style={{
+                          padding: "12px 14px", borderRadius: 10, marginBottom: 14,
+                          background: "rgba(129,140,248,0.04)", border: "1px solid rgba(129,140,248,0.1)",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                            <div style={{ fontSize: 22, fontWeight: 800, color: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444" }}>
+                              {ta.overallCohesion}/10
                             </div>
-                          ))}
-
-                          {/* Legend */}
-                          <div style={{ display: "flex", gap: 12, marginTop: 8, paddingLeft: 90 }}>
-                            {([
-                              { label: "Strong", bg: "var(--pw-accent, #a3e635)" },
-                              { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
-                              { label: "Absent", bg: "rgba(255,255,255,0.06)" },
-                              { label: "Contradicted", bg: "#ef4444" },
-                            ]).map((l) => (
-                              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: 2, background: l.bg }} />
-                                <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${ta.overallCohesion * 10}%`, borderRadius: 3, background: ta.overallCohesion >= 7 ? "#a3e635" : ta.overallCohesion >= 5 ? "#f59e0b" : "#ef4444", transition: "width 0.3s" }} />
                               </div>
-                            ))}
+                            </div>
                           </div>
+                          <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: 0 }}>{ta.summary}</p>
                         </div>
 
-                        {/* Drift warnings */}
-                        {driftThemes.length > 0 && (
-                          <div style={{ marginBottom: 10 }}>
-                            <div
-                              style={{
-                                display: "flex", alignItems: "center", justifyContent: "space-between",
-                                cursor: "pointer", padding: "8px 12px", borderRadius: 10,
-                                background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.12)",
-                              }}
-                              onClick={() => setThemeScanExpanded(!themeScanExpanded)}
-                            >
-                              <span style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>
-                                {driftThemes.length} theme{driftThemes.length !== 1 ? "s" : ""} drifting
-                              </span>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                                style={{ transform: themeScanExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
-                              ><path d="M6 9l6 6 6-6"/></svg>
-                            </div>
-                            {themeScanExpanded && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-                                {driftThemes.map((theme) => (
-                                  <div key={theme.id} style={{
-                                    padding: "8px 12px", borderRadius: 8,
-                                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
-                                  }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: theme.color }} />
-                                      <span style={{ fontSize: 12, fontWeight: 700 }}>{theme.label}</span>
-                                    </div>
-                                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: 0 }}>
-                                      {theme.driftWarning}
-                                    </p>
-                                  </div>
-                                ))}
+                        {/* Per-theme detail cards */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                          {ta.themes.map((theme) => (
+                            <div key={theme.id} style={{
+                              borderRadius: 10, padding: "10px 14px",
+                              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: theme.color, flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>{theme.label}</span>
+                                <span style={{ fontSize: 10, color: "var(--pw-text-dim)", marginLeft: "auto" }}>
+                                  Strong in {strongCount(theme)}/{chapCount} chapters
+                                  {contradictedCount(theme) > 0 && <span style={{ color: "#ef4444", marginLeft: 6 }}>Contradicted in {contradictedCount(theme)}</span>}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        )}
+                              {theme.description && (
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, margin: "0 0 6px" }}>{theme.description}</p>
+                              )}
+                              {/* Mini heatmap for this theme */}
+                              <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
+                                {Array.from({ length: chapCount }, (_, i) => {
+                                  const status = theme.chapterMap.find((cm) => cm.chapter === i + 1);
+                                  const presence = status?.presence ?? "absent";
+                                  const bg = presence === "strong" ? theme.color
+                                    : presence === "moderate" ? `${theme.color}60`
+                                    : presence === "contradicted" ? "#ef4444"
+                                    : "rgba(255,255,255,0.06)";
+                                  return (
+                                    <div key={i} title={`Ch ${i + 1}: ${presence}${status?.note ? ` — ${status.note}` : ""}`} style={{
+                                      flex: 1, height: 14, borderRadius: 2, background: bg, minWidth: 0,
+                                      opacity: presence === "absent" ? 0.3 : 1,
+                                    }} />
+                                  );
+                                })}
+                              </div>
+                              {/* Notes for notable chapters */}
+                              {(() => {
+                                const notable = theme.chapterMap.filter((cm) => cm.note && (cm.presence === "contradicted" || cm.presence === "strong"));
+                                return notable.length > 0 ? (
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                                    {notable.slice(0, 4).map((cm) => (
+                                      <span key={cm.chapter} style={{
+                                        fontSize: 10, padding: "2px 6px", borderRadius: 4,
+                                        background: cm.presence === "contradicted" ? "rgba(239,68,68,0.08)" : `${theme.color}12`,
+                                        color: cm.presence === "contradicted" ? "#ef4444" : "var(--pw-text-dim)",
+                                        border: cm.presence === "contradicted" ? "1px solid rgba(239,68,68,0.15)" : "1px solid rgba(255,255,255,0.05)",
+                                      }}>
+                                        Ch{cm.chapter}: {cm.note}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+                              {/* Drift warning inline */}
+                              {theme.driftWarning && (
+                                <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 5, display: "flex", alignItems: "flex-start", gap: 4 }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                  {theme.driftWarning}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Legend */}
+                        <div style={{ display: "flex", gap: 12, marginBottom: 6 }}>
+                          {([
+                            { label: "Strong", bg: "var(--pw-accent, #a3e635)" },
+                            { label: "Moderate", bg: "rgba(163,230,53,0.4)" },
+                            { label: "Absent", bg: "rgba(255,255,255,0.06)" },
+                            { label: "Contradicted", bg: "#ef4444" },
+                          ]).map((l) => (
+                            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <div style={{ width: 10, height: 10, borderRadius: 2, background: l.bg }} />
+                              <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l.label}</span>
+                            </div>
+                          ))}
+                        </div>
 
                         {/* Timestamp */}
                         <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.5 }}>
@@ -9814,9 +10093,7 @@ function NovelWorkspacePage() {
                   })() : (
                     <div style={{ textAlign: "center", padding: "16px 0", opacity: 0.4 }}>
                       <p style={{ fontSize: 12, margin: 0 }}>
-                        {aiOff
-                          ? "Enable AI in settings to scan for thematic consistency."
-                          : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
+                        {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2
                           ? "Write at least 2 chapters to scan for themes."
                           : "Extract themes from your manuscript and track their consistency across chapters."}
                       </p>
@@ -9829,6 +10106,332 @@ function NovelWorkspacePage() {
           )}
         </section>
       </div>
+
+      {/* ── Narrative Control Center Modal ── */}
+      {showNccModal && novel && (
+        <div className="pw-modal-overlay" onClick={() => setShowNccModal(false)}>
+          <div style={{
+            background: "var(--pw-bg, #18181b)", borderRadius: 20,
+            width: "96%", maxWidth: 900, maxHeight: "88vh",
+            display: "flex", flexDirection: "column",
+            boxShadow: "0 32px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)",
+          }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{
+              padding: "20px 24px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Narrative Control Center</h2>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--pw-text-dim)" }}>
+                    Your story at a glance — arcs, relationships, tension, and threads.
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button type="button" disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
+                  onClick={() => void runNccAnalysis()}
+                  style={{
+                    padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
+                    background: nccBusy ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(163,230,53,0.15), rgba(129,140,248,0.15))",
+                    color: nccBusy ? "var(--pw-text-dim)" : "#a3e635",
+                    border: "1px solid rgba(163,230,53,0.2)", cursor: nccBusy ? "default" : "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}
+                >
+                  {nccBusy ? <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Analysing...</> : novel.narrativeControl ? "Regenerate" : "Analyse Novel"}
+                </button>
+                <button type="button" onClick={() => setShowNccModal(false)} style={{
+                  background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8,
+                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                }}>&times;</button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 2, padding: "12px 24px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", overflow: "auto" }}>
+              {NCC_TABS.map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setNccTab(tab.id)} style={{
+                  padding: "8px 14px", fontSize: 12, fontWeight: nccTab === tab.id ? 700 : 500,
+                  borderRadius: "8px 8px 0 0", border: "none", cursor: "pointer",
+                  background: nccTab === tab.id ? "rgba(255,255,255,0.06)" : "transparent",
+                  color: nccTab === tab.id ? tab.color : "var(--pw-text-dim)",
+                  borderBottom: nccTab === tab.id ? `2px solid ${tab.color}` : "2px solid transparent",
+                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", transition: "all 0.15s",
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={tab.icon}/></svg>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div style={{ flex: 1, overflow: "auto", padding: "18px 24px 24px" }}>
+              {!novel.narrativeControl && !nccBusy ? (
+                <div style={{ textAlign: "center", padding: "60px 20px", opacity: 0.4 }}>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block" }}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  <p style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>No analysis yet</p>
+                  <p style={{ fontSize: 12 }}>Click &quot;Analyse Novel&quot; to generate your narrative dashboard. Needs at least 2 chapters.</p>
+                </div>
+              ) : nccBusy && !novel.narrativeControl ? (
+                <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                  <div style={{ width: 28, height: 28, border: "2px solid rgba(163,230,53,0.2)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+                  <p style={{ fontSize: 13, color: "var(--pw-text-dim)" }}>Analysing {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters...</p>
+                </div>
+              ) : novel.narrativeControl && (() => {
+                const nc = novel.narrativeControl!;
+                const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
+                return (
+                  <>
+                    {/* ── Character Arcs ── */}
+                    {nccTab === "arcs" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                        {nc.characterArcs.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No character arcs detected.</p> : nc.characterArcs.map((arc, ai) => (
+                          <div key={ai} style={{ borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                              <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#a3e635" }}>
+                                {arc.name.charAt(0)}
+                              </div>
+                              <span style={{ fontWeight: 700, fontSize: 14 }}>{arc.name}</span>
+                            </div>
+                            {/* Arc timeline */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 8 }}>
+                              {arc.arcPhases.map((phase, pi) => (
+                                <div key={pi} style={{ flex: 1, textAlign: "center", position: "relative" }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#a3e635", margin: "0 auto 6px", position: "relative", zIndex: 1 }} />
+                                  {pi < arc.arcPhases.length - 1 && (
+                                    <div style={{ position: "absolute", top: 4, left: "50%", width: "100%", height: 2, background: "rgba(163,230,53,0.2)", zIndex: 0 }} />
+                                  )}
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: "#a3e635" }}>Ch {phase.chapter}</div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2 }}>{phase.phase}</div>
+                                  {phase.note && <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1 }}>{phase.note}</div>}
+                                </div>
+                              ))}
+                            </div>
+                            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, fontStyle: "italic" }}>{arc.overallArc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Relationships ── */}
+                    {nccTab === "relationships" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {nc.relationships.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No relationship evolutions detected.</p> : nc.relationships.map((rel, ri) => (
+                          <div key={ri} style={{ borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: "#f472b6" }}>{rel.fromName}</span>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f472b6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: "#f472b6" }}>{rel.toName}</span>
+                              <span style={{ fontSize: 11, color: "var(--pw-text-dim)", marginLeft: "auto", fontStyle: "italic" }}>Now: {rel.currentState}</span>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {rel.evolution.map((ev, ei) => (
+                                <div key={ei} style={{
+                                  padding: "4px 10px", borderRadius: 8, fontSize: 11,
+                                  background: "rgba(244,114,182,0.08)", border: "1px solid rgba(244,114,182,0.15)",
+                                  display: "flex", alignItems: "center", gap: 4,
+                                }}>
+                                  <span style={{ fontWeight: 700, color: "#f472b6" }}>Ch{ev.chapter}</span>
+                                  <span style={{ color: "var(--pw-text-dim)" }}>{ev.state}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Tension Curve ── */}
+                    {nccTab === "tension" && (
+                      <div>
+                        {nc.tensionCurve.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No tension data.</p> : (
+                          <>
+                            {/* SVG tension graph */}
+                            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", padding: "16px 16px 8px", marginBottom: 12 }}>
+                              <svg width="100%" height="180" viewBox={`0 0 ${Math.max(nc.tensionCurve.length * 60, 300)} 180`} style={{ display: "block" }}>
+                                {/* Grid lines */}
+                                {[2, 4, 6, 8, 10].map((v) => (
+                                  <line key={v} x1="30" y1={160 - (v / 10) * 140} x2={nc.tensionCurve.length * 60} y2={160 - (v / 10) * 140}
+                                    stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+                                ))}
+                                {/* Y-axis labels */}
+                                {[2, 5, 8, 10].map((v) => (
+                                  <text key={v} x="22" y={164 - (v / 10) * 140} fill="rgba(255,255,255,0.25)" fontSize="9" textAnchor="end">{v}</text>
+                                ))}
+                                {/* Area fill */}
+                                <path d={
+                                  `M30,160 ` +
+                                  nc.tensionCurve.map((t, i) => `L${30 + i * 55},${160 - (t.tension / 10) * 140}`).join(" ") +
+                                  ` L${30 + (nc.tensionCurve.length - 1) * 55},160 Z`
+                                } fill="rgba(245,158,11,0.08)" />
+                                {/* Line */}
+                                <polyline points={nc.tensionCurve.map((t, i) => `${30 + i * 55},${160 - (t.tension / 10) * 140}`).join(" ")}
+                                  fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                {/* Points */}
+                                {nc.tensionCurve.map((t, i) => (
+                                  <g key={i}>
+                                    <circle cx={30 + i * 55} cy={160 - (t.tension / 10) * 140} r="4" fill="#f59e0b" />
+                                    <text x={30 + i * 55} y="175" fill="rgba(255,255,255,0.35)" fontSize="9" textAnchor="middle">Ch{t.chapter}</text>
+                                  </g>
+                                ))}
+                              </svg>
+                            </div>
+                            {/* Chapter tension labels */}
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {nc.tensionCurve.map((t, i) => (
+                                <div key={i} style={{
+                                  padding: "6px 10px", borderRadius: 8, fontSize: 11,
+                                  background: t.tension >= 8 ? "rgba(239,68,68,0.08)" : t.tension >= 5 ? "rgba(245,158,11,0.08)" : "rgba(255,255,255,0.02)",
+                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.15)" : t.tension >= 5 ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)"}`,
+                                }}>
+                                  <span style={{ fontWeight: 700, color: t.tension >= 8 ? "#ef4444" : t.tension >= 5 ? "#f59e0b" : "var(--pw-text-dim)" }}>Ch{t.chapter}: {t.tension}/10</span>
+                                  <span style={{ color: "var(--pw-text-dim)", marginLeft: 6 }}>{t.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Plot Threads ── */}
+                    {nccTab === "threads" && (
+                      <div>
+                        {nc.plotThreads.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No plot threads detected.</p> : (
+                          <>
+                            {/* Thread timeline */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {nc.plotThreads.map((thread, ti) => {
+                                const statusColor = thread.status === "resolved" ? "#a3e635" : thread.status === "progressing" ? "#f59e0b" : thread.status === "abandoned" ? "#ef4444" : "#818cf8";
+                                const startPct = Math.max(0, ((thread.introducedChapter - 1) / chapCount) * 100);
+                                const endPct = thread.resolvedChapter ? Math.min(100, (thread.resolvedChapter / chapCount) * 100) : 100;
+                                return (
+                                  <div key={ti} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                                    <div style={{ width: 140, flexShrink: 0 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{thread.label}</div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4, background: `${statusColor}18`, color: statusColor }}>{thread.status}</span>
+                                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Ch{thread.introducedChapter}{thread.resolvedChapter ? `–${thread.resolvedChapter}` : "+"}</span>
+                                      </div>
+                                    </div>
+                                    {/* Bar */}
+                                    <div style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)", position: "relative" }}>
+                                      <div style={{
+                                        position: "absolute", top: 0, left: `${startPct}%`, width: `${endPct - startPct}%`, height: "100%",
+                                        borderRadius: 4, background: statusColor, opacity: 0.6,
+                                      }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* Notes */}
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                              {nc.plotThreads.filter((t) => t.note).map((thread, ti) => (
+                                <div key={ti} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", maxWidth: 280 }}>
+                                  <span style={{ fontWeight: 600 }}>{thread.label}:</span> <span style={{ color: "var(--pw-text-dim)" }}>{thread.note}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Canon Conflicts ── */}
+                    {nccTab === "conflicts" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {nc.canonConflicts.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: "30px 0", opacity: 0.5 }}>
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 10px", display: "block" }}><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <p style={{ fontWeight: 700, fontSize: 13, color: "#a3e635" }}>No canon conflicts detected</p>
+                          </div>
+                        ) : nc.canonConflicts.map((conflict, ci) => (
+                          <div key={ci} style={{
+                            padding: "10px 14px", borderRadius: 10,
+                            background: conflict.severity === "critical" ? "rgba(239,68,68,0.06)" : conflict.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
+                            border: `1px solid ${conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                              <span style={{
+                                fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 6px", borderRadius: 4,
+                                background: conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
+                                color: conflict.severity === "critical" ? "#ef4444" : conflict.severity === "warning" ? "#f59e0b" : "#818cf8",
+                              }}>{conflict.severity}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)" }}>{conflict.type} — Chapter {conflict.chapter}</span>
+                            </div>
+                            <div style={{ fontSize: 12 }}>{conflict.message}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Theme Presence ── */}
+                    {nccTab === "themes" && (
+                      <div>
+                        {nc.themePresence.length === 0 ? <p style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>No themes detected.</p> : (
+                          <div>
+                            {/* Chapter header */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4, paddingLeft: 100 }}>
+                              {Array.from({ length: chapCount }, (_, i) => (
+                                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 600, minWidth: 0 }}>{i + 1}</div>
+                              ))}
+                            </div>
+                            {/* Theme rows */}
+                            {nc.themePresence.map((theme, ti) => (
+                              <div key={ti} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 4 }}>
+                                <div style={{ width: 96, flexShrink: 0, fontSize: 11, fontWeight: 600, color: theme.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 4 }}>
+                                  {theme.label}
+                                </div>
+                                {Array.from({ length: chapCount }, (_, i) => {
+                                  const entry = theme.chapters.find((c) => c.chapter === i + 1);
+                                  const strength = entry?.strength ?? 0;
+                                  const opacities = [0.05, 0.25, 0.55, 1];
+                                  return (
+                                    <div key={i} style={{
+                                      flex: 1, height: 20, minWidth: 0, margin: "0 1px", borderRadius: 3,
+                                      background: theme.color, opacity: opacities[strength] ?? 0.05,
+                                      transition: "opacity 0.2s",
+                                    }} title={`Ch${i + 1}: ${["Absent", "Subtle", "Moderate", "Strong"][strength]}`} />
+                                  );
+                                })}
+                              </div>
+                            ))}
+                            {/* Legend */}
+                            <div style={{ display: "flex", gap: 12, marginTop: 10, paddingLeft: 100 }}>
+                              {["Absent", "Subtle", "Moderate", "Strong"].map((l, i) => (
+                                <div key={l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: 2, background: "#818cf8", opacity: [0.05, 0.25, 0.55, 1][i] }} />
+                                  <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>{l}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Timestamp */}
+                    <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: "16px 0 0", opacity: 0.4 }}>
+                      Generated {new Date(nc.generatedAt).toLocaleString()}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── The Plan Modal ── */}
       {showPlanModal && (
@@ -12833,45 +13436,75 @@ function NovelWorkspacePage() {
                                       ><path d="M6 9l6 6 6-6"/></svg>
                                     </div>
 
-                                    {/* Expanded detail */}
-                                    {isExpanded && (
+                                    {/* Expanded detail with selectable boltons */}
+                                    {isExpanded && (() => {
+                                      const packBoltonKeys = pack.boltons.map((_, i) => `${pack.id}-${i}`);
+                                      const packSelected = packBoltonKeys.filter((k) => packSelectedBoltons.has(k));
+                                      const hasSelection = packSelected.length > 0;
+                                      return (
                                       <div style={{
                                         borderTop: "1px solid rgba(255,255,255,0.05)",
                                         padding: "12px 16px 16px",
                                       }}>
-                                        <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                          {pack.boltons.length} bolt-ons included
-                                        </p>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                          <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                            {pack.boltons.length} bolt-ons — select which to install
+                                          </p>
+                                          <button type="button" onClick={() => {
+                                            const uninstalled = pack.boltons.map((pb, i) => {
+                                              const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+                                              const already = (novel?.storyBible.boltons ?? []).some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
+                                              return already ? null : `${pack.id}-${i}`;
+                                            }).filter(Boolean) as string[];
+                                            const allChecked = uninstalled.every((k) => packSelectedBoltons.has(k));
+                                            const next = new Set(packSelectedBoltons);
+                                            if (allChecked) uninstalled.forEach((k) => next.delete(k));
+                                            else uninstalled.forEach((k) => next.add(k));
+                                            setPackSelectedBoltons(next);
+                                          }} style={{ fontSize: 10, background: "none", border: "none", color: "var(--pw-accent, #a3e635)", cursor: "pointer", fontWeight: 600, padding: "2px 4px" }}>
+                                            {packBoltonKeys.every((k) => packSelectedBoltons.has(k)) ? "Deselect all" : "Select all"}
+                                          </button>
+                                        </div>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                           {pack.boltons.map((pb, i) => {
-                                            const catLabel = BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === pb.category)?.label || "Custom";
+                                            const bKey = `${pack.id}-${i}`;
                                             const alreadyHas = (novel?.storyBible.boltons ?? []).some((b) => {
                                               const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
                                               return `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key;
                                             });
+                                            const isChecked = packSelectedBoltons.has(bKey);
                                             return (
-                                              <div key={i} style={{
-                                                display: "flex", alignItems: "flex-start", gap: 10,
-                                                padding: "8px 10px", borderRadius: 8,
-                                                background: alreadyHas ? "rgba(163,230,53,0.04)" : "rgba(255,255,255,0.015)",
-                                                border: alreadyHas ? "1px solid rgba(163,230,53,0.12)" : "1px solid rgba(255,255,255,0.04)",
-                                              }}>
+                                              <div key={i}
+                                                onClick={() => {
+                                                  if (alreadyHas) return;
+                                                  const next = new Set(packSelectedBoltons);
+                                                  if (isChecked) next.delete(bKey); else next.add(bKey);
+                                                  setPackSelectedBoltons(next);
+                                                }}
+                                                style={{
+                                                  display: "flex", alignItems: "center", gap: 10,
+                                                  padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
+                                                  background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "rgba(255,255,255,0.01)",
+                                                  border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid rgba(255,255,255,0.03)",
+                                                  transition: "all 0.12s",
+                                                }}>
+                                                {/* Checkbox */}
                                                 <div style={{
-                                                  width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 5,
-                                                  background: alreadyHas ? "var(--pw-accent, #a3e635)" : pack.color,
-                                                  opacity: alreadyHas ? 1 : 0.5,
-                                                }} />
+                                                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                                  border: alreadyHas ? "1.5px solid var(--pw-accent, #a3e635)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid rgba(255,255,255,0.15)",
+                                                  background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? `${pack.color}25` : "transparent",
+                                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                                }}>
+                                                  {(alreadyHas || isChecked) && (
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent, #a3e635)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                  )}
+                                                </div>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                                                  <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
                                                     {pb.title}
-                                                    {alreadyHas && <span style={{ fontSize: 10, color: "var(--pw-accent, #a3e635)", marginLeft: 6, fontWeight: 500 }}>installed</span>}
+                                                    {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent, #a3e635)", marginLeft: 6 }}>installed</span>}
                                                   </div>
-                                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>
-                                                    {pb.description}
-                                                  </div>
-                                                  <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 3, opacity: 0.6 }}>
-                                                    {catLabel}
-                                                  </div>
+                                                  <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
                                                 </div>
                                               </div>
                                             );
@@ -12879,31 +13512,43 @@ function NovelWorkspacePage() {
                                         </div>
 
                                         {/* Install button */}
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
                                           <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
-                                            {installed > 0 && !allInstalled && `${installed}/${pack.boltons.length} already installed`}
-                                            {allInstalled && "All bolt-ons installed"}
-                                            {installed === 0 && `${pack.boltons.length} bolt-ons ready`}
+                                            {allInstalled ? "All installed" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
                                           </span>
-                                          <button
-                                            type="button"
-                                            disabled={allInstalled || slotsLeft <= 0}
-                                            onClick={() => installWritingPack(pack)}
-                                            title={allInstalled ? "Already installed" : slotsLeft <= 0 ? "Bolt-on limit reached (10 max)" : `Install ${pack.boltons.length - installed} bolt-on${pack.boltons.length - installed > 1 ? "s" : ""}`}
-                                            style={{
-                                              padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                                              border: "none", cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                              background: allInstalled ? "rgba(163,230,53,0.1)" : slotsLeft <= 0 ? "rgba(255,255,255,0.04)" : pack.color,
-                                              color: allInstalled ? "var(--pw-accent, #a3e635)" : slotsLeft <= 0 ? "var(--pw-text-dim)" : "#111",
-                                              opacity: allInstalled || slotsLeft <= 0 ? 0.6 : 1,
-                                              transition: "all 0.15s",
-                                            }}
-                                          >
-                                            {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : installed > 0 ? "Install Remaining" : "Install Pack"}
-                                          </button>
+                                          <div style={{ display: "flex", gap: 6 }}>
+                                            {hasSelection && (
+                                              <button type="button"
+                                                disabled={slotsLeft <= 0}
+                                                onClick={() => installWritingPack(pack, packSelectedBoltons)}
+                                                style={{
+                                                  padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
+                                                  border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer",
+                                                  background: pack.color, color: "#111", transition: "all 0.15s",
+                                                }}
+                                              >
+                                                Install Selected ({packSelected.length})
+                                              </button>
+                                            )}
+                                            <button type="button"
+                                              disabled={allInstalled || slotsLeft <= 0}
+                                              onClick={() => installWritingPack(pack)}
+                                              style={{
+                                                padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
+                                                border: "none", cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
+                                                background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "rgba(255,255,255,0.06)" : pack.color,
+                                                color: allInstalled ? "var(--pw-accent, #a3e635)" : hasSelection ? "var(--pw-text-dim)" : "#111",
+                                                opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1,
+                                                transition: "all 0.15s",
+                                              }}
+                                            >
+                                              {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : "Install All"}
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
-                                    )}
+                                      );
+                                    })()}
                                   </div>
                                 );
                               })}

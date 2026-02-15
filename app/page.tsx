@@ -77,6 +77,7 @@ export default function LandingPage() {
       <AiBanner />
       <HowItWorks />
       <FeatureGrid />
+      <AdvancedFeatures />
       <Pricing />
       <FAQ />
       <CTABanner />
@@ -640,6 +641,129 @@ function FeatureGrid() {
               </div>
               <h3 style={{ fontSize: 17, fontWeight: 700, marginTop: 20, marginBottom: 8 }}>{f.title}</h3>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: C.textSoft, margin: 0 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Advanced Features ──────────────────────────────────── */
+const ADVANCED_FEATURES = [
+  {
+    title: "Narrative Control Center",
+    desc: "A live dashboard showing character arc progression, relationship evolution, tension curves, open plot threads, canon conflicts, and theme presence — all visualised in one place.",
+    icon: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
+    color: "#a3e635",
+  },
+  {
+    title: "Continuity Engine",
+    desc: "11 categories of checks across 3 layers — deterministic, light AI, and deep AI. Catches timeline errors, character drift, location mismatches, and canon violations before readers do.",
+    icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+    color: "#06b6d4",
+  },
+  {
+    title: "Smart Rewrite Modes",
+    desc: "Highlight any passage and instantly rewrite it: more emotional, suspenseful, poetic, tighter, or in a bestseller tone. Preview, accept, or regenerate.",
+    icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+    color: "#f472b6",
+  },
+  {
+    title: "Manuscript Health Report",
+    desc: "AI-powered publishing readiness assessment. Scores pacing, dialogue, clarity, and engagement — with per-chapter breakdowns and actionable tips you can toggle through.",
+    icon: "M22 12h-4l-3 9L9 3l-3 9H2",
+    color: "#ef4444",
+  },
+  {
+    title: "Arc Intelligence Engine",
+    desc: "Go beyond continuity. Track protagonist goal evolution, internal flaw vs growth, detect arc stagnation, missing midpoint shifts, and weak third-act escalation.",
+    icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
+    color: "#818cf8",
+  },
+  {
+    title: "Knowledge & Reveal Tracker",
+    desc: "Track who knows what, when secrets are revealed, whether reveals are earned, and if reader knowledge exceeds character knowledge. Essential for mystery, fantasy, and thriller.",
+    icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z",
+    color: "#f59e0b",
+  },
+  {
+    title: "Thematic Consistency Scanner",
+    desc: "Extract themes from early chapters, then track reinforcement, absence, and contradiction across your whole manuscript. Flags drift before it becomes a plot hole.",
+    icon: "M4 6h16M4 12h16M4 18h7",
+    color: "#8b5cf6",
+  },
+  {
+    title: "Scene Purpose Enforcement",
+    desc: "Each bloc can declare POV, goal, conflict, outcome, and emotional shift. If the outcome doesn't alter state, it flags the scene as static — pushing tighter writing.",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+    color: "#10b981",
+  },
+  {
+    title: "Writing Pack Marketplace",
+    desc: "Pre-made craft kits built by genre experts — Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Generator. Select individual bolt-ons or install an entire pack.",
+    icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
+    color: "#0ea5e9",
+  },
+  {
+    title: "Talk to Your Characters",
+    desc: "Have a live AI conversation with any character from your Canon. Test their voice, explore backstory, or discover unexpected dialogue — all grounded in your story world.",
+    icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+    color: "#fb923c",
+  },
+];
+
+function AdvancedFeatures() {
+  return (
+    <section style={{ padding: "96px 0" }}>
+      <div style={wrap()}>
+        <div style={{ textAlign: "center", marginBottom: 64 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.accentText, marginBottom: 14 }}>
+            INTELLIGENCE LAYER
+          </p>
+          <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.035em", margin: "0 0 12px" }}>
+            Features no other writing tool offers.
+          </h2>
+          <p style={{ fontSize: 17, color: C.textSoft, maxWidth: 600, margin: "0 auto", lineHeight: 1.6 }}>
+            Blocwrite goes beyond drafting. Every feature below works with your Canon — keeping your story consistent, intentional, and publishable.
+          </p>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+          {ADVANCED_FEATURES.map((f) => (
+            <div
+              key={f.title}
+              style={{
+                padding: "24px 28px",
+                borderRadius: 16,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                display: "flex", gap: 16, alignItems: "flex-start",
+                transition: "box-shadow 0.25s, transform 0.25s",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.06)";
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.borderColor = f.color + "44";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.02)";
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.borderColor = C.border;
+              }}
+            >
+              <div style={{
+                width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                background: `${f.color}10`, border: `1.5px solid ${f.color}22`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={f.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon}/></svg>
+              </div>
+              <div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>{f.title}</h3>
+                <p style={{ fontSize: 13, lineHeight: 1.6, color: C.textSoft, margin: 0 }}>{f.desc}</p>
+              </div>
             </div>
           ))}
         </div>

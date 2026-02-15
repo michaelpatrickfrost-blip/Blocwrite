@@ -287,6 +287,71 @@ export type ThematicAnalysis = {
   generatedAt: string;
 };
 
+/* ─── Narrative Control Center ─── */
+export type NccCharacterArc = {
+  characterId: string;
+  name: string;
+  arcPhases: Array<{ chapter: number; phase: string; note: string }>;
+  overallArc: string;
+};
+
+export type NccRelationshipEdge = {
+  from: string;
+  to: string;
+  fromName: string;
+  toName: string;
+  evolution: Array<{ chapter: number; state: string }>;
+  currentState: string;
+};
+
+export type NccTensionPoint = {
+  chapter: number;
+  tension: number; // 1-10
+  label: string;
+};
+
+export type NccPlotThread = {
+  id: string;
+  label: string;
+  status: "open" | "progressing" | "resolved" | "abandoned";
+  introducedChapter: number;
+  resolvedChapter?: number;
+  note: string;
+};
+
+export type NccConflict = {
+  type: string;
+  chapter: number;
+  message: string;
+  severity: "info" | "warning" | "critical";
+};
+
+export type NccThemePresence = {
+  label: string;
+  color: string;
+  chapters: Array<{ chapter: number; strength: number }>; // strength 0-3
+};
+
+export type NarrativeControlData = {
+  characterArcs: NccCharacterArc[];
+  relationships: NccRelationshipEdge[];
+  tensionCurve: NccTensionPoint[];
+  plotThreads: NccPlotThread[];
+  canonConflicts: NccConflict[];
+  themePresence: NccThemePresence[];
+  generatedAt: string;
+};
+
+/** Per-chapter health breakdown */
+export type ChapterHealthBreakdown = {
+  chapterTitle: string;
+  pacing: number;
+  dialogue: number;
+  clarity: number;
+  engagement: number;
+  tips: string[];
+};
+
 /** Manuscript health score — AI-generated publishing readiness report */
 export type ManuscriptHealthScore = {
   pacing: number;        // 1–10
@@ -295,6 +360,7 @@ export type ManuscriptHealthScore = {
   engagement: number;    // 1–10
   overall: number;       // 1–10 (average)
   tips: string[];        // actionable edits (max 5)
+  chapterBreakdowns?: ChapterHealthBreakdown[];
   generatedAt: string;   // ISO timestamp
 };
 
@@ -312,6 +378,7 @@ export type Novel = {
   archived?: boolean;
   healthScore?: ManuscriptHealthScore | null;
   thematicAnalysis?: ThematicAnalysis | null;
+  narrativeControl?: NarrativeControlData | null;
 };
 
 // ─── User-scoped localStorage keys ────────────────────────────────────────────

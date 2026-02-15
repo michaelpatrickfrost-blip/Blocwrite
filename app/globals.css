@@ -279,11 +279,11 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Exit transition (page navigation) ── */
 .pw-exit {
-  animation: pw-fade-out 0.1s ease-in forwards !important;
+  animation: pw-fade-out 0.12s ease-out forwards !important;
   pointer-events: none;
 }
 .pw-exit .pw-window {
-  animation: pw-fade-out 0.1s ease-in forwards !important;
+  animation: pw-fade-out 0.12s ease-out forwards !important;
 }
 @keyframes pw-fade-out {
   from { opacity: 1; }
