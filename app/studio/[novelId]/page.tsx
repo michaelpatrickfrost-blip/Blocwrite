@@ -1118,6 +1118,17 @@ function NovelWorkspacePage() {
     } else {
       setCanUndo(false);
     }
+    // Reset Editor state so each chapter / overview starts fresh
+    setEditorResult(null);
+    setEditorError(null);
+    setEditorLoadingPhase(null);
+    setEditorOriginalParagraphs([]);
+    setEditorFindings([]);
+    setEditorSummary("");
+    setEditorScannedAt(null);
+    setEditorApplyDone(false);
+    setEditorApplyCount(0);
+    setEditorApplyProgress("");
   }, [activeChapterId]);
 
   function handleSidebarEnter() {
