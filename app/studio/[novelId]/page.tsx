@@ -927,6 +927,10 @@ function NovelWorkspacePage() {
   }>>([]);
   const [editorSummary, setEditorSummary] = useState<string>("");
   const [editorScannedAt, setEditorScannedAt] = useState<string | null>(null);
+  const [editorApplying, setEditorApplying] = useState(false);
+  const [editorApplyProgress, setEditorApplyProgress] = useState<string>("");
+  const [editorApplyDone, setEditorApplyDone] = useState(false);
+  const [editorApplyCount, setEditorApplyCount] = useState(0);
   // Auto-scroll character chat to bottom
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -6664,9 +6668,78 @@ function NovelWorkspacePage() {
       setEditorFindings(findings);
       setEditorSummary(String(res.summary || "").slice(0, 500));
       setEditorScannedAt(new Date().toISOString());
+      setEditorApplyDone(false);
+      setEditorApplyCount(0);
     } catch { /* ignore */ } finally {
       setNccBusy(false);
     }
+  }
+
+  async function applyEditorChanges() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const noted = editorFindings.filter((f) => f.status === "accepted");
+    if (noted.length === 0) return;
+
+    setEditorApplying(true);
+    setEditorApplyDone(false);
+    setEditorApplyCount(0);
+
+    // Group findings by chapter number
+    const byChapter = new Map<number, typeof noted>();
+    for (const f of noted) {
+      const ch = f.chapter ?? 1;
+      if (!byChapter.has(ch)) byChapter.set(ch, []);
+      byChapter.get(ch)!.push(f);
+    }
+
+    let applied = 0;
+
+    for (const [chapterNum, findings] of byChapter.entries()) {
+      const chapter = novel.chapters[chapterNum - 1];
+      if (!chapter) continue;
+
+      const content = chapter.content ?? "";
+      if (content.trim().length < 20) continue;
+
+      setEditorApplyProgress(`Editing Chapter ${chapterNum}: ${chapter.title || "Untitled"}...`);
+
+      const findingsList = findings.map((f, i) =>
+        `${i + 1}. [${f.category.toUpperCase()}] ${f.title}\n   Problem: ${f.explanation}\n   Fix: ${f.suggestion}`
+      ).join("\n\n");
+
+      const systemMsg = [
+        "You are a precise prose editor. You receive chapter text and a list of editorial fixes.",
+        "Apply EACH fix by making minimal, surgical changes to the text.",
+        "Preserve the author's voice, style, and structure. Only change what the fixes require.",
+        "Return the COMPLETE revised chapter text. Nothing else — no commentary, no labels, no markdown formatting.",
+        "If a fix cannot be applied (e.g. the referenced issue isn't in the text), skip it silently.",
+      ].join(" ");
+
+      const userMsg = [
+        `Here is the chapter text:\n\n${content}`,
+        `\n\n---\n\nApply these editorial fixes:\n\n${findingsList}`,
+        `\n\nReturn the full revised chapter text with fixes applied:`,
+      ].join("");
+
+      try {
+        const result = await requestOpenRouterText(
+          userMsg,
+          Math.max(2000, Math.round(content.length * 0.5)),
+          180000,
+          systemMsg,
+        );
+        if (result && typeof result === "string" && result.trim().length > content.length * 0.3) {
+          updateChapter(chapter.id, { content: result.trim() });
+          applied += findings.length;
+          setEditorApplyCount(applied);
+        }
+      } catch { /* skip this chapter */ }
+    }
+
+    setEditorApplying(false);
+    setEditorApplyDone(true);
+    setEditorApplyProgress("");
+    saveNow();
   }
 
   function mutateNovel(mutator: (current: Novel) => Novel, options?: { skipSync?: boolean }) {
@@ -10381,6 +10454,57 @@ function NovelWorkspacePage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Apply Changes — appears when all findings addressed and at least one noted */}
+              {editorFindings.length > 0 && !editorFindings.some((f) => f.status === "pending") && !editorApplyDone && (() => {
+                const notedCount = editorFindings.filter((f) => f.status === "accepted").length;
+                if (notedCount === 0) return (
+                  <div className="pw-editor-apply-box" style={{ textAlign: "center", opacity: 0.5 }}>
+                    <p style={{ fontSize: 12, margin: 0 }}>All findings dismissed — no changes to apply.</p>
+                  </div>
+                );
+                return (
+                  <div className="pw-editor-apply-box">
+                    {!editorApplying ? (
+                      <>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: "0 0 8px" }}>
+                          Ready to apply {notedCount} change{notedCount !== 1 ? "s" : ""} to your manuscript?
+                        </p>
+                        <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                          The AI will read each noted finding and make surgical edits to your chapters. You can undo afterwards.
+                        </p>
+                        <button type="button" onClick={() => void applyEditorChanges()} className="pw-editor-apply-btn">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                          Apply {notedCount} Change{notedCount !== 1 ? "s" : ""}
+                        </button>
+                      </>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>Applying changes...</div>
+                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 1 }}>{editorApplyProgress}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Done message */}
+              {editorApplyDone && (
+                <div className="pw-editor-apply-box" style={{ borderColor: "rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-accent)" }}>Changes applied</div>
+                      <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 1 }}>
+                        {editorApplyCount} edit{editorApplyCount !== 1 ? "s" : ""} made across your chapters. Use Undo if you want to revert.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

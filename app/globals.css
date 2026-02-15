@@ -2039,6 +2039,33 @@ a { color: inherit; text-decoration: none; }
 }
 .pw-editor-finding-dismiss:hover { background: var(--pw-overlay-bg-hover); }
 
+/* Apply changes box */
+.pw-editor-apply-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--pw-overlay-bg);
+  border: 1px solid var(--pw-border-light);
+}
+.pw-editor-apply-btn {
+  width: 100%;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+  background: var(--pw-accent);
+  color: var(--pw-btn-primary-text, #000);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.pw-editor-apply-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.pw-editor-apply-btn:active { transform: translateY(0); }
+
 /* ── Floating Chat FAB ── */
 .pw-chat-fab-wrap {
   position: fixed;
