@@ -1176,52 +1176,56 @@ function NovelWorkspacePage() {
   type TutorialStep = { target: string; title: string; desc: string; onEnter?: () => void; onLeave?: () => void };
   const TUTORIAL_STEPS: TutorialStep[] = [
     {
-      target: "sidebar", title: "Your Manuscript",
-      desc: "This is your chapter list. Every chapter you create appears here. Click any chapter to jump straight into writing it. Hit \u2018+ New chapter\u2019 at the bottom to add more. The sidebar auto-collapses while you write to maximise your writing space \u2014 hover to bring it back, or pin it open.",
+      target: "settings", title: "Step 1 — Connect Your AI",
+      desc: "Start here. Click your profile icon to open Settings, then head to the AI tab. Choose a provider — OpenRouter, Hugging Face, Infermatic, or LM Studio for free local AI. Paste your API key, pick a model, and set your language. Once connected, every AI feature in Blocwrite runs through your chosen model.",
     },
     {
-      target: "overview", title: "Novel Overview",
-      desc: "This button takes you to the command centre for your entire novel. You\u2019ll see your cover image, full synopsis, live word count dashboard, chapter progress bars, and quick access to every major feature \u2014 Canon, Health Score, Arc Intelligence, and more. Click it anytime to get the big picture.",
+      target: "canon", title: "Step 2 — The Canon",
+      desc: "This is the heart of your novel. Click 'Open Canon' to build your story\u2019s single source of truth. Inside you\u2019ll find modules for Characters (personalities, speech patterns, backstories), Locations, Lore & Worldbuilding, Timeline, and Voice Directives. You can also set Bolt-Ons — targeted writing instructions like 'keep it gritty' or 'more dialogue'. Every AI feature reads your Canon first, so nothing ever contradicts your world.",
     },
     {
-      target: "plan", title: "The Plan",
-      desc: "This opens your chapter planner. Enter your synopsis, hit generate, and the AI builds a structured outline: chapter titles, detailed synopses, character assignments, and location mapping \u2014 all pulled from your Canon. Rearrange chapters, add or remove them, then sync everything to your manuscript. After planning, Arc Intelligence will offer three scored story directions to choose from.",
-      onEnter: () => setShowPlanModal(true),
-      onLeave: () => setShowPlanModal(false),
+      target: "plan", title: "Step 3 — The Plan",
+      desc: "Click 'The Plan' to open your chapter planner. Write or paste your synopsis, hit Generate, and the AI builds a full structured outline: chapter titles, detailed synopses, character assignments, and location mapping — all pulled from your Canon. Rearrange, add, or remove chapters, then sync everything to your manuscript in one click.",
     },
     {
-      target: "canon", title: "The Canon",
-      desc: "This is the heart of Blocwrite \u2014 your story\u2019s single source of truth. Define your characters with personalities, speech patterns, and backstories. Add locations, lore entries, worldbuilding rules, and voice directives. Set bolt-on writing instructions like \u2018keep it gritty\u2019 or \u2018more dialogue\u2019. Every AI feature reads your Canon before generating, so nothing ever contradicts your world.",
-      onEnter: () => setShowStoryBibleModal(true),
-      onLeave: () => setShowStoryBibleModal(false),
+      target: "overview", title: "Step 4 — Arc Intelligence",
+      desc: "After planning, go to the Overview and scroll down to find Arc Intelligence. It analyses your chapter outlines and presents three scored story directions — each with a name, description, rationale, and a score out of 10. Pick one and it reshapes all your chapter synopses to match that arc. Note: Arc Intelligence only works before you\u2019ve written prose, so run it early.",
     },
     {
-      target: "editor", title: "The Editor",
-      desc: "Your AI-powered manuscript analysis tool. In a chapter, it runs 11 continuity checks: Canon Traits, Character Presence, Timeline, Emotional Arc, Voice Drift, Spatial Logic, and more \u2014 each issue shows severity, explanation, and location. From the overview, it scans your entire manuscript and suggests sentence-level rewrites with current vs. proposed text side by side. Accept or dismiss each change individually.",
+      target: "sidebar", title: "Step 5 — Chapters & Blocs",
+      desc: "Every chapter appears in this sidebar. Click any chapter to jump into writing it, or hit '+ New chapter' at the bottom to add more. The sidebar auto-collapses while you write — hover to bring it back. Inside each chapter you\u2019ll find Blocs: per-chapter Bolt-On instructions that apply only to that section. Use them to give the AI specific direction for individual chapters.",
     },
     {
-      target: "health", title: "Manuscript Health",
-      desc: "Scroll down in your overview to find Manuscript Health. The AI reads your entire novel and scores it on pacing, dialogue quality, clarity, and reader engagement \u2014 each out of 10. You get per-chapter breakdowns with specific, actionable tips: which chapters are strong, which need work, and exactly what to improve. Think of it as a publishing readiness report.",
+      target: "editor", title: "Step 6 — The Editor (In-Chapter)",
+      desc: "When you\u2019re inside a chapter, click 'The Editor' to run 11 real-time continuity checks: Canon Traits, Character Presence, Timeline, Emotional Arc, Voice Drift, Spatial Logic, and more. Each issue shows its severity, a clear explanation, and the exact location in your text so you can fix it immediately.",
     },
     {
-      target: "share", title: "Share & Export",
-      desc: "This button lets you share your manuscript with beta readers or export it. Generate a password-protected, time-limited link \u2014 readers open it in a clean branded view with light and dark mode, highlight passages, and leave typed annotations. Their feedback arrives instantly in your dashboard. When you\u2019re ready to publish, export to EPUB or DOCX with clean chaptered prose.",
-      onEnter: () => { if (novel) { setSelectedShareChapterIds(novel.chapters.map((c) => c.id)); setShareResult(null); setShareError(null); setShowShareModal(true); } },
-      onLeave: () => setShowShareModal(false),
+      target: "overview", title: "Step 7 — The Editor (Manuscript)",
+      desc: "From the Overview (no chapter selected), The Editor switches to manuscript mode. It scans your entire novel and suggests sentence-level rewrites — showing your current text vs. a proposed improvement side by side. Accept or dismiss each suggestion individually. This is your final polish tool before sharing or exporting.",
     },
     {
-      target: "chat", title: "Chat & Co-Author",
-      desc: "This floating button opens your AI conversation panel. Choose a character from your Canon and interview them \u2014 they respond in their own voice using their backstory, goals, and personality. When you end the chat, Story Insights recommends changes to their profile. Or switch to Co-Author mode: a writing partner who\u2019s read every chapter, knows every character, and gives advice specific to your story \u2014 not generic writing tips.",
+      target: "share", title: "Step 8 — Share",
+      desc: "Click the share icon to send your work to beta readers. Generate a password-protected, time-limited link — readers open it in a clean, branded reading view with light and dark mode. They can highlight passages and leave typed annotations directly on your text. All feedback arrives instantly in your review dashboard.",
     },
     {
-      target: "theme", title: "Dark & Light Mode",
-      desc: "Switch between dark and light themes with one click. Your preference saves automatically and syncs across all your devices. The entire studio \u2014 sidebar, editor, modals, and toolbars \u2014 adapts instantly.",
+      target: "export", title: "Step 9 — Export",
+      desc: "Click the export icon to download your manuscript as a professionally formatted EPUB or DOCX file. Choose which chapters to include, and Blocwrite generates clean, chaptered prose ready for submission to publishers or self-publishing platforms.",
     },
     {
-      target: "settings", title: "Settings",
-      desc: "Open your settings to configure your AI provider (OpenRouter, Hugging Face, Infermatic, or LM Studio for free local AI), enter your API key, choose your model, set your language and context budget, manage your subscription, or change your password. You can also restart this tutorial anytime from the General tab.",
-      onEnter: () => setProfileOpen(true),
-      onLeave: () => setProfileOpen(false),
+      target: "health", title: "Step 10 — Manuscript Health",
+      desc: "In the Overview, scroll to Manuscript Health. The AI reads your entire novel and scores it on pacing, dialogue quality, clarity, and reader engagement — each out of 10. You get per-chapter breakdowns with specific, actionable tips: which chapters are strong, which need work, and exactly what to improve. Think of it as a publishing readiness report.",
+    },
+    {
+      target: "chat", title: "Step 11 — Chat & Co-Author",
+      desc: "This floating button opens your AI conversation panel. Choose a character from your Canon and interview them — they respond in their own voice using their backstory, goals, and personality. When you end the chat, Story Insights recommends changes to their Canon profile. Switch to Co-Author mode for a writing partner who\u2019s read every chapter and knows every character — giving advice specific to your story, not generic tips.",
+    },
+    {
+      target: "settings", title: "Step 12 — Settings",
+      desc: "Your settings hub lives behind the profile icon. Manage your AI provider and model, set your language and context budget, manage your subscription, change your password, and restart this tutorial anytime from the General tab. Everything you need to configure your writing environment is here.",
+    },
+    {
+      target: "theme", title: "Step 13 — Dark & Light Mode",
+      desc: "Switch between dark and light themes with one click. Your preference saves automatically and syncs across devices. The entire studio — sidebar, editor, modals, and toolbars — adapts instantly. Write in whichever mode suits your eyes.",
     },
   ];
   const [tutorialActive, setTutorialActive] = useState(false);
@@ -1590,7 +1594,6 @@ function NovelWorkspacePage() {
     setTutorialActive(true);
   }
   function completeTutorial() {
-    // Close any modals the tutorial may have opened
     const prev = tutorialPrevStep.current;
     if (prev >= 0 && TUTORIAL_STEPS[prev]?.onLeave) TUTORIAL_STEPS[prev].onLeave!();
     setTutorialActive(false);
@@ -9441,6 +9444,13 @@ function NovelWorkspacePage() {
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
+            <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }}
+              data-tutorial="export"
+              onClick={() => openExportModal()}
+              title="Export to EPUB or DOCX"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
             <span data-tutorial="settings"><ProfileButton onClick={() => setProfileOpen(true)} /></span>
             {isAdmin && (
               <Link
@@ -15130,9 +15140,9 @@ function NovelWorkspacePage() {
       )}
 
       {/* ── Floating Chat FAB (bottom-left) ── */}
-      {!aiOff && !charChatOpen
+      {(tutorialActive || (!aiOff && !charChatOpen
         && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
-        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showEditorModal && (
+        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showEditorModal)) && (
         <div className="pw-chat-fab-wrap" data-tutorial="chat">
           {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
@@ -15286,7 +15296,7 @@ function NovelWorkspacePage() {
               }} />
             )}
             <div className="pw-tutorial-card" key={tutorialStep} style={cardStyle} onClick={(e) => e.stopPropagation()}>
-              <div className="pw-tutorial-step-num">Step {tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
+              <div className="pw-tutorial-step-num">{tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
               <h4 className="pw-tutorial-title">{step.title}</h4>
               <p className="pw-tutorial-desc">{step.desc}</p>
               <div className="pw-tutorial-dots">
