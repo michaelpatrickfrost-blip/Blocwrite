@@ -204,6 +204,38 @@ export type BookPlan = {
   updatedAt: string;
 };
 
+/* ─── Knowledge & Reveal Tracker ─── */
+export type KnowledgeHolder = {
+  characterId: string;
+  learnedInChapter?: number; // 1-based, when they learn it (null = knows from start)
+};
+
+export type KnowledgeEntry = {
+  id: string;
+  label: string;            // e.g. "The letter is forged"
+  description: string;      // what the secret/knowledge actually is
+  type: "secret" | "reveal" | "clue" | "deception";
+  holders: KnowledgeHolder[];      // which characters know this
+  revealChapter?: number;          // 1-based chapter where the reader learns
+  status: "hidden" | "foreshadowed" | "revealed";
+  notes?: string;                  // author notes
+  createdAt: string;
+};
+
+export type KnowledgeScanIssue = {
+  entryId: string;
+  chapter: number;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  suggestion: string;
+};
+
+export type KnowledgeMap = {
+  entries: KnowledgeEntry[];
+  scanIssues: KnowledgeScanIssue[];
+  lastScanAt?: string;
+};
+
 export type StoryBible = {
   summary: SummarySection;
   styleVoice: StyleVoiceSection;
@@ -216,6 +248,7 @@ export type StoryBible = {
   timeline: TimelineEvent[];
   glossary: GlossaryTerm[];
   boltons: Bolton[];
+  knowledgeMap: KnowledgeMap;
   aiContext: AIContextSettings;
   // Legacy simple fields kept for backward compatibility with existing UI while Canon evolves.
   braindump: string;
@@ -714,6 +747,35 @@ function normalizeStoryBible(raw: unknown): StoryBible {
     timeline,
     glossary,
     boltons,
+    knowledgeMap: (() => {
+      const raw = record.knowledgeMap && typeof record.knowledgeMap === "object" ? (record.knowledgeMap as Record<string, unknown>) : null;
+      const entries: KnowledgeEntry[] = Array.isArray(raw?.entries)
+        ? (raw!.entries as Record<string, unknown>[]).filter((e) => e && typeof e.id === "string").map((e) => ({
+            id: String(e.id),
+            label: typeof e.label === "string" ? e.label : "",
+            description: typeof e.description === "string" ? e.description : "",
+            type: (["secret", "reveal", "clue", "deception"].includes(String(e.type)) ? String(e.type) : "secret") as KnowledgeEntry["type"],
+            holders: Array.isArray(e.holders) ? (e.holders as Record<string, unknown>[]).filter((h) => h && typeof h.characterId === "string").map((h) => ({
+              characterId: String(h.characterId),
+              learnedInChapter: typeof h.learnedInChapter === "number" ? h.learnedInChapter : undefined,
+            })) : [],
+            revealChapter: typeof e.revealChapter === "number" ? e.revealChapter : undefined,
+            status: (["hidden", "foreshadowed", "revealed"].includes(String(e.status)) ? String(e.status) : "hidden") as KnowledgeEntry["status"],
+            notes: typeof e.notes === "string" ? e.notes : undefined,
+            createdAt: typeof e.createdAt === "string" ? e.createdAt : now,
+          }))
+        : [];
+      const scanIssues: KnowledgeScanIssue[] = Array.isArray(raw?.scanIssues)
+        ? (raw!.scanIssues as Record<string, unknown>[]).filter((i) => i && typeof i.entryId === "string").map((i) => ({
+            entryId: String(i.entryId),
+            chapter: typeof i.chapter === "number" ? i.chapter : 0,
+            severity: (["info", "warning", "critical"].includes(String(i.severity)) ? String(i.severity) : "info") as KnowledgeScanIssue["severity"],
+            message: typeof i.message === "string" ? i.message : "",
+            suggestion: typeof i.suggestion === "string" ? i.suggestion : "",
+          }))
+        : [];
+      return { entries, scanIssues, lastScanAt: typeof raw?.lastScanAt === "string" ? (raw!.lastScanAt as string) : undefined };
+    })(),
     aiContext,
     braindump: coerce("braindump", record),
     genre: coerce("genre", record),
@@ -1027,6 +1089,7 @@ export function createNovel(title: string, coverImage: string | null = null): No
       timeline: [],
       glossary: [],
       boltons: [],
+      knowledgeMap: { entries: [], scanIssues: [] },
       aiContext: {
         defaultModel: "openai/gpt-4o-mini",
         strictCanon: false,

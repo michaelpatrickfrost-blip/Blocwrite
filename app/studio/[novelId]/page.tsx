@@ -32,6 +32,8 @@ import {
   type ArcDimension,
   type ArcScore,
   type ArcIssue,
+  type KnowledgeEntry,
+  type KnowledgeScanIssue,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -657,7 +659,7 @@ function NovelWorkspacePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showStoryBibleModal, setShowStoryBibleModal] = useState(false);
   const [bibleSection, setBibleSection] = useState<
-    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons"
+    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge"
   >(
     "summary",
   );
@@ -673,6 +675,9 @@ function NovelWorkspacePage() {
   const [writingPacksOpen, setWritingPacksOpen] = useState(false);
   const [expandedPack, setExpandedPack] = useState<string | null>(null);
   const [packInstallFlash, setPackInstallFlash] = useState<string | null>(null);
+  const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
+  const [knowledgeScanBusy, setKnowledgeScanBusy] = useState(false);
+  const [knowledgeScanError, setKnowledgeScanError] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
@@ -7149,6 +7154,169 @@ function NovelWorkspacePage() {
     }).length;
   }
 
+  /* ─── Knowledge & Reveal Tracker ─── */
+  const KNOWLEDGE_TYPES: Array<{ id: KnowledgeEntry["type"]; label: string; color: string; icon: string }> = [
+    { id: "secret", label: "Secret", color: "#ef4444", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
+    { id: "reveal", label: "Reveal", color: "#f59e0b", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" },
+    { id: "clue", label: "Clue", color: "#818cf8", icon: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },
+    { id: "deception", label: "Deception", color: "#f472b6", icon: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" },
+  ];
+
+  const STATUS_META: Record<KnowledgeEntry["status"], { label: string; color: string }> = {
+    hidden: { label: "Hidden", color: "#ef4444" },
+    foreshadowed: { label: "Foreshadowed", color: "#f59e0b" },
+    revealed: { label: "Revealed", color: "#a3e635" },
+  };
+
+  function addKnowledgeEntry() {
+    if (!novel) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    if (km.entries.length >= 30) return;
+    const entry: KnowledgeEntry = {
+      id: createEntityId("know"),
+      label: "",
+      description: "",
+      type: "secret",
+      holders: [],
+      status: "hidden",
+      createdAt: new Date().toISOString(),
+    };
+    updateStoryBible({ knowledgeMap: { ...km, entries: [...km.entries, entry] } });
+    setKnowledgeSelectedId(entry.id);
+  }
+
+  function updateKnowledgeEntry(entryId: string, patch: Partial<KnowledgeEntry>) {
+    if (!novel) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    updateStoryBible({
+      knowledgeMap: {
+        ...km,
+        entries: km.entries.map((e) => e.id === entryId ? { ...e, ...patch } : e),
+      },
+    });
+  }
+
+  function removeKnowledgeEntry(entryId: string) {
+    if (!novel) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    updateStoryBible({
+      knowledgeMap: {
+        ...km,
+        entries: km.entries.filter((e) => e.id !== entryId),
+        scanIssues: km.scanIssues.filter((i) => i.entryId !== entryId),
+      },
+    });
+    if (knowledgeSelectedId === entryId) setKnowledgeSelectedId(null);
+  }
+
+  function addKnowledgeHolder(entryId: string, characterId: string) {
+    if (!novel) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    const entry = km.entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    if (entry.holders.some((h) => h.characterId === characterId)) return;
+    updateKnowledgeEntry(entryId, { holders: [...entry.holders, { characterId }] });
+  }
+
+  function removeKnowledgeHolder(entryId: string, characterId: string) {
+    if (!novel) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    const entry = km.entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    updateKnowledgeEntry(entryId, { holders: entry.holders.filter((h) => h.characterId !== characterId) });
+  }
+
+  async function runKnowledgeScan() {
+    if (!novel || aiOff) return;
+    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+    if (km.entries.length === 0) {
+      setKnowledgeScanError("Add at least one knowledge entry before scanning.");
+      return;
+    }
+    const chapters = novel.chapters.filter((ch) => (ch.content ?? "").trim().length > 30);
+    if (chapters.length === 0) {
+      setKnowledgeScanError("No chapters with content to scan.");
+      return;
+    }
+    setKnowledgeScanBusy(true);
+    setKnowledgeScanError(null);
+
+    try {
+      // Build knowledge map description for the AI
+      const knowledgeDesc = km.entries.map((e, i) => {
+        const holders = e.holders.map((h) => {
+          const char = novel.storyBible.characters.find((c) => c.id === h.characterId);
+          const learn = h.learnedInChapter ? ` (learns in Ch${h.learnedInChapter})` : " (knows from start)";
+          return char ? `${char.name}${learn}` : null;
+        }).filter(Boolean);
+        return `${i + 1}. [${e.type.toUpperCase()}] "${e.label}" — ${e.description || "(no description)"}\n   Status: ${e.status}. Reader reveal: ${e.revealChapter ? `Chapter ${e.revealChapter}` : "not set"}.\n   Known by: ${holders.length > 0 ? holders.join(", ") : "nobody yet"}.`;
+      }).join("\n");
+
+      // Build chapter summaries
+      const chapterSummaries = chapters.map((ch, i) => {
+        const prose = extractProseFromContent(ch.content ?? "").slice(0, 800);
+        return `Chapter ${i + 1}: "${ch.title || `Chapter ${i + 1}`}"\n${prose}`;
+      }).join("\n\n---\n\n");
+
+      const systemPrompt = [
+        "You are an expert continuity and knowledge-state checker for novels.",
+        "You detect when characters reference information they shouldn't know yet, when secrets are mentioned before being revealed to the reader, and when reveals feel unearned.",
+        "Be specific — reference chapter numbers and character names. Be constructive.",
+        "Respond ONLY with valid JSON. No markdown outside JSON.",
+      ].join("\n");
+
+      const userPrompt = [
+        `Novel: "${novel.title}"`,
+        "",
+        "KNOWLEDGE MAP (the source of truth for who knows what):",
+        knowledgeDesc,
+        "",
+        "CHAPTER CONTENT:",
+        chapterSummaries,
+        "",
+        "Scan every chapter against the knowledge map. Find:",
+        "1. Characters referencing secrets they don't know (check the holders list)",
+        "2. Reader learning information before the designated reveal chapter",
+        "3. Secrets mentioned or hinted at when their status is 'hidden' and the chapter is before the reveal",
+        "4. Reveals that feel unearned — reader gains knowledge without proper setup",
+        "5. Characters making deductions without evidence in their knowledge state",
+        "",
+        'Return JSON: { "issues": [{ "entryId": string (the knowledge entry id), "chapter": number (1-based), "severity": "info"|"warning"|"critical", "message": string, "suggestion": string }] }',
+        "Return 0-20 issues. Only flag genuine violations. If everything is clean, return empty issues array.",
+        "",
+        "Knowledge entry IDs for reference:",
+        km.entries.map((e) => `  "${e.id}" = "${e.label}"`).join("\n"),
+      ].join("\n");
+
+      const result = await requestOpenRouterJson(
+        userPrompt,
+        2000,
+        { systemMessage: systemPrompt },
+      );
+
+      const res = result as Record<string, unknown> | null;
+      const issues: KnowledgeScanIssue[] = res && Array.isArray(res.issues)
+        ? (res.issues as Record<string, unknown>[])
+            .filter((i) => i && typeof i.entryId === "string")
+            .map((i) => ({
+              entryId: String(i.entryId),
+              chapter: typeof i.chapter === "number" ? i.chapter : 0,
+              severity: (["info", "warning", "critical"].includes(String(i.severity)) ? String(i.severity) : "info") as KnowledgeScanIssue["severity"],
+              message: String(i.message || "").slice(0, 400),
+              suggestion: String(i.suggestion || "").slice(0, 400),
+            }))
+        : [];
+
+      updateStoryBible({
+        knowledgeMap: { ...km, scanIssues: issues, lastScanAt: new Date().toISOString() },
+      });
+    } catch (err) {
+      setKnowledgeScanError(err instanceof Error ? err.message : "Scan failed.");
+    } finally {
+      setKnowledgeScanBusy(false);
+    }
+  }
+
   async function saveBoltonLibrary() {
     if (!novel || typeof window === "undefined") return;
     const source = (novel.storyBible.boltons ?? [])
@@ -10783,6 +10951,7 @@ function NovelWorkspacePage() {
                     { id: "characters", label: "Characters" },
                     { id: "locations", label: "Locations" },
                     { id: "worldbuilding", label: "Worldbuilding" },
+                    { id: "knowledge", label: "Knowledge & Reveals" },
                     { id: "boltons", label: "Bolt-Ons" },
                   ] as const
                 ).map((item) => (
@@ -11658,6 +11827,329 @@ function NovelWorkspacePage() {
                       </div>
                     )}
 
+                  </div>
+                )}
+
+                {bibleSection === "knowledge" && (
+                  <div className="pw-bible-section">
+                    {/* ── Header ── */}
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Knowledge & Reveals</h3>
+                        <p className="pw-bible-section-note">
+                          Track who knows what, when secrets are revealed, and scan for violations across your manuscript.
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {!aiOff && (
+                          <button
+                            type="button"
+                            className="pw-bolton-add-btn"
+                            disabled={knowledgeScanBusy || (novel.storyBible.knowledgeMap?.entries ?? []).length === 0}
+                            onClick={() => void runKnowledgeScan()}
+                            title={(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? "Add entries first" : "Scan manuscript for knowledge violations"}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                          >
+                            {knowledgeScanBusy ? (
+                              <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Scanning...</>
+                            ) : (
+                              <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Scan Manuscript</>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="pw-bolton-add-btn"
+                          disabled={(novel.storyBible.knowledgeMap?.entries ?? []).length >= 30}
+                          onClick={addKnowledgeEntry}
+                          title="Add a knowledge entry (secret, reveal, clue, or deception)"
+                        >
+                          + Add Entry
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scan error */}
+                    {knowledgeScanError && (
+                      <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 12, fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)" }}>
+                        {knowledgeScanError}
+                      </div>
+                    )}
+
+                    {/* Scan results banner */}
+                    {(() => {
+                      const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
+                      if (km.scanIssues.length === 0 && !km.lastScanAt) return null;
+                      const critical = km.scanIssues.filter((i) => i.severity === "critical").length;
+                      const warnings = km.scanIssues.filter((i) => i.severity === "warning").length;
+                      const infos = km.scanIssues.filter((i) => i.severity === "info").length;
+                      return (
+                        <div style={{
+                          padding: "12px 16px", borderRadius: 12, marginBottom: 14,
+                          background: km.scanIssues.length === 0 ? "rgba(163,230,53,0.06)" : "rgba(245,158,11,0.06)",
+                          border: `1px solid ${km.scanIssues.length === 0 ? "rgba(163,230,53,0.15)" : "rgba(245,158,11,0.15)"}`,
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                        }}>
+                          <div style={{ fontSize: 13 }}>
+                            {km.scanIssues.length === 0 ? (
+                              <span style={{ color: "#a3e635", fontWeight: 700 }}>All clear — no knowledge violations found</span>
+                            ) : (
+                              <span>
+                                {critical > 0 && <span style={{ color: "#ef4444", fontWeight: 700 }}>{critical} critical</span>}
+                                {critical > 0 && warnings > 0 && " · "}
+                                {warnings > 0 && <span style={{ color: "#f59e0b", fontWeight: 700 }}>{warnings} warning{warnings !== 1 ? "s" : ""}</span>}
+                                {(critical > 0 || warnings > 0) && infos > 0 && " · "}
+                                {infos > 0 && <span style={{ color: "#818cf8", fontWeight: 600 }}>{infos} info</span>}
+                                <span style={{ marginLeft: 6, color: "var(--pw-text-dim)", fontSize: 12 }}>found in scan</span>
+                              </span>
+                            )}
+                          </div>
+                          {km.lastScanAt && (
+                            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+                              Scanned {new Date(km.lastScanAt).toLocaleTimeString()}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Empty state */}
+                    {(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "40px 20px", opacity: 0.5 }}>
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block" }}>
+                          <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                        <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>No knowledge entries yet</p>
+                        <p style={{ fontSize: 12 }}>Add secrets, reveals, clues, and deceptions to track who knows what in your story.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 12, minHeight: 300 }}>
+                        {/* Entry list (left side) */}
+                        <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4, overflow: "auto", maxHeight: 500 }}>
+                          {(novel.storyBible.knowledgeMap?.entries ?? []).map((entry) => {
+                            const typeMeta = KNOWLEDGE_TYPES.find((t) => t.id === entry.type) || KNOWLEDGE_TYPES[0];
+                            const statusMeta = STATUS_META[entry.status] || STATUS_META.hidden;
+                            const isSelected = knowledgeSelectedId === entry.id;
+                            const issueCount = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id).length;
+                            return (
+                              <div key={entry.id}
+                                onClick={() => setKnowledgeSelectedId(isSelected ? null : entry.id)}
+                                style={{
+                                  padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                                  background: isSelected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
+                                  border: `1px solid ${isSelected ? typeMeta.color + "40" : "rgba(255,255,255,0.05)"}`,
+                                  transition: "all 0.15s",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={typeMeta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={typeMeta.icon}/></svg>
+                                  <span style={{ fontSize: 12, fontWeight: 700, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {entry.label || "Untitled"}
+                                  </span>
+                                  {issueCount > 0 && (
+                                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>
+                                      {issueCount}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: `${typeMeta.color}15`, color: typeMeta.color, fontWeight: 600 }}>{typeMeta.label}</span>
+                                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600 }}>{statusMeta.label}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Entry detail (right side) */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {(() => {
+                            const entry = (novel.storyBible.knowledgeMap?.entries ?? []).find((e) => e.id === knowledgeSelectedId);
+                            if (!entry) return (
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.3, fontSize: 13 }}>
+                                Select an entry to edit
+                              </div>
+                            );
+                            const entryIssues = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id);
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {/* Label + type row */}
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Label</label>
+                                    <input
+                                      className="pw-bible-input"
+                                      value={entry.label}
+                                      maxLength={80}
+                                      placeholder="e.g. The letter is forged"
+                                      onChange={(e) => updateKnowledgeEntry(entry.id, { label: e.target.value })}
+                                      style={{ width: "100%", fontSize: 13 }}
+                                    />
+                                  </div>
+                                  <div style={{ width: 130 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Type</label>
+                                    <select
+                                      className="pw-bible-input"
+                                      value={entry.type}
+                                      onChange={(e) => updateKnowledgeEntry(entry.id, { type: e.target.value as KnowledgeEntry["type"] })}
+                                      style={{ width: "100%" }}
+                                    >
+                                      {KNOWLEDGE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Description */}
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>What is it?</label>
+                                  <textarea
+                                    className="pw-bible-input"
+                                    rows={2}
+                                    maxLength={300}
+                                    value={entry.description}
+                                    placeholder="Describe the secret, reveal, clue, or deception..."
+                                    onChange={(e) => updateKnowledgeEntry(entry.id, { description: e.target.value })}
+                                    style={{ width: "100%" }}
+                                  />
+                                </div>
+
+                                {/* Status + Reveal chapter */}
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Status</label>
+                                    <select
+                                      className="pw-bible-input"
+                                      value={entry.status}
+                                      onChange={(e) => updateKnowledgeEntry(entry.id, { status: e.target.value as KnowledgeEntry["status"] })}
+                                      style={{ width: "100%" }}
+                                    >
+                                      <option value="hidden">Hidden — reader doesn&apos;t know yet</option>
+                                      <option value="foreshadowed">Foreshadowed — hinted at</option>
+                                      <option value="revealed">Revealed — reader knows</option>
+                                    </select>
+                                  </div>
+                                  <div style={{ width: 120 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Reveal chapter</label>
+                                    <input
+                                      className="pw-bible-input"
+                                      type="number"
+                                      min={1}
+                                      max={novel.chapters.length || 99}
+                                      value={entry.revealChapter ?? ""}
+                                      placeholder="Ch #"
+                                      onChange={(e) => updateKnowledgeEntry(entry.id, { revealChapter: e.target.value ? Number(e.target.value) : undefined })}
+                                      style={{ width: "100%" }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Who knows — character holders */}
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 6, display: "block" }}>Who knows this?</label>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                                    {entry.holders.map((h) => {
+                                      const char = novel.storyBible.characters.find((c) => c.id === h.characterId);
+                                      if (!char) return null;
+                                      return (
+                                        <div key={h.characterId} style={{
+                                          display: "inline-flex", alignItems: "center", gap: 6,
+                                          padding: "5px 10px", borderRadius: 8,
+                                          background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                                          fontSize: 12,
+                                        }}>
+                                          <span style={{ fontWeight: 600 }}>{char.name}</span>
+                                          {h.learnedInChapter ? (
+                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>learns Ch{h.learnedInChapter}</span>
+                                          ) : (
+                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>from start</span>
+                                          )}
+                                          <button type="button" onClick={(ev) => { ev.stopPropagation(); removeKnowledgeHolder(entry.id, h.characterId); }}
+                                            style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}
+                                          >&times;</button>
+                                        </div>
+                                      );
+                                    })}
+                                    {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).length > 0 && (
+                                      <select
+                                        className="pw-bible-input"
+                                        value=""
+                                        onChange={(e) => { if (e.target.value) addKnowledgeHolder(entry.id, e.target.value); }}
+                                        style={{ width: "auto", fontSize: 11, padding: "4px 8px" }}
+                                      >
+                                        <option value="">+ Add character</option>
+                                        {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).map((c) => (
+                                          <option key={c.id} value={c.id}>{c.name || "Unnamed"}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Notes */}
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 3, display: "block" }}>Author notes</label>
+                                  <textarea
+                                    className="pw-bible-input"
+                                    rows={2}
+                                    maxLength={300}
+                                    value={entry.notes ?? ""}
+                                    placeholder="Private notes about this piece of knowledge..."
+                                    onChange={(e) => updateKnowledgeEntry(entry.id, { notes: e.target.value })}
+                                    style={{ width: "100%" }}
+                                  />
+                                </div>
+
+                                {/* Delete */}
+                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                  <button type="button" onClick={() => removeKnowledgeEntry(entry.id)}
+                                    style={{
+                                      fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 6,
+                                      background: "rgba(239,68,68,0.08)", color: "#ef4444",
+                                      border: "1px solid rgba(239,68,68,0.15)", cursor: "pointer",
+                                    }}
+                                  >
+                                    Remove entry
+                                  </button>
+                                </div>
+
+                                {/* Issues for this entry */}
+                                {entryIssues.length > 0 && (
+                                  <div style={{ marginTop: 4 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                      {entryIssues.length} violation{entryIssues.length !== 1 ? "s" : ""} found
+                                    </label>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                      {entryIssues.map((issue, ii) => (
+                                        <div key={ii} style={{
+                                          padding: "8px 10px", borderRadius: 8,
+                                          background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
+                                          border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
+                                        }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                            <span style={{
+                                              fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 4,
+                                              background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)",
+                                              color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8",
+                                            }}>{issue.severity}</span>
+                                            <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Chapter {issue.chapter}</span>
+                                          </div>
+                                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{issue.message}</div>
+                                          {issue.suggestion && (
+                                            <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4, fontStyle: "italic" }}>
+                                              {issue.suggestion}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
