@@ -891,6 +891,7 @@ function NovelWorkspacePage() {
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
   const [pendingNovelArchive, setPendingNovelArchive] = useState(false);
   const [pendingNovelDelete, setPendingNovelDelete] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   // ── Chat (Characters + Co-Author) ──
   const [charChatOpen, setCharChatOpen] = useState(false);
   const [charChatTarget, setCharChatTarget] = useState<Character | null>(null);
@@ -1570,7 +1571,7 @@ function NovelWorkspacePage() {
         return;
       }
       if (showPlanGenerateModal) {
-        setShowPlanGenerateModal(false);
+        cancelAiWork(); setShowPlanGenerateModal(false);
         saveNow();
         return;
       }
@@ -1583,17 +1584,17 @@ function NovelWorkspacePage() {
         return;
       }
       if (showFeedbackPanel) {
-        setShowFeedbackPanel(false);
+        cancelAiWork(); setShowFeedbackPanel(false);
         saveNow();
         return;
       }
       if (showPlanModal) {
-        setShowPlanModal(false);
+        cancelAiWork(); setShowPlanModal(false);
         saveNow();
         return;
       }
       if (showEditorModal) {
-        setShowEditorModal(false);
+        cancelAiWork(); setShowEditorModal(false);
         saveNow();
         return;
       }
@@ -1601,9 +1602,8 @@ function NovelWorkspacePage() {
         setCharChatOpen(false);
         return;
       }
-      // overview editor now unified under showEditorModal — handled above
       if (showStoryBibleModal) {
-        setShowStoryBibleModal(false);
+        cancelAiWork(); setShowStoryBibleModal(false);
         saveNow();
         return;
       }
@@ -3723,6 +3723,12 @@ function NovelWorkspacePage() {
     setStoryAiBusyAction(null);
     setEditorLoadingPhase(null);
     setFeedbackReviewApplying(false);
+    setNccBusy(false);
+    setEditorApplying(false);
+    setEditorApplyProgress("");
+    setRewriteBusy(false);
+    setProseCtxBusy(false);
+    setHealthScoreBusy(false);
   }
   /** Returns true if the error is a user-initiated cancellation (silent). */
   function isCancelledError(err: unknown): boolean {
@@ -5682,10 +5688,12 @@ function NovelWorkspacePage() {
       return;
     }
     if (planChapters.length > 0) {
-      const ok = window.confirm(
-        `This will remove your existing ${planChapters.length} chapter${planChapters.length === 1 ? "" : "s"} from the plan. Do you want to continue?`
-      );
-      if (!ok) return;
+      setShowPlanGenerateModal(false);
+      setRegenConfirm({
+        message: `This will replace your existing ${planChapters.length} chapter${planChapters.length === 1 ? "" : "s"} in the plan. Existing synopses will be overwritten.`,
+        onConfirm: () => { setRegenConfirm(null); updateBookPlan({ aiChapterTarget: target, pacingMode: planGeneratePacingMode }); void runGeneratePlan(target); },
+      });
+      return;
     }
     setShowPlanGenerateModal(false);
     updateBookPlan({ aiChapterTarget: target, pacingMode: planGeneratePacingMode });
@@ -6961,7 +6969,14 @@ function NovelWorkspacePage() {
   }
 
   function clearBibleSection(section: typeof bibleSection) {
-    if (!confirm(`Clear this section? This cannot be undone.`)) return;
+    const labels: Record<string, string> = { summary: "summary", styleVoice: "style & voice", characters: "all characters", locations: "all locations", worldbuilding: "worldbuilding", boltons: "all bolt-ons" };
+    setRegenConfirm({
+      message: `This will clear ${labels[section] || "this section"}. This cannot be undone.`,
+      onConfirm: () => { setRegenConfirm(null); executeClearBibleSection(section); },
+    });
+  }
+
+  function executeClearBibleSection(section: typeof bibleSection) {
     switch (section) {
       case "summary":
         updateStoryBible({
@@ -9234,7 +9249,14 @@ function NovelWorkspacePage() {
                     type="button"
                     className="btn btn-primary"
                     disabled={storyAiBusyAction !== null}
-                    onClick={() => void runGenerateChapterBlocks()}
+                    onClick={() => {
+                      const hasBlocs = activeChapter.content?.includes("<<<BLOCK>>>");
+                      if (hasBlocs) {
+                        setRegenConfirm({ message: "This will regenerate all blocs for this chapter. Existing bloc synopses and prose could be overwritten.", onConfirm: () => { setRegenConfirm(null); void runGenerateChapterBlocks(); } });
+                      } else {
+                        void runGenerateChapterBlocks();
+                      }
+                    }}
                   >
                     {storyAiBusyAction === `chapter-blocks-${activeChapter.id}` ? "Generating…" : "✦ Generate blocs"}
                   </button>
@@ -9626,12 +9648,13 @@ function NovelWorkspacePage() {
                                       className={`pw-block-btn ${block.prose ? "pw-block-btn-regenerate" : "pw-block-btn-generate"}`}
                                       title={!block.synopsis?.trim() ? "Add a synopsis first" : block.prose ? "Regenerate prose" : "Generate prose"}
                                       disabled={storyAiBusyAction !== null || !block.synopsis?.trim()}
-                                      onClick={() =>
-                                        void runGenerateBlockProse(
-                                          idx,
-                                          block.prose ? (block.regenConstraint.trim() || undefined) : undefined,
-                                        )
-                                      }
+                                      onClick={() => {
+                                        if (block.prose?.trim()) {
+                                          setRegenConfirm({ message: "This will regenerate the prose for this bloc. Your current text will be overwritten.", onConfirm: () => { setRegenConfirm(null); void runGenerateBlockProse(idx, block.regenConstraint.trim() || undefined); } });
+                                        } else {
+                                          void runGenerateBlockProse(idx);
+                                        }
+                                      }}
                                     >
                                       {storyAiBusyAction === `block-${activeChapter.id}-${idx}` ? "…" : block.prose ? "↻" : "✦ Generate"}
                                     </button>
@@ -10031,12 +10054,13 @@ function NovelWorkspacePage() {
                             type="button"
                             className="btn btn-primary"
                             disabled={storyAiBusyAction !== null}
-                            onClick={() =>
-                              void runGenerateBlockProse(
-                                focusBlockIndex,
-                                block.regenConstraint.trim() || undefined,
-                              )
-                            }
+                            onClick={() => {
+                              if (block.prose?.trim()) {
+                                setRegenConfirm({ message: "This will regenerate the prose for this bloc. Your current text will be overwritten.", onConfirm: () => { setRegenConfirm(null); void runGenerateBlockProse(focusBlockIndex, block.regenConstraint.trim() || undefined); } });
+                              } else {
+                                void runGenerateBlockProse(focusBlockIndex, block.regenConstraint.trim() || undefined);
+                              }
+                            }}
                           >
                             {storyAiBusyAction === `block-${activeChapter.id}-${focusBlockIndex}`
                               ? "Regenerating..."
@@ -10223,7 +10247,11 @@ function NovelWorkspacePage() {
                       type="button"
                       className={novel.healthScore ? "btn" : "btn btn-primary"}
                       disabled={healthScoreBusy || totalWords < 100}
-                      onClick={() => void generateHealthScore()}
+                      onClick={() => {
+                        if (novel.healthScore) {
+                          setRegenConfirm({ message: "This will regenerate your manuscript health report, replacing the current scores.", onConfirm: () => { setRegenConfirm(null); void generateHealthScore(); } });
+                        } else { void generateHealthScore(); }
+                      }}
                       style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
                       title={totalWords < 100 ? "Write at least 100 words first" : "Generate health report"}
                     >
@@ -10460,6 +10488,23 @@ function NovelWorkspacePage() {
         </section>
       </div>
 
+      {/* ── Regeneration confirmation modal ── */}
+      {regenConfirm && (
+        <div className="pw-modal-overlay" onClick={() => setRegenConfirm(null)}>
+          <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, textAlign: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, margin: "0 auto 14px", background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Are you sure?</div>
+            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>{regenConfirm.message}</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button type="button" className="btn pw-cancel-btn" onClick={() => setRegenConfirm(null)}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={regenConfirm.onConfirm}>Continue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Archive confirmation modal ── */}
       {pendingNovelArchive && novel && (
         <div className="pw-modal-overlay" onClick={() => setPendingNovelArchive(false)}>
@@ -10517,7 +10562,7 @@ function NovelWorkspacePage() {
 
       {/* ── The Plan Modal ── */}
       {showPlanModal && (
-        <div className="pw-modal-overlay" onClick={() => { setShowPlanModal(false); saveNow(); }}>
+        <div className="pw-modal-overlay" onClick={() => { cancelAiWork(); setShowPlanModal(false); saveNow(); }}>
           <div
             className="pw-plan-modal"
             onClick={(e) => e.stopPropagation()}
@@ -10574,7 +10619,7 @@ function NovelWorkspacePage() {
                 <button
                   type="button"
                   className="pw-plan-modal-close"
-                  onClick={() => { setShowPlanModal(false); saveNow(); }}
+                  onClick={() => { cancelAiWork(); setShowPlanModal(false); saveNow(); }}
                   aria-label="Close"
                 >
                   &times;
@@ -12037,7 +12082,7 @@ function NovelWorkspacePage() {
         }
 
         // ── Overview mode: sentence-level manuscript edits ──
-        const closeOverview = () => { setShowEditorModal(false); saveNow(); };
+        const closeOverview = () => { cancelAiWork(); setShowEditorModal(false); saveNow(); };
         return (
           <div className="pw-modal-overlay" onClick={closeOverview}>
             <div className="pw-chapter-review-modal" onClick={(e) => e.stopPropagation()}
@@ -12083,7 +12128,11 @@ function NovelWorkspacePage() {
                 <div style={{ marginLeft: "auto" }}>
                   <button type="button"
                     disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 1}
-                    onClick={() => void runEditorScan()}
+                    onClick={() => {
+                      if (editorFindings.length > 0) {
+                        setRegenConfirm({ message: "Re-scanning will replace your current editing suggestions. Any unreviewed changes will be lost.", onConfirm: () => { setRegenConfirm(null); void runEditorScan(); } });
+                      } else { void runEditorScan(); }
+                    }}
                     style={{
                       padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
                       background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
@@ -12238,7 +12287,7 @@ function NovelWorkspacePage() {
       })()}
 
       {showStoryBibleModal && novel && (
-        <div className="pw-modal-overlay" onClick={() => { setShowStoryBibleModal(false); saveNow(); }}>
+        <div className="pw-modal-overlay" onClick={() => { cancelAiWork(); setShowStoryBibleModal(false); saveNow(); }}>
           <div className="pw-bible-modal" onClick={(event) => event.stopPropagation()}>
             <div className="pw-bible-modal-head">
               <div>
@@ -12252,7 +12301,7 @@ function NovelWorkspacePage() {
                 <button type="button" className="pw-link-btn" onClick={() => setProfileOpen(true)}>
                   Settings
                 </button>
-                <button type="button" className="pw-bible-close" onClick={() => { setShowStoryBibleModal(false); saveNow(); }} aria-label="Close">
+                <button type="button" className="pw-bible-close" onClick={() => { cancelAiWork(); setShowStoryBibleModal(false); saveNow(); }} aria-label="Close">
                   ×
                 </button>
               </div>
@@ -12452,14 +12501,16 @@ function NovelWorkspacePage() {
                         )}
                       </div>
                       <div className="pw-bible-inline-actions">
+                        {storyCharacters.length > 0 && (
                         <button
                           type="button"
                           className="pw-bible-clear-btn"
                           onClick={() => clearBibleSection("characters")}
-                          title="Clear this section"
+                          title="Remove all characters"
                         >
-                          Clear this section
+                          Clear All Characters
                         </button>
+                        )}
                         {!aiOff && (
                         <button
                           type="button"
@@ -12487,18 +12538,42 @@ function NovelWorkspacePage() {
                           </p>
                         ) : (
                           storyCharacters.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
-                              onClick={() => setSelectedV2CharacterId(c.id)}
-                            >
-                              <span className="pw-char-name">{c.name || "Untitled"}</span>
-                              <span className="pw-char-role">
-                                {c.role}
-                                {c.accent ? ` • ${c.accent}` : ""}
-                              </span>
-                            </button>
+                            <div key={c.id} style={{ position: "relative", display: "inline-flex" }}>
+                              <button
+                                type="button"
+                                className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
+                                onClick={() => setSelectedV2CharacterId(c.id)}
+                                style={{ paddingRight: 28 }}
+                              >
+                                <span className="pw-char-name">{c.name || "Untitled"}</span>
+                                <span className="pw-char-role">
+                                  {c.role}
+                                  {c.accent ? ` • ${c.accent}` : ""}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                title={`Remove ${c.name || "character"}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRegenConfirm({
+                                    message: `Remove "${c.name || "Untitled"}" from your Canon? This cannot be undone.`,
+                                    onConfirm: () => { setRegenConfirm(null); removeV2Character(c.id); },
+                                  });
+                                }}
+                                style={{
+                                  position: "absolute", top: 4, right: 4,
+                                  width: 18, height: 18, borderRadius: "50%",
+                                  background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)",
+                                  color: "#ef4444", fontSize: 11, fontWeight: 700,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  cursor: "pointer", padding: 0, lineHeight: 1,
+                                  opacity: 0.5, transition: "opacity 0.15s",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.5"; }}
+                              >×</button>
+                            </div>
                           ))
                         )}
                       </div>
@@ -12871,7 +12946,12 @@ function NovelWorkspacePage() {
                                     <button
                                       type="button"
                                       className="pw-character-delete"
-                                      onClick={() => removeV2Character(character.id)}
+                                      onClick={() => {
+                                        setRegenConfirm({
+                                          message: `Remove "${character.name || "Untitled"}" from your Canon? This cannot be undone.`,
+                                          onConfirm: () => { setRegenConfirm(null); removeV2Character(character.id); },
+                                        });
+                                      }}
                                     >
                                       Remove character
                                     </button>
