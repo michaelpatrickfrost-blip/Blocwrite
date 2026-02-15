@@ -6195,43 +6195,43 @@ function NovelWorkspacePage() {
     const CATEGORY_PROMPTS: Record<string, { system: string; task: string; categoryLabel: string }> = {
       "state-drift": {
         categoryLabel: "State Drift",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect state drift — injuries, conditions, possession changes, death states that are contradicted between chapters without explanation.`,
-        task: `Find state drift issues: injuries that heal without mention, characters who die then reappear, possession of items changing without explanation, conditions (pregnant, sick, imprisoned) that vanish. Only flag genuine contradictions.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use the previous/next chapter excerpts ONLY as context for detecting contradictions within this chapter. Do NOT report issues that exist solely in other chapters.`,
+        task: `Find state drift issues WITHIN THIS CHAPTER: injuries that heal without mention, characters who die then reappear, possession of items changing without explanation, conditions (pregnant, sick, imprisoned) that vanish. Only flag genuine contradictions visible in the current chapter text. If the chapter has no contradictions, return empty.`,
       },
       "timeline": {
         categoryLabel: "Timeline Error",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect timeline errors — time-of-day impossibilities, travel that's too fast, events happening in wrong order.`,
-        task: `Find timeline issues: impossible time jumps, characters traveling too fast between locations, events referenced before they happen, day/night contradictions. Only flag genuine issues.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use the previous/next chapter excerpts ONLY as context for detecting contradictions within this chapter.`,
+        task: `Find timeline issues WITHIN THIS CHAPTER: impossible time jumps, characters traveling too fast between locations, events referenced before they happen, day/night contradictions. Only flag genuine issues visible in the current chapter text. If there are no issues, return empty.`,
       },
       "relationships": {
         categoryLabel: "Relationship Inconsistency",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect relationship inconsistencies — emotional states between characters that shift without catalyst.`,
-        task: `Find relationship issues: characters acting deeply in love after a breakup with no reconciliation scene, enemies suddenly friendly, betrayals forgotten. Flag missing emotional transitions.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use the canon and previous chapter ONLY as context for understanding established relationship states.`,
+        task: `Find relationship issues WITHIN THIS CHAPTER: characters acting deeply in love after a breakup with no reconciliation scene, enemies suddenly friendly, betrayals forgotten. Flag missing emotional transitions. Only flag issues visible in the current chapter text. If there are no issues, return empty.`,
       },
       "knowledge": {
         categoryLabel: "Knowledge Violation",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect knowledge violations — characters knowing things they shouldn't.`,
-        task: `Find knowledge violations: a character references information only another character knows, secrets mentioned before being revealed, deductions made without evidence. Only flag genuine impossible knowledge.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use the canon info to understand what each character should and shouldn't know.`,
+        task: `Find knowledge violations WITHIN THIS CHAPTER: a character references information only another character knows, secrets mentioned before being revealed, deductions made without evidence. Only flag genuine impossible knowledge visible in the current chapter text. If there are no issues, return empty.`,
       },
       "spatial-logic": {
         categoryLabel: "Spatial Logic Error",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect spatial logic errors — characters speaking after leaving, impossible physical positions.`,
-        task: `Find spatial issues: characters speaking after exiting a scene, people in rooms they never entered, physical impossibilities (facing wrong direction, grabbing with injured hand). Only flag genuine errors.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Check physical/spatial consistency within this chapter's scenes.`,
+        task: `Find spatial issues WITHIN THIS CHAPTER: characters speaking after exiting a scene, people in rooms they never entered, physical impossibilities (facing wrong direction, grabbing with injured hand). Only flag genuine errors visible in the current chapter text. If there are no issues, return empty.`,
       },
       "emotional-arc": {
         categoryLabel: "Emotional Arc Break",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect emotional arc breaks — grief vanishing too fast, fear disappearing without resolution, disproportionate reactions.`,
-        task: `Find emotional arc issues: intense grief that vanishes next scene, fear of something suddenly forgotten, joy that's unrealistic given recent trauma. Is the character reacting proportionally? Flag missing emotional transitions.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use previous chapter context only to understand the emotional state characters should be in.`,
+        task: `Find emotional arc issues WITHIN THIS CHAPTER: intense grief that vanishes within the same scene, fear of something suddenly forgotten, joy that's unrealistic given recent trauma. Is the character reacting proportionally? Only flag issues visible in the current chapter text. If there are no issues, return empty.`,
       },
       "setup-payoff": {
         categoryLabel: "Setup / Payoff",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect setup/payoff issues — loose threads, promises to the reader that go unfulfilled, payoffs with no setup.`,
-        task: `Find setup/payoff issues: mysteries introduced but never referenced again in this chapter range, dramatic events that get no follow-through, resolutions to things never set up. Report as open threads that need attention.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use previous/next chapter excerpts as context only.`,
+        task: `Find setup/payoff issues WITHIN THIS CHAPTER: things that resolve without being set up earlier in this chapter, dramatic events that get no follow-through within the chapter, internal contradictions in the narrative. Only flag issues visible in the current chapter text. If there are no issues, return empty.`,
       },
       "voice-drift": {
         categoryLabel: "Voice Drift",
-        system: `You are ThreadKeeper, a continuity engine for novels. Detect character voice drift — speech patterns changing without reason.`,
-        task: `Find voice drift: formal character suddenly using slang, shy character becoming aggressive without catalyst, accent inconsistencies in dialogue, vocabulary level shifts. Only flag clear voice breaks, not subtle variation.`,
+        system: `You are a continuity checker for a single novel. Focus ONLY on the current chapter provided. Use the canon's character speech styles as reference.`,
+        task: `Find voice drift WITHIN THIS CHAPTER: formal character suddenly using slang, shy character becoming aggressive without catalyst, accent inconsistencies in dialogue, vocabulary level shifts. Only flag clear voice breaks visible in the current chapter text, not subtle variation. If there are no issues, return empty.`,
       },
     };
 
