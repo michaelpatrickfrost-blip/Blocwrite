@@ -9309,37 +9309,40 @@ function NovelWorkspacePage() {
                         )}
                       </div>
                     )}
-                    {(novel.storyBible.boltons ?? []).length > 0 && (
-                      <div className="pw-chapter-bolton-wrap">
-                        <button
-                          type="button"
-                          className={`pw-chapter-bolton-trigger ${chapterBoltonId ? "pw-bolton-active" : ""}`}
-                          onClick={(e) => {
-                            const dd = e.currentTarget.parentElement?.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
-                            if (dd) {
-                              const isOpen = dd.classList.toggle("open");
-                              if (isOpen) positionDropdown(e.currentTarget, dd);
-                            }
-                          }}
-                          title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Bolt-On: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Bolt-On"; })() : "Apply Bolt-On to chapter"}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill={chapterBoltonId ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                          {chapterBoltonId && <span className="pw-chapter-bolton-name">{(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}</span>}
+                    <div className="pw-chapter-bolton-wrap">
+                      <button
+                        type="button"
+                        className={`pw-chapter-bolton-trigger ${chapterBoltonId ? "pw-bolton-active" : ""}`}
+                        onClick={(e) => {
+                          const dd = e.currentTarget.parentElement?.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                          if (dd) {
+                            const isOpen = dd.classList.toggle("open");
+                            if (isOpen) positionDropdown(e.currentTarget, dd);
+                          }
+                        }}
+                        title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Bolt-On: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Bolt-On"; })() : "Apply Bolt-On to chapter"}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill={chapterBoltonId ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        {chapterBoltonId ? <span className="pw-chapter-bolton-name">{(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}</span> : <span style={{ fontSize: 11, fontWeight: 600 }}>Bolt-Ons</span>}
+                      </button>
+                      <div className="pw-block-bolton-dropdown">
+                        <div className="pw-bolton-dropdown-head">Chapter Bolt-On</div>
+                        <button type="button" className={`pw-block-bolton-option ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                          <span className="pw-block-bolton-option-title">None</span>
                         </button>
-                        <div className="pw-block-bolton-dropdown">
-                          <div className="pw-bolton-dropdown-head">Chapter Bolt-On</div>
-                          <button type="button" className={`pw-block-bolton-option ${!chapterBoltonId ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(""); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
-                            <span className="pw-block-bolton-option-title">None</span>
+                        {(novel.storyBible.boltons ?? []).map((b, i) => (
+                          <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                           </button>
-                          {(novel.storyBible.boltons ?? []).map((b, i) => (
-                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={(e) => { setChapterBoltonForActiveChapter(b.id); e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); }}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                              <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
-                            </button>
-                          ))}
-                        </div>
+                        ))}
+                        <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 6px" }} />
+                        <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.currentTarget.closest(".pw-block-bolton-dropdown")?.classList.remove("open"); setWritingPacksOpen(true); }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                          <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
+                        </button>
                       </div>
-                    )}
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                       <div className="pw-settings-toggle-row">
                         <span className={`pw-settings-toggle-label ${hideBlocks ? "off" : "on"}`}>{hideBlocks ? "Blocs hidden" : "Blocs"}</span>
@@ -9494,69 +9497,72 @@ function NovelWorkspacePage() {
                                         Best fit
                                       </button>
                                     </div>
-                                    {(novel.storyBible.boltons ?? []).length > 0 && (
-                                      chapterBoltonId ? (
-                                        <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}`}>
-                                          <span className="pw-block-bolton-trigger pw-bolton-active pw-bolton-locked">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <div className="pw-block-bolton-wrap pw-block-bolton-hover">
+                                    {chapterBoltonId ? (
+                                      <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}`}>
+                                        <span className="pw-block-bolton-trigger pw-bolton-active pw-bolton-locked">
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div className="pw-block-bolton-wrap pw-block-bolton-hover">
+                                        <button
+                                          type="button"
+                                          className={`pw-block-bolton-trigger ${block.notes ? "pw-bolton-active" : ""}`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const wrap = e.currentTarget.parentElement;
+                                            if (wrap) {
+                                              const wasOpen = wrap.classList.contains("pw-bolton-open");
+                                              wrap.classList.toggle("pw-bolton-open");
+                                              if (!wasOpen) {
+                                                const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                                                if (dd) positionDropdown(e.currentTarget, dd);
+                                              }
+                                            }
+                                          }}
+                                          title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill={block.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                        </button>
+                                        <div className="pw-block-bolton-dropdown">
+                                          <div className="pw-bolton-dropdown-head">Bloc Bolt-On</div>
                                           <button
                                             type="button"
-                                            className={`pw-block-bolton-trigger ${block.notes ? "pw-bolton-active" : ""}`}
+                                            className={`pw-block-bolton-option ${!block.notes ? "active" : ""}`}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              const wrap = e.currentTarget.parentElement;
-                                              if (wrap) {
-                                                const wasOpen = wrap.classList.contains("pw-bolton-open");
-                                                wrap.classList.toggle("pw-bolton-open");
-                                                if (!wasOpen) {
-                                                  const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
-                                                  if (dd) positionDropdown(e.currentTarget, dd);
-                                                }
-                                              }
+                                              e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                              const next = [...blocks];
+                                              next[idx] = { ...block, notes: "" };
+                                              updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
                                             }}
-                                            title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
                                           >
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill={block.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                            <span className="pw-block-bolton-option-title">None</span>
                                           </button>
-                                          <div className="pw-block-bolton-dropdown">
-                                            <div className="pw-bolton-dropdown-head">Bloc Bolt-On</div>
+                                          {(novel.storyBible.boltons ?? []).map((b, i) => (
                                             <button
+                                              key={b.id}
                                               type="button"
-                                              className={`pw-block-bolton-option ${!block.notes ? "active" : ""}`}
+                                              className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
                                                 const next = [...blocks];
-                                                next[idx] = { ...block, notes: "" };
+                                                next[idx] = { ...block, notes: b.id };
                                                 updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
                                               }}
                                             >
-                                              <span className="pw-block-bolton-option-title">None</span>
+                                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                              <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
                                             </button>
-                                            {(novel.storyBible.boltons ?? []).map((b, i) => (
-                                              <button
-                                                key={b.id}
-                                                type="button"
-                                                className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
-                                                  const next = [...blocks];
-                                                  next[idx] = { ...block, notes: b.id };
-                                                  updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
-                                                }}
-                                              >
-                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                                <span className="pw-block-bolton-option-title">{`[${getBoltonCategoryMeta(b.category).label}] ${b.title || `Bolt-On ${i + 1}`}`}</span>
-                                              </button>
-                                            ))}
-                                          </div>
+                                          ))}
+                                          <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 6px" }} />
+                                          <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open"); setWritingPacksOpen(true); }}>
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                            <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
+                                          </button>
                                         </div>
-                                      )
+                                      </div>
                                     )}
                                   </div>
                                   <div className="pw-block-toolbar-right">
@@ -13172,227 +13178,7 @@ function NovelWorkspacePage() {
                       </div>
                     )}
 
-                    {/* ── Writing Packs modal ── */}
-                    {writingPacksOpen && (
-                      <div style={{
-                        position: "fixed", inset: 0, zIndex: 9999,
-                        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}
-                        onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }}
-                      >
-                        <div
-                          style={{
-                            background: "var(--pw-bg)",
-                            border: "1px solid var(--pw-border)",
-                            borderRadius: 20, width: "94%", maxWidth: 560, maxHeight: "80vh",
-                            display: "flex", flexDirection: "column",
-                            boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {/* Header */}
-                          <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Writing Packs</h3>
-                              </div>
-                              <button type="button" onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }} style={{
-                                background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
-                                width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                                color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
-                              }}>&times;</button>
-                            </div>
-                            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-                              Pre-made craft kits — install bolt-ons built by genre experts with one click.
-                            </p>
-                          </div>
-
-                          {/* Pack list */}
-                          <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              {WRITING_PACKS.map((pack) => {
-                                const installed = getPackInstalledCount(pack);
-                                const allInstalled = installed === pack.boltons.length;
-                                const isExpanded = expandedPack === pack.id;
-                                const justInstalled = packInstallFlash === pack.id;
-                                const slotsLeft = 10 - (novel?.storyBible.boltons ?? []).length;
-                                return (
-                                  <div key={pack.id} style={{
-                                    borderRadius: 14,
-                                    background: "var(--pw-overlay-bg)",
-                                    border: `1px solid ${justInstalled ? pack.color + "55" : "var(--pw-overlay-bg-hover)"}`,
-                                    transition: "all 0.2s",
-                                    overflow: "hidden",
-                                  }}>
-                                    {/* Pack header — clickable to expand */}
-                                    <div
-                                      style={{
-                                        display: "flex", alignItems: "center", gap: 14,
-                                        padding: "14px 16px", cursor: "pointer",
-                                        transition: "background 0.15s",
-                                      }}
-                                      onClick={() => setExpandedPack(isExpanded ? null : pack.id)}
-                                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg)"; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                                    >
-                                      {/* Genre icon */}
-                                      <div style={{
-                                        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                                        background: `${pack.color}18`,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                      }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
-                                      </div>
-
-                                      {/* Name + tagline */}
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                          <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
-                                          <span style={{
-                                            fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
-                                            background: `${pack.color}20`, color: pack.color,
-                                          }}>{pack.genre}</span>
-                                          {allInstalled && (
-                                            <span style={{
-                                              fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
-                                              background: "rgba(163,230,53,0.12)", color: "var(--pw-accent)",
-                                            }}>Installed</span>
-                                          )}
-                                        </div>
-                                        <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>
-                                          {pack.tagline}
-                                        </div>
-                                      </div>
-
-                                      {/* Expand chevron */}
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                                        style={{ flexShrink: 0, transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
-                                      ><path d="M6 9l6 6 6-6"/></svg>
-                                    </div>
-
-                                    {/* Expanded detail with selectable boltons */}
-                                    {isExpanded && (() => {
-                                      const packBoltonKeys = pack.boltons.map((_, i) => `${pack.id}-${i}`);
-                                      const packSelected = packBoltonKeys.filter((k) => packSelectedBoltons.has(k));
-                                      const hasSelection = packSelected.length > 0;
-                                      return (
-                                      <div style={{
-                                        borderTop: "1px solid var(--pw-border-light)",
-                                        padding: "12px 16px 16px",
-                                      }}>
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                                          <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                            {pack.boltons.length} bolt-ons — select which to install
-                                          </p>
-                                          <button type="button" onClick={() => {
-                                            const uninstalled = pack.boltons.map((pb, i) => {
-                                              const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
-                                              const already = (novel?.storyBible.boltons ?? []).some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
-                                              return already ? null : `${pack.id}-${i}`;
-                                            }).filter(Boolean) as string[];
-                                            const allChecked = uninstalled.every((k) => packSelectedBoltons.has(k));
-                                            const next = new Set(packSelectedBoltons);
-                                            if (allChecked) uninstalled.forEach((k) => next.delete(k));
-                                            else uninstalled.forEach((k) => next.add(k));
-                                            setPackSelectedBoltons(next);
-                                          }} style={{ fontSize: 10, background: "none", border: "none", color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600, padding: "2px 4px" }}>
-                                            {packBoltonKeys.every((k) => packSelectedBoltons.has(k)) ? "Deselect all" : "Select all"}
-                                          </button>
-                                        </div>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                          {pack.boltons.map((pb, i) => {
-                                            const bKey = `${pack.id}-${i}`;
-                                            const alreadyHas = (novel?.storyBible.boltons ?? []).some((b) => {
-                                              const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
-                                              return `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key;
-                                            });
-                                            const isChecked = packSelectedBoltons.has(bKey);
-                                            return (
-                                              <div key={i}
-                                                onClick={() => {
-                                                  if (alreadyHas) return;
-                                                  const next = new Set(packSelectedBoltons);
-                                                  if (isChecked) next.delete(bKey); else next.add(bKey);
-                                                  setPackSelectedBoltons(next);
-                                                }}
-                                                style={{
-                                                  display: "flex", alignItems: "center", gap: 10,
-                                                  padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
-                                                  background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
-                                                  border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
-                                                  transition: "all 0.12s",
-                                                }}>
-                                                {/* Checkbox */}
-                                                <div style={{
-                                                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                                  border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid var(--pw-border)",
-                                                  background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? `${pack.color}25` : "transparent",
-                                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                                }}>
-                                                  {(alreadyHas || isChecked) && (
-                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                                                  )}
-                                                </div>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                  <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
-                                                    {pb.title}
-                                                    {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>installed</span>}
-                                                  </div>
-                                                  <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-
-                                        {/* Install button */}
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
-                                          <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
-                                            {allInstalled ? "All installed" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
-                                          </span>
-                                          <div style={{ display: "flex", gap: 6 }}>
-                                            {hasSelection && (
-                                              <button type="button"
-                                                disabled={slotsLeft <= 0}
-                                                onClick={() => installWritingPack(pack, packSelectedBoltons)}
-                                                style={{
-                                                  padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                                                  border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer",
-                                                  background: pack.color, color: "var(--pw-btn-primary-text)", transition: "all 0.15s",
-                                                }}
-                                              >
-                                                Install Selected ({packSelected.length})
-                                              </button>
-                                            )}
-                                            <button type="button"
-                                              disabled={allInstalled || slotsLeft <= 0}
-                                              onClick={() => installWritingPack(pack)}
-                                              style={{
-                                                padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8,
-                                                border: "none", cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                                background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : pack.color,
-                                                color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
-                                                opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1,
-                                                transition: "all 0.15s",
-                                              }}
-                                            >
-                                              {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : "Install All"}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      );
-                                    })()}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    {/* Writing Packs modal is rendered at top level so it can be opened from chapter/bloc view too */}
 
                     {/* ── Quick-add by category ── */}
                     <div className="pw-bolton-quick-cats">
@@ -14633,6 +14419,194 @@ function NovelWorkspacePage() {
         </div>
       )}
 
+
+      {/* ── Writing Packs modal (top-level so accessible from chapter/bloc/canon) ── */}
+      {writingPacksOpen && novel && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+          onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }}
+        >
+          <div
+            style={{
+              background: "var(--pw-bg)",
+              border: "1px solid var(--pw-border)",
+              borderRadius: 20, width: "94%", maxWidth: 560, maxHeight: "80vh",
+              display: "flex", flexDirection: "column",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
+              animation: "pw-modal-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--pw-border-light)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Writing Packs</h3>
+                </div>
+                <button type="button" onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }} style={{
+                  background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
+                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                }}>&times;</button>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
+                Pre-made craft kits — install bolt-ons built by genre experts with one click.
+              </p>
+            </div>
+
+            {/* Pack list */}
+            <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {WRITING_PACKS.map((pack) => {
+                  const installed = getPackInstalledCount(pack);
+                  const allInstalled = installed === pack.boltons.length;
+                  const isExpanded = expandedPack === pack.id;
+                  const justInstalled = packInstallFlash === pack.id;
+                  const slotsLeft = 10 - (novel.storyBible.boltons ?? []).length;
+                  return (
+                    <div key={pack.id} style={{
+                      borderRadius: 14,
+                      background: "var(--pw-overlay-bg)",
+                      border: `1px solid ${justInstalled ? pack.color + "55" : "var(--pw-overlay-bg-hover)"}`,
+                      transition: "all 0.2s",
+                      overflow: "hidden",
+                    }}>
+                      {/* Pack header */}
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", gap: 14,
+                          padding: "14px 16px", cursor: "pointer",
+                          transition: "background 0.15s",
+                        }}
+                        onClick={() => setExpandedPack(isExpanded ? null : pack.id)}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <div style={{
+                          width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                          background: `${pack.color}18`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pack.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: `${pack.color}20`, color: pack.color }}>{pack.genre}</span>
+                            {allInstalled && (
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(163,230,53,0.12)", color: "var(--pw-accent)" }}>Installed</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>{pack.tagline}</div>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          style={{ flexShrink: 0, transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
+                        ><path d="M6 9l6 6 6-6"/></svg>
+                      </div>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (() => {
+                        const packBoltonKeys = pack.boltons.map((_, i) => `${pack.id}-${i}`);
+                        const packSelected = packBoltonKeys.filter((k) => packSelectedBoltons.has(k));
+                        const hasSelection = packSelected.length > 0;
+                        return (
+                        <div style={{ borderTop: "1px solid var(--pw-border-light)", padding: "12px 16px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              {pack.boltons.length} bolt-ons — select which to install
+                            </p>
+                            <button type="button" onClick={() => {
+                              const uninstalled = pack.boltons.map((pb, i) => {
+                                const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+                                const already = (novel.storyBible.boltons ?? []).some((b) => `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key);
+                                return already ? null : `${pack.id}-${i}`;
+                              }).filter(Boolean) as string[];
+                              const allChecked = uninstalled.every((k) => packSelectedBoltons.has(k));
+                              const next = new Set(packSelectedBoltons);
+                              if (allChecked) uninstalled.forEach((k) => next.delete(k));
+                              else uninstalled.forEach((k) => next.add(k));
+                              setPackSelectedBoltons(next);
+                            }} style={{ fontSize: 10, background: "none", border: "none", color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600, padding: "2px 4px" }}>
+                              {packBoltonKeys.every((k) => packSelectedBoltons.has(k)) ? "Deselect all" : "Select all"}
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {pack.boltons.map((pb, i) => {
+                              const bKey = `${pack.id}-${i}`;
+                              const alreadyHas = (novel.storyBible.boltons ?? []).some((b) => {
+                                const key = `${pb.title.trim().toLowerCase()}|${pb.description.trim().toLowerCase()}`;
+                                return `${b.title.trim().toLowerCase()}|${(b.description || "").trim().toLowerCase()}` === key;
+                              });
+                              const isChecked = packSelectedBoltons.has(bKey);
+                              return (
+                                <div key={i}
+                                  onClick={() => { if (alreadyHas) return; const next = new Set(packSelectedBoltons); if (isChecked) next.delete(bKey); else next.add(bKey); setPackSelectedBoltons(next); }}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 10,
+                                    padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
+                                    background: isChecked ? `${pack.color}10` : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
+                                    border: isChecked ? `1px solid ${pack.color}30` : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
+                                    transition: "all 0.12s",
+                                  }}>
+                                  <div style={{
+                                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                    border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? `1.5px solid ${pack.color}` : "1.5px solid var(--pw-border)",
+                                    background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? `${pack.color}25` : "transparent",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                  }}>
+                                    {(alreadyHas || isChecked) && (
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={alreadyHas ? "var(--pw-accent)" : pack.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                    )}
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
+                                      {pb.title}
+                                      {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>installed</span>}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+                            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+                              {allInstalled ? "All installed" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
+                            </span>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {hasSelection && (
+                                <button type="button" disabled={slotsLeft <= 0} onClick={() => installWritingPack(pack, packSelectedBoltons)}
+                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: pack.color, color: "var(--pw-btn-primary-text)", transition: "all 0.15s" }}>
+                                  Install Selected ({packSelected.length})
+                                </button>
+                              )}
+                              <button type="button" disabled={allInstalled || slotsLeft <= 0} onClick={() => installWritingPack(pack)}
+                                style={{
+                                  padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none",
+                                  cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
+                                  background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : pack.color,
+                                  color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
+                                  opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1, transition: "all 0.15s",
+                                }}>
+                                {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : "Install All"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Floating Chat FAB (bottom-left) ── */}
       {!aiOff && !charChatOpen
