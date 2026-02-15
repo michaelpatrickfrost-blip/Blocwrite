@@ -703,6 +703,7 @@ function NovelWorkspacePage() {
   const [focusBlockIndex, setFocusBlockIndex] = useState<number | null>(null);
   const [blockProseDrafts, setBlockProseDrafts] = useState<Record<string, string>>({});
   const [collapsedBeats, setCollapsedBeats] = useState<Set<number>>(new Set());
+  const [scenePurposeOpen, setScenePurposeOpen] = useState<Set<number>>(new Set());
   const [editorFontFamily, setEditorFontFamily] = useState<string>("serif");
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
@@ -3120,6 +3121,14 @@ function NovelWorkspacePage() {
   const END_BLOCK = "<<<ENDBLOCK>>>";
   const META_DELIM = "<<<META>>>";
 
+  type ScenePurpose = {
+    pov: string;
+    goal: string;
+    conflict: string;
+    outcome: string;
+    emotionalShift: string;
+  };
+
   type ChapterBlock = {
     synopsis: string;
     prose: string;
@@ -3128,7 +3137,10 @@ function NovelWorkspacePage() {
     notes: string;
     regenConstraint: string;
     lengthMode: "strict" | "best-fit";
+    scenePurpose?: ScenePurpose;
   };
+
+  const EMPTY_SCENE_PURPOSE: ScenePurpose = { pov: "", goal: "", conflict: "", outcome: "", emotionalShift: "" };
 
   const DEFAULT_BLOCK: ChapterBlock = {
     synopsis: "",
@@ -3139,6 +3151,8 @@ function NovelWorkspacePage() {
     regenConstraint: "",
     lengthMode: "best-fit",
   };
+
+  const SCENE_PURPOSE_DELIM = "<<<SP>>>";
 
   function parseChapterBlocks(content: string): { blocks: ChapterBlock[]; hasBlocks: boolean } {
     if (!content.includes(BLOCK_DELIM)) return { blocks: [], hasBlocks: false };
@@ -3156,6 +3170,7 @@ function NovelWorkspacePage() {
       let notes = DEFAULT_BLOCK.notes;
       let regenConstraint = DEFAULT_BLOCK.regenConstraint;
       let lengthMode = DEFAULT_BLOCK.lengthMode;
+      let scenePurpose: ScenePurpose | undefined;
       if (header.startsWith(META_DELIM)) {
         const firstNewline = header.indexOf("\n");
         const metaLine = firstNewline >= 0 ? header.slice(META_DELIM.length, firstNewline) : header.slice(META_DELIM.length);
@@ -3169,7 +3184,25 @@ function NovelWorkspacePage() {
           lengthMode = metaParts[4] === "best-fit" ? "best-fit" : "strict";
         }
       }
-      blocks.push({ synopsis, prose, wordTarget, preset, notes, regenConstraint, lengthMode });
+      // Parse scene purpose if present in synopsis area
+      if (synopsis.includes(SCENE_PURPOSE_DELIM)) {
+        const spIdx = synopsis.indexOf(SCENE_PURPOSE_DELIM);
+        const spData = synopsis.slice(spIdx + SCENE_PURPOSE_DELIM.length).trim();
+        synopsis = synopsis.slice(0, spIdx).trim();
+        try {
+          const parsed = JSON.parse(spData);
+          if (parsed && typeof parsed === "object") {
+            scenePurpose = {
+              pov: typeof parsed.pov === "string" ? parsed.pov : "",
+              goal: typeof parsed.goal === "string" ? parsed.goal : "",
+              conflict: typeof parsed.conflict === "string" ? parsed.conflict : "",
+              outcome: typeof parsed.outcome === "string" ? parsed.outcome : "",
+              emotionalShift: typeof parsed.emotionalShift === "string" ? parsed.emotionalShift : "",
+            };
+          }
+        } catch { /* ignore malformed scene purpose */ }
+      }
+      blocks.push({ synopsis, prose, wordTarget, preset, notes, regenConstraint, lengthMode, scenePurpose });
     }
     return { blocks, hasBlocks: blocks.length > 0 };
   }
@@ -3178,9 +3211,22 @@ function NovelWorkspacePage() {
     return blocks
       .map((b) => {
         const meta = `${META_DELIM}${b.wordTarget}|${b.preset}|${b.notes}|${b.regenConstraint}|${b.lengthMode}\n`;
-        return `${BLOCK_DELIM}\n${meta}${b.synopsis}\n${PROSE_DELIM}\n${b.prose}\n${END_BLOCK}`;
+        const spHasContent = b.scenePurpose && (b.scenePurpose.pov || b.scenePurpose.goal || b.scenePurpose.conflict || b.scenePurpose.outcome || b.scenePurpose.emotionalShift);
+        const spLine = spHasContent ? `\n${SCENE_PURPOSE_DELIM}${JSON.stringify(b.scenePurpose)}` : "";
+        return `${BLOCK_DELIM}\n${meta}${b.synopsis}${spLine}\n${PROSE_DELIM}\n${b.prose}\n${END_BLOCK}`;
       })
       .join("\n\n");
+  }
+
+  function isStaticScene(sp: ScenePurpose | undefined): boolean {
+    if (!sp) return false;
+    // A scene is static if it has purpose fields filled but the outcome doesn't change anything
+    const hasContent = sp.goal || sp.conflict;
+    if (!hasContent) return false; // not enough to judge
+    const outcome = sp.outcome.trim().toLowerCase();
+    if (!outcome) return true; // no outcome declared = static
+    const staticPatterns = ["nothing changes", "no change", "unchanged", "same as before", "static", "none", "n/a", "nothing", "no outcome"];
+    return staticPatterns.some((p) => outcome.includes(p));
   }
 
   function insertBlockAt(blocks: ChapterBlock[], atIndex: number, position: "before" | "after") {
@@ -3647,6 +3693,11 @@ function NovelWorkspacePage() {
               : "",
             storyPosition.arcGuidance,
             `Scene: ${block.synopsis}`,
+            block.scenePurpose?.pov ? `POV: ${block.scenePurpose.pov}` : "",
+            block.scenePurpose?.goal ? `Scene goal: ${block.scenePurpose.goal}` : "",
+            block.scenePurpose?.conflict ? `Scene conflict: ${block.scenePurpose.conflict}` : "",
+            block.scenePurpose?.outcome ? `Scene outcome: ${block.scenePurpose.outcome}` : "",
+            block.scenePurpose?.emotionalShift ? `Emotional shift: ${block.scenePurpose.emotionalShift}` : "",
             previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
             nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
             `Current:\n${block.prose!.slice(0, 1500)}`,
@@ -3670,6 +3721,11 @@ function NovelWorkspacePage() {
               : "",
             storyPosition.arcGuidance,
             `Scene: ${block.synopsis}`,
+            block.scenePurpose?.pov ? `POV: ${block.scenePurpose.pov}` : "",
+            block.scenePurpose?.goal ? `Scene goal: ${block.scenePurpose.goal}` : "",
+            block.scenePurpose?.conflict ? `Scene conflict: ${block.scenePurpose.conflict}` : "",
+            block.scenePurpose?.outcome ? `Scene outcome: ${block.scenePurpose.outcome}` : "",
+            block.scenePurpose?.emotionalShift ? `Emotional shift: ${block.scenePurpose.emotionalShift}` : "",
             planChapterSynopsis ? `Chapter: ${clampPromptText(planChapterSynopsis, 150)}` : "",
             previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
             nextChapterSynopsis ? `Next chapter synopsis: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
@@ -8573,6 +8629,34 @@ function NovelWorkspacePage() {
                                 </span>
                               </div>
                               <div className="pw-block-header-actions">
+                                {/* Scene Purpose toggle */}
+                                <button
+                                  type="button"
+                                  className="pw-block-header-btn"
+                                  title={scenePurposeOpen.has(idx) ? "Hide scene purpose" : "Scene purpose — declare POV, goal, conflict, outcome, emotional shift"}
+                                  onClick={() =>
+                                    setScenePurposeOpen((s) => {
+                                      const next = new Set(s);
+                                      if (next.has(idx)) next.delete(idx);
+                                      else next.add(idx);
+                                      return next;
+                                    })
+                                  }
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11,
+                                    color: scenePurposeOpen.has(idx) || block.scenePurpose ? "#818cf8" : undefined,
+                                    fontWeight: scenePurposeOpen.has(idx) ? 700 : undefined,
+                                  }}
+                                >
+                                  {isStaticScene(block.scenePurpose) ? (
+                                    <span style={{ color: "#f59e0b", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                      Static
+                                    </span>
+                                  ) : (
+                                    <>{scenePurposeOpen.has(idx) ? "−" : "+"} Purpose</>
+                                  )}
+                                </button>
                                 <button
                                   type="button"
                                   className="pw-block-header-btn"
@@ -8613,6 +8697,75 @@ function NovelWorkspacePage() {
                                     });
                                   }}
                                 />
+                                {/* Scene Purpose panel */}
+                                {scenePurposeOpen.has(idx) && (() => {
+                                  const sp = block.scenePurpose ?? { ...EMPTY_SCENE_PURPOSE };
+                                  const staticScene = isStaticScene(block.scenePurpose);
+                                  const updateSP = (field: keyof ScenePurpose, value: string) => {
+                                    const next = [...blocks];
+                                    const updated = { ...sp, [field]: value };
+                                    next[idx] = { ...block, scenePurpose: updated };
+                                    updateChapter(activeChapter.id, { content: serializeChapterBlocks(next) });
+                                  };
+                                  const fields: Array<{ key: keyof ScenePurpose; label: string; placeholder: string; icon: string; color: string }> = [
+                                    { key: "pov", label: "POV", placeholder: "Whose perspective? (e.g. Elena, Third-person limited)", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z", color: "#06b6d4" },
+                                    { key: "goal", label: "Goal", placeholder: "What does the POV character want in this scene?", icon: "M13 10V3L4 14h7v7l9-11h-7z", color: "#a3e635" },
+                                    { key: "conflict", label: "Conflict", placeholder: "What stands in the way?", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "#f59e0b" },
+                                    { key: "outcome", label: "Outcome", placeholder: "How does the scene end? What changes?", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z", color: "#818cf8" },
+                                    { key: "emotionalShift", label: "Emotional Shift", placeholder: "How does the character feel before → after?", icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z", color: "#f472b6" },
+                                  ];
+                                  return (
+                                    <div style={{
+                                      margin: "6px 0 8px",
+                                      padding: "10px 12px 12px",
+                                      borderRadius: 10,
+                                      background: staticScene ? "rgba(245,158,11,0.04)" : "rgba(129,140,248,0.04)",
+                                      border: `1px solid ${staticScene ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.1)"}`,
+                                    }}>
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: staticScene ? "#f59e0b" : "#818cf8" }}>
+                                          Scene Purpose
+                                        </span>
+                                        {staticScene && (
+                                          <span style={{
+                                            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                                            background: "rgba(245,158,11,0.12)", color: "#f59e0b",
+                                            display: "inline-flex", alignItems: "center", gap: 4,
+                                          }}>
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                            Static Scene — outcome doesn&apos;t alter state
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        {fields.map((f) => (
+                                          <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            <div style={{
+                                              width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                                              background: `${f.color}12`, display: "flex", alignItems: "center", justifyContent: "center",
+                                            }}>
+                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={f.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon}/></svg>
+                                            </div>
+                                            <span style={{ width: 80, fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", flexShrink: 0 }}>{f.label}</span>
+                                            <input
+                                              className="pw-bible-input"
+                                              value={sp[f.key]}
+                                              placeholder={f.placeholder}
+                                              maxLength={120}
+                                              onChange={(e) => updateSP(f.key, e.target.value)}
+                                              style={{ flex: 1, fontSize: 12, padding: "5px 8px", margin: 0 }}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                      {(sp.goal || sp.conflict) && !sp.outcome && (
+                                        <p style={{ fontSize: 10, color: "#f59e0b", margin: "6px 0 0", fontStyle: "italic" }}>
+                                          Every scene needs an outcome that changes something — fill in Outcome to avoid a static scene.
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                                 <div className="pw-block-toolbar">
                                   <div className="pw-block-toolbar-left">
                                     <div className="pw-block-word-pills">
