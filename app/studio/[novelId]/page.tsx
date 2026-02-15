@@ -37,7 +37,6 @@ import {
   type ThematicAnalysis,
   type ThemeEntry,
   type ThemePresence,
-  type NarrativeControlData,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -913,10 +912,21 @@ function NovelWorkspacePage() {
   const [charChatReviewing, setCharChatReviewing] = useState(false);
   const [charChatRecommendations, setCharChatRecommendations] = useState<ChatRecommendation[]>([]);
   const [charChatReviewDone, setCharChatReviewDone] = useState(false);
-  // ── Narrative Control Center ──
+  // ── The Editor (manuscript intelligence) ──
   const [showNccModal, setShowNccModal] = useState(false);
   const [nccBusy, setNccBusy] = useState(false);
-  const [nccTab, setNccTab] = useState<"arcs" | "relationships" | "tension" | "threads" | "conflicts" | "themes" | "knowledge">("arcs");
+  const [editorFindings, setEditorFindings] = useState<Array<{
+    id: string;
+    category: "consistency" | "character" | "pacing" | "plot" | "prose" | "structure";
+    severity: "suggestion" | "warning" | "issue";
+    title: string;
+    explanation: string;
+    suggestion: string;
+    chapter?: number;
+    status: "pending" | "accepted" | "dismissed";
+  }>>([]);
+  const [editorSummary, setEditorSummary] = useState<string>("");
+  const [editorScannedAt, setEditorScannedAt] = useState<string | null>(null);
   // Auto-scroll character chat to bottom
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -6580,104 +6590,80 @@ function NovelWorkspacePage() {
     }
   }
 
-  /* ─── Narrative Control Center ─── */
-  const NCC_TABS: Array<{ id: typeof nccTab; label: string; icon: string; color: string }> = [
-    { id: "arcs", label: "Character Arcs", icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", color: "#a3e635" },
-    { id: "relationships", label: "Relationships", icon: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z", color: "#f472b6" },
-    { id: "tension", label: "Tension Curve", icon: "M13 10V3L4 14h7v7l9-11h-7z", color: "#f59e0b" },
-    { id: "threads", label: "Plot Threads", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", color: "#818cf8" },
-    { id: "conflicts", label: "Canon Conflicts", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "#ef4444" },
-    { id: "themes", label: "Theme Presence", icon: "M4 6h16M4 12h16M4 18h7", color: "#06b6d4" },
-    { id: "knowledge", label: "Knowledge & Reveals", icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z", color: "#f59e0b" },
-  ];
+  /* ─── The Editor — intelligent manuscript analysis ─── */
+  const EDITOR_CATEGORIES: Record<string, { label: string; color: string; icon: string }> = {
+    consistency: { label: "Consistency", color: "#ef4444", icon: "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+    character:   { label: "Character",   color: "#f472b6", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
+    pacing:      { label: "Pacing",      color: "#f59e0b", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
+    plot:        { label: "Plot",        color: "#818cf8", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
+    prose:       { label: "Prose",       color: "#a3e635", icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" },
+    structure:   { label: "Structure",   color: "#06b6d4", icon: "M4 6h16M4 12h16M4 18h7" },
+  };
 
-  async function runNccAnalysis() {
+  async function runEditorScan() {
     if (!novel || !ensureStoryAiReady()) return;
-    const chapters = novel.chapters.filter((ch) => (ch.content ?? "").trim().length > 50);
-    if (chapters.length < 2) return;
+
+    const isChapterMode = !!activeChapter;
+    const chapters = isChapterMode
+      ? [activeChapter!]
+      : novel.chapters.filter((ch) => (ch.content ?? "").trim().length > 50);
+    if (chapters.length === 0) return;
 
     setNccBusy(true);
+    setEditorFindings([]);
+    setEditorSummary("");
     try {
       const charSummaries = novel.storyBible.characters.slice(0, 8).map((c) => {
-        const rels = (c.relationships ?? []).map((r) => {
-          const target = novel.storyBible.characters.find((t) => t.id === r.targetCharacterId);
-          return target ? `${r.type} with ${target.name}` : null;
-        }).filter(Boolean);
-        return `${c.name} (${c.role}): ${c.logline || ""}${rels.length > 0 ? `. Relationships: ${rels.join(", ")}` : ""}`;
+        return `${c.name} (${c.role}): ${c.logline || "No description"}`;
       }).join("\n");
 
-      const chapterSamples = chapters.map((ch, i) => {
-        const prose = extractProseFromContent(ch.content ?? "").slice(0, 500);
-        return `Ch${i + 1} "${ch.title || `Chapter ${i + 1}`}": ${prose}`;
-      }).join("\n---\n");
+      const chapterContent = chapters.map((ch, i) => {
+        const chapterNum = isChapterMode
+          ? (novel.chapters.findIndex((c) => c.id === ch.id) + 1)
+          : (i + 1);
+        const prose = extractProseFromContent(ch.content ?? "").slice(0, 1200);
+        return `--- Chapter ${chapterNum}: "${ch.title || `Chapter ${chapterNum}`}" ---\n${prose}`;
+      }).join("\n\n");
 
-      const systemPrompt = "You are a narrative analyst. Analyse novel chapters and return structured JSON about story arcs, relationships, tension, plot threads, conflicts, and themes. Be specific with chapter numbers. Return ONLY valid JSON.";
+      const scope = isChapterMode
+        ? `Focus on Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter!.id) + 1} ("${activeChapter!.title || "Untitled"}") specifically.`
+        : `Analyse the full manuscript (${chapters.length} chapters).`;
+
+      const systemPrompt = [
+        "You are a sharp, experienced book editor reviewing a manuscript.",
+        "Your job: find real, actionable problems and suggest specific fixes.",
+        "You are NOT a cheerleader. Only flag things worth fixing.",
+        "Categories: consistency (contradictions, timeline errors), character (flat arcs, unmotivated actions, voice issues), pacing (too slow, too fast, info-dumps), plot (holes, abandoned threads, deus ex machina), prose (weak writing, purple prose, clichés, telling not showing), structure (chapter length imbalance, missing transitions).",
+        "Return ONLY valid JSON.",
+      ].join(" ");
 
       const userPrompt = [
-        `Novel: "${novel.title}". ${chapters.length} chapters.`,
-        `Characters:\n${charSummaries || "None defined"}`,
-        `\nChapter content:\n${chapterSamples}`,
-        "\nAnalyse and return JSON with ALL of these fields:",
-        '1. "characterArcs": array of { "characterId": string, "name": string, "arcPhases": [{ "chapter": number, "phase": string (2-4 words like "Denial", "Reluctant ally", "Full commitment"), "note": string (10 words max) }], "overallArc": string (1 sentence) } — for top 3-5 characters',
-        '2. "relationships": array of { "from": string (characterId), "to": string (characterId), "fromName": string, "toName": string, "evolution": [{ "chapter": number, "state": string (2-4 words like "Hostile strangers", "Grudging respect") }], "currentState": string } — for 3-6 key relationships',
-        '3. "tensionCurve": array of { "chapter": number, "tension": number (1-10), "label": string (3-5 words) } — one per chapter',
-        '4. "plotThreads": array of { "id": string, "label": string, "status": "open"|"progressing"|"resolved"|"abandoned", "introducedChapter": number, "resolvedChapter": number|null, "note": string } — 4-10 threads',
-        '5. "canonConflicts": array of { "type": string (e.g. "Timeline", "Character trait", "Location"), "chapter": number, "message": string, "severity": "info"|"warning"|"critical" } — 0-8 conflicts found',
-        '6. "themePresence": array of { "label": string (1-2 words), "color": string (hex), "chapters": [{ "chapter": number, "strength": number (0=absent, 1=subtle, 2=moderate, 3=strong) }] } — 3-6 themes, one entry per chapter per theme',
-        `\nCharacter IDs: ${novel.storyBible.characters.slice(0, 8).map((c) => `${c.id}="${c.name}"`).join(", ")}`,
+        `Novel: "${novel.title}". Genre: ${novel.storyBible.genre || "general fiction"}.`,
+        scope,
+        `\nCharacters:\n${charSummaries || "None defined in Canon"}`,
+        `\nManuscript:\n${chapterContent}`,
+        `\nReturn JSON: { "summary": "2-3 sentence overall editorial assessment", "findings": [ { "category": "consistency"|"character"|"pacing"|"plot"|"prose"|"structure", "severity": "suggestion"|"warning"|"issue", "title": "Short title (5-8 words)", "explanation": "What the problem is (1-2 sentences)", "suggestion": "Specific actionable fix (1-2 sentences)", "chapter": number } ] }`,
+        `Return 5-15 findings, ordered by importance (most critical first). Be specific — reference character names, scenes, and chapter numbers.`,
       ].join("\n");
 
-      const result = await requestOpenRouterJson(userPrompt, 4000, { systemMessage: systemPrompt });
+      const result = await requestOpenRouterJson(userPrompt, 3000, { systemMessage: systemPrompt });
       const res = result as Record<string, unknown> | null;
       if (!res) { setNccBusy(false); return; }
 
-      const data: NarrativeControlData = {
-        characterArcs: Array.isArray(res.characterArcs) ? (res.characterArcs as Record<string, unknown>[]).slice(0, 6).map((a) => ({
-          characterId: String(a.characterId || ""),
-          name: String(a.name || ""),
-          arcPhases: Array.isArray(a.arcPhases) ? (a.arcPhases as Record<string, unknown>[]).map((p) => ({
-            chapter: Number(p.chapter) || 1, phase: String(p.phase || ""), note: String(p.note || "").slice(0, 60),
-          })) : [],
-          overallArc: String(a.overallArc || "").slice(0, 200),
-        })) : [],
-        relationships: Array.isArray(res.relationships) ? (res.relationships as Record<string, unknown>[]).slice(0, 8).map((r) => ({
-          from: String(r.from || ""), to: String(r.to || ""),
-          fromName: String(r.fromName || ""), toName: String(r.toName || ""),
-          evolution: Array.isArray(r.evolution) ? (r.evolution as Record<string, unknown>[]).map((e) => ({
-            chapter: Number(e.chapter) || 1, state: String(e.state || "").slice(0, 40),
-          })) : [],
-          currentState: String(r.currentState || "").slice(0, 60),
-        })) : [],
-        tensionCurve: Array.isArray(res.tensionCurve) ? (res.tensionCurve as Record<string, unknown>[]).map((t) => ({
-          chapter: Number(t.chapter) || 1,
-          tension: Math.max(1, Math.min(10, Number(t.tension) || 5)),
-          label: String(t.label || "").slice(0, 40),
-        })) : [],
-        plotThreads: Array.isArray(res.plotThreads) ? (res.plotThreads as Record<string, unknown>[]).slice(0, 12).map((p) => ({
-          id: String(p.id || ""), label: String(p.label || "").slice(0, 50),
-          status: (["open", "progressing", "resolved", "abandoned"].includes(String(p.status)) ? String(p.status) : "open") as "open" | "progressing" | "resolved" | "abandoned",
-          introducedChapter: Number(p.introducedChapter) || 1,
-          resolvedChapter: typeof p.resolvedChapter === "number" ? p.resolvedChapter : undefined,
-          note: String(p.note || "").slice(0, 100),
-        })) : [],
-        canonConflicts: Array.isArray(res.canonConflicts) ? (res.canonConflicts as Record<string, unknown>[]).slice(0, 10).map((c) => ({
-          type: String(c.type || "").slice(0, 30),
-          chapter: Number(c.chapter) || 1,
-          message: String(c.message || "").slice(0, 200),
-          severity: (["info", "warning", "critical"].includes(String(c.severity)) ? String(c.severity) : "info") as "info" | "warning" | "critical",
-        })) : [],
-        themePresence: Array.isArray(res.themePresence) ? (res.themePresence as Record<string, unknown>[]).slice(0, 6).map((t) => ({
-          label: String(t.label || "").slice(0, 30),
-          color: typeof t.color === "string" && t.color.startsWith("#") ? t.color : "#818cf8",
-          chapters: Array.isArray(t.chapters) ? (t.chapters as Record<string, unknown>[]).map((c) => ({
-            chapter: Number(c.chapter) || 1,
-            strength: Math.max(0, Math.min(3, Number(c.strength) || 0)),
-          })) : [],
-        })) : [],
-        generatedAt: new Date().toISOString(),
-      };
+      const findings = Array.isArray(res.findings) ? (res.findings as Record<string, unknown>[]).slice(0, 20).map((f, i) => ({
+        id: `finding-${Date.now()}-${i}`,
+        category: (["consistency", "character", "pacing", "plot", "prose", "structure"].includes(String(f.category)) ? String(f.category) : "prose") as "consistency" | "character" | "pacing" | "plot" | "prose" | "structure",
+        severity: (["suggestion", "warning", "issue"].includes(String(f.severity)) ? String(f.severity) : "suggestion") as "suggestion" | "warning" | "issue",
+        title: String(f.title || "Finding").slice(0, 80),
+        explanation: String(f.explanation || "").slice(0, 300),
+        suggestion: String(f.suggestion || "").slice(0, 300),
+        chapter: typeof f.chapter === "number" ? f.chapter : undefined,
+        status: "pending" as const,
+      })) : [];
 
-      updateNovel({ narrativeControl: data });
+      setEditorFindings(findings);
+      setEditorSummary(String(res.summary || "").slice(0, 500));
+      setEditorScannedAt(new Date().toISOString());
     } catch { /* ignore */ } finally {
       setNccBusy(false);
     }
@@ -8912,10 +8898,10 @@ function NovelWorkspacePage() {
             )}
             <button type="button" className="btn" onClick={() => setShowNccModal(true)}
               style={{ display: "flex", alignItems: "center", gap: 5 }}
-              title="Narrative Control Center — arcs, relationships, tension, threads"
+              title="The Editor — AI manuscript analysis"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              NCC
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              The Editor
             </button>
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
@@ -10257,431 +10243,144 @@ function NovelWorkspacePage() {
         </section>
       </div>
 
-      {/* ── Narrative Control Center Modal ── */}
+      {/* ── The Editor Modal ── */}
       {showNccModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowNccModal(false)}>
-          <div className="pw-ncc-modal" onClick={(e) => e.stopPropagation()}>
-            {/* Compact header */}
-            <div className="pw-ncc-header">
-              <h2 className="pw-ncc-title">NCC</h2>
-              <div className="pw-ncc-tabs">
-                {NCC_TABS.map((tab) => (
-                  <button key={tab.id} type="button" onClick={() => setNccTab(tab.id)}
-                    className={`pw-ncc-tab${nccTab === tab.id ? " active" : ""}`}
-                    style={{ "--tab-color": tab.color } as React.CSSProperties}>
-                    {tab.label}
-                  </button>
-                ))}
+          <div className="pw-editor-modal" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="pw-editor-modal-header">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>The Editor</h2>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>
+                  {activeChapter
+                    ? `Scanning Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1}: ${activeChapter.title || "Untitled"}`
+                    : `Full manuscript — ${novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters`
+                  }
+                </p>
               </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto", flexShrink: 0 }}>
-                <button type="button" disabled={nccBusy || aiOff || novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 2}
-                  onClick={() => void runNccAnalysis()} className="pw-ncc-analyse-btn">
-                  {nccBusy ? <><span className="pw-plan-spinner" style={{ width: 10, height: 10 }} /> Analysing</> : novel.narrativeControl ? "↻ Re-scan" : "Analyse"}
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button type="button"
+                  disabled={nccBusy || aiOff || (activeChapter ? (activeChapter.content ?? "").trim().length < 50 : novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length < 1)}
+                  onClick={() => void runEditorScan()}
+                  className="pw-editor-scan-btn"
+                >
+                  {nccBusy ? (
+                    <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
+                  ) : editorFindings.length > 0 ? "↻ Re-scan" : "Scan"}
                 </button>
-                <button type="button" onClick={() => setShowNccModal(false)} className="pw-ncc-close">&times;</button>
+                <button type="button" onClick={() => setShowNccModal(false)} style={{
+                  background: "var(--pw-overlay-bg)", border: "none", borderRadius: 8,
+                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
+                }}>&times;</button>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="pw-ncc-body">
-              {!novel.narrativeControl && !nccBusy ? (
-                <div className="pw-ncc-empty">
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                  <p style={{ fontWeight: 700, fontSize: 14, margin: "12px 0 4px" }}>No analysis yet</p>
-                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0 }}>Click Analyse to scan your manuscript. Needs 2+ chapters.</p>
+            {/* Body */}
+            <div className="pw-editor-modal-body">
+              {/* Empty / scanning state */}
+              {editorFindings.length === 0 && !nccBusy && (
+                <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.25 }}>
+                    <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                  <p style={{ fontWeight: 700, fontSize: 14, margin: "0 0 4px" }}>Ready to edit</p>
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, maxWidth: 320, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
+                    {activeChapter
+                      ? "Click Scan to get editorial feedback on this chapter."
+                      : "Click Scan to analyse your entire manuscript for issues, inconsistencies, and opportunities."
+                    }
+                  </p>
                 </div>
-              ) : nccBusy && !novel.narrativeControl ? (
-                <div className="pw-ncc-empty">
-                  <div style={{ width: 24, height: 24, border: "2px solid rgba(163,230,53,0.2)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "12px 0 0" }}>Scanning {novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length} chapters...</p>
+              )}
+              {nccBusy && editorFindings.length === 0 && (
+                <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                  <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0 }}>
+                    Reading your manuscript...
+                  </p>
                 </div>
-              ) : novel.narrativeControl && (() => {
-                const nc = novel.narrativeControl!;
-                const chapCount = novel.chapters.filter((c) => (c.content ?? "").trim().length > 50).length;
+              )}
+
+              {/* Summary */}
+              {editorSummary && (
+                <div className="pw-editor-summary">
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>Editorial Summary</span>
+                    {editorScannedAt && <span style={{ fontSize: 9, color: "var(--pw-text-dim)", marginLeft: "auto" }}>{new Date(editorScannedAt).toLocaleTimeString()}</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.5 }}>{editorSummary}</p>
+                </div>
+              )}
+
+              {/* Progress bar */}
+              {editorFindings.length > 0 && (() => {
+                const total = editorFindings.length;
+                const done = editorFindings.filter((f) => f.status !== "pending").length;
                 return (
-                  <>
-                    {/* ── Character Arcs ── */}
-                    {nccTab === "arcs" && (
-                      <div className="pw-ncc-cards">
-                        {nc.characterArcs.length === 0 ? <p className="pw-ncc-no-data">No character arcs detected.</p> : nc.characterArcs.map((arc, ai) => (
-                          <div key={ai} className="pw-ncc-card">
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                              <span style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#a3e635", flexShrink: 0 }}>{arc.name.charAt(0)}</span>
-                              <span style={{ fontWeight: 700, fontSize: 13 }}>{arc.name}</span>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 0, marginBottom: 6 }}>
-                              {arc.arcPhases.map((phase, pi) => (
-                                <div key={pi} style={{ flex: 1, textAlign: "center", position: "relative", minWidth: 0 }}>
-                                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#a3e635", margin: "0 auto 4px", position: "relative", zIndex: 1 }} />
-                                  {pi < arc.arcPhases.length - 1 && <div style={{ position: "absolute", top: 3, left: "50%", width: "100%", height: 2, background: "rgba(163,230,53,0.15)", zIndex: 0 }} />}
-                                  <div style={{ fontSize: 9, fontWeight: 700, color: "#a3e635" }}>Ch {phase.chapter}</div>
-                                  <div style={{ fontSize: 10, fontWeight: 600, marginTop: 1 }}>{phase.phase}</div>
-                                  {phase.note && <div style={{ fontSize: 9, color: "var(--pw-text-dim)", marginTop: 1 }}>{phase.note}</div>}
-                                </div>
-                              ))}
-                            </div>
-                            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontStyle: "italic" }}>{arc.overallArc}</p>
-                          </div>
-                        ))}
+                  <div style={{ padding: "0 0 8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)" }}>{done}/{total} addressed</span>
+                      <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--pw-text-dim)" }}>
+                        <span>{editorFindings.filter((f) => f.severity === "issue").length} issues</span>
+                        <span>{editorFindings.filter((f) => f.severity === "warning").length} warnings</span>
+                        <span>{editorFindings.filter((f) => f.severity === "suggestion").length} suggestions</span>
                       </div>
-                    )}
-
-                    {/* ── Relationships ── */}
-                    {nccTab === "relationships" && (
-                      <div className="pw-ncc-cards">
-                        {nc.relationships.length === 0 ? <p className="pw-ncc-no-data">No relationship evolutions detected.</p> : nc.relationships.map((rel, ri) => (
-                          <div key={ri} className="pw-ncc-card">
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                              <span style={{ fontWeight: 700, fontSize: 12, color: "#f472b6" }}>{rel.fromName}</span>
-                              <span style={{ color: "var(--pw-text-dim)", fontSize: 10 }}>→</span>
-                              <span style={{ fontWeight: 700, fontSize: 12, color: "#f472b6" }}>{rel.toName}</span>
-                              <span style={{ fontSize: 10, color: "var(--pw-text-dim)", marginLeft: "auto", fontStyle: "italic" }}>{rel.currentState}</span>
-                            </div>
-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                              {rel.evolution.map((ev, ei) => (
-                                <span key={ei} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, background: "rgba(244,114,182,0.06)", border: "1px solid rgba(244,114,182,0.12)" }}>
-                                  <b style={{ color: "#f472b6" }}>Ch{ev.chapter}</b> {ev.state}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* ── Tension Curve ── */}
-                    {nccTab === "tension" && (
-                      <div>
-                        {nc.tensionCurve.length === 0 ? <p className="pw-ncc-no-data">No tension data.</p> : (
-                          <>
-                            <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
-                              <svg width="100%" height="140" viewBox={`0 0 ${Math.max(nc.tensionCurve.length * 60, 300)} 140`} style={{ display: "block" }}>
-                                {[2, 5, 8].map((v) => <line key={v} x1="30" y1={125 - (v / 10) * 110} x2={nc.tensionCurve.length * 60} y2={125 - (v / 10) * 110} stroke="var(--pw-border-light)" strokeWidth="1" />)}
-                                {[2, 5, 8].map((v) => <text key={v} x="22" y={129 - (v / 10) * 110} fill="var(--pw-text-dim)" fontSize="8" textAnchor="end">{v}</text>)}
-                                <path d={`M30,125 ${nc.tensionCurve.map((t, i) => `L${30 + i * 55},${125 - (t.tension / 10) * 110}`).join(" ")} L${30 + (nc.tensionCurve.length - 1) * 55},125 Z`} fill="rgba(245,158,11,0.06)" />
-                                <polyline points={nc.tensionCurve.map((t, i) => `${30 + i * 55},${125 - (t.tension / 10) * 110}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                {nc.tensionCurve.map((t, i) => (
-                                  <g key={i}>
-                                    <circle cx={30 + i * 55} cy={125 - (t.tension / 10) * 110} r="3.5" fill="#f59e0b" />
-                                    <text x={30 + i * 55} y="138" fill="var(--pw-text-dim)" fontSize="8" textAnchor="middle">Ch{t.chapter}</text>
-                                  </g>
-                                ))}
-                              </svg>
-                            </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                              {nc.tensionCurve.map((t, i) => (
-                                <span key={i} style={{
-                                  padding: "3px 8px", borderRadius: 6, fontSize: 10,
-                                  background: t.tension >= 8 ? "rgba(239,68,68,0.06)" : t.tension >= 5 ? "rgba(245,158,11,0.06)" : "var(--pw-overlay-bg)",
-                                  border: `1px solid ${t.tension >= 8 ? "rgba(239,68,68,0.12)" : t.tension >= 5 ? "rgba(245,158,11,0.12)" : "var(--pw-border-light)"}`,
-                                }}>
-                                  <b style={{ color: t.tension >= 8 ? "#ef4444" : t.tension >= 5 ? "#f59e0b" : "var(--pw-text-dim)" }}>Ch{t.chapter} {t.tension}/10</b> <span style={{ color: "var(--pw-text-dim)" }}>{t.label}</span>
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {/* ── Plot Threads ── */}
-                    {nccTab === "threads" && (
-                      <div>
-                        {nc.plotThreads.length === 0 ? <p className="pw-ncc-no-data">No plot threads detected.</p> : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            {nc.plotThreads.map((thread, ti) => {
-                              const statusColor = thread.status === "resolved" ? "#a3e635" : thread.status === "progressing" ? "#f59e0b" : thread.status === "abandoned" ? "#ef4444" : "#818cf8";
-                              const startPct = Math.max(0, ((thread.introducedChapter - 1) / chapCount) * 100);
-                              const endPct = thread.resolvedChapter ? Math.min(100, (thread.resolvedChapter / chapCount) * 100) : 100;
-                              return (
-                                <div key={ti} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                                  <div style={{ width: 120, flexShrink: 0 }}>
-                                    <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{thread.label}</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 1 }}>
-                                      <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 4px", borderRadius: 3, background: `${statusColor}15`, color: statusColor }}>{thread.status}</span>
-                                      <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>Ch{thread.introducedChapter}{thread.resolvedChapter ? `–${thread.resolvedChapter}` : "+"}</span>
-                                    </div>
-                                  </div>
-                                  <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--pw-overlay-bg)", position: "relative" }}>
-                                    <div style={{ position: "absolute", top: 0, left: `${startPct}%`, width: `${endPct - startPct}%`, height: "100%", borderRadius: 3, background: statusColor, opacity: 0.5 }} />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* ── Canon Conflicts ── */}
-                    {nccTab === "conflicts" && (
-                      <div className="pw-ncc-cards">
-                        {nc.canonConflicts.length === 0 ? (
-                          <div className="pw-ncc-empty" style={{ padding: "24px 0" }}>
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            <p style={{ fontWeight: 700, fontSize: 12, color: "#a3e635", margin: "8px 0 0" }}>No canon conflicts</p>
-                          </div>
-                        ) : nc.canonConflicts.map((conflict, ci) => (
-                          <div key={ci} className="pw-ncc-card" style={{
-                            borderColor: conflict.severity === "critical" ? "rgba(239,68,68,0.15)" : conflict.severity === "warning" ? "rgba(245,158,11,0.15)" : undefined,
-                          }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-                              <span style={{
-                                fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 5px", borderRadius: 3,
-                                background: conflict.severity === "critical" ? "rgba(239,68,68,0.12)" : conflict.severity === "warning" ? "rgba(245,158,11,0.12)" : "rgba(129,140,248,0.1)",
-                                color: conflict.severity === "critical" ? "#ef4444" : conflict.severity === "warning" ? "#f59e0b" : "#818cf8",
-                              }}>{conflict.severity}</span>
-                              <span style={{ fontSize: 10, fontWeight: 600, color: "var(--pw-text-dim)" }}>{conflict.type} — Ch {conflict.chapter}</span>
-                            </div>
-                            <div style={{ fontSize: 11 }}>{conflict.message}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* ── Theme Presence ── */}
-                    {nccTab === "themes" && (
-                      <div>
-                        {nc.themePresence.length === 0 ? <p className="pw-ncc-no-data">No themes detected.</p> : (
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3, paddingLeft: 90 }}>
-                              {Array.from({ length: chapCount }, (_, i) => (
-                                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 8, color: "var(--pw-text-dim)", fontWeight: 600, minWidth: 0 }}>{i + 1}</div>
-                              ))}
-                            </div>
-                            {nc.themePresence.map((theme, ti) => (
-                              <div key={ti} style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 3 }}>
-                                <div style={{ width: 86, flexShrink: 0, fontSize: 10, fontWeight: 600, color: theme.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 4 }}>{theme.label}</div>
-                                {Array.from({ length: chapCount }, (_, i) => {
-                                  const entry = theme.chapters.find((c) => c.chapter === i + 1);
-                                  const strength = entry?.strength ?? 0;
-                                  return <div key={i} style={{ flex: 1, height: 16, minWidth: 0, margin: "0 1px", borderRadius: 2, background: theme.color, opacity: [0.04, 0.2, 0.5, 1][strength] ?? 0.04 }} title={`Ch${i + 1}: ${["Absent", "Subtle", "Moderate", "Strong"][strength]}`} />;
-                                })}
-                              </div>
-                            ))}
-                            <div style={{ display: "flex", gap: 10, marginTop: 8, paddingLeft: 90 }}>
-                              {["Absent", "Subtle", "Moderate", "Strong"].map((l, i) => (
-                                <div key={l} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                  <div style={{ width: 8, height: 8, borderRadius: 2, background: "#818cf8", opacity: [0.04, 0.2, 0.5, 1][i] }} />
-                                  <span style={{ fontSize: 8, color: "var(--pw-text-dim)" }}>{l}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <p style={{ fontSize: 9, color: "var(--pw-text-dim)", margin: "14px 0 0", opacity: 0.35 }}>
-                      {new Date(nc.generatedAt).toLocaleString()}
-                    </p>
-                  </>
+                    </div>
+                    <div style={{ height: 3, borderRadius: 2, background: "var(--pw-overlay-bg-hover)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(done / total) * 100}%`, borderRadius: 2, background: "var(--pw-accent)", transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
                 );
               })()}
 
-              {/* ── Knowledge & Reveals tab (independent of AI analysis) ── */}
-              {nccTab === "knowledge" && (
-                <div>
-                  {/* Header with actions */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0 }}>Track who knows what, when secrets are revealed, and scan for violations.</p>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {!aiOff && (
-                        <button type="button" disabled={knowledgeScanBusy || (novel.storyBible.knowledgeMap?.entries ?? []).length === 0}
-                          onClick={() => void runKnowledgeScan()}
-                          style={{
-                            padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                            background: knowledgeScanBusy ? "var(--pw-overlay-bg)" : "rgba(245,158,11,0.08)",
-                            color: knowledgeScanBusy ? "var(--pw-text-dim)" : "#f59e0b",
-                            border: "1px solid rgba(245,158,11,0.15)", cursor: knowledgeScanBusy ? "default" : "pointer",
-                            display: "flex", alignItems: "center", gap: 4,
-                          }}
-                        >
-                          {knowledgeScanBusy ? <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(245,158,11,0.3)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</> : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Scan</>}
-                        </button>
-                      )}
-                      <button type="button" disabled={(novel.storyBible.knowledgeMap?.entries ?? []).length >= 30}
-                        onClick={addKnowledgeEntry}
-                        style={{
-                          padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                          background: "rgba(245,158,11,0.08)", color: "#f59e0b",
-                          border: "1px solid rgba(245,158,11,0.15)", cursor: "pointer",
-                        }}
-                      >+ Add Entry</button>
-                    </div>
-                  </div>
-
-                  {/* Scan error */}
-                  {knowledgeScanError && (
-                    <div style={{ padding: "8px 12px", borderRadius: 8, marginBottom: 10, fontSize: 11, color: "#ef4444", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)" }}>{knowledgeScanError}</div>
-                  )}
-
-                  {/* Scan results banner */}
-                  {(() => {
-                    const km = novel.storyBible.knowledgeMap ?? { entries: [], scanIssues: [] };
-                    if (km.scanIssues.length === 0 && !km.lastScanAt) return null;
+              {/* Findings list — work through one by one */}
+              {editorFindings.length > 0 && (
+                <div className="pw-editor-findings">
+                  {editorFindings.map((finding) => {
+                    const cat = EDITOR_CATEGORIES[finding.category] || EDITOR_CATEGORIES.prose;
+                    const sevColor = finding.severity === "issue" ? "#ef4444" : finding.severity === "warning" ? "#f59e0b" : "#818cf8";
+                    const isDone = finding.status !== "pending";
                     return (
-                      <div style={{
-                        padding: "10px 14px", borderRadius: 10, marginBottom: 12,
-                        background: km.scanIssues.length === 0 ? "rgba(163,230,53,0.06)" : "rgba(245,158,11,0.06)",
-                        border: `1px solid ${km.scanIssues.length === 0 ? "rgba(163,230,53,0.15)" : "rgba(245,158,11,0.15)"}`,
-                        display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12,
-                      }}>
-                        <span>{km.scanIssues.length === 0 ? <span style={{ color: "#a3e635", fontWeight: 700 }}>No violations found</span> : <span style={{ fontWeight: 700, color: "#f59e0b" }}>{km.scanIssues.length} issue{km.scanIssues.length !== 1 ? "s" : ""} found</span>}</span>
-                        {km.lastScanAt && <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Scanned {new Date(km.lastScanAt).toLocaleTimeString()}</span>}
+                      <div key={finding.id} className={`pw-editor-finding${isDone ? " done" : ""}`}>
+                        <div className="pw-editor-finding-head">
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={cat.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cat.icon}/></svg>
+                            <span className="pw-editor-finding-cat" style={{ color: cat.color, background: `${cat.color}12`, borderColor: `${cat.color}20` }}>{cat.label}</span>
+                            <span className="pw-editor-finding-sev" style={{ color: sevColor, background: `${sevColor}12`, borderColor: `${sevColor}20` }}>{finding.severity}</span>
+                            {finding.chapter && <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>Ch {finding.chapter}</span>}
+                          </div>
+                          {isDone && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: finding.status === "accepted" ? "#a3e635" : "var(--pw-text-dim)" }}>
+                              {finding.status === "accepted" ? "Noted" : "Dismissed"}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="pw-editor-finding-title">{finding.title}</h4>
+                        <p className="pw-editor-finding-text">{finding.explanation}</p>
+                        {finding.suggestion && (
+                          <div className="pw-editor-finding-fix">
+                            <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--pw-accent)", marginBottom: 2, display: "block" }}>Suggestion</span>
+                            {finding.suggestion}
+                          </div>
+                        )}
+                        {!isDone && (
+                          <div className="pw-editor-finding-actions">
+                            <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === finding.id ? { ...f, status: "accepted" } : f))}
+                              className="pw-editor-finding-accept">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              Note it
+                            </button>
+                            <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.id === finding.id ? { ...f, status: "dismissed" } : f))}
+                              className="pw-editor-finding-dismiss">
+                              Dismiss
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
-                  })()}
-
-                  {/* Empty state */}
-                  {(novel.storyBible.knowledgeMap?.entries ?? []).length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "40px 16px", opacity: 0.4 }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block" }}><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-                      <p style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>No knowledge entries yet</p>
-                      <p style={{ fontSize: 11 }}>Add secrets, reveals, clues, and deceptions to track who knows what.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", gap: 12, minHeight: 280 }}>
-                      {/* Entry list */}
-                      <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4, overflow: "auto", maxHeight: 400 }}>
-                        {(novel.storyBible.knowledgeMap?.entries ?? []).map((entry) => {
-                          const typeMeta = KNOWLEDGE_TYPES.find((t) => t.id === entry.type) || KNOWLEDGE_TYPES[0];
-                          const statusMeta = STATUS_META[entry.status] || STATUS_META.hidden;
-                          const isSelected = knowledgeSelectedId === entry.id;
-                          const issueCount = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id).length;
-                          return (
-                            <div key={entry.id} onClick={() => setKnowledgeSelectedId(isSelected ? null : entry.id)}
-                              style={{
-                                padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-                                background: isSelected ? "var(--pw-overlay-bg-hover)" : "var(--pw-overlay-bg)",
-                                border: `1px solid ${isSelected ? typeMeta.color + "40" : "var(--pw-border-light)"}`,
-                                transition: "all 0.12s",
-                              }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={typeMeta.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={typeMeta.icon}/></svg>
-                                <span style={{ fontSize: 11, fontWeight: 700, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.label || "Untitled"}</span>
-                                {issueCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>{issueCount}</span>}
-                              </div>
-                              <div style={{ display: "flex", gap: 3 }}>
-                                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: `${typeMeta.color}15`, color: typeMeta.color, fontWeight: 600 }}>{typeMeta.label}</span>
-                                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600 }}>{statusMeta.label}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Entry detail */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {(() => {
-                          const entry = (novel.storyBible.knowledgeMap?.entries ?? []).find((e) => e.id === knowledgeSelectedId);
-                          if (!entry) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.3, fontSize: 12 }}>Select an entry to edit</div>;
-                          const entryIssues = (novel.storyBible.knowledgeMap?.scanIssues ?? []).filter((i) => i.entryId === entry.id);
-                          return (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                              {/* Label + type */}
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <div style={{ flex: 1 }}>
-                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Label</label>
-                                  <input style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none" }}
-                                    value={entry.label} maxLength={80} placeholder="e.g. The letter is forged"
-                                    onChange={(e) => updateKnowledgeEntry(entry.id, { label: e.target.value })} />
-                                </div>
-                                <div style={{ width: 120 }}>
-                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Type</label>
-                                  <select style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 11, outline: "none" }}
-                                    value={entry.type} onChange={(e) => updateKnowledgeEntry(entry.id, { type: e.target.value as KnowledgeEntry["type"] })}>
-                                    {KNOWLEDGE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                              {/* Description */}
-                              <div>
-                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>What is it?</label>
-                                <textarea rows={2} maxLength={300} value={entry.description} placeholder="Describe the secret, reveal, clue, or deception..."
-                                  onChange={(e) => updateKnowledgeEntry(entry.id, { description: e.target.value })}
-                                  style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none", resize: "vertical" }} />
-                              </div>
-                              {/* Status + reveal chapter */}
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <div style={{ flex: 1 }}>
-                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Status</label>
-                                  <select style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 11, outline: "none" }}
-                                    value={entry.status} onChange={(e) => updateKnowledgeEntry(entry.id, { status: e.target.value as KnowledgeEntry["status"] })}>
-                                    <option value="hidden">Hidden</option><option value="foreshadowed">Foreshadowed</option><option value="revealed">Revealed</option>
-                                  </select>
-                                </div>
-                                <div style={{ width: 100 }}>
-                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Reveal Ch</label>
-                                  <input type="number" min={1} max={novel.chapters.length || 99} value={entry.revealChapter ?? ""} placeholder="#"
-                                    onChange={(e) => updateKnowledgeEntry(entry.id, { revealChapter: e.target.value ? Number(e.target.value) : undefined })}
-                                    style={{ width: "100%", padding: "6px 8px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none" }} />
-                                </div>
-                              </div>
-                              {/* Who knows */}
-                              <div>
-                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 4, display: "block" }}>Who knows this?</label>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                  {entry.holders.map((h) => {
-                                    const char = novel.storyBible.characters.find((c) => c.id === h.characterId);
-                                    if (!char) return null;
-                                    return (
-                                      <span key={h.characterId} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", fontSize: 11 }}>
-                                        {char.name} {h.learnedInChapter ? <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>Ch{h.learnedInChapter}</span> : <span style={{ fontSize: 9, color: "var(--pw-text-dim)" }}>start</span>}
-                                        <button type="button" onClick={() => removeKnowledgeHolder(entry.id, h.characterId)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1 }}>&times;</button>
-                                      </span>
-                                    );
-                                  })}
-                                  {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).length > 0 && (
-                                    <select value="" onChange={(e) => { if (e.target.value) addKnowledgeHolder(entry.id, e.target.value); }}
-                                      style={{ padding: "3px 6px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 10, outline: "none" }}>
-                                      <option value="">+ Add</option>
-                                      {novel.storyBible.characters.filter((c) => !entry.holders.some((h) => h.characterId === c.id)).map((c) => (
-                                        <option key={c.id} value={c.id}>{c.name || "Unnamed"}</option>
-                                      ))}
-                                    </select>
-                                  )}
-                                </div>
-                              </div>
-                              {/* Notes */}
-                              <div>
-                                <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 2, display: "block" }}>Notes</label>
-                                <textarea rows={2} maxLength={300} value={entry.notes ?? ""} placeholder="Private notes..."
-                                  onChange={(e) => updateKnowledgeEntry(entry.id, { notes: e.target.value })}
-                                  style={{ width: "100%", padding: "6px 10px", borderRadius: 7, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)", color: "inherit", fontSize: 12, outline: "none", resize: "vertical" }} />
-                              </div>
-                              {/* Delete */}
-                              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                <button type="button" onClick={() => removeKnowledgeEntry(entry.id)}
-                                  style={{ fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)", cursor: "pointer" }}>Remove</button>
-                              </div>
-                              {/* Issues */}
-                              {entryIssues.length > 0 && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                  <label style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{entryIssues.length} violation{entryIssues.length !== 1 ? "s" : ""}</label>
-                                  {entryIssues.map((issue, ii) => (
-                                    <div key={ii} style={{
-                                      padding: "6px 10px", borderRadius: 7,
-                                      background: issue.severity === "critical" ? "rgba(239,68,68,0.06)" : issue.severity === "warning" ? "rgba(245,158,11,0.06)" : "rgba(129,140,248,0.04)",
-                                      border: `1px solid ${issue.severity === "critical" ? "rgba(239,68,68,0.12)" : issue.severity === "warning" ? "rgba(245,158,11,0.12)" : "rgba(129,140,248,0.08)"}`,
-                                      fontSize: 11,
-                                    }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                                        <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", padding: "1px 4px", borderRadius: 3, background: issue.severity === "critical" ? "rgba(239,68,68,0.15)" : issue.severity === "warning" ? "rgba(245,158,11,0.15)" : "rgba(129,140,248,0.12)", color: issue.severity === "critical" ? "#ef4444" : issue.severity === "warning" ? "#f59e0b" : "#818cf8" }}>{issue.severity}</span>
-                                        <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Ch {issue.chapter}</span>
-                                      </div>
-                                      <div style={{ fontWeight: 600, marginBottom: 1 }}>{issue.message}</div>
-                                      {issue.suggestion && <div style={{ color: "var(--pw-text-dim)", fontStyle: "italic" }}>{issue.suggestion}</div>}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
+                  })}
                 </div>
               )}
             </div>
