@@ -865,6 +865,8 @@ function NovelWorkspacePage() {
   const [sharePassword, setSharePassword] = useState("");
   const [shareExpiryDays, setShareExpiryDays] = useState(7);
   const [shareRecipientEmail, setShareRecipientEmail] = useState("");
+  const [sendingShareEmail, setSendingShareEmail] = useState(false);
+  const [shareEmailStatus, setShareEmailStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
@@ -7196,6 +7198,31 @@ function NovelWorkspacePage() {
     });
   }
 
+  /** Send a branded Blocwrite invitation email for the current share link. */
+  async function sendShareInviteEmail() {
+    if (!shareResult || !shareRecipientEmail.trim() || sendingShareEmail) return;
+    setSendingShareEmail(true);
+    setShareEmailStatus(null);
+    try {
+      const res = await fetch("/api/share/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: shareResult.token, recipientEmail: shareRecipientEmail.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setShareEmailStatus({ ok: true, message: `Invitation sent to ${shareRecipientEmail.trim()}` });
+        setShareRecipientEmail("");
+      } else {
+        setShareEmailStatus({ ok: false, message: data.error || "Failed to send email." });
+      }
+    } catch {
+      setShareEmailStatus({ ok: false, message: "Network error. Please try again." });
+    } finally {
+      setSendingShareEmail(false);
+    }
+  }
+
   function handleCoverUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -11328,7 +11355,8 @@ function NovelWorkspacePage() {
 
             {shareResult && (
               <div className="pw-export-section">
-                <div className="pw-export-success" style={{ padding: "12px 14px", borderRadius: 10, background: "var(--pw-success-bg, rgba(16,185,129,0.08))", border: "1px solid var(--pw-success-border, rgba(16,185,129,0.18))" }}>
+                {/* Link created success */}
+                <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--pw-success-bg, rgba(16,185,129,0.08))", border: "1px solid var(--pw-success-border, rgba(16,185,129,0.18))" }}>
                   <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--pw-success, #10b981)" }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ verticalAlign: "-2px", marginRight: 6 }}><polyline points="20 6 9 17 4 12"/></svg>
                     Share link created!
@@ -11344,28 +11372,60 @@ function NovelWorkspacePage() {
                       style={{ flex: 1, fontSize: 12, fontFamily: "monospace" }}
                     />
                     <button type="button" className="btn btn-primary" style={{ padding: "7px 16px", fontSize: 12 }} onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>Copy</button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{ padding: "7px 16px", fontSize: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}
-                      onClick={() => {
-                        const novelName = novel.title || "Untitled Novel";
-                        const expiry = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-                        const subject = encodeURIComponent(`You've been invited to review "${novelName}" on Blocwrite`);
-                        const body = encodeURIComponent(
-                          `I'd like you to review my work on Blocwrite.\n\nOpen the link below to read, highlight text, and leave notes:\n${shareResult.url}\n\n${shareResult.hasPassword ? "You'll need a password to open it — I'll send it separately.\n\n" : ""}This link expires on ${expiry}.\n\nThanks!`
-                        );
-                        window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
-                      }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px", marginRight: 4 }}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      Email
-                    </button>
                   </div>
                   <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6, marginBottom: 0 }}>
                     Link expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                   </p>
                 </div>
+
+                {/* Send branded email invitation */}
+                <div style={{
+                  marginTop: 10, padding: "12px 14px", borderRadius: 10,
+                  background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
+                }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    Send invitation email
+                  </p>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      className="pw-settings-input"
+                      type="email"
+                      placeholder="reader@example.com"
+                      value={shareRecipientEmail}
+                      onChange={(e) => setShareRecipientEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && shareRecipientEmail.trim()) {
+                          e.preventDefault();
+                          sendShareInviteEmail();
+                        }
+                      }}
+                      style={{ flex: 1, fontSize: 13 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={!shareRecipientEmail.trim() || sendingShareEmail}
+                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap" }}
+                      onClick={sendShareInviteEmail}
+                    >
+                      {sendingShareEmail ? "Sending..." : "Send"}
+                    </button>
+                  </div>
+                  {shareEmailStatus && (
+                    <p style={{
+                      fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4,
+                      color: shareEmailStatus.ok ? "var(--pw-success, #10b981)" : "var(--pw-danger, #ef4444)",
+                    }}>
+                      {shareEmailStatus.message}
+                    </p>
+                  )}
+                  <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4, marginBottom: 0 }}>
+                    Sends a branded Blocwrite email with a direct link to your manuscript.
+                  </p>
+                </div>
+
+                {/* Warning about editing */}
                 <div style={{
                   marginTop: 10, padding: "10px 12px", borderRadius: 8,
                   background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",

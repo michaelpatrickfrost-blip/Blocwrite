@@ -70,34 +70,104 @@ async function sendShareEmail(
   const expiryStr = expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const passwordNote = hasPassword ? "You'll need a password to open it — the person who shared this will provide it." : "";
 
-  const htmlEmail = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 40px 0;">
-      <div style="text-align: center; margin-bottom: 32px;">
-        <img src="${appUrl}/blocwrite-logo-white.png" alt="Blocwrite" style="height: 28px; width: auto;" />
-      </div>
-      <div style="background: #1a1a1a; border-radius: 16px; padding: 32px; color: #e5e7eb;">
-        <h2 style="font-size: 20px; font-weight: 700; color: #f9fafb; margin: 0 0 12px; text-align: center;">
-          You've been invited to review
-        </h2>
-        <p style="font-size: 15px; color: #9ca3af; text-align: center; margin: 0 0 24px; line-height: 1.6;">
-          ${chapterCount} chapter${chapterCount !== 1 ? "s" : ""} from <strong style="color: #f9fafb;">${novelTitle}</strong> are waiting for your feedback.
-        </p>
-        <div style="text-align: center; margin-bottom: 24px;">
-          <a href="${shareUrl}" style="display: inline-block; padding: 14px 36px; background: #3b82f6; color: #fff; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px;">
-            Open &amp; Review
-          </a>
-        </div>
-        ${passwordNote ? `<p style="font-size: 13px; color: #6b7280; text-align: center; margin: 0 0 16px;">🔒 ${passwordNote}</p>` : ""}
-        <p style="font-size: 12px; color: #6b7280; text-align: center; margin: 0; line-height: 1.5;">
-          Select text to highlight it, add notes, and submit your feedback.<br/>
-          This link expires on ${expiryStr}.
-        </p>
-      </div>
-      <p style="font-size: 11px; color: #4b5563; text-align: center; margin-top: 24px;">
-        Sent via <a href="${appUrl}" style="color: #6b7280;">Blocwrite</a>
-      </p>
-    </div>
-  `;
+  const htmlEmail = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin: 0; padding: 0; background: #111; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background: #111; padding: 40px 16px;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="max-width: 520px; width: 100%;">
+        <!-- Logo -->
+        <tr><td align="center" style="padding-bottom: 32px;">
+          <img src="${appUrl}/blocwrite-logo-white.png" alt="Blocwrite" width="120" style="height: auto; display: block;" />
+        </td></tr>
+
+        <!-- Card -->
+        <tr><td style="background: #1e1c1c; border-radius: 16px; border: 1px solid #333; overflow: hidden;">
+          <!-- Accent bar -->
+          <div style="height: 3px; background: linear-gradient(90deg, #a3e635, #65a30d);"></div>
+
+          <table width="100%" cellpadding="0" cellspacing="0" style="padding: 36px 32px 32px;">
+            <tr><td align="center" style="padding-bottom: 8px;">
+              <p style="font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin: 0;">
+                You&rsquo;ve been invited to review
+              </p>
+            </td></tr>
+
+            <tr><td align="center" style="padding-bottom: 6px;">
+              <h1 style="font-size: 22px; font-weight: 700; color: #f0f0f0; margin: 0; letter-spacing: -0.02em; line-height: 1.3;">
+                &ldquo;${novelTitle}&rdquo;
+              </h1>
+            </td></tr>
+
+            <tr><td align="center" style="padding-bottom: 28px;">
+              <p style="font-size: 14px; color: #888; margin: 0; line-height: 1.5;">
+                ${chapterCount} chapter${chapterCount !== 1 ? "s" : ""} shared for your feedback
+              </p>
+            </td></tr>
+
+            <!-- CTA Button -->
+            <tr><td align="center" style="padding-bottom: 24px;">
+              <a href="${shareUrl}" style="display: inline-block; padding: 14px 40px; background: #a3e635; color: #111; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px; letter-spacing: -0.01em;">
+                Open Manuscript
+              </a>
+            </td></tr>
+
+            ${hasPassword ? `<tr><td align="center" style="padding-bottom: 16px;">
+              <div style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.04); border: 1px solid #333; border-radius: 8px;">
+                <p style="font-size: 12px; color: #888; margin: 0;">&#128274; Password protected &mdash; the sender will provide it separately.</p>
+              </div>
+            </td></tr>` : ""}
+
+            <!-- Divider -->
+            <tr><td style="padding: 0 0 20px;">
+              <div style="height: 1px; background: #333;"></div>
+            </td></tr>
+
+            <!-- How it works -->
+            <tr><td>
+              <p style="font-size: 12px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px;">How it works</p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="24" valign="top" style="padding-right: 10px; padding-bottom: 8px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: rgba(163,230,53,0.1); border: 1px solid rgba(163,230,53,0.2); text-align: center; line-height: 20px; font-size: 10px; color: #a3e635; font-weight: 700;">1</div>
+                  </td>
+                  <td style="padding-bottom: 8px;"><p style="font-size: 13px; color: #aaa; margin: 0; line-height: 1.5;">Read through the manuscript at your own pace</p></td>
+                </tr>
+                <tr>
+                  <td width="24" valign="top" style="padding-right: 10px; padding-bottom: 8px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: rgba(163,230,53,0.1); border: 1px solid rgba(163,230,53,0.2); text-align: center; line-height: 20px; font-size: 10px; color: #a3e635; font-weight: 700;">2</div>
+                  </td>
+                  <td style="padding-bottom: 8px;"><p style="font-size: 13px; color: #aaa; margin: 0; line-height: 1.5;">Highlight text to leave comments, suggestions, or flag issues</p></td>
+                </tr>
+                <tr>
+                  <td width="24" valign="top" style="padding-right: 10px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: rgba(163,230,53,0.1); border: 1px solid rgba(163,230,53,0.2); text-align: center; line-height: 20px; font-size: 10px; color: #a3e635; font-weight: 700;">3</div>
+                  </td>
+                  <td><p style="font-size: 13px; color: #aaa; margin: 0; line-height: 1.5;">Submit your notes &mdash; the author gets them instantly</p></td>
+                </tr>
+              </table>
+            </td></tr>
+
+            <tr><td align="center" style="padding-top: 20px;">
+              <p style="font-size: 11px; color: #555; margin: 0;">
+                This link expires on <strong style="color: #888;">${expiryStr}</strong>
+              </p>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td align="center" style="padding-top: 28px;">
+          <p style="font-size: 11px; color: #444; margin: 0;">
+            Sent via <a href="${appUrl}" style="color: #666; text-decoration: none;">Blocwrite</a> &mdash; the AI writing studio
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
   const textEmail = `You've been invited to review ${chapterCount} chapter${chapterCount !== 1 ? "s" : ""} from "${novelTitle}" on Blocwrite.\n\nOpen the link to read, highlight, and leave notes:\n${shareUrl}\n\n${passwordNote}\n\nThis link expires on ${expiryStr}.`;
 

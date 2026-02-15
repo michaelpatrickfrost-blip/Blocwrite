@@ -54,8 +54,8 @@ function isPublicShareRoute(pathname: string): boolean {
   const shareMatch = pathname.match(/^\/api\/share\/([^/]+)/);
   if (!shareMatch) return false;
   const segment = shareMatch[1];
-  // "feedback" is an authenticated route, not a token
-  if (segment === "feedback") return false;
+  // "feedback" and "send-email" are authenticated routes, not tokens
+  if (segment === "feedback" || segment === "send-email") return false;
   return true;
 }
 
