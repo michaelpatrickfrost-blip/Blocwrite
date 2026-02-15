@@ -10114,8 +10114,8 @@ function NovelWorkspacePage() {
                     className="pw-overview-synopsis"
                     value={novel.synopsis}
                     onChange={(event) => updateNovel({ synopsis: event.target.value })}
-                    placeholder="Add synopsis..."
-                    rows={3}
+                    placeholder="Write your full synopsis here — this is the foundation the AI uses for every generation..."
+                    rows={8}
                   />
                 </div>
               </div>
