@@ -993,6 +993,8 @@ function NovelWorkspacePage() {
   const [collapsedBeats, setCollapsedBeats] = useState<Set<number>>(new Set());
   const [scenePurposeOpen, setScenePurposeOpen] = useState<Set<number>>(new Set());
   const [editorFontFamily, setEditorFontFamily] = useState<string>("serif");
+  const [editorTextAlign, setEditorTextAlign] = useState<"left" | "center" | "right" | "justify">("left");
+  const [editorFontSize, setEditorFontSize] = useState<number>(17.5);
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
   // ── Right-click prose context menu ──
@@ -1031,7 +1033,11 @@ function NovelWorkspacePage() {
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
     { id: "sans", label: "Sans", font: "var(--font-sans), 'Inter', system-ui, sans-serif" },
     { id: "mono", label: "Mono", font: "var(--font-mono), ui-monospace, 'Cascadia Code', monospace" },
+    { id: "garamond", label: "Garamond", font: "'EB Garamond', Garamond, 'Times New Roman', serif" },
+    { id: "merriweather", label: "Merriweather", font: "'Merriweather', Georgia, serif" },
+    { id: "courier", label: "Courier", font: "'Courier New', Courier, monospace" },
   ];
+  const EDITOR_FONT_SIZES = [14, 15, 16, 17.5, 19, 21, 24];
   const [characterAiMode, setCharacterAiMode] = useState<CharacterAiMode>("profile");
   const [locationLookupBusyId, setLocationLookupBusyId] = useState<string | null>(null);
   const [locationLookupMessage, setLocationLookupMessage] = useState<string | null>(null);
@@ -9226,16 +9232,30 @@ function NovelWorkspacePage() {
                     return (
                       <>
                       <div className="pw-editor-toolbar">
-                        <select
-                          className="pw-toolbar-font-select"
-                          value={editorFontFamily}
-                          onChange={(e) => setEditorFontFamily(e.target.value)}
-                          title="Font"
-                        >
+                        {/* Text alignment */}
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "left" ? " active" : ""}`} title="Align left" onClick={() => setEditorTextAlign("left")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "center" ? " active" : ""}`} title="Align center" onClick={() => setEditorTextAlign("center")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "right" ? " active" : ""}`} title="Align right" onClick={() => setEditorTextAlign("right")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "justify" ? " active" : ""}`} title="Justify" onClick={() => setEditorTextAlign("justify")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                        </button>
+                        <span className="pw-toolbar-sep" />
+                        {/* Font family */}
+                        <select className="pw-toolbar-font-select" value={editorFontFamily} onChange={(e) => setEditorFontFamily(e.target.value)} title="Font">
                           {EDITOR_FONT_OPTIONS.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.label}
-                            </option>
+                            <option key={f.id} value={f.id}>{f.label}</option>
+                          ))}
+                        </select>
+                        {/* Font size */}
+                        <select className="pw-toolbar-font-select pw-toolbar-size-select" value={editorFontSize} onChange={(e) => setEditorFontSize(Number(e.target.value))} title="Font size">
+                          {EDITOR_FONT_SIZES.map((s) => (
+                            <option key={s} value={s}>{s}px</option>
                           ))}
                         </select>
                       </div>
@@ -9502,6 +9522,8 @@ function NovelWorkspacePage() {
                                     fontFamily:
                                       EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)
                                         ?.font ?? "Georgia, serif",
+                                    textAlign: editorTextAlign,
+                                    fontSize: editorFontSize,
                                     overflow: "hidden",
                                     ...(isGenerating ? { opacity: 0.45, pointerEvents: "none" as const } : {}),
                                   }}
@@ -9586,65 +9608,56 @@ function NovelWorkspacePage() {
                   return (
                     <>
                       <div className="pw-editor-toolbar">
-                        <button
-                          type="button"
-                          className="pw-toolbar-btn"
-                          title="Bold"
-                          onClick={() =>
-                            applyRawFormatting(
-                              { open: "**", close: "**" },
-                              activeChapter.content,
-                            )
-                          }
-                        >
+                        {/* Text formatting */}
+                        <button type="button" className="pw-toolbar-btn" title="Bold (wrap in **)" onClick={() => applyRawFormatting({ open: "**", close: "**" }, activeChapter.content)}>
                           <b>B</b>
                         </button>
-                        <button
-                          type="button"
-                          className="pw-toolbar-btn"
-                          title="Italic"
-                          onClick={() =>
-                            applyRawFormatting(
-                              { open: "*", close: "*" },
-                              activeChapter.content,
-                            )
-                          }
-                        >
+                        <button type="button" className="pw-toolbar-btn" title="Italic (wrap in *)" onClick={() => applyRawFormatting({ open: "*", close: "*" }, activeChapter.content)}>
                           <i>I</i>
                         </button>
-                        <button
-                          type="button"
-                          className="pw-toolbar-btn"
-                          title="Strikethrough"
-                          onClick={() =>
-                            applyRawFormatting(
-                              { open: "~~", close: "~~" },
-                              activeChapter.content,
-                            )
-                          }
-                        >
+                        <button type="button" className="pw-toolbar-btn" title="Underline (wrap in __)" onClick={() => applyRawFormatting({ open: "__", close: "__" }, activeChapter.content)}>
+                          <span style={{ textDecoration: "underline", fontWeight: 600, fontSize: 13 }}>U</span>
+                        </button>
+                        <button type="button" className="pw-toolbar-btn" title="Strikethrough (wrap in ~~)" onClick={() => applyRawFormatting({ open: "~~", close: "~~" }, activeChapter.content)}>
                           <s>S</s>
                         </button>
                         <span className="pw-toolbar-sep" />
-                        <select
-                          className="pw-toolbar-font-select"
-                          value={editorFontFamily}
-                          onChange={(e) => setEditorFontFamily(e.target.value)}
-                          title="Font"
-                        >
+                        {/* Text alignment */}
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "left" ? " active" : ""}`} title="Align left" onClick={() => setEditorTextAlign("left")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "center" ? " active" : ""}`} title="Align center" onClick={() => setEditorTextAlign("center")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "right" ? " active" : ""}`} title="Align right" onClick={() => setEditorTextAlign("right")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                        </button>
+                        <button type="button" className={`pw-toolbar-btn${editorTextAlign === "justify" ? " active" : ""}`} title="Justify" onClick={() => setEditorTextAlign("justify")}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                        </button>
+                        <span className="pw-toolbar-sep" />
+                        {/* Heading / section break */}
+                        <button type="button" className="pw-toolbar-btn" title="Insert heading" onClick={() => applyRawFormatting({ open: "\n## ", close: "\n" }, activeChapter.content)}>
+                          <span style={{ fontWeight: 800, fontSize: 13 }}>H</span>
+                        </button>
+                        <button type="button" className="pw-toolbar-btn" title="Insert section break (***)" onClick={() => applyRawFormatting({ open: "\n\n***\n\n", close: "" }, activeChapter.content)}>
+                          <span style={{ fontSize: 14, letterSpacing: 2 }}>***</span>
+                        </button>
+                        <span className="pw-toolbar-sep" />
+                        {/* Font family */}
+                        <select className="pw-toolbar-font-select" value={editorFontFamily} onChange={(e) => setEditorFontFamily(e.target.value)} title="Font">
                           {EDITOR_FONT_OPTIONS.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.label}
-                            </option>
+                            <option key={f.id} value={f.id}>{f.label}</option>
+                          ))}
+                        </select>
+                        {/* Font size */}
+                        <select className="pw-toolbar-font-select pw-toolbar-size-select" value={editorFontSize} onChange={(e) => setEditorFontSize(Number(e.target.value))} title="Font size">
+                          {EDITOR_FONT_SIZES.map((s) => (
+                            <option key={s} value={s}>{s}px</option>
                           ))}
                         </select>
                         <span className="pw-toolbar-sep" />
-                        <button
-                          type="button"
-                          className="pw-toolbar-btn"
-                          title="Add bloc (or type /)"
-                          onClick={() => addBlockFromPlainContent(activeChapter.content)}
-                        >
+                        <button type="button" className="pw-toolbar-btn" title="Add bloc (or type /)" onClick={() => addBlockFromPlainContent(activeChapter.content)}>
                           /
                         </button>
                       </div>
@@ -9656,6 +9669,8 @@ function NovelWorkspacePage() {
                           fontFamily:
                             EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ??
                             "Georgia, serif",
+                          textAlign: editorTextAlign,
+                          fontSize: editorFontSize,
                         }}
                         dir="ltr"
                         spellCheck
@@ -9736,68 +9751,51 @@ function NovelWorkspacePage() {
                         </div>
                         <div className="pw-focus-toolbar-wrap">
                           <div className="pw-editor-toolbar">
-                            <button
-                              type="button"
-                              className="pw-toolbar-btn"
-                              title="Bold"
-                              onClick={() =>
-                                applyBlockFormatting(focusBlockIndex, blocks, {
-                                  open: "**",
-                                  close: "**",
-                                })
-                              }
-                            >
+                            <button type="button" className="pw-toolbar-btn" title="Bold" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "**", close: "**" })}>
                               <b>B</b>
                             </button>
-                            <button
-                              type="button"
-                              className="pw-toolbar-btn"
-                              title="Italic"
-                              onClick={() =>
-                                applyBlockFormatting(focusBlockIndex, blocks, {
-                                  open: "*",
-                                  close: "*",
-                                })
-                              }
-                            >
+                            <button type="button" className="pw-toolbar-btn" title="Italic" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "*", close: "*" })}>
                               <i>I</i>
                             </button>
-                            <button
-                              type="button"
-                              className="pw-toolbar-btn"
-                              title="Strikethrough"
-                              onClick={() =>
-                                applyBlockFormatting(focusBlockIndex, blocks, {
-                                  open: "~~",
-                                  close: "~~",
-                                })
-                              }
-                            >
+                            <button type="button" className="pw-toolbar-btn" title="Underline" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "__", close: "__" })}>
+                              <span style={{ textDecoration: "underline", fontWeight: 600, fontSize: 13 }}>U</span>
+                            </button>
+                            <button type="button" className="pw-toolbar-btn" title="Strikethrough" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "~~", close: "~~" })}>
                               <s>S</s>
                             </button>
                             <span className="pw-toolbar-sep" />
-                            <select
-                              className="pw-toolbar-font-select"
-                              value={editorFontFamily}
-                              onChange={(e) => setEditorFontFamily(e.target.value)}
-                              title="Font"
-                            >
+                            <button type="button" className={`pw-toolbar-btn${editorTextAlign === "left" ? " active" : ""}`} title="Align left" onClick={() => setEditorTextAlign("left")}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                            </button>
+                            <button type="button" className={`pw-toolbar-btn${editorTextAlign === "center" ? " active" : ""}`} title="Align center" onClick={() => setEditorTextAlign("center")}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                            </button>
+                            <button type="button" className={`pw-toolbar-btn${editorTextAlign === "right" ? " active" : ""}`} title="Align right" onClick={() => setEditorTextAlign("right")}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                            </button>
+                            <button type="button" className={`pw-toolbar-btn${editorTextAlign === "justify" ? " active" : ""}`} title="Justify" onClick={() => setEditorTextAlign("justify")}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                            </button>
+                            <span className="pw-toolbar-sep" />
+                            <button type="button" className="pw-toolbar-btn" title="Insert heading" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "\n## ", close: "\n" })}>
+                              <span style={{ fontWeight: 800, fontSize: 13 }}>H</span>
+                            </button>
+                            <button type="button" className="pw-toolbar-btn" title="Section break (***)" onClick={() => applyBlockFormatting(focusBlockIndex, blocks, { open: "\n\n***\n\n", close: "" })}>
+                              <span style={{ fontSize: 14, letterSpacing: 2 }}>***</span>
+                            </button>
+                            <span className="pw-toolbar-sep" />
+                            <select className="pw-toolbar-font-select" value={editorFontFamily} onChange={(e) => setEditorFontFamily(e.target.value)} title="Font">
                               {EDITOR_FONT_OPTIONS.map((f) => (
-                                <option key={f.id} value={f.id}>
-                                  {f.label}
-                                </option>
+                                <option key={f.id} value={f.id}>{f.label}</option>
+                              ))}
+                            </select>
+                            <select className="pw-toolbar-font-select pw-toolbar-size-select" value={editorFontSize} onChange={(e) => setEditorFontSize(Number(e.target.value))} title="Font size">
+                              {EDITOR_FONT_SIZES.map((s) => (
+                                <option key={s} value={s}>{s}px</option>
                               ))}
                             </select>
                             <span className="pw-toolbar-sep" />
-                            <button
-                              type="button"
-                              className="pw-toolbar-btn"
-                              title="New bloc below"
-                              onClick={() => {
-                                insertBlockAt(blocks, focusBlockIndex, "after");
-                                setFocusBlockIndex(null);
-                              }}
-                            >
+                            <button type="button" className="pw-toolbar-btn" title="New bloc below" onClick={() => { insertBlockAt(blocks, focusBlockIndex, "after"); setFocusBlockIndex(null); }}>
                               /
                             </button>
                           </div>
@@ -9812,6 +9810,8 @@ function NovelWorkspacePage() {
                               fontFamily:
                                 EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ??
                                 "Georgia, serif",
+                              textAlign: editorTextAlign,
+                              fontSize: editorFontSize,
                             }}
                             value={block.prose}
                             onMouseUp={(e) => handleEditorMouseUp(e, focusBlockIndex)}
