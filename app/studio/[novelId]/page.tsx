@@ -1174,9 +1174,27 @@ function NovelWorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchProfileQueue]);
 
-  // When queue empties, link relationships then clear progress
+  // When queue empties, wait for last profile to settle, then link relationships
+  const [batchLinkReady, setBatchLinkReady] = useState(false);
+
   useEffect(() => {
     if (batchProfileQueue.length !== 0 || batchProfileTotalRef.current === 0) return;
+
+    // Show "finishing up" while we wait for state to settle
+    setProfileGenProgress((p) => p ? { ...p, name: "Finishing profiles..." } : p);
+
+    // Wait 5 seconds so the last profile fully saves and React re-renders with fresh state
+    const timer = setTimeout(() => {
+      setBatchLinkReady(true);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [batchProfileQueue]);
+
+  // Separate effect for the actual linking — runs AFTER the delay, with FRESH storyCharacters
+  useEffect(() => {
+    if (!batchLinkReady) return;
+    setBatchLinkReady(false);
 
     const allIds = batchProfileAllIdsRef.current;
     const chars = storyCharacters.filter((c) => allIds.includes(c.id));
@@ -1195,11 +1213,16 @@ function NovelWorkspacePage() {
       setProfileGenProgress({ current: chars.length, total: chars.length, name: "Linking characters...", done: chars.length });
 
       try {
-        const nameList = chars.map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ");
+        const charSummaries = chars.map((c) =>
+          `${c.name} (${c.role || "Supporting"})${c.logline ? ` — ${c.logline}` : ""}${c.backstory ? ` Background: ${c.backstory.slice(0, 120)}` : ""}`
+        ).join("\n");
         const ctx = buildStoryBibleContext("characters");
         const relPrompt = [
-          `Characters: ${nameList}`,
-          `Story: ${ctx.slice(0, 1500)}`,
+          "Here are the characters with their completed profiles:",
+          charSummaries,
+          "",
+          `Story context: ${ctx.slice(0, 1500)}`,
+          "",
           "Return a JSON array of meaningful relationships between these characters.",
           "Include family (husband/wife/parent/child/sibling), friends, rivals, mentors, colleagues, enemies, lovers etc.",
           '[{"from":"Full Name","to":"Full Name","type":"spouse/parent/child/sibling/friend/rival/lover/mentor/ally/enemy/colleague","description":"brief description"}]',
@@ -1213,12 +1236,14 @@ function NovelWorkspacePage() {
         if (cancelled) return;
 
         const relArr = Array.isArray(data) ? data : [];
+        // Re-read characters fresh from current state
+        const freshChars = storyCharacters;
         for (const rel of relArr) {
           if (!rel.from || !rel.to || !rel.type) continue;
           const fromLow = rel.from.trim().toLowerCase();
           const toLow = rel.to.trim().toLowerCase();
-          const fc = storyCharacters.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
-          const tc = storyCharacters.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
+          const fc = freshChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+          const tc = freshChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
           if (fc && tc && fc.id !== tc.id) {
             const existing = fc.relationships ?? [];
             if (!existing.some((r) => r.targetCharacterId === tc.id)) {
@@ -1243,7 +1268,7 @@ function NovelWorkspacePage() {
     void linkRelationships();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchProfileQueue]);
+  }, [batchLinkReady]);
 
   useEffect(() => {
     if (!showStoryBibleModal || bibleSection !== "boltons") return;
