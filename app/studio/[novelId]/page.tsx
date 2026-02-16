@@ -5316,10 +5316,10 @@ function NovelWorkspacePage() {
     setNameConfirmPopup(null);
     setStoryAiError(null);
     setStoryAiBusyAction("character-profile-batch");
-    setProfileGenProgress({ current: 0, total: characterIds.length, name: "Preparing...", done: 0 });
+    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
     const allChars = novel.storyBible.characters ?? [];
-    const context = buildStoryBibleContext("characters").slice(0, 1200);
+    const context = buildStoryBibleContext("characters").slice(0, 1000);
     const targets = characterIds.map((id) => allChars.find((c) => c.id === id)).filter(Boolean) as typeof allChars;
     if (!targets.length) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
 
@@ -5330,134 +5330,114 @@ function NovelWorkspacePage() {
       voiceNotes?: string; tags?: string[];
     };
 
-    // Direct fetch to the API — bypasses all retry cascading and abort controller state
-    async function directAiCall(prompt: string, system: string, maxTokens: number): Promise<string> {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 90000);
+    const apiBody = {
+      provider: assistantProvider,
+      apiKey: normalizeClientApiKey(openRouterKey),
+      baseUrl: assistantBaseUrl.trim(),
+      model: openRouterModel,
+      system: "Character profile writer. Return ONLY valid JSON.",
+      jsonMode: false,
+    };
+
+    async function directAiCall(prompt: string, maxTokens: number, timeoutMs = 60000): Promise<string> {
+      const ctrl = new AbortController();
+      const tid = window.setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const res = await fetch("/api/openrouter/complete", {
+        const r = await fetch("/api/openrouter/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider: assistantProvider,
-            apiKey: normalizeClientApiKey(openRouterKey),
-            baseUrl: assistantBaseUrl.trim(),
-            model: openRouterModel,
-            prompt,
-            system,
-            maxTokens,
-            jsonMode: false,
-          }),
-          signal: controller.signal,
+          body: JSON.stringify({ ...apiBody, prompt, maxTokens }),
+          signal: ctrl.signal,
         });
-        if (!res.ok) return "";
-        const payload = await res.json().catch(() => null) as Record<string, unknown> | null;
-        return typeof payload?.text === "string" ? (payload.text as string).trim() : "";
-      } catch {
-        return "";
-      } finally {
-        window.clearTimeout(timeoutId);
-      }
+        if (!r.ok) return "";
+        const p = await r.json().catch(() => null) as Record<string, unknown> | null;
+        return typeof p?.text === "string" ? (p.text as string).trim() : "";
+      } catch { return ""; }
+      finally { window.clearTimeout(tid); }
     }
 
-    const sysMsg = "Character profile writer. Return ONLY valid JSON. No markdown, no explanation, no commentary.";
-    const completed = new Set<string>();
-
-    // ── PHASE 1: Build each profile individually with a clean direct call ──
-    for (let i = 0; i < targets.length; i++) {
-      const character = targets[i];
-      setProfileGenProgress((prev) => prev ? { ...prev, current: i + 1, name: character.name } : prev);
-
-      // Small pause between calls to avoid rate limits (skip first)
-      if (i > 0) await new Promise((r) => setTimeout(r, 1200));
-
-      const prompt = [
-        `Character: ${character.name} (${character.role || "Supporting"})`,
-        character.logline ? `Hook: ${character.logline}` : "",
-        `Story: ${context.slice(0, 900)}`,
-        ``,
-        `Return JSON:`,
-        `{"appearance":"vivid physical description","personality":"how they act","goals":"what they want","fears":"what scares them","backstory":"their history","speakingStyle":"how they talk","secrets":"what they hide","readerSecretHint":"subtle hint for readers","accent":"speech patterns","reactionPattern":"behaviour under stress","voiceNotes":"dialogue notes","tags":["keyword","tags"]}`,
-        ``,
-        `Fill every field with 1-2 vivid sentences grounded in the story. ONLY JSON.`,
-      ].filter(Boolean).join("\n");
-
-      // Try up to 2 attempts per character
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await directAiCall(prompt, sysMsg, 600);
-        if (!raw) {
-          if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
-
-        const parsed = parseJsonFromAi<CoreProfile>(raw);
-        if (!parsed) {
-          if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
-
-        // Apply profile — accept if at least 3 fields have content
-        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-        let fieldCount = 0;
-        const trySet = (key: keyof CoreProfile, patchKey: keyof typeof patch) => {
-          const val = parsed[key];
-          if (typeof val === "string" && val.trim().length > 3) {
-            (patch as Record<string, unknown>)[patchKey] = val.trim();
-            fieldCount++;
-          }
-        };
-        trySet("appearance", "appearance");
-        trySet("personality", "personality");
-        trySet("goals", "goals");
-        trySet("fears", "fears");
-        trySet("backstory", "backstory");
-        trySet("speakingStyle", "speakingStyle");
-        trySet("secrets", "secrets");
-        trySet("readerSecretHint", "readerSecretHint");
-        trySet("accent", "accent");
-        trySet("reactionPattern", "reactionPattern");
-        trySet("voiceNotes", "voiceNotes");
-        const aiTags = parseStringList(parsed.tags);
-        if (aiTags.length) { patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags])); fieldCount++; }
-
-        if (fieldCount >= 3) {
-          updateV2Character(character.id, patch);
-          completed.add(character.id);
-          setProfileGenProgress((prev) => prev ? { ...prev, done: completed.size } : prev);
-          break;
-        }
-        if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
-      }
+    function applyParsed(charId: string, parsed: CoreProfile): boolean {
+      const character = allChars.find((c) => c.id === charId);
+      if (!character || !parsed) return false;
+      const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+      let n = 0;
+      const s = (k: keyof CoreProfile) => { const v = parsed[k]; if (typeof v === "string" && v.trim().length > 3) { (patch as Record<string, unknown>)[k] = v.trim(); n++; } };
+      s("appearance"); s("personality"); s("goals"); s("fears"); s("backstory");
+      s("speakingStyle"); s("secrets"); s("readerSecretHint"); s("accent");
+      s("reactionPattern"); s("voiceNotes");
+      const t = parseStringList(parsed.tags);
+      if (t.length) { patch.tags = Array.from(new Set([...(character.tags ?? []), ...t])); n++; }
+      if (n < 3) return false;
+      updateV2Character(charId, patch);
+      return true;
     }
 
-    // ── PHASE 2: Link relationships in one quick call ──
-    if (completed.size >= 2) {
-      setProfileGenProgress((prev) => prev ? { ...prev, name: "Linking relationships..." } : prev);
-      await new Promise((r) => setTimeout(r, 1000));
-
-      const roster = targets.map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ");
-      const relPrompt = [
-        `Characters: ${roster}`,
-        `Story: ${context.slice(0, 600)}`,
-        `Return JSON array of relationships between these characters:`,
-        `[{"from":"Name","to":"Name","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"one sentence"}]`,
-        `Only include meaningful story relationships. ONLY JSON array.`,
+    function buildPrompt(c: typeof targets[0]): string {
+      return [
+        `${c.name} (${c.role || "Supporting"})${c.logline ? " — " + c.logline : ""}`,
+        context.slice(0, 800),
+        `JSON: {"appearance":"...","personality":"...","goals":"...","fears":"...","backstory":"...","speakingStyle":"...","secrets":"...","readerSecretHint":"...","accent":"...","reactionPattern":"...","voiceNotes":"...","tags":["..."]}`,
+        `1-2 vivid sentences per field. All fields filled. ONLY JSON.`,
       ].join("\n");
+    }
 
-      const relRaw = await directAiCall(relPrompt, "Relationship mapper. Return ONLY a JSON array.", 400);
+    const completed = new Set<string>();
+    const failed: string[] = [];
+
+    // ── Fast pass: fire each character, short gap between calls ──
+    for (let i = 0; i < targets.length; i++) {
+      const c = targets[i];
+      setProfileGenProgress({ current: i + 1, total: targets.length, name: c.name, done: completed.size });
+
+      if (i > 0) await new Promise((r) => setTimeout(r, 500));
+
+      const raw = await directAiCall(buildPrompt(c), 550);
+      const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
+      if (parsed && applyParsed(c.id, parsed)) {
+        completed.add(c.id);
+        setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
+      } else {
+        failed.push(c.id);
+      }
+    }
+
+    // ── Retry pass: pick up any that failed on first try ──
+    if (failed.length > 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      for (let i = 0; i < failed.length; i++) {
+        const c = targets.find((t) => t.id === failed[i]);
+        if (!c) continue;
+        setProfileGenProgress((p) => p ? { ...p, name: c.name } : p);
+        if (i > 0) await new Promise((r) => setTimeout(r, 800));
+        const raw = await directAiCall(buildPrompt(c), 550, 75000);
+        const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
+        if (parsed && applyParsed(c.id, parsed)) {
+          completed.add(c.id);
+          setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
+        }
+      }
+    }
+
+    // ── Relationship pass: one quick call to connect everyone ──
+    if (completed.size >= 2) {
+      setProfileGenProgress((p) => p ? { ...p, name: "Linking..." } : p);
+      const names = targets.map((c) => c.name).join(", ");
+      const relRaw = await directAiCall(
+        `Characters: ${names}\nStory: ${context.slice(0, 500)}\nReturn JSON array: [{"from":"Name","to":"Name","type":"friend/rival/lover/mentor/sibling/ally/enemy","description":"one sentence"}]\nOnly meaningful relationships. ONLY JSON.`,
+        350,
+      );
       if (relRaw) {
-        const relParsed = parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw);
-        const relArray = Array.isArray(relParsed) ? relParsed : [];
-        for (const rel of relArray) {
-          if (!rel.from || !rel.to || !rel.type) continue;
-          const fromChar = allChars.find((c) => c.name.toLowerCase().includes(rel.from!.toLowerCase().split(/\s+/)[0]));
-          const toChar = allChars.find((c) => c.name.toLowerCase().includes(rel.to!.toLowerCase().split(/\s+/)[0]));
-          if (fromChar && toChar && fromChar.id !== toChar.id) {
-            const existing = fromChar.relationships ?? [];
-            if (!existing.some((r) => r.targetCharacterId === toChar.id)) {
-              updateV2Character(fromChar.id, {
-                relationships: [...existing, { targetCharacterId: toChar.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
-              });
+        const relArr = parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw);
+        if (Array.isArray(relArr)) {
+          for (const rel of relArr) {
+            if (!rel.from || !rel.to || !rel.type) continue;
+            const fc = allChars.find((c) => c.name.toLowerCase().startsWith(rel.from!.toLowerCase().split(/\s+/)[0]));
+            const tc = allChars.find((c) => c.name.toLowerCase().startsWith(rel.to!.toLowerCase().split(/\s+/)[0]));
+            if (fc && tc && fc.id !== tc.id) {
+              const ex = fc.relationships ?? [];
+              if (!ex.some((r) => r.targetCharacterId === tc.id)) {
+                updateV2Character(fc.id, { relationships: [...ex, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }] });
+              }
             }
           }
         }
@@ -14042,44 +14022,47 @@ function NovelWorkspacePage() {
       {/* ── Profile generation progress overlay ── */}
       {profileGenProgress && (
         <div className="pw-modal-overlay">
-          <div className="pw-modal" style={{ maxWidth: 400, textAlign: "center" }}>
+          <div className="pw-modal" style={{ maxWidth: 380, textAlign: "center", padding: "28px 24px" }}>
+            {/* Pulsing icon */}
             <div style={{
-              width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
-              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+              width: 48, height: 48, borderRadius: 14, margin: "0 auto 14px",
+              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.10)",
               display: "flex", alignItems: "center", justifyContent: "center",
+              animation: "pulse 1.8s ease-in-out infinite",
             }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round">
                 <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
               </svg>
             </div>
-            <div className="pw-delete-modal-title" style={{ fontSize: 16, fontWeight: 800 }}>
-              Generating profiles
+            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--pw-text)", letterSpacing: "-0.01em" }}>
+              {profileGenProgress.name === "Linking..."
+                ? "Connecting characters"
+                : profileGenProgress.done === profileGenProgress.total
+                  ? "Finishing up"
+                  : "Building profiles"}
             </div>
-            <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
-              {profileGenProgress.name === "Linking relationships..."
-                ? <>Connecting characters together...</>
-                : profileGenProgress.name
-                  ? <>Building <strong>{profileGenProgress.name}</strong>...</>
-                  : "Preparing..."}
-            </p>
-            <p className="pw-delete-modal-copy" style={{ fontSize: 12, marginTop: 2, fontWeight: 600 }}>
-              {profileGenProgress.done} of {profileGenProgress.total} profiles done
-            </p>
+            {profileGenProgress.name && profileGenProgress.name !== "Linking..." && (
+              <p style={{ marginTop: 4, fontSize: 13, color: "var(--pw-text-dim)", fontWeight: 500 }}>
+                <strong style={{ color: "var(--pw-text)" }}>{profileGenProgress.name}</strong> — {profileGenProgress.current} of {profileGenProgress.total}
+              </p>
+            )}
+            {/* Progress bar */}
             <div style={{
-              marginTop: 14, height: 6, borderRadius: 3,
+              marginTop: 16, height: 5, borderRadius: 3,
               background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
               overflow: "hidden",
             }}>
               <div style={{
                 height: "100%", borderRadius: 3,
                 background: "var(--pw-accent, #a3e635)",
-                width: `${Math.round((profileGenProgress.done / profileGenProgress.total) * 100)}%`,
-                transition: "width 0.4s ease",
+                width: `${Math.max(4, Math.round((profileGenProgress.done / profileGenProgress.total) * 100))}%`,
+                transition: "width 0.5s cubic-bezier(.4,0,.2,1)",
               }} />
             </div>
-            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
-              Each character is built individually — this may take a minute or two
+            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 10, fontWeight: 600 }}>
+              {profileGenProgress.done} of {profileGenProgress.total} done
             </p>
+            <style>{`@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.7; transform:scale(0.95); } }`}</style>
           </div>
         </div>
       )}
