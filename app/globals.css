@@ -4307,7 +4307,78 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 .pw-theme-icon { font-size: 15px; line-height: 1; }
 
 /* ═══════════════════════════════════════
-   Responsive
+   Responsive — Large screens
+   ═══════════════════════════════════════ */
+
+/* 1600px+ : expand the window to use more horizontal space */
+@media (min-width: 1600px) {
+  .pw-window { max-width: 1720px; }
+  .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 280px 1fr; }
+  .pw-editor-area { padding: var(--pw-space-6) var(--pw-space-8) var(--pw-space-8); }
+  .pw-overview { padding: 36px 48px 48px; }
+  .pw-overview-grid { gap: var(--pw-space-6); }
+  .pw-dashboard-grid { gap: var(--pw-space-6); }
+}
+
+/* 1920px+ (Full HD): even wider, editor prose gets a comfortable max-width */
+@media (min-width: 1920px) {
+  .pw-window { max-width: 1920px; }
+  .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 300px 1fr; }
+  .pw-editor-area { padding: var(--pw-space-8) var(--pw-space-8) var(--pw-space-10); }
+  .pw-editor-input { max-width: 900px; }
+  .pw-overview { padding: 40px 56px 56px; }
+  .pw-overview-hero { gap: 36px; }
+  .pw-overview-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
+  .pw-dashboard-grid { grid-template-columns: 1fr 360px; }
+}
+
+/* 2560px+ (QHD / large monitors) */
+@media (min-width: 2560px) {
+  .pw-wallpaper { padding: var(--pw-space-8); }
+  .pw-window {
+    max-width: 2400px;
+    height: calc(100vh - 64px);
+    border-radius: 28px;
+  }
+  .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 320px 1fr; }
+  .pw-editor-area { padding: 40px 56px 56px; }
+  .pw-editor-input { max-width: 960px; }
+  .pw-overview { padding: 48px 64px 64px; }
+  .pw-overview-hero { grid-template-columns: 220px minmax(0, 1fr); gap: 40px; }
+  .pw-overview-title { font-size: 34px; }
+  .pw-overview-grid { gap: 32px; }
+  .pw-dashboard-grid { grid-template-columns: 1fr 400px; gap: 28px; }
+  .pw-topbar { min-height: 64px; padding: 0 var(--pw-space-8); }
+  .pw-bible-modal { width: min(1400px, calc(100vw - 80px)); height: min(92vh, 1100px); }
+}
+
+/* 3440px+ (Ultrawide / 4K) */
+@media (min-width: 3440px) {
+  .pw-wallpaper { padding: var(--pw-space-10); }
+  .pw-window {
+    max-width: 3000px;
+    height: calc(100vh - 80px);
+    border-radius: 32px;
+  }
+  .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 340px 1fr; }
+  .pw-editor-area { padding: 48px 72px 72px; }
+  .pw-editor-input { max-width: 1020px; font-size: 17px; }
+  .pw-overview { padding: 56px 80px 80px; }
+  .pw-overview-hero { grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
+  .pw-overview-title { font-size: 38px; }
+  .pw-overview-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 36px; }
+  .pw-dashboard-grid { grid-template-columns: 1fr 440px; gap: 32px; }
+  .pw-topbar { min-height: 72px; padding: 0 var(--pw-space-10); }
+  .pw-bible-modal { width: min(1600px, calc(100vw - 120px)); height: min(92vh, 1200px); }
+}
+
+/* ── Editor prose readability ── */
+@media (min-width: 1920px) {
+  .pw-block-prose { max-width: 900px; }
+}
+
+/* ═══════════════════════════════════════
+   Responsive — Small screens
    ═══════════════════════════════════════ */
 
 @media (max-width: 1100px) {

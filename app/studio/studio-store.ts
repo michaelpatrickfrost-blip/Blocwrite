@@ -3,6 +3,7 @@ export type SceneBlock = {
   wordTarget: number;     // prose pacing target (400/600/800/1000)
   focus: string;          // "default" | "dialogue" | "action" | "introspection" | "atmosphere"
   notes: string;          // optional user notes
+  prose: string;          // generated / manually edited prose for this scene
 };
 
 export type Chapter = {
@@ -483,6 +484,7 @@ function normalizeChapter(raw: unknown, fallbackIndex: number): Chapter | null {
       wordTarget: typeof b.wordTarget === "number" ? b.wordTarget : 600,
       focus: typeof b.focus === "string" ? b.focus : "default",
       notes: typeof b.notes === "string" ? b.notes : "",
+      prose: typeof b.prose === "string" ? b.prose : "",
     }));
   }
 

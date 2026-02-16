@@ -865,6 +865,8 @@ function NovelWorkspacePage() {
   const [sharePassword, setSharePassword] = useState("");
   const [shareExpiryDays, setShareExpiryDays] = useState(7);
   const [shareRecipientEmail, setShareRecipientEmail] = useState("");
+  const [shareSendingEmail, setShareSendingEmail] = useState(false);
+  const [shareEmailSentMsg, setShareEmailSentMsg] = useState<string | null>(null);
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
@@ -982,6 +984,8 @@ function NovelWorkspacePage() {
   );
   const [selectedV2CharacterId, setSelectedV2CharacterId] = useState<string | null>(null);
   const [nameConfirmPopup, setNameConfirmPopup] = useState<{ detected: string[]; selected: Set<string> } | null>(null);
+  const [profileOfferPopup, setProfileOfferPopup] = useState<{ characterIds: string[] } | null>(null);
+  const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -3952,6 +3956,7 @@ function NovelWorkspacePage() {
     wordTarget: 600,
     focus: "default",
     notes: "",
+    prose: "",
   };
 
   const FOCUS_PRESETS: Array<{ id: string; label: string; hint: string }> = [
@@ -4039,14 +4044,37 @@ function NovelWorkspacePage() {
     const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
     const systemMsg = `Novel outliner. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
 
+    // Build a rich character roster for synopses — names, roles, pronouns, key traits
+    const allChars = novel.storyBible.characters ?? [];
+    const planCharIds = planChapter?.characterIds ?? [];
+    const planLinked = planCharIds.length > 0
+      ? allChars.filter((c) => planCharIds.includes(c.id))
+      : [];
+    const synopsisSearch = `${chapterSynopsis} ${activeChapter.title}`.toLowerCase();
+    const textMatched = allChars.filter((c) => {
+      if (c.role === "Protagonist" || c.role === "Antagonist") return true;
+      const name = (c.name || "").toLowerCase();
+      return name.length > 1 && synopsisSearch.includes(name);
+    });
+    const rosterChars = planLinked.length > 0
+      ? [...new Map([...planLinked, ...textMatched].map((c) => [c.id, c])).values()]
+      : textMatched.length > 0 ? textMatched : allChars.slice(0, 6);
+    const characterRoster = rosterChars.slice(0, 8).map((c) => {
+      const parts = [`${c.name} (${c.role || "Supporting"})`];
+      if (c.pronouns) parts.push(`pronouns: ${c.pronouns}`);
+      if (c.logline) parts.push(clampPromptText(c.logline, 60));
+      if (c.personality) parts.push(`personality: ${clampPromptText(c.personality, 50)}`);
+      if (c.otherNames?.trim()) parts.push(`also known as: ${clampPromptText(c.otherNames, 40)}`);
+      if (c.goals) parts.push(`goal: ${clampPromptText(c.goals, 40)}`);
+      return parts.join(" — ");
+    }).join("\n  ");
+
     setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
 
     try {
       /* ══════════════════════════════════════════════════════════════
        * SINGLE BATCH CALL — generate all bloc synopses at once.
-       * Replaces the old 4 sequential calls (each with 5 retries +
-       * repair calls = up to 24 API calls) with ONE call.
        * ══════════════════════════════════════════════════════════════ */
 
       type BatchBlocResult = { blocs?: Array<{ synopsis?: string }> };
@@ -4059,10 +4087,16 @@ function NovelWorkspacePage() {
         `Return ONLY this JSON structure:`,
         `{ "blocs": [{ "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }] }`,
         "",
+        "═══ CHARACTER ROSTER — USE THESE EXACT NAMES ═══",
+        `The following characters exist in this story. You MUST use their EXACT names (not generic labels like "the protagonist" or "the hero"). Every synopsis must reference characters by their proper name.`,
+        "",
+        `  ${characterRoster}`,
+        "",
         "RULES:",
         `- Return EXACTLY ${BLOC_COUNT} blocs in the array. This is mandatory.`,
         "- Each synopsis must be 1-3 concrete sentences (at least 15 words) describing what HAPPENS — actions, dialogue beats, emotional shifts.",
-        "- Use character names from the Canon below. Do not invent new characters.",
+        "- ALWAYS use the character's PROPER NAME (e.g. 'Elena', 'Marcus') — NEVER use generic labels like 'the protagonist', 'the hero', 'the main character', 'Character A'.",
+        "- If multiple characters interact, name each one explicitly.",
         "- All blocs share ONE primary location unless a transition is essential for the plot.",
         "- Bloc 1 opens the chapter. The final bloc resolves or closes the chapter.",
         "- Each bloc flows naturally into the next — no jumps.",
@@ -4081,7 +4115,7 @@ function NovelWorkspacePage() {
         "",
         context,
         "",
-        `REMINDER: Return EXACTLY ${BLOC_COUNT} blocs in your JSON response.`,
+        `REMINDER: Return EXACTLY ${BLOC_COUNT} blocs. Use character NAMES, not generic labels.`,
       ].filter(Boolean).join("\n");
 
       let batchBlocs: Array<{ synopsis?: string }> = [];
@@ -4193,8 +4227,12 @@ function NovelWorkspacePage() {
           const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
           const repairPrompt = [
             `Write a 1-3 sentence synopsis for scene bloc ${i + 1} of ${BLOC_COUNT} in this chapter.`,
-            `The synopsis must describe specific actions, name characters, and show what HAPPENS.`,
+            `The synopsis must describe specific actions and show what HAPPENS.`,
+            `Use the EXACT character names from the roster below — NEVER use generic labels like "the protagonist".`,
             `Return JSON: { "synopsis": "your synopsis" }`,
+            "",
+            `CHARACTER ROSTER:\n  ${characterRoster}`,
+            "",
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
             previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
@@ -4268,19 +4306,21 @@ function NovelWorkspacePage() {
     }
   }
 
-  /* BLOCK_REGENERATE_PRESETS removed — prose generation is now chapter-level */
+  /* ─── Per-bloc prose generation ─── */
 
-  async function runGenerateChapterProse() {
+  function syncChapterContentFromBlocks(chapterId: string, blocks: SceneBlock[]) {
+    const combined = blocks.map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+    updateChapter(chapterId, { content: combined });
+  }
+
+  async function runGenerateBlockProse(blockIndex: number) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
     const blocks = getSceneBlocks(activeChapter);
-    if (blocks.length === 0) {
-      setStoryAiError("Add scene blocks first, then generate prose.");
-      return;
-    }
-    const hasAnySynopsis = blocks.some((b) => b.synopsis?.trim());
-    if (!hasAnySynopsis) {
-      setStoryAiError("Add a synopsis to at least one scene block first.");
+    if (blockIndex < 0 || blockIndex >= blocks.length) return;
+    const block = blocks[blockIndex];
+    if (!block.synopsis?.trim()) {
+      setStoryAiError("Add a synopsis to this scene block first.");
       return;
     }
 
@@ -4289,13 +4329,16 @@ function NovelWorkspacePage() {
     const planLocIds = planChapter?.locationIds ?? [];
     const { previousChapterSynopsis, nextChapterSynopsis } = getAdjacentChapterSynopses(targetChapterId);
     const storyPosition = getChapterStoryPosition(targetChapterId);
+
+    const precedingProse = blocks.slice(0, blockIndex).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
     const prevChapterEnding = (() => {
+      if (precedingProse) return precedingProse.slice(-500);
       const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
       const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
       return prev?.content?.trim().slice(-500) || "";
     })();
 
-    setStoryAiBusyAction("chapter-prose");
+    setStoryAiBusyAction(`block-prose-${blockIndex}`);
     setStoryAiError(null);
     try {
       const fullContext = buildChapterBlocksContext(activeChapter.title, planChapter?.synopsis || activeChapter.subtitle || "", planCharIds, planLocIds);
@@ -4309,8 +4352,12 @@ function NovelWorkspacePage() {
         sv?.voiceRules ? `Style rules: ${(sv.voiceRules ?? "").slice(0, 1200)}` : "",
       ].filter(Boolean).join("\n");
 
-      const activeBolton = chapterBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId) : null;
+      const blockBoltonId = block.notes || chapterBoltonId;
+      const activeBolton = blockBoltonId ? (novel.storyBible.boltons ?? []).find((b) => b.id === blockBoltonId) : null;
       const boltonDirective = activeBolton ? getBoltonDirectiveText(activeBolton) : "";
+
+      const focusPreset = FOCUS_PRESETS.find((p) => p.id === block.focus);
+      const focusHint = focusPreset && block.focus !== "default" ? `\nFOCUS MODE: ${focusPreset.hint}` : "";
 
       const povNote = sv?.pov ? ` You MUST use ${sv.pov} POV.` : "";
       const systemMsg = [
@@ -4321,61 +4368,62 @@ function NovelWorkspacePage() {
         "Return ONLY the prose. No headers, labels, JSON, block markers, word counts. No thinking blocks — only novel text.",
       ].join(" ");
 
-      const totalWordTarget = blocks.reduce((sum, b) => sum + b.wordTarget, 0);
-      const blocksDescription = blocks.map((b, i) => {
-        const focusPreset = FOCUS_PRESETS.find((p) => p.id === b.focus);
-        const focusHint = focusPreset && b.focus !== "default" ? ` [Focus: ${focusPreset.hint}]` : "";
-        return `Scene ${i + 1} (~${b.wordTarget} words${focusHint}):\n${b.synopsis || "(no synopsis)"}`;
+      const sceneContext = blocks.map((b, i) => {
+        const fp = FOCUS_PRESETS.find((p) => p.id === b.focus);
+        const fh = fp && b.focus !== "default" ? ` [Focus: ${fp.hint}]` : "";
+        return `Scene ${i + 1} (~${b.wordTarget} words${fh}):\n${b.synopsis || "(no synopsis)"}`;
       }).join("\n\n");
 
       const prompt = [
         "STYLE AND TONE — CRITICAL: Match the author's voice, genre, and style. This is your top priority.",
         styleSection || "Use professional, consistent prose.",
-        boltonDirective ? `\nBOLT-ON DIRECTIVE (weigh this rule across the chapter — apply where it naturally fits): ${boltonDirective}` : "",
+        boltonDirective ? `\nBOLT-ON DIRECTIVE: ${boltonDirective}` : "",
+        focusHint,
         "",
-        `Write the FULL chapter prose. TARGET: ~${totalWordTarget} words total. Each scene has its own word target — respect them.`,
+        `Write prose for SCENE ${blockIndex + 1} ONLY. TARGET: ~${block.wordTarget} words.`,
         "",
         `Chapter: ${activeChapter.title}`,
         storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
         storyPosition.arcGuidance,
-        `Total scenes: ${blocks.length}`,
         "",
-        "SCENE BLOCKS:",
-        blocksDescription,
+        "ALL SCENE BLOCKS (for context — write ONLY the indicated scene):",
+        sceneContext,
         "",
-        prevChapterEnding ? `Previous chapter ended with:\n${prevChapterEnding.slice(-400)}` : "",
-        previousChapterSynopsis ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
-        nextChapterSynopsis ? `Next chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
+        prevChapterEnding ? `Text immediately before this scene:\n${prevChapterEnding.slice(-400)}` : "",
+        previousChapterSynopsis && blockIndex === 0 ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+        nextChapterSynopsis && blockIndex === blocks.length - 1 ? `Next chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
         "",
         "Canon (style, voice, characters, locations):",
         fullContext.slice(0, 3000),
         "",
         "RULES:",
-        "- Write continuous prose for the ENTIRE chapter, covering all scenes in order.",
-        "- Each scene should flow naturally into the next — no scene breaks, no headers, no labels.",
-        "- Respect each scene's word target and focus mode.",
-        "- Continue naturally from where the previous chapter left off.",
+        `- Write prose for Scene ${blockIndex + 1} ONLY.`,
+        "- Continue naturally from the preceding text.",
+        "- Respect the word target and focus mode.",
         "- Maintain character continuity and canon consistency.",
         "- Write like a professional published author. No AI clichés.",
-        "- Output the chapter prose only. No explanation, no thinking — only novel text.",
+        "- Output the scene prose only. No explanation, no thinking — only novel text.",
       ].filter(Boolean).join("\n");
 
-      const maxTokens = Math.min(8000, Math.round(totalWordTarget * 2.0));
-      let prose = await requestOpenRouterText(prompt, maxTokens, 240000, systemMsg, false);
+      const maxTokens = Math.min(4000, Math.round(block.wordTarget * 2.0));
+      let prose = await requestOpenRouterText(prompt, maxTokens, 180000, systemMsg, false);
       prose = cleanProseOutput(prose);
 
       if (!prose) {
         throw new Error("No prose returned. Try again or switch to a different model.");
       }
 
-      updateChapter(targetChapterId, { content: prose });
+      const updatedBlocks = [...blocks];
+      updatedBlocks[blockIndex] = { ...block, prose };
+      updateSceneBlocks(targetChapterId, updatedBlocks);
+      syncChapterContentFromBlocks(targetChapterId, updatedBlocks);
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
-      let msg = "Chapter prose generation failed.";
+      let msg = "Prose generation failed for this scene.";
       if (error instanceof Error) {
         const m = error.message.toLowerCase();
         if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
-          msg = "Prose generation timed out. Try a faster model or fewer scene blocks.";
+          msg = "Prose generation timed out. Try a faster model.";
         } else {
           msg = error.message;
         }
@@ -4950,11 +4998,16 @@ function NovelWorkspacePage() {
       // ═══════════════════════════════════════════════════════════════
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
+      const themes = (sb.summary.themes ?? []).slice(0, 3).join(", ") || "";
+      const premise = sb.summary.premise?.trim() || "";
+
       const promptParts = [
         `You are creating characters for a ${genre} novel.`,
         `Synopsis: ${clampPromptText(synopsis, 500)}`,
         stakes ? `Core conflict: ${clampPromptText(stakes, 200)}` : "",
+        premise ? `Premise: ${clampPromptText(premise, 150)}` : "",
         tone ? `Tone: ${tone}` : "",
+        themes ? `Themes: ${themes}` : "",
         existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
       ];
 
@@ -4965,8 +5018,14 @@ function NovelWorkspacePage() {
       }
 
       promptParts.push(
-        `Create ${requestedCount} characters with full names (first + last) that fit the story's setting, culture, and era.`,
-        "Give each character a role (Protagonist, Antagonist, Supporting, or Minor) and a one-sentence hook that fits the synopsis.",
+        `Create ${requestedCount} characters with realistic, human-sounding full names (first + last) that fit the story's setting, culture, time period, and geography.`,
+        "NAMING RULES:",
+        "- Names must feel like real people — not fantasy placeholders or generic fiction names.",
+        "- Match the cultural background and era of the story (e.g. Victorian England → English names, modern Tokyo → Japanese names, medieval Italy → Italian names).",
+        "- Each character needs a distinct, memorable name. Avoid alliterative pairs or names that sound too similar.",
+        "- If the story setting is ambiguous, use grounded, contemporary names appropriate for the genre.",
+        "",
+        "Give each character a role (Protagonist, Antagonist, Supporting, Love Interest, or Minor) and a one-sentence hook that fits the synopsis.",
         `Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
       );
 
@@ -5081,6 +5140,12 @@ function NovelWorkspacePage() {
       updateStoryBible({ characters: nextCharacters });
       if (!selectedV2CharacterId && nextCharacters[0]) {
         setSelectedV2CharacterId(nextCharacters[0].id);
+      }
+
+      // Collect IDs of newly added characters for profile generation offer
+      const newCharIds = nextCharacters.slice(nextCharacters.length - addedCount).map((c) => c.id);
+      if (newCharIds.length > 0) {
+        setProfileOfferPopup({ characterIds: newCharIds });
       }
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
@@ -5235,6 +5300,112 @@ function NovelWorkspacePage() {
     } finally {
       setStoryAiBusyAction(null);
     }
+  }
+
+  async function runAutoGenerateAllProfiles(characterIds: string[]) {
+    if (!novel || !ensureStoryAiReady() || characterIds.length === 0) return;
+
+    setProfileOfferPopup(null);
+    setStoryAiError(null);
+
+    for (let i = 0; i < characterIds.length; i++) {
+      const charId = characterIds[i];
+      const character = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
+      if (!character) continue;
+
+      setProfileGenProgress({ current: i + 1, total: characterIds.length, name: character.name });
+      setStoryAiBusyAction(`character-profile-batch`);
+      setSelectedV2CharacterId(charId);
+
+      try {
+        const context = buildStoryBibleContext("characters");
+        const summaryNameHints = extractSummaryNameHints();
+        const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "none detected";
+        const existingOtherNames = (novel.storyBible.characters ?? [])
+          .filter((item) => item.id !== character.id)
+          .map((item) => item.name.trim().toLowerCase())
+          .filter(Boolean);
+
+        const systemMsg = "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return only valid JSON.";
+        const prompt = [
+          `Build a full character profile for: ${character.name} (${character.role || "Supporting"})`,
+          character.logline ? `Hook: ${character.logline}` : "",
+          "",
+          "Build a complete, vivid profile — appearance, personality, goals, fears, backstory, speaking style, and voice. Make them feel like a real person grounded in the story world.",
+          "Anchor everything to Summary canon only. Do not invent unrelated storylines.",
+          "Return JSON only in this shape:",
+          `{
+  "name": "string",
+  "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Type|Custom",
+  "logline": "string",
+  "appearance": "string",
+  "personality": "string",
+  "goals": "string",
+  "fears": "string",
+  "backstory": "string",
+  "accent": "string",
+  "speakingStyle": "string",
+  "reactionPattern": "string",
+  "voiceNotes": "string",
+  "secrets": "string",
+  "readerSecretHint": "string",
+  "tags": ["string"]
+}`,
+          "Rules:",
+          "- Keep the character's existing name unless it's a placeholder.",
+          "- Name must be a realistic full name (first + last) fitting the story's culture and setting.",
+          "- Appearance should be vivid and specific — height, build, hair, eyes, distinguishing features.",
+          "- Personality should capture how they act, not just adjectives.",
+          "- Goals and fears must connect to the story's conflict.",
+          "- Backstory should explain who they are and why they want what they want.",
+          "- Speaking style should describe how they talk — formal/casual, verbose/terse, quirks.",
+          "- readerSecretHint must remain spoiler-safe.",
+          `Summary-mentioned names: ${summaryNamesText}`,
+          `Current character:\n${JSON.stringify({ name: character.name, role: character.role, logline: character.logline || "" }, null, 2)}`,
+          `Story context:\n${context}`,
+        ].filter(Boolean).join("\n\n");
+
+        const data = await requestOpenRouterJson<{
+          name?: string; role?: string; logline?: string; appearance?: string;
+          personality?: string; goals?: string; fears?: string; backstory?: string;
+          accent?: string; speakingStyle?: string; reactionPattern?: string;
+          voiceNotes?: string; secrets?: string; readerSecretHint?: string; tags?: string[];
+        }>(prompt, 850, { systemMessage: systemMsg });
+
+        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+        const aiName = typeof data.name === "string" ? data.name.trim() : "";
+        if (aiName) {
+          const aiFullName = ensureFullCharacterName(aiName, (novel.storyBible.characters ?? []).length);
+          const aiNameKey = aiFullName.toLowerCase();
+          const currentNameKey = character.name.trim().toLowerCase();
+          if (aiNameKey === currentNameKey || !existingOtherNames.includes(aiNameKey)) {
+            patch.name = aiFullName;
+          }
+        }
+        if (typeof data.role === "string" && data.role.trim()) patch.role = normalizeCharacterRole(data.role);
+        if (typeof data.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
+        if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
+        if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
+        if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
+        if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
+        if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
+        if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
+        if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
+        if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
+        if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
+        if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
+        if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
+        const aiTags = parseStringList(data.tags);
+        if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
+
+        updateV2Character(character.id, patch);
+      } catch (error) {
+        if (isCancelledError(error)) break;
+      }
+    }
+
+    setStoryAiBusyAction(null);
+    setProfileGenProgress(null);
   }
 
   async function runSummaryFieldAi(target: SummaryAiField, mode: string) {
@@ -7118,48 +7289,105 @@ function NovelWorkspacePage() {
     });
   }
 
-  /** Open the user's email client with a branded invitation for the share link. */
+  /** Send branded HTML invitation email via the server. Falls back to email client. */
+  async function sendShareEmail() {
+    if (!shareResult || !novel) return;
+    const recipient = shareRecipientEmail.trim();
+    if (!recipient) return;
+
+    setShareSendingEmail(true);
+    setShareEmailSentMsg(null);
+
+    try {
+      const res = await fetch("/api/share/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: shareResult.token,
+          recipientEmail: recipient,
+          password: sharePassword.trim() || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setShareEmailSentMsg(`Invitation sent to ${recipient}`);
+        setShareRecipientEmail("");
+        return;
+      }
+
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (data.error?.includes("not configured")) {
+        openShareEmailInClient();
+        return;
+      }
+
+      setShareEmailSentMsg(data.error || "Failed to send. Try opening in your email app instead.");
+    } catch {
+      openShareEmailInClient();
+    } finally {
+      setShareSendingEmail(false);
+    }
+  }
+
+  /** Fallback: open the user's email client with a premium plain-text invitation. */
   function openShareEmailInClient() {
     if (!shareResult || !novel) return;
     const novelTitle = novel.title || "Untitled Novel";
     const pw = sharePassword.trim();
     const expiryDate = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    const authorName = novel.authorName?.trim() || "";
 
-    const subject = `You're invited to read "${novelTitle}" on Blocwrite`;
+    const subject = `You're invited to read "${novelTitle}" — Manuscript Review`;
 
     const lines: string[] = [
-      `You've been invited to read "${novelTitle}" on Blocwrite.`,
+      `You've been personally invited to review a manuscript on Blocwrite.`,
       "",
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      `──────────────────────────────────────`,
       "",
-      "Open this link to start reading:",
-      shareResult.url,
+      `  "${novelTitle}"`,
+      authorName ? `  by ${authorName}` : "",
+      "",
+      `──────────────────────────────────────`,
+      "",
+      `Open this link to begin reading:`,
+      "",
+      `  ${shareResult.url}`,
       "",
     ];
 
     if (pw) {
-      lines.push("Password: " + pw);
-      lines.push("");
+      lines.push(
+        `Your access password:  ${pw}`,
+        "",
+      );
     } else if (shareResult.hasPassword) {
-      lines.push("(A password is required — it will be provided separately.)");
-      lines.push("");
+      lines.push(
+        `This manuscript is password protected — the password will be provided separately.`,
+        "",
+      );
     }
 
     lines.push(
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      `──────────────────────────────────────`,
       "",
-      "How it works:",
-      "1. Click the link above",
-      pw ? "2. Enter the password when prompted" : "2. The manuscript will open automatically",
-      "3. Read, highlight text, and leave notes",
-      "4. Submit your feedback when you're done",
+      `What to do:`,
       "",
-      `This link expires on ${expiryDate}.`,
+      `  1.  Open the link above`,
+      pw ? `  2.  Enter the password when prompted` : `  2.  The manuscript will open for you`,
+      `  3.  Read at your own pace`,
+      `  4.  Highlight any text to leave a comment or note`,
+      `  5.  Submit your feedback when you're done`,
       "",
-      "— Sent via Blocwrite (blocwrite.com)",
+      `Your insights will go directly to the author and help shape the final draft.`,
+      "",
+      `This invitation expires on ${expiryDate}.`,
+      "",
+      `──────────────────────────────────────`,
+      `Blocwrite  ·  The AI writing studio for novelists`,
+      `blocwrite.com`,
     );
 
-    const body = lines.join("\n");
+    const body = lines.filter((l) => l !== undefined).join("\n");
     const recipient = shareRecipientEmail.trim();
     const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.open(mailtoUrl, "_blank");
@@ -7988,15 +8216,15 @@ function NovelWorkspacePage() {
       const vh = window.innerHeight;
       const pad = 12; // minimum distance from viewport edges
 
-      // Prefer below trigger (more natural)
-      let top = rect.bottom + gap;
-      // If not enough room below, try above
-      if (top + ddH > vh - pad) {
-        top = rect.top - ddH - gap;
+      // Prefer above trigger (keeps dropdown in user's visible area)
+      let top = rect.top - ddH - gap;
+      // If not enough room above, fall back to below
+      if (top < pad) {
+        top = rect.bottom + gap;
       }
-      // If above also clips, clamp to viewport
-      if (top < pad) top = pad;
+      // Final clamp: ensure dropdown stays within viewport
       if (top + ddH > vh - pad) top = vh - ddH - pad;
+      if (top < pad) top = pad;
 
       // Align left edge to trigger's left edge, then clamp
       let left = rect.left;
@@ -8997,6 +9225,7 @@ function NovelWorkspacePage() {
     if (storyAiBusyAction.startsWith("block-")) return "Writing prose";
     if (storyAiBusyAction === "events-generate") return "Generating key events";
     if (storyAiBusyAction === "characters-generate") return "Generating characters";
+    if (storyAiBusyAction === "character-profile-batch") return "Building character profiles";
     if (storyAiBusyAction === "locations-generate") return "Generating locations";
     if (storyAiBusyAction === "worldbuilding-generate") return "Generating lore";
     return "Working with AI";
@@ -9177,6 +9406,7 @@ function NovelWorkspacePage() {
                 setSharePassword("");
                 setShareExpiryDays(7);
                 setShareRecipientEmail("");
+                setShareEmailSentMsg(null);
                 setShowShareModal(true);
                 setShareLinksLoading(true);
                 fetch("/api/share").then((r) => r.ok ? r.json() : []).then((data) => {
@@ -9507,7 +9737,9 @@ function NovelWorkspacePage() {
                       </div>
                       {!hideBlocks && blocks.length > 0 && (
                       <div className="pw-chapter-blocks" dir="ltr">
-                        {blocks.map((block, idx) => (
+                        {blocks.map((block, idx) => {
+                          const isBlockBusy = storyAiBusyAction === `block-prose-${idx}`;
+                          return (
                           <div key={idx} className="pw-block-wrap">
                             <div className="pw-block-card">
                               <div className="pw-block-header">
@@ -9618,15 +9850,57 @@ function NovelWorkspacePage() {
                                 <button type="button" className="pw-block-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)}>×</button>
                               </div>
                             </div>
+                            {/* ── Per-bloc prose area ── */}
+                            <div className="pw-block-prose-area" style={{ marginTop: 6, marginBottom: 10 }}>
+                              {!aiOff && block.synopsis?.trim() && (
+                                <button
+                                  type="button"
+                                  className="pw-block-generate-btn"
+                                  disabled={isBlockBusy || !!storyAiBusyAction}
+                                  onClick={() => void runGenerateBlockProse(idx)}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 6,
+                                    padding: "6px 14px", marginBottom: 6, borderRadius: 8,
+                                    fontSize: 12, fontWeight: 600,
+                                    background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.10)",
+                                    color: "var(--pw-accent)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.25)",
+                                    cursor: isBlockBusy || storyAiBusyAction ? "not-allowed" : "pointer",
+                                    opacity: isBlockBusy || storyAiBusyAction ? 0.6 : 1,
+                                  }}
+                                >
+                                  {isBlockBusy ? "Generating…" : "✦ Generate Prose"}
+                                </button>
+                              )}
+                              <textarea
+                                className="pw-block-prose-input"
+                                style={{
+                                  width: "100%", boxSizing: "border-box",
+                                  minHeight: block.prose?.trim() ? 120 : 60,
+                                  padding: "10px 12px", borderRadius: 8,
+                                  border: "1px solid var(--pw-border)",
+                                  background: "var(--pw-surface-alt)",
+                                  color: "var(--pw-text)", fontSize: 14, lineHeight: 1.7,
+                                  fontFamily: EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ?? "Georgia, serif",
+                                  resize: "vertical", outline: "none",
+                                }}
+                                placeholder="Scene prose..."
+                                value={block.prose || ""}
+                                onChange={(e) => {
+                                  const next = [...blocks];
+                                  next[idx] = { ...block, prose: e.target.value };
+                                  updateSceneBlocks(activeChapter.id, next);
+                                  syncChapterContentFromBlocks(activeChapter.id, next);
+                                }}
+                                onInput={(event) => autoSizeEditorInput(event.currentTarget)}
+                              />
+                            </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       )}
-                      {blocks.length > 0 && !aiOff && (
-                        <button type="button" className="btn btn-primary" style={{ width: "100%", marginBottom: 8 }} disabled={storyAiBusyAction === "chapter-prose"} onClick={() => void runGenerateChapterProse()}>
-                          {storyAiBusyAction === "chapter-prose" ? "Generating…" : "✦ Generate Chapter Prose"}
-                        </button>
-                      )}
+                      {/* Combined chapter view (read-only when blocks exist, editable otherwise) */}
+                      {blocks.length === 0 && (
                       <textarea
                         ref={editorInputRef}
                         data-pw-plain-editor
@@ -9651,8 +9925,9 @@ function NovelWorkspacePage() {
                             insertSceneBlockAt(b, b.length);
                           }
                         }}
-                        placeholder="Chapter prose..."
+                        placeholder="Chapter prose... (type / to add a scene block)"
                       />
+                      )}
                     </>
                   );
                 })()}
@@ -10941,7 +11216,7 @@ function NovelWorkspacePage() {
                   </p>
                 </div>
 
-                {/* Send invitation via email client */}
+                {/* Send branded invitation email */}
                 <div style={{
                   marginTop: 10, padding: "12px 14px", borderRadius: 10,
                   background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
@@ -10956,11 +11231,11 @@ function NovelWorkspacePage() {
                       type="email"
                       placeholder="reader@example.com"
                       value={shareRecipientEmail}
-                      onChange={(e) => setShareRecipientEmail(e.target.value)}
+                      onChange={(e) => { setShareRecipientEmail(e.target.value); setShareEmailSentMsg(null); }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && shareRecipientEmail.trim()) {
+                        if (e.key === "Enter" && shareRecipientEmail.trim() && !shareSendingEmail) {
                           e.preventDefault();
-                          openShareEmailInClient();
+                          void sendShareEmail();
                         }
                       }}
                       style={{ flex: 1, fontSize: 13 }}
@@ -10968,23 +11243,51 @@ function NovelWorkspacePage() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={!shareRecipientEmail.trim()}
-                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}
-                      onClick={openShareEmailInClient}
+                      disabled={!shareRecipientEmail.trim() || shareSendingEmail}
+                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5, opacity: shareSendingEmail ? 0.6 : 1 }}
+                      onClick={() => void sendShareEmail()}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      Open in Email
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+                      {shareSendingEmail ? "Sending..." : "Send"}
                     </button>
                   </div>
-                  {shareResult.hasPassword && sharePassword.trim() && (
+                  {shareEmailSentMsg && (
+                    <p style={{
+                      fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4,
+                      color: shareEmailSentMsg.includes("sent") ? "var(--pw-accent, #a3e635)" : "var(--pw-danger, #ef4444)",
+                      display: "flex", alignItems: "center", gap: 5,
+                    }}>
+                      {shareEmailSentMsg.includes("sent") ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      )}
+                      {shareEmailSentMsg}
+                    </p>
+                  )}
+                  {shareResult.hasPassword && sharePassword.trim() && !shareEmailSentMsg && (
                     <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #a3e635)", display: "flex", alignItems: "center", gap: 5 }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       Password will be included in the email
                     </p>
                   )}
-                  <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4, marginBottom: 0 }}>
-                    Opens your email app with a pre-written invitation, link{shareResult.hasPassword && sharePassword.trim() ? ", and password" : ""}.
-                  </p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                    <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: 0 }}>
+                      Sends a branded invitation with your manuscript link{shareResult.hasPassword && sharePassword.trim() ? " and password" : ""}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openShareEmailInClient}
+                      disabled={!shareRecipientEmail.trim()}
+                      style={{
+                        fontSize: 10, color: "var(--pw-text-dim)", background: "none",
+                        border: "none", cursor: "pointer", textDecoration: "underline",
+                        padding: 0, whiteSpace: "nowrap", opacity: shareRecipientEmail.trim() ? 1 : 0.4,
+                      }}
+                    >
+                      Open in email app instead
+                    </button>
+                  </div>
                 </div>
 
                 {/* Warning about editing */}
@@ -11146,6 +11449,7 @@ function NovelWorkspacePage() {
                       setSharePassword("");
                       setShareExpiryDays(7);
                       setShareRecipientEmail("");
+                      setShareEmailSentMsg(null);
                       setShowShareModal(true);
                       setShareLinksLoading(true);
                       fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
@@ -11441,15 +11745,49 @@ function NovelWorkspacePage() {
                                 apiKey: openRouterKey,
                                 baseUrl: assistantBaseUrl,
                                 model: openRouterModel || "openai/gpt-4o-mini",
-                                systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary. Be creative — produce a fresh variation.",
-                                prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
+                                systemMessage: [
+                                  "You are a careful, skilled prose editor working on a novel manuscript.",
+                                  "A beta reader highlighted a passage and left feedback. Your previous revision was rejected, so produce a DIFFERENT approach.",
+                                  "1. Revise ONLY the highlighted passage to address the reader's concern — with a fresh take.",
+                                  "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
+                                  "3. Keep the same tense, POV, and narrative perspective.",
+                                  "4. Do NOT add new plot points, characters, or information not implied by the original.",
+                                  "5. Do NOT expand the passage significantly — keep roughly the same length.",
+                                  "6. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
+                                ].join("\n"),
+                                prompt: [
+                                  `HIGHLIGHTED PASSAGE:`,
+                                  `"""`,
+                                  item.ann.selectedText,
+                                  `"""`,
+                                  ``,
+                                  `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+                                  ``,
+                                  `PREVIOUS REJECTED REVISION:`,
+                                  `"""`,
+                                  fbPreviewRevised ?? "",
+                                  `"""`,
+                                  ``,
+                                  `SURROUNDING CONTEXT (for tone/flow — do NOT modify):`,
+                                  `"""`,
+                                  item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+                                  `[HIGHLIGHTED PASSAGE GOES HERE]`,
+                                  item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+                                  `"""`,
+                                  ``,
+                                  `Produce a DIFFERENT revision. Return ONLY the revised text:`,
+                                ].join("\n"),
                                 maxTokens: 1200,
                                 timeoutMs: 120000,
                               }),
                             });
                             const aiData = await res.json() as { text?: string; error?: string };
                             if (aiData.text) {
-                              setFbPreviewRevised(aiData.text.trim());
+                              let revised = aiData.text.trim();
+                              if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
+                                revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
+                              }
+                              setFbPreviewRevised(revised);
                             } else {
                               alert(aiData.error || "AI could not regenerate. Try again.");
                             }
@@ -11498,13 +11836,77 @@ function NovelWorkspacePage() {
                           setFeedbackReviewApplying(true);
                           try {
                             const currentContent = matchChapter.content || "";
-                            const idx = currentContent.indexOf(item.ann.selectedText);
-                            if (idx !== -1) {
-                              const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + item.ann.selectedText.length);
+                            const selectedText = item.ann.selectedText;
+
+                            // Try exact match first
+                            let idx = currentContent.indexOf(selectedText);
+
+                            // Fuzzy match: try with normalised whitespace
+                            if (idx === -1) {
+                              const normSelected = selectedText.replace(/\s+/g, " ").trim();
+                              const normContent = currentContent.replace(/\s+/g, " ");
+                              const normIdx = normContent.indexOf(normSelected);
+                              if (normIdx !== -1) {
+                                // Map normalised offset back to original content
+                                let origChars = 0;
+                                let origIdx = 0;
+                                let normChars = 0;
+                                while (origIdx < currentContent.length && normChars < normIdx) {
+                                  if (/\s/.test(currentContent[origIdx])) {
+                                    while (origIdx < currentContent.length && /\s/.test(currentContent[origIdx])) origIdx++;
+                                    normChars++;
+                                  } else {
+                                    origIdx++;
+                                    normChars++;
+                                  }
+                                }
+                                origChars = origIdx;
+                                // Find the end in original
+                                let endNorm = normChars;
+                                let endOrig = origIdx;
+                                while (endOrig < currentContent.length && endNorm < normIdx + normSelected.length) {
+                                  if (/\s/.test(currentContent[endOrig])) {
+                                    while (endOrig < currentContent.length && /\s/.test(currentContent[endOrig])) endOrig++;
+                                    endNorm++;
+                                  } else {
+                                    endOrig++;
+                                    endNorm++;
+                                  }
+                                }
+                                idx = origChars;
+                                const origSelectedLen = endOrig - origChars;
+                                const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + origSelectedLen);
+                                updateChapter(matchChapter.id, { content: newContent });
+                                setFeedbackReviewAccepted((c) => c + 1);
+                                idx = -2; // sentinel: already applied
+                              }
+                            }
+
+                            // Context-based fallback: use surrounding text to locate the passage
+                            if (idx === -1) {
+                              const words = selectedText.split(/\s+/).filter(Boolean);
+                              if (words.length >= 3) {
+                                const startPhrase = words.slice(0, Math.min(4, words.length)).join(" ");
+                                const endPhrase = words.slice(-Math.min(4, words.length)).join(" ");
+                                const sIdx = currentContent.indexOf(startPhrase);
+                                const eIdx = sIdx !== -1 ? currentContent.indexOf(endPhrase, sIdx) : -1;
+                                if (sIdx !== -1 && eIdx !== -1) {
+                                  const end = eIdx + endPhrase.length;
+                                  const newContent = currentContent.slice(0, sIdx) + fbPreviewRevised + currentContent.slice(end);
+                                  updateChapter(matchChapter.id, { content: newContent });
+                                  setFeedbackReviewAccepted((c) => c + 1);
+                                  idx = -2; // sentinel: already applied
+                                }
+                              }
+                            }
+
+                            if (idx >= 0) {
+                              // Exact match found — apply directly
+                              const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + selectedText.length);
                               updateChapter(matchChapter.id, { content: newContent });
                               setFeedbackReviewAccepted((c) => c + 1);
-                            } else {
-                              alert("Could not find the exact text. The chapter may have changed since sharing. Skipping.");
+                            } else if (idx === -1) {
+                              alert("Could not locate this passage in the current chapter. The text may have changed since sharing. Skipping this note.");
                             }
                           } finally {
                             setFeedbackReviewApplying(false);
@@ -11542,15 +11944,47 @@ function NovelWorkspacePage() {
                                 apiKey: openRouterKey,
                                 baseUrl: assistantBaseUrl,
                                 model: openRouterModel || "openai/gpt-4o-mini",
-                                systemMessage: "You are a professional prose editor. A reader highlighted text and left a note. Revise ONLY the highlighted passage to address the reader's feedback while preserving the author's voice. Return ONLY the revised passage, nothing else. No explanations, no meta-commentary.",
-                                prompt: `Reader highlighted this text:\n"${item.ann.selectedText}"\n\nReader's note: "${item.ann.note}" (type: ${item.ann.type})\n\nSurrounding context from the chapter:\n${item.chapterContent.slice(Math.max(0, item.ann.startOffset - 400), item.ann.endOffset + 400)}\n\nRevise the highlighted passage to address the feedback. Return ONLY the revised text:`,
+                                systemMessage: [
+                                  "You are a careful, skilled prose editor working on a novel manuscript.",
+                                  "A beta reader highlighted a passage and left feedback. Your job:",
+                                  "1. Revise ONLY the highlighted passage to address the reader's concern.",
+                                  "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
+                                  "3. Keep the same tense, POV, and narrative perspective.",
+                                  "4. Do NOT add new plot points, characters, or information not implied by the original.",
+                                  "5. Do NOT expand the passage significantly — keep roughly the same length.",
+                                  "6. Do NOT rewrite surrounding text — only revise what was highlighted.",
+                                  "7. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
+                                  "8. If the feedback is vague or you're unsure, make the smallest meaningful improvement.",
+                                ].join("\n"),
+                                prompt: [
+                                  `HIGHLIGHTED PASSAGE:`,
+                                  `"""`,
+                                  item.ann.selectedText,
+                                  `"""`,
+                                  ``,
+                                  `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+                                  ``,
+                                  `SURROUNDING CONTEXT (for tone/flow — do NOT modify this, only use for reference):`,
+                                  `"""`,
+                                  item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+                                  `[HIGHLIGHTED PASSAGE GOES HERE]`,
+                                  item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+                                  `"""`,
+                                  ``,
+                                  `Now revise the highlighted passage. Return ONLY the revised text, nothing else:`,
+                                ].join("\n"),
                                 maxTokens: 1200,
                                 timeoutMs: 120000,
                               }),
                             });
                             const aiData = await res.json() as { text?: string; error?: string };
                             if (aiData.text) {
-                              setFbPreviewRevised(aiData.text.trim());
+                              let revised = aiData.text.trim();
+                              // Strip wrapping quotes/triple-quotes if the AI added them
+                              if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
+                                revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
+                              }
+                              setFbPreviewRevised(revised);
                             } else {
                               setFbPreviewOriginal(null);
                               alert(aiData.error || "AI could not generate a revision. Try again.");
@@ -11620,6 +12054,7 @@ function NovelWorkspacePage() {
                       setSharePassword("");
                       setShareExpiryDays(7);
                       setShareRecipientEmail("");
+                      setShareEmailSentMsg(null);
                       setShowShareModal(true);
                       setShareLinksLoading(true);
                       fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
@@ -13409,6 +13844,92 @@ function NovelWorkspacePage() {
                 Continue with {nameConfirmPopup.selected.size} name{nameConfirmPopup.selected.size !== 1 ? "s" : ""}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profile generation offer popup ── */}
+      {profileOfferPopup && (
+        <div className="pw-modal-overlay" onClick={() => setProfileOfferPopup(null)}>
+          <div className="pw-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>✦</div>
+              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
+                Characters created!
+              </div>
+              <p className="pw-delete-modal-copy" style={{ marginTop: 8 }}>
+                {profileOfferPopup.characterIds.length} character{profileOfferPopup.characterIds.length !== 1 ? "s were" : " was"} added with names and roles. Would you like the AI to auto-generate full profiles for each one? This fills in appearance, personality, goals, fears, backstory, and speaking style.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "16px 0" }}>
+              {profileOfferPopup.characterIds.map((cid) => {
+                const ch = storyCharacters.find((c) => c.id === cid);
+                if (!ch) return null;
+                return (
+                  <div key={cid} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 14px", borderRadius: 10,
+                    background: "var(--pw-surface-alt, rgba(255,255,255,0.04))",
+                    border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{ch.name}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+                      background: ch.role === "Protagonist" ? "rgba(163,230,53,0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                      color: ch.role === "Protagonist" ? "var(--pw-accent)" : ch.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                    }}>{ch.role || "Supporting"}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pw-delete-modal-actions" style={{ marginTop: 20 }}>
+              <button
+                type="button"
+                className="btn pw-cancel-btn"
+                onClick={() => setProfileOfferPopup(null)}
+              >
+                Skip — I'll do it manually
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void runAutoGenerateAllProfiles(profileOfferPopup.characterIds)}
+              >
+                Auto-generate all profiles
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profile generation progress overlay ── */}
+      {profileGenProgress && (
+        <div className="pw-modal-overlay">
+          <div className="pw-modal" style={{ maxWidth: 400, textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>✦</div>
+            <div className="pw-delete-modal-title" style={{ fontSize: 16, fontWeight: 800 }}>
+              Generating profile {profileGenProgress.current} of {profileGenProgress.total}
+            </div>
+            <p className="pw-delete-modal-copy" style={{ marginTop: 8, fontSize: 14 }}>
+              Building profile for <strong>{profileGenProgress.name}</strong>...
+            </p>
+            <div style={{
+              marginTop: 16, height: 6, borderRadius: 3,
+              background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+              overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%", borderRadius: 3,
+                background: "var(--pw-accent, #a3e635)",
+                width: `${Math.round((profileGenProgress.current / profileGenProgress.total) * 100)}%`,
+                transition: "width 0.4s ease",
+              }} />
+            </div>
+            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
+              Each profile is generated individually for best quality
+            </p>
           </div>
         </div>
       )}
