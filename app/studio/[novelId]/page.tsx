@@ -3959,12 +3959,27 @@ function NovelWorkspacePage() {
     prose: "",
   };
 
+  const WORD_TARGET_OPTIONS: Array<{ value: number; label: string; title: string }> = [
+    { value: 0, label: "Best Fit", title: "AI decides the ideal length for this scene" },
+    { value: 400, label: "400", title: "Target ~400 words (short scene)" },
+    { value: 600, label: "600", title: "Target ~600 words (standard scene)" },
+    { value: 800, label: "800", title: "Target ~800 words (longer scene)" },
+    { value: 1000, label: "1000", title: "Target ~1000 words (extended scene)" },
+    { value: 1500, label: "1500", title: "Target ~1500 words (major scene)" },
+  ];
+
   const FOCUS_PRESETS: Array<{ id: string; label: string; hint: string }> = [
     { id: "default", label: "Default", hint: "Canon voice, balanced narration/dialogue/action, matches novel's style" },
-    { id: "dialogue", label: "Dialogue", hint: "Higher dialogue ratio, faster exchanges, reduced exposition" },
-    { id: "action", label: "Action", hint: "Shorter sentences, clear movement, high momentum" },
-    { id: "introspection", label: "Introspection", hint: "Interior monologue, emotional processing, thematic depth" },
-    { id: "atmosphere", label: "Atmosphere", hint: "Sensory detail, mood-forward writing" },
+    { id: "dialogue", label: "Dialogue-Heavy", hint: "Higher dialogue ratio, faster exchanges, snappy back-and-forth, reduced exposition" },
+    { id: "action", label: "Action & Pace", hint: "Shorter sentences, clear physical movement, high momentum, visceral detail" },
+    { id: "introspection", label: "Introspection", hint: "Interior monologue, emotional processing, thematic depth, character reflection" },
+    { id: "atmosphere", label: "Atmosphere", hint: "Rich sensory detail, mood-forward writing, setting as character" },
+    { id: "tension", label: "Tension & Suspense", hint: "Building dread, withholding information, shorter paragraphs, cliffhanger pacing" },
+    { id: "emotional", label: "Emotional Beat", hint: "Heightened emotion, vulnerability, character relationships, meaningful pauses" },
+    { id: "exposition", label: "World-Building", hint: "Weave in lore, rules, backstory naturally through action and dialogue, no info-dumps" },
+    { id: "opening", label: "Chapter Opening", hint: "Strong hook, establish scene and stakes quickly, ground the reader in time/place" },
+    { id: "climax", label: "Climax", hint: "Peak intensity, payoff of setups, decisive character action, turning point" },
+    { id: "resolution", label: "Resolution", hint: "Aftermath, reflection, new equilibrium, plant seeds for what comes next" },
   ];
 
   function getSceneBlocks(chapter: typeof activeChapter): SceneBlock[] {
@@ -4077,7 +4092,9 @@ function NovelWorkspacePage() {
        * SINGLE BATCH CALL — generate all bloc synopses at once.
        * ══════════════════════════════════════════════════════════════ */
 
-      type BatchBlocResult = { blocs?: Array<{ synopsis?: string }> };
+      type BatchBlocResult = { blocs?: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> };
+
+      const focusIds = FOCUS_PRESETS.map((p) => p.id).join(", ");
 
       const batchPrompt = [
         `Split this chapter into EXACTLY ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into prose.`,
@@ -4085,7 +4102,12 @@ function NovelWorkspacePage() {
         `CRITICAL: You MUST return EXACTLY ${BLOC_COUNT} blocs — not 1, not 2, not 3 — EXACTLY ${BLOC_COUNT}.`,
         ``,
         `Return ONLY this JSON structure:`,
-        `{ "blocs": [{ "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }, { "synopsis": "..." }] }`,
+        `{ "blocs": [{ "synopsis": "...", "focus": "...", "wordTarget": 600 }, ...] }`,
+        ``,
+        `For each bloc:`,
+        `- "synopsis": 1-3 concrete sentences describing the scene beat`,
+        `- "focus": the best writing focus for this scene, one of: ${focusIds}`,
+        `- "wordTarget": recommended word count (0 for best-fit, or 400/600/800/1000/1500) — choose based on scene complexity and pacing`,
         "",
         "═══ CHARACTER ROSTER — USE THESE EXACT NAMES ═══",
         `The following characters exist in this story. You MUST use their EXACT names (not generic labels like "the protagonist" or "the hero"). Every synopsis must reference characters by their proper name.`,
@@ -4118,7 +4140,7 @@ function NovelWorkspacePage() {
         `REMINDER: Return EXACTLY ${BLOC_COUNT} blocs. Use character NAMES, not generic labels.`,
       ].filter(Boolean).join("\n");
 
-      let batchBlocs: Array<{ synopsis?: string }> = [];
+      let batchBlocs: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> = [];
 
       // Attempt batch call (with 2 retries max)
       for (let attempt = 0; attempt < 3 && batchBlocs.length < BLOC_COUNT; attempt++) {
@@ -4131,7 +4153,7 @@ function NovelWorkspacePage() {
             false,
             0.3,
           );
-          let parsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string }>>(raw);
+          let parsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string; focus?: string; wordTarget?: number }>>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
@@ -4141,15 +4163,15 @@ function NovelWorkspacePage() {
           } else if (parsed && typeof parsed === "object") {
             const obj = parsed as Record<string, unknown>;
             if (Array.isArray(obj.blocs)) {
-              batchBlocs = obj.blocs as Array<{ synopsis?: string }>;
+              batchBlocs = obj.blocs as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
             } else if (Array.isArray(obj.blocks)) {
-              batchBlocs = obj.blocks as Array<{ synopsis?: string }>;
+              batchBlocs = obj.blocks as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
             } else if (Array.isArray(obj.scenes)) {
-              batchBlocs = obj.scenes as Array<{ synopsis?: string }>;
+              batchBlocs = obj.scenes as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
             } else {
               // Try any array value
               for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
+                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
               }
             }
           }
@@ -4169,11 +4191,16 @@ function NovelWorkspacePage() {
       }
 
       // ── Build blocks from batch results ──
+      const validFocusIds = FOCUS_PRESETS.map((p) => p.id);
+      const validWordTargets = WORD_TARGET_OPTIONS.map((o) => o.value);
       const blocks: SceneBlock[] = [];
       for (let i = 0; i < Math.min(BLOC_COUNT, batchBlocs.length); i++) {
-        const synopsis = (typeof batchBlocs[i]?.synopsis === "string" ? batchBlocs[i].synopsis!.trim() : "");
+        const b = batchBlocs[i];
+        const synopsis = (typeof b?.synopsis === "string" ? b.synopsis!.trim() : "");
         if (synopsis.length >= 15) {
-          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton });
+          const suggestedFocus = typeof b.focus === "string" && validFocusIds.includes(b.focus) ? b.focus : "default";
+          const suggestedTarget = typeof b.wordTarget === "number" && validWordTargets.includes(b.wordTarget) ? b.wordTarget : 0;
+          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: suggestedFocus, wordTarget: suggestedTarget });
         }
       }
 
@@ -4185,22 +4212,22 @@ function NovelWorkspacePage() {
             batchPrompt,
           ].join("\n\n");
           const retryRaw = await requestOpenRouterText(retryPrompt, 800, 240000, systemMsg, false, 0.3);
-          let retryParsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string }>>(retryRaw);
+          let retryParsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string; focus?: string; wordTarget?: number }>>(retryRaw);
           if (!retryParsed) {
             const repaired = attemptCloseTruncatedJson(retryRaw.trim());
             if (repaired) try { retryParsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
           }
-          let retryBlocs: Array<{ synopsis?: string }> = [];
+          let retryBlocs: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> = [];
           if (Array.isArray(retryParsed)) {
             retryBlocs = retryParsed;
           } else if (retryParsed && typeof retryParsed === "object") {
             const obj = retryParsed as Record<string, unknown>;
             for (const key of ["blocs", "blocks", "scenes"]) {
-              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
+              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
             }
             if (!retryBlocs.length) {
               for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string }>; break; }
+                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
               }
             }
           }
@@ -4211,9 +4238,12 @@ function NovelWorkspacePage() {
           if (retryBlocs.length > blocks.length) {
             blocks.length = 0;
             for (let i = 0; i < Math.min(BLOC_COUNT, retryBlocs.length); i++) {
-              const synopsis = retryBlocs[i]?.synopsis?.trim() ?? "";
+              const rb = retryBlocs[i];
+              const synopsis = rb?.synopsis?.trim() ?? "";
               if (synopsis.length >= 15) {
-                blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton });
+                const sf = typeof rb.focus === "string" && validFocusIds.includes(rb.focus) ? rb.focus : "default";
+                const st = typeof rb.wordTarget === "number" && validWordTargets.includes(rb.wordTarget) ? rb.wordTarget : 0;
+                blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: sf, wordTarget: st });
               }
             }
           }
@@ -4368,10 +4398,14 @@ function NovelWorkspacePage() {
         "Return ONLY the prose. No headers, labels, JSON, block markers, word counts. No thinking blocks — only novel text.",
       ].join(" ");
 
+      const isBestFit = block.wordTarget === 0;
+      const effectiveTarget = isBestFit ? 600 : block.wordTarget;
+
       const sceneContext = blocks.map((b, i) => {
         const fp = FOCUS_PRESETS.find((p) => p.id === b.focus);
         const fh = fp && b.focus !== "default" ? ` [Focus: ${fp.hint}]` : "";
-        return `Scene ${i + 1} (~${b.wordTarget} words${fh}):\n${b.synopsis || "(no synopsis)"}`;
+        const wt = b.wordTarget === 0 ? "best fit" : `~${b.wordTarget} words`;
+        return `Scene ${i + 1} (${wt}${fh}):\n${b.synopsis || "(no synopsis)"}`;
       }).join("\n\n");
 
       const prompt = [
@@ -4380,7 +4414,9 @@ function NovelWorkspacePage() {
         boltonDirective ? `\nBOLT-ON DIRECTIVE: ${boltonDirective}` : "",
         focusHint,
         "",
-        `Write prose for SCENE ${blockIndex + 1} ONLY. TARGET: ~${block.wordTarget} words.`,
+        isBestFit
+          ? `Write prose for SCENE ${blockIndex + 1} ONLY. Use the length that best serves the scene — let the synopsis complexity and dramatic weight guide you. Aim for a natural, well-paced scene.`
+          : `Write prose for SCENE ${blockIndex + 1} ONLY. TARGET: ~${block.wordTarget} words.`,
         "",
         `Chapter: ${activeChapter.title}`,
         storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
@@ -4405,7 +4441,7 @@ function NovelWorkspacePage() {
         "- Output the scene prose only. No explanation, no thinking — only novel text.",
       ].filter(Boolean).join("\n");
 
-      const maxTokens = Math.min(4000, Math.round(block.wordTarget * 2.0));
+      const maxTokens = Math.min(4000, Math.round((isBestFit ? 1000 : block.wordTarget) * 2.0));
       let prose = await requestOpenRouterText(prompt, maxTokens, 180000, systemMsg, false);
       prose = cleanProseOutput(prose);
 
@@ -9766,8 +9802,8 @@ function NovelWorkspacePage() {
                               <textarea className="pw-block-synopsis" placeholder="Scene synopsis..." value={block.synopsis} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, synopsis: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} rows={2} />
                               <div className="pw-block-toolbar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                                 <div className="pw-block-word-pills">
-                                  {[400, 600, 800, 1000].map((n) => (
-                                    <button key={n} type="button" className={`pw-word-pill ${block.wordTarget === n ? "active" : ""}`} onClick={() => { const next = [...blocks]; next[idx] = { ...block, wordTarget: n }; updateSceneBlocks(activeChapter.id, next); }} title={`Target ${n} words`}>{n}</button>
+                                  {WORD_TARGET_OPTIONS.map((opt) => (
+                                    <button key={opt.value} type="button" className={`pw-word-pill ${block.wordTarget === opt.value ? "active" : ""}`} onClick={() => { const next = [...blocks]; next[idx] = { ...block, wordTarget: opt.value }; updateSceneBlocks(activeChapter.id, next); }} title={opt.title}>{opt.label}</button>
                                   ))}
                                 </div>
                                 <select value={block.focus} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, focus: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} title="Focus mode" style={{ fontSize: 11, padding: "4px 8px" }}>
