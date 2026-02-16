@@ -5316,107 +5316,167 @@ function NovelWorkspacePage() {
     setNameConfirmPopup(null);
     setStoryAiError(null);
     setStoryAiBusyAction("character-profile-batch");
-    setProfileGenProgress({ current: 0, total: characterIds.length, name: "Building profiles...", done: 0 });
+    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
-    const normalizedKey = normalizeClientApiKey(openRouterKey);
-    const allChars = novel.storyBible.characters ?? [];
-    const characters = characterIds
-      .map((id) => allChars.find((c) => c.id === id))
-      .filter(Boolean)
-      .map((c) => ({
-        id: c!.id,
-        name: c!.name,
-        role: c!.role || "Supporting",
-        logline: c!.logline || "",
-      }));
+    // Simple helper: one raw fetch to the existing /api/openrouter/complete endpoint.
+    // No wrappers, no retries, no abort controller sharing. One call = one response.
+    async function singleAiCall(system: string, prompt: string, maxTokens: number, temp = 0.4): Promise<string> {
+      const controller = new AbortController();
+      const tid = window.setTimeout(() => controller.abort(), 120_000);
+      try {
+        const res = await fetch("/api/openrouter/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: assistantProvider,
+            apiKey: normalizeClientApiKey(openRouterKey),
+            baseUrl: assistantBaseUrl.trim(),
+            model: openRouterModel,
+            prompt,
+            system,
+            maxTokens,
+            temperature: temp,
+          }),
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Error ${res.status}`);
+        return typeof data.text === "string" ? data.text : "";
+      } finally {
+        window.clearTimeout(tid);
+      }
+    }
+
+    const PROFILE_SHAPE = `{
+  "appearance": "2-3 sentences describing physical appearance",
+  "personality": "2-3 sentences on personality traits",
+  "goals": "1-2 sentences on what they want",
+  "fears": "1-2 sentences on their deepest fears",
+  "backstory": "2-3 sentences on their background",
+  "accent": "dialect or accent notes",
+  "speakingStyle": "how they talk — formal, slang, etc.",
+  "reactionPattern": "how they react under stress",
+  "voiceNotes": "unique vocal characteristics",
+  "secrets": "1-2 hidden facts about them",
+  "readerSecretHint": "a spoiler-safe hint for the reader",
+  "tags": ["keyword1", "keyword2", "keyword3"]
+}`;
 
     const storyContext = buildStoryBibleContext("characters");
+    const systemMsg = "You are a character development specialist for novels. Return ONLY valid JSON. No markdown fences, no explanation, no thinking tags, no extra text.";
+    let doneCount = 0;
 
-    try {
-      const response = await fetch("/api/characters/batch-profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: assistantProvider,
-          apiKey: normalizedKey,
-          baseUrl: assistantBaseUrl.trim(),
-          model: openRouterModel,
-          characters,
-          storyContext,
-        }),
-      });
+    // Generate each profile one at a time through the proven /api/openrouter/complete
+    for (let i = 0; i < characterIds.length; i++) {
+      const charId = characterIds[i];
+      const allChars = novel.storyBible.characters ?? [];
+      const character = allChars.find((c) => c.id === charId);
+      if (!character) continue;
 
-      if (!response.ok) {
-        const errPayload = await response.json().catch(() => ({})) as Record<string, unknown>;
-        throw new Error(typeof errPayload.error === "string" ? errPayload.error : `Server error ${response.status}`);
-      }
+      setProfileGenProgress({ current: i + 1, total: characterIds.length, name: character.name, done: doneCount });
 
-      const payload = await response.json() as {
-        results: Array<{ characterId: string; profile: Record<string, unknown> | null; error?: string }>;
-        relationships: Array<{ from: string; to: string; type: string; description?: string }>;
-      };
+      if (i > 0) await new Promise((r) => setTimeout(r, 2000));
 
-      let doneCount = 0;
+      const prompt = [
+        `Create a detailed character profile for: ${character.name} (Role: ${character.role || "Supporting"})`,
+        character.logline ? `Character hook: ${character.logline}` : null,
+        "",
+        "Return a JSON object with EXACTLY these fields, each filled with 1-3 vivid sentences:",
+        PROFILE_SHAPE,
+        "",
+        "CRITICAL RULES:",
+        "- Output ONLY the JSON object. Nothing else.",
+        "- Every field MUST have a non-empty string value.",
+        "- tags MUST be an array of 3-6 keyword strings.",
+        "- Anchor to the story context below. Do not invent unrelated storylines.",
+        "",
+        `Story context:\n${storyContext.slice(0, 3000)}`,
+      ].filter((l) => l !== null).join("\n");
 
-      for (const result of payload.results) {
-        if (!result.profile) continue;
-        const profile = result.profile;
-        const charId = result.characterId;
+      try {
+        const raw = await singleAiCall(systemMsg, prompt, 900);
+        let profile = parseJsonFromAi<Record<string, unknown>>(raw);
 
-        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-        const str = (key: string) => typeof profile[key] === "string" && (profile[key] as string).trim() ? (profile[key] as string).trim() : "";
-        if (str("appearance")) patch.appearance = str("appearance");
-        if (str("personality")) patch.personality = str("personality");
-        if (str("goals")) patch.goals = str("goals");
-        if (str("fears")) patch.fears = str("fears");
-        if (str("backstory")) patch.backstory = str("backstory");
-        if (str("speakingStyle")) patch.speakingStyle = str("speakingStyle");
-        if (str("secrets")) patch.secrets = str("secrets");
-        if (str("readerSecretHint")) patch.readerSecretHint = str("readerSecretHint");
-        if (str("accent")) patch.accent = str("accent");
-        if (str("reactionPattern")) patch.reactionPattern = str("reactionPattern");
-        if (str("voiceNotes")) patch.voiceNotes = str("voiceNotes");
-        const aiTags = parseStringList(profile.tags);
-        if (aiTags.length) {
-          const existingChar = allChars.find((c) => c.id === charId);
-          patch.tags = Array.from(new Set([...(existingChar?.tags ?? []), ...aiTags]));
+        // One retry with stricter prompt if parse failed
+        if (!profile) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const raw2 = await singleAiCall(
+            "Return ONLY valid JSON. No markdown fences, no text.",
+            `Return a character profile as JSON for ${character.name}. Fields: appearance, personality, goals, fears, backstory, accent, speakingStyle, reactionPattern, voiceNotes, secrets, readerSecretHint, tags.\n\nStory: ${storyContext.slice(0, 1500)}`,
+            900, 0.1,
+          );
+          profile = parseJsonFromAi<Record<string, unknown>>(raw2);
         }
 
-        if (Object.keys(patch).length > 0) {
-          updateV2Character(charId, patch);
-          doneCount++;
-          setProfileGenProgress({ current: doneCount, total: characterIds.length, name: "", done: doneCount });
-        }
-      }
+        if (profile && typeof profile === "object") {
+          const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+          const str = (key: string) => typeof profile![key] === "string" && (profile![key] as string).trim() ? (profile![key] as string).trim() : "";
+          if (str("appearance")) patch.appearance = str("appearance");
+          if (str("personality")) patch.personality = str("personality");
+          if (str("goals")) patch.goals = str("goals");
+          if (str("fears")) patch.fears = str("fears");
+          if (str("backstory")) patch.backstory = str("backstory");
+          if (str("speakingStyle")) patch.speakingStyle = str("speakingStyle");
+          if (str("secrets")) patch.secrets = str("secrets");
+          if (str("readerSecretHint")) patch.readerSecretHint = str("readerSecretHint");
+          if (str("accent")) patch.accent = str("accent");
+          if (str("reactionPattern")) patch.reactionPattern = str("reactionPattern");
+          if (str("voiceNotes")) patch.voiceNotes = str("voiceNotes");
+          const aiTags = parseStringList(profile.tags);
+          if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
 
-      // Apply relationships
-      if (payload.relationships?.length) {
+          if (Object.keys(patch).length >= 3) {
+            updateV2Character(charId, patch);
+            doneCount++;
+            setProfileGenProgress((p) => p ? { ...p, done: doneCount } : p);
+          }
+        }
+      } catch (err) {
+        if (isCancelledError(err)) break;
+        console.warn(`[profile-gen] ${character.name} failed:`, err);
+      }
+    }
+
+    // Link relationships (only if 2+ profiles succeeded)
+    if (doneCount >= 2) {
+      setProfileGenProgress((p) => p ? { ...p, name: "Linking..." } : p);
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
         const latestChars = novel.storyBible.characters ?? [];
-        for (const rel of payload.relationships) {
-          if (!rel.from || !rel.to || !rel.type) continue;
-          const fromLow = rel.from.trim().toLowerCase();
-          const toLow = rel.to.trim().toLowerCase();
-          const fc = latestChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
-          const tc = latestChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
-          if (fc && tc && fc.id !== tc.id) {
-            const existing = fc.relationships ?? [];
-            if (!existing.some((r) => r.targetCharacterId === tc.id)) {
-              updateV2Character(fc.id, {
-                relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
-              });
+        const names = characterIds
+          .map((id) => latestChars.find((c) => c.id === id))
+          .filter(Boolean)
+          .map((c) => `${c!.name} (${c!.role || "Supporting"})`)
+          .join(", ");
+        const relRaw = await singleAiCall(
+          "Relationship mapper. Return ONLY a valid JSON array. No markdown.",
+          `Characters: ${names}\nStory: ${storyContext.slice(0, 1500)}\nReturn JSON array: [{"from":"Name","to":"Name","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"brief"}]\nOnly meaningful relationships.`,
+          500, 0.3,
+        );
+        const relArr = parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw);
+        if (Array.isArray(relArr)) {
+          const freshChars = novel.storyBible.characters ?? [];
+          for (const rel of relArr) {
+            if (!rel.from || !rel.to || !rel.type) continue;
+            const fromLow = rel.from.trim().toLowerCase();
+            const toLow = rel.to.trim().toLowerCase();
+            const fc = freshChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+            const tc = freshChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
+            if (fc && tc && fc.id !== tc.id) {
+              const existing = fc.relationships ?? [];
+              if (!existing.some((r) => r.targetCharacterId === tc.id)) {
+                updateV2Character(fc.id, {
+                  relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
+                });
+              }
             }
           }
         }
-      }
+      } catch { /* relationships are a bonus */ }
+    }
 
-      if (doneCount === 0) {
-        const errors = payload.results.filter((r) => r.error).map((r) => r.error).join("; ");
-        setStoryAiError(`No profiles generated. ${errors || "Check your API key and model."}`);
-      }
-    } catch (err) {
-      if (!isCancelledError(err)) {
-        setStoryAiError(err instanceof Error ? err.message : "Profile generation failed. Check your API key and model.");
-      }
+    if (doneCount === 0) {
+      setStoryAiError("Profile generation didn't return usable data. Check your API key and model, or try a different model.");
     }
 
     setStoryAiBusyAction(null);
