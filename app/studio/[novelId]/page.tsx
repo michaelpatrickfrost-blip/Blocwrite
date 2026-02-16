@@ -12607,11 +12607,29 @@ function NovelWorkspacePage() {
                             );
                             return (
                               <div className="pw-character-editor">
-                                <div className="pw-character-panel-head">
-                                  <div style={{ flex: 1 }}>
-                                    <h4>{character.name || "Character Profile"}</h4>
-                                    <p className="pw-character-panel-sub">
-                                      Define voice, appearance, behavior, and spoiler-safe secret handling.
+                                {/* ── Character header: name + actions ── */}
+                                <div style={{
+                                  display: "flex", alignItems: "center", gap: 10,
+                                  padding: "12px 0 8px", borderBottom: "1px solid var(--pw-border-light, rgba(255,255,255,0.06))",
+                                  marginBottom: 12,
+                                }}>
+                                  <div style={{
+                                    width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                                    background: "rgba(var(--pw-accent-rgb,163,230,53),0.12)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 14, fontWeight: 800, color: "var(--pw-accent)",
+                                  }}>
+                                    {(character.name || "?").charAt(0).toUpperCase()}
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <h4 style={{
+                                      margin: 0, fontSize: 15, fontWeight: 800, letterSpacing: "-0.01em",
+                                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                    }}>
+                                      {character.name || "Character Profile"}
+                                    </h4>
+                                    <p style={{ margin: "1px 0 0", fontSize: 11, color: "var(--pw-text-dim)", fontWeight: 500 }}>
+                                      {character.role || "Supporting"}{character.logline ? ` — ${character.logline.slice(0, 60)}${character.logline.length > 60 ? "…" : ""}` : ""}
                                     </p>
                                   </div>
                                   <button
@@ -12639,7 +12657,11 @@ function NovelWorkspacePage() {
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                                     Remove
                                   </button>
-                                  {!aiOff && (
+                                </div>
+
+                                {/* ── AI assistant controls (own row) ── */}
+                                {!aiOff && (
+                                <div style={{ marginBottom: 14 }}>
                                   <div className="pw-character-ai-controls">
                                     <div className="pw-character-ai-mode-grid" role="radiogroup" aria-label="Character assistant mode">
                                       {(Object.entries(CHARACTER_AI_MODE_COPY) as Array<
@@ -12670,8 +12692,8 @@ function NovelWorkspacePage() {
                                         : `Run: ${characterAiModeCopy.label}`}
                                     </button>
                                   </div>
-                                  )}
                                 </div>
+                                )}
 
                                 <div className="pw-char-row">
                                   <div className="pw-char-col">
