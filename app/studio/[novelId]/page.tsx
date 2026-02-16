@@ -8253,47 +8253,55 @@ function NovelWorkspacePage() {
   }
 
   /** Position a fixed-position dropdown anchored to the trigger icon.
-   *  Measures synchronously by temporarily making the dropdown visible off-screen,
-   *  then moves it to the correct position. */
+   *  Accounts for ancestor transforms / will-change that break position:fixed
+   *  by computing the containing-block offset. */
   function positionDropdown(trigger: HTMLElement, dropdown: HTMLElement) {
-    const rect = trigger.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
     const gap = 6;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const pad = 8;
 
-    // Temporarily show off-screen to get real dimensions
-    const prevTop = dropdown.style.top;
-    const prevLeft = dropdown.style.left;
-    const prevVis = dropdown.style.visibility;
-    dropdown.style.visibility = "hidden";
-    dropdown.style.top = "0px";
-    dropdown.style.left = "-9999px";
+    // Temporarily show and place at (0,0) in fixed coords to measure
+    // the containing-block offset (will-change/transform on ancestors
+    // makes position:fixed relative to that ancestor, not viewport).
     dropdown.style.display = "flex";
     dropdown.style.flexDirection = "column";
+    dropdown.style.visibility = "hidden";
+    dropdown.style.top = "0px";
+    dropdown.style.left = "0px";
 
-    // Force synchronous layout
+    // Force layout — get real dimensions and containing-block offset
     const ddW = dropdown.offsetWidth || 270;
     const ddH = dropdown.offsetHeight || 280;
+    const ddRect = dropdown.getBoundingClientRect();
+    const cbOffsetX = ddRect.left; // where fixed (0,0) actually renders
+    const cbOffsetY = ddRect.top;
 
-    // Now compute final position
+    const trigCenterX = triggerRect.left + triggerRect.width / 2;
+
     // Horizontal: center on trigger, clamp to viewport
-    let left = rect.left + rect.width / 2 - ddW / 2;
+    let left = trigCenterX - ddW / 2;
     if (left + ddW > vw - pad) left = vw - ddW - pad;
     if (left < pad) left = pad;
 
     // Vertical: prefer above trigger
-    let top = rect.top - ddH - gap;
-    if (top < pad) top = rect.bottom + gap;
+    let top = triggerRect.top - ddH - gap;
+    if (top < pad) top = triggerRect.bottom + gap;
     if (top + ddH > vh - pad) top = vh - ddH - pad;
     if (top < pad) top = pad;
 
-    dropdown.style.top = `${Math.round(top)}px`;
-    dropdown.style.left = `${Math.round(left)}px`;
-    // Remove the inline display so the CSS class controls visibility
+    // Subtract the containing-block offset to convert viewport → local coords
+    dropdown.style.top = `${Math.round(top - cbOffsetY)}px`;
+    dropdown.style.left = `${Math.round(left - cbOffsetX)}px`;
     dropdown.style.removeProperty("display");
     dropdown.style.removeProperty("flex-direction");
     dropdown.style.visibility = "";
+  }
+
+  /** Close all open bolton dropdowns */
+  function closeBoltonDropdowns() {
+    document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open"));
   }
 
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {
@@ -9694,7 +9702,7 @@ function NovelWorkspacePage() {
                           if (!wrap) return;
                           const wasOpen = wrap.classList.contains("pw-bolton-open");
                           // Close any other open bolton dropdowns first
-                          document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open"));
+                          closeBoltonDropdowns();
                           if (!wasOpen) {
                             wrap.classList.add("pw-bolton-open");
                             const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
@@ -9702,7 +9710,7 @@ function NovelWorkspacePage() {
                             // Click outside to close
                             const closeHandler = (ev: MouseEvent) => {
                               if (!wrap.contains(ev.target as Node)) {
-                                wrap.classList.remove("pw-bolton-open");
+                                closeBoltonDropdowns();
                                 document.removeEventListener("click", closeHandler, true);
                               }
                             };
@@ -9720,7 +9728,7 @@ function NovelWorkspacePage() {
                           Chapter Bolt-On
                         </div>
                         <div className="pw-bolton-dropdown-body">
-                          <button type="button" className={`pw-block-bolton-option pw-bolton-dropdown-none ${!chapterBoltonId ? "active" : ""}`} onClick={() => { setChapterBoltonForActiveChapter(""); document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open")); }}>
+                          <button type="button" className={`pw-block-bolton-option pw-bolton-dropdown-none ${!chapterBoltonId ? "active" : ""}`} onClick={() => { setChapterBoltonForActiveChapter(""); closeBoltonDropdowns(); }}>
                             <span className="pw-block-bolton-option-icon">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                             </span>
@@ -9730,7 +9738,7 @@ function NovelWorkspacePage() {
                             </span>
                           </button>
                           {(novel.storyBible.boltons ?? []).map((b, i) => (
-                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={() => { setChapterBoltonForActiveChapter(b.id); document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open")); }}>
+                            <button key={b.id} type="button" className={`pw-block-bolton-option ${chapterBoltonId === b.id ? "active" : ""}`} onClick={() => { setChapterBoltonForActiveChapter(b.id); closeBoltonDropdowns(); }}>
                               <span className="pw-block-bolton-option-icon">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                               </span>
@@ -9741,7 +9749,7 @@ function NovelWorkspacePage() {
                             </button>
                           ))}
                           <div className="pw-bolton-dropdown-sep" />
-                          <button type="button" className="pw-block-bolton-option" onClick={() => { document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open")); setWritingPacksOpen(true); }}>
+                          <button type="button" className="pw-block-bolton-option" onClick={() => { closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
                             <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                             </span>
@@ -9850,14 +9858,14 @@ function NovelWorkspacePage() {
                                             const wrap = e.currentTarget.parentElement;
                                             if (!wrap) return;
                                             const wasOpen = wrap.classList.contains("pw-bolton-open");
-                                            document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open"));
+                                            closeBoltonDropdowns();
                                             if (!wasOpen) {
                                               wrap.classList.add("pw-bolton-open");
                                               const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
                                               if (dd) positionDropdown(e.currentTarget, dd);
                                               const closeHandler = (ev: MouseEvent) => {
                                                 if (!wrap.contains(ev.target as Node)) {
-                                                  wrap.classList.remove("pw-bolton-open");
+                                                  closeBoltonDropdowns();
                                                   document.removeEventListener("click", closeHandler, true);
                                                 }
                                               };
@@ -9879,7 +9887,7 @@ function NovelWorkspacePage() {
                                               className={`pw-block-bolton-option pw-bolton-dropdown-none ${!block.notes ? "active" : ""}`}
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                closeBoltonDropdowns();
                                                 const next = [...blocks];
                                                 next[idx] = { ...block, notes: "" };
                                                 updateSceneBlocks(activeChapter.id, next);
@@ -9900,7 +9908,7 @@ function NovelWorkspacePage() {
                                                 className={`pw-block-bolton-option ${block.notes === b.id ? "active" : ""}`}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
-                                                  e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open");
+                                                  closeBoltonDropdowns();
                                                   const next = [...blocks];
                                                   next[idx] = { ...block, notes: b.id };
                                                   updateSceneBlocks(activeChapter.id, next);
@@ -9916,7 +9924,7 @@ function NovelWorkspacePage() {
                                               </button>
                                             ))}
                                             <div className="pw-bolton-dropdown-sep" />
-                                            <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest(".pw-block-bolton-wrap")?.classList.remove("pw-bolton-open"); setWritingPacksOpen(true); }}>
+                                            <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
                                               <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                               </span>
