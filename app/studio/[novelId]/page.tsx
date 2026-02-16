@@ -993,6 +993,11 @@ function NovelWorkspacePage() {
   const [batchProfileQueue, setBatchProfileQueue] = useState<string[]>([]);
   const batchProfileTotalRef = useRef(0);
   const batchProfileAllIdsRef = useRef<string[]>([]);
+  const [newCharPopup, setNewCharPopup] = useState<{
+    charId: string;
+    description: string;
+    generating: boolean;
+  } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -7985,30 +7990,124 @@ function NovelWorkspacePage() {
 
   function addV2Character() {
     if (!novel) return;
+    const charId = `charv2-${Date.now()}`;
+    if (aiOff) {
+      // AI disabled — just create a blank character directly
+      const newChar = {
+        id: charId, name: "New Character", role: "Protagonist" as CharacterRole,
+        logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
+        relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
+        voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
+      };
+      updateStoryBible({ characters: [...(novel.storyBible.characters || []), newChar] });
+      setSelectedV2CharacterId(newChar.id);
+      return;
+    }
+    // Show AI prompt popup
+    setNewCharPopup({ charId, description: "", generating: false });
+  }
+
+  function addV2CharacterBlank(charId: string) {
+    if (!novel) return;
     const newChar = {
-      id: `charv2-${Date.now()}`,
-      name: "New Character",
-      role: "Protagonist" as CharacterRole,
-      logline: "",
-      appearance: "",
-      personality: "",
-      goals: "",
-      fears: "",
-      backstory: "",
-      secrets: "",
-      readerSecretHint: "",
-      accent: "",
-      speakingStyle: "",
-      reactionPattern: "",
-      relationships: [],
-      voiceNotes: "",
-      tags: [],
-      pronouns: "",
-      groups: "",
-      otherNames: "",
+      id: charId, name: "New Character", role: "Protagonist" as CharacterRole,
+      logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+      secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
+      relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
+      voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
     };
     updateStoryBible({ characters: [...(novel.storyBible.characters || []), newChar] });
     setSelectedV2CharacterId(newChar.id);
+    setNewCharPopup(null);
+  }
+
+  async function addV2CharacterWithAi(charId: string, userDescription: string) {
+    if (!novel) return;
+    setNewCharPopup((p) => p ? { ...p, generating: true } : p);
+
+    // Create character placeholder first
+    const newChar = {
+      id: charId, name: "Generating...", role: "Supporting" as CharacterRole,
+      logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+      secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
+      relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
+      voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
+    };
+    updateStoryBible({ characters: [...(novel.storyBible.characters || []), newChar] });
+    setSelectedV2CharacterId(charId);
+
+    try {
+      const context = buildStoryBibleContext("characters");
+      const existingNames = storyCharacters.map((c) => c.name.trim().toLowerCase()).filter(Boolean);
+
+      const prompt = [
+        "Create a brand-new character for this novel based on the author's description below.",
+        "",
+        `Author's description: "${userDescription.trim()}"`,
+        "",
+        "Use the story context and existing characters to make this character fit naturally.",
+        "Give them a real, full human name (first and last) that suits the genre and setting.",
+        "",
+        "Return JSON only in this shape:",
+        `{
+  "name": "string (full first and last name)",
+  "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Custom",
+  "logline": "one-sentence summary of who they are",
+  "appearance": "physical description",
+  "personality": "personality traits and demeanour",
+  "goals": "what they want",
+  "fears": "what they're afraid of",
+  "backstory": "brief background",
+  "accent": "how they sound",
+  "speakingStyle": "speech patterns and vocabulary",
+  "secrets": "hidden information about them",
+  "readerSecretHint": "spoiler-safe hint for readers",
+  "tags": ["string"]
+}`,
+        "",
+        "Rules:",
+        "- Name must be a realistic full name, never a placeholder.",
+        `- Do NOT reuse these existing names: ${existingNames.join(", ") || "none yet"}`,
+        "- Anchor everything to the story context. Don't invent unrelated storylines.",
+        "- readerSecretHint must be spoiler-safe.",
+        "",
+        `Story context:\n${context}`,
+      ].join("\n");
+
+      const data = await requestOpenRouterJson<{
+        name?: string; role?: string; logline?: string;
+        appearance?: string; personality?: string; goals?: string; fears?: string;
+        backstory?: string; accent?: string; speakingStyle?: string;
+        secrets?: string; readerSecretHint?: string; tags?: string[];
+      }>(prompt, 900, { systemMessage: "Character creation specialist. Return only valid JSON. No markdown." });
+
+      const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+      if (typeof data.name === "string" && data.name.trim()) {
+        patch.name = ensureFullCharacterName(data.name.trim(), storyCharacters.length + 1);
+      } else {
+        patch.name = "New Character";
+      }
+      if (typeof data.role === "string" && data.role.trim()) patch.role = normalizeCharacterRole(data.role);
+      if (typeof data.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
+      if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
+      if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
+      if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
+      if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
+      if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
+      if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
+      if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
+      if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
+      if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
+      const aiTags = parseStringList(data.tags);
+      if (aiTags.length) patch.tags = aiTags;
+
+      updateV2Character(charId, patch);
+    } catch (err) {
+      // If AI fails, just leave as blank character so nothing is lost
+      updateV2Character(charId, { name: "New Character" });
+    }
+    setNewCharPopup(null);
   }
 
   function updateV2Character(id: string, patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>>) {
@@ -14024,6 +14123,95 @@ function NovelWorkspacePage() {
                 Generate all profiles
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New character AI prompt popup ── */}
+      {newCharPopup && (
+        <div className="pw-modal-overlay">
+          <div className="pw-modal" style={{ maxWidth: 440, padding: "28px 26px" }}>
+            <div style={{ textAlign: "center", marginBottom: 18 }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 14, margin: "0 auto 12px",
+                background: "rgba(var(--pw-accent-rgb,163,230,53),0.10)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#a3e635)" strokeWidth="2" strokeLinecap="round">
+                  <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+                </svg>
+              </div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em" }}>
+                New Character
+              </h3>
+              <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--pw-text-dim)", fontWeight: 500, lineHeight: 1.5 }}>
+                Want AI to generate this character? Describe them briefly in relation to your story and we'll build a full profile with a name.
+              </p>
+            </div>
+
+            {newCharPopup.generating ? (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 12, margin: "0 auto 12px",
+                  background: "rgba(var(--pw-accent-rgb,163,230,53),0.10)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  animation: "pulse 1.8s ease-in-out infinite",
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#a3e635)" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4m-3.93 7.07l-2.83-2.83M7.76 7.76L4.93 4.93"/>
+                  </svg>
+                </div>
+                <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Creating character...</p>
+                <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 6 }}>
+                  Building profile, this may take a moment.
+                </p>
+                <style>{`@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.7; transform:scale(0.95); } }`}</style>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  placeholder="e.g. The detective's ex-wife who now works as a journalist and is secretly investigating the same case..."
+                  value={newCharPopup.description}
+                  onChange={(e) => setNewCharPopup((p) => p ? { ...p, description: e.target.value } : p)}
+                  style={{
+                    width: "100%", padding: "10px 12px", fontSize: 13, fontWeight: 500,
+                    borderRadius: 8, border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                    background: "var(--pw-surface-alt, rgba(255,255,255,0.04))",
+                    color: "var(--pw-text)", resize: "vertical", fontFamily: "inherit",
+                    lineHeight: 1.55,
+                  }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={() => addV2CharacterBlank(newCharPopup.charId)}
+                    style={{
+                      padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8,
+                      background: "transparent", border: "1px solid var(--pw-border-light, rgba(255,255,255,0.1))",
+                      color: "var(--pw-text-dim)", cursor: "pointer",
+                    }}
+                  >
+                    Skip — I'll fill it in
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newCharPopup.description.trim()}
+                    onClick={() => void addV2CharacterWithAi(newCharPopup.charId, newCharPopup.description)}
+                    style={{
+                      padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8,
+                      background: newCharPopup.description.trim() ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb,163,230,53),0.2)",
+                      border: "none", color: newCharPopup.description.trim() ? "#000" : "var(--pw-text-dim)",
+                      cursor: newCharPopup.description.trim() ? "pointer" : "not-allowed",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    Generate Character
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
