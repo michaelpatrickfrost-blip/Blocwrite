@@ -4417,6 +4417,10 @@ function NovelWorkspacePage() {
       updatedBlocks[blockIndex] = { ...block, prose };
       updateSceneBlocks(targetChapterId, updatedBlocks);
       syncChapterContentFromBlocks(targetChapterId, updatedBlocks);
+      requestAnimationFrame(() => {
+        const el = blockProseRefs.current[blockIndex];
+        if (el) autoSizeEditorInput(el);
+      });
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       let msg = "Prose generation failed for this scene.";
@@ -6637,16 +6641,25 @@ function NovelWorkspacePage() {
     }
   }
 
-  function autoSizeEditorInput(input: HTMLTextAreaElement | null) {
+  function autoSizeEditorInput(input: HTMLTextAreaElement | null, minHeight?: number) {
     if (!input) return;
-    const minimumHeight = 520;
+    const min = minHeight ?? (input.classList.contains("pw-block-prose-seamless") ? 40 : 520);
     input.style.height = "auto";
-    input.style.height = `${Math.max(input.scrollHeight, minimumHeight)}px`;
+    input.style.height = `${Math.max(input.scrollHeight, min)}px`;
   }
 
   useEffect(() => {
     autoSizeEditorInput(editorInputRef.current);
   }, [activeChapter?.id, activeChapter?.content]);
+
+  useEffect(() => {
+    if (!activeChapter) return;
+    const blocks = getSceneBlocks(activeChapter);
+    blocks.forEach((_, idx) => {
+      const el = blockProseRefs.current[idx];
+      if (el) autoSizeEditorInput(el);
+    });
+  }, [activeChapter?.id, JSON.stringify(activeChapter ? getSceneBlocks(activeChapter).map((b) => b.prose?.length ?? 0) : [])]);
 
   /** Force an immediate save (local + server flush) — call when any panel/modal closes */
   function saveNow() {
