@@ -8262,7 +8262,11 @@ function NovelWorkspacePage() {
     const vh = window.innerHeight;
     const pad = 8;
 
-    // Temporarily show and place at (0,0) in fixed coords to measure
+    // Save original display state — if already visible (React-rendered),
+    // don't hide it afterwards; if CSS-class controlled, restore to none.
+    const wasVisible = getComputedStyle(dropdown).display !== "none";
+
+    // Temporarily show at (0,0) in fixed coords to measure
     // the containing-block offset (will-change/transform on ancestors
     // makes position:fixed relative to that ancestor, not viewport).
     dropdown.style.display = "flex";
@@ -8275,7 +8279,7 @@ function NovelWorkspacePage() {
     const ddW = dropdown.offsetWidth || 270;
     const ddH = dropdown.offsetHeight || 280;
     const ddRect = dropdown.getBoundingClientRect();
-    const cbOffsetX = ddRect.left; // where fixed (0,0) actually renders
+    const cbOffsetX = ddRect.left;
     const cbOffsetY = ddRect.top;
 
     const trigCenterX = triggerRect.left + triggerRect.width / 2;
@@ -8294,8 +8298,13 @@ function NovelWorkspacePage() {
     // Subtract the containing-block offset to convert viewport → local coords
     dropdown.style.top = `${Math.round(top - cbOffsetY)}px`;
     dropdown.style.left = `${Math.round(left - cbOffsetX)}px`;
-    dropdown.style.removeProperty("display");
-    dropdown.style.removeProperty("flex-direction");
+
+    // Only remove inline display if the element uses CSS-class toggling
+    // (not React conditional rendering which already handles display)
+    if (!wasVisible) {
+      dropdown.style.removeProperty("display");
+      dropdown.style.removeProperty("flex-direction");
+    }
     dropdown.style.visibility = "";
   }
 
@@ -9636,6 +9645,7 @@ function NovelWorkspacePage() {
                     {!aiOff && activeChapter && (activeChapter.content ?? "").trim().length > 20 && (
                       <div style={{ position: "relative" }}>
                         <button type="button"
+                          data-pw-rewrite-trigger
                           disabled={chapterRewriteBusy}
                           onClick={() => setChapterRewriteMenuOpen(!chapterRewriteMenuOpen)}
                           style={{
@@ -9659,8 +9669,7 @@ function NovelWorkspacePage() {
                             <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setChapterRewriteMenuOpen(false)} />
                             <div ref={(el) => {
                               if (!el) return;
-                              const parent = el.previousElementSibling?.previousElementSibling?.previousElementSibling as HTMLElement | null; // backdrop -> skip to trigger's wrapper
-                              const trigger = el.parentElement?.querySelector("button") as HTMLElement | null;
+                              const trigger = document.querySelector("[data-pw-rewrite-trigger]") as HTMLElement | null;
                               if (trigger) positionDropdown(trigger, el);
                             }} style={{
                               position: "fixed", zIndex: 9999,
