@@ -16,12 +16,6 @@ type Annotation = {
   createdAt?: string;
 };
 
-type Reaction = {
-  chapterId: string;
-  paragraphIdx: number;
-  emoji: string;
-};
-
 type GeneralNote = {
   chapterId: string;
   text: string;
@@ -65,15 +59,6 @@ const TYPE_META: Record<AnnotationType, { label: string; icon: string; dark: { c
     light: { color: "#dc2626", bg: "rgba(220,38,38,0.06)",   border: "rgba(220,38,38,0.12)",   highlight: "rgba(220,38,38,0.08)" },
   },
 };
-
-const REACTION_EMOJIS = [
-  { emoji: "\u2764\uFE0F", label: "Love" },
-  { emoji: "\uD83D\uDD25", label: "Fire" },
-  { emoji: "\uD83D\uDCAF", label: "Perfect" },
-  { emoji: "\u2753", label: "Confused" },
-  { emoji: "\uD83D\uDE22", label: "Emotional" },
-  { emoji: "\uD83D\uDCAA", label: "Strong" },
-];
 
 const DARK = {
   bg: "#1e1c1c",
@@ -183,10 +168,8 @@ export default function ShareReaderPage() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [readProgress, setReadProgress] = useState(0);
-  const [reactions, setReactions] = useState<Reaction[]>([]);
   const [generalNotes, setGeneralNotes] = useState<GeneralNote[]>([]);
   const [showNotesSidebar, setShowNotesSidebar] = useState(true);
-  const [hoveredParaIdx, setHoveredParaIdx] = useState<number | null>(null);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
 
   useEffect(() => { setTheme(getInitialTheme()); }, []);
@@ -228,9 +211,9 @@ export default function ShareReaderPage() {
   // ── Auto-save to localStorage ──
   const storageKey = `blocwrite-share-draft-${token}`;
 
-  function saveDraftToStorage(anns: Annotation[], reacts: Reaction[], gNotes: GeneralNote[], name: string) {
+  function saveDraftToStorage(anns: Annotation[], gNotes: GeneralNote[], name: string) {
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ annotations: anns, reactions: reacts, generalNotes: gNotes, readerName: name }));
+      localStorage.setItem(storageKey, JSON.stringify({ annotations: anns, generalNotes: gNotes, readerName: name }));
     } catch { /* ignore */ }
   }
 
@@ -238,7 +221,7 @@ export default function ShareReaderPage() {
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) return null;
-      return JSON.parse(raw) as { annotations?: Annotation[]; reactions?: Reaction[]; generalNotes?: GeneralNote[]; readerName?: string };
+      return JSON.parse(raw) as { annotations?: Annotation[]; generalNotes?: GeneralNote[]; readerName?: string };
     } catch { return null; }
   }
 
@@ -246,12 +229,12 @@ export default function ShareReaderPage() {
     try { localStorage.removeItem(storageKey); } catch { /* ignore */ }
   }
 
-  // Save draft whenever annotations/reactions/notes change
+  // Save draft whenever annotations/notes change
   useEffect(() => {
     if (!data || submitted) return;
-    saveDraftToStorage(annotations, reactions, generalNotes, readerName);
+    saveDraftToStorage(annotations, generalNotes, readerName);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [annotations, reactions, generalNotes, readerName, submitted]);
+  }, [annotations, generalNotes, readerName, submitted]);
 
   function loadShareData(d: ShareData) {
     setData(d);
@@ -274,7 +257,6 @@ export default function ShareReaderPage() {
       } else {
         setAnnotations(existing);
       }
-      if (draft.reactions) setReactions(draft.reactions);
       if (draft.generalNotes) setGeneralNotes(draft.generalNotes);
       if (draft.readerName) setReaderName(draft.readerName);
     } else {
@@ -322,7 +304,6 @@ export default function ShareReaderPage() {
   const totalWords = useMemo(() => data?.chapters?.reduce((sum, ch) => sum + wordCount(ch.content || ""), 0) ?? 0, [data]);
 
   const chapterAnnotations = annotations.filter((a) => activeChapter && a.sharedChapterId === activeChapter.id);
-  const chapterReactions = reactions.filter((r) => activeChapter && r.chapterId === activeChapter.id);
   const chapterGeneralNote = generalNotes.find((n) => activeChapter && n.chapterId === activeChapter.id);
 
   // ── Reading progress tracking ──
@@ -401,15 +382,6 @@ export default function ShareReaderPage() {
 
   const removeAnnotation = (idx: number) => setAnnotations((prev) => prev.filter((_, i) => i !== idx));
 
-  const toggleReaction = (emoji: string) => {
-    if (!activeChapter || submitted || hoveredParaIdx === null) return;
-    setReactions((prev) => {
-      const existing = prev.findIndex((r) => r.chapterId === activeChapter.id && r.paragraphIdx === hoveredParaIdx && r.emoji === emoji);
-      if (existing !== -1) return prev.filter((_, i) => i !== existing);
-      return [...prev, { chapterId: activeChapter.id, paragraphIdx: hoveredParaIdx, emoji }];
-    });
-  };
-
   const updateGeneralNote = (text: string) => {
     if (!activeChapter) return;
     setGeneralNotes((prev) => {
@@ -426,9 +398,8 @@ export default function ShareReaderPage() {
   const submitFeedback = async () => {
     if (!data) return;
     const hasAnnotations = annotations.length > 0;
-    const hasReactions = reactions.length > 0;
     const hasGeneralNotes = generalNotes.some((n) => n.text.trim());
-    if (!hasAnnotations && !hasReactions && !hasGeneralNotes) return;
+    if (!hasAnnotations && !hasGeneralNotes) return;
 
     setSubmitting(true);
     try {
@@ -448,13 +419,9 @@ export default function ShareReaderPage() {
         if (!res.ok) { const d = await res.json(); alert(d.error || "Failed to save."); return; }
       }
 
-      // Submit general notes + reactions as a combined annotation
+      // Submit general notes
       for (const gn of generalNotes) {
         if (!gn.text.trim()) continue;
-        const chapterReacts = reactions.filter((r) => r.chapterId === gn.chapterId);
-        const reactSummary = chapterReacts.length > 0
-          ? `\n\nParagraph reactions: ${chapterReacts.map((r) => `P${r.paragraphIdx + 1}: ${r.emoji}`).join(", ")}`
-          : "";
         await fetch(`/api/share/${token}/annotate`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -463,28 +430,7 @@ export default function ShareReaderPage() {
               sharedChapterId: gn.chapterId,
               selectedText: "[General chapter feedback]",
               startOffset: 0, endOffset: 0,
-              note: gn.text.trim() + reactSummary,
-              type: "comment",
-            }],
-          }),
-        });
-      }
-
-      // Submit orphan reactions (chapters with reactions but no general note)
-      const chaptersWithGeneralNotes = new Set(generalNotes.filter((n) => n.text.trim()).map((n) => n.chapterId));
-      const orphanReactChapters = [...new Set(reactions.map((r) => r.chapterId))].filter((id) => !chaptersWithGeneralNotes.has(id));
-      for (const chId of orphanReactChapters) {
-        const chReacts = reactions.filter((r) => r.chapterId === chId);
-        if (chReacts.length === 0) continue;
-        await fetch(`/api/share/${token}/annotate`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            readerName: readerName.trim() || undefined,
-            annotations: [{
-              sharedChapterId: chId,
-              selectedText: "[Paragraph reactions]",
-              startOffset: 0, endOffset: 0,
-              note: `Paragraph reactions: ${chReacts.map((r) => `P${r.paragraphIdx + 1}: ${r.emoji}`).join(", ")}`,
+              note: gn.text.trim(),
               type: "comment",
             }],
           }),
@@ -498,7 +444,7 @@ export default function ShareReaderPage() {
     finally { setSubmitting(false); }
   };
 
-  const totalFeedbackCount = annotations.length + reactions.length + generalNotes.filter((n) => n.text.trim()).length;
+  const totalFeedbackCount = annotations.length + generalNotes.filter((n) => n.text.trim()).length;
 
   function renderHighlightedContent(content: string, anns: Annotation[]) {
     const paragraphs = content.split("\n\n");
@@ -515,7 +461,6 @@ export default function ShareReaderPage() {
 
       // Find annotations that overlap this paragraph
       const paraAnns = anns.filter((a) => a.startOffset < paraEndOffset && a.endOffset > paraStartOffset);
-      const paraReacts = chapterReactions.filter((r) => r.paragraphIdx === pIdx);
 
       let paraContent: React.ReactNode;
       if (paraAnns.length === 0) {
@@ -549,12 +494,7 @@ export default function ShareReaderPage() {
       }
 
       return (
-        <div
-          key={pIdx}
-          style={{ position: "relative", marginBottom: 24 }}
-          onMouseEnter={() => !submitted && setHoveredParaIdx(pIdx)}
-          onMouseLeave={() => setHoveredParaIdx(null)}
-        >
+        <div key={pIdx} style={{ position: "relative", marginBottom: 24 }}>
           {/* Margin annotation indicators */}
           {paraAnns.length > 0 && (
             <div style={{
@@ -578,51 +518,6 @@ export default function ShareReaderPage() {
           )}
 
           <p style={{ lineHeight: 1.9, margin: 0 }}>{paraContent}</p>
-
-          {/* Paragraph reactions display */}
-          {paraReacts.length > 0 && (
-            <div style={{
-              display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap",
-            }}>
-              {paraReacts.map((r, i) => (
-                <span key={i} style={{
-                  fontSize: 14, padding: "2px 6px", borderRadius: 6,
-                  background: C.accentMuted, border: `1px solid ${C.borderLight}`,
-                  cursor: submitted ? "default" : "pointer",
-                  transition: "transform 0.1s",
-                }}
-                onClick={() => !submitted && setReactions((prev) => prev.filter((_, idx) => idx !== reactions.indexOf(r)))}
-                onMouseEnter={(e) => { if (!submitted) e.currentTarget.style.transform = "scale(1.15)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                >{r.emoji}</span>
-              ))}
-            </div>
-          )}
-
-          {/* Hover reaction bar */}
-          {hoveredParaIdx === pIdx && !submitted && !selPopup && (
-            <div style={{
-              position: "absolute", right: -48, top: "50%", transform: "translateY(-50%)",
-              display: "flex", flexDirection: "column", gap: 2,
-              animation: "shareSlideIn 0.12s ease",
-            }}>
-              {REACTION_EMOJIS.map(({ emoji, label }) => {
-                const isActive = chapterReactions.some((r) => r.paragraphIdx === pIdx && r.emoji === emoji);
-                return (
-                  <button key={emoji} title={label} onClick={() => toggleReaction(emoji)} style={{
-                    width: 28, height: 28, borderRadius: 8, border: "none",
-                    background: isActive ? C.accentMuted : "transparent",
-                    cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
-                    opacity: isActive ? 1 : 0.4, transition: "all 0.12s",
-                    padding: 0,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1.2)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.opacity = isActive ? "1" : "0.4"; e.currentTarget.style.transform = "scale(1)"; }}
-                  >{emoji}</button>
-                );
-              })}
-            </div>
-          )}
         </div>
       );
     });
@@ -796,7 +691,6 @@ export default function ShareReaderPage() {
         @keyframes obHighlightSweep { 0% { width: 0; } 100% { width: 100%; } }
         @keyframes obCursorMove { 0% { left: 10%; opacity: 0; } 20% { opacity: 1; } 50% { left: 55%; } 100% { left: 55%; opacity: 1; } }
         @keyframes obDotPop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
-        @keyframes obEmojiPop { 0% { transform: scale(0) rotate(-20deg); opacity: 0; } 60% { transform: scale(1.2) rotate(5deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
         @keyframes obTypeIn { from { width: 0; } to { width: 100%; } }
         ::selection { background: ${C.selectionBg}; color: ${C.selectionText}; }
       `}</style>
@@ -941,39 +835,6 @@ export default function ShareReaderPage() {
             ),
           },
           {
-            title: "React to what you read",
-            desc: "Hover over any paragraph and you\u2019ll see quick reaction emojis appear on the right. Tap one to let the author know which passages moved you, made you laugh, confused you, or hit especially hard.",
-            visual: (
-              <div style={{ position: "relative", padding: "18px 24px", borderRadius: 14, background: demoLineBg, border: `1px solid ${C.borderLight}` }}>
-                <div style={{ fontFamily: "Georgia, serif", fontSize: 13, color: C.prose, lineHeight: 1.8, opacity: 0.5 }}>
-                  She looked up from the letter, her hands trembling. The words blurred together but the meaning was unmistakable.
-                </div>
-                {/* Animated emoji reactions */}
-                <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: 3 }}>
-                  {[
-                    { emoji: "\u2764\uFE0F", delay: "0.4s" },
-                    { emoji: "\uD83D\uDD25", delay: "0.6s" },
-                    { emoji: "\uD83D\uDE22", delay: "0.8s" },
-                  ].map(({ emoji, delay }) => (
-                    <span key={emoji} style={{
-                      fontSize: 16, width: 28, height: 28, borderRadius: 8,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      animation: `obEmojiPop 0.5s cubic-bezier(0.34,1.56,0.64,1) ${delay} both`,
-                    }}>{emoji}</span>
-                  ))}
-                </div>
-                {/* Inline reaction display */}
-                <div style={{
-                  display: "flex", gap: 4, marginTop: 8,
-                  animation: "obDotPop 0.4s cubic-bezier(0.34,1.56,0.64,1) 1.2s both",
-                }}>
-                  <span style={{ fontSize: 13, padding: "2px 6px", borderRadius: 6, background: C.accentMuted, border: `1px solid ${C.borderLight}` }}>{"\u2764\uFE0F"}</span>
-                  <span style={{ fontSize: 13, padding: "2px 6px", borderRadius: 6, background: C.accentMuted, border: `1px solid ${C.borderLight}` }}>{"\uD83D\uDE22"}</span>
-                </div>
-              </div>
-            ),
-          },
-          {
             title: "Share your overall thoughts",
             desc: "At the bottom of each chapter you\u2019ll find a space for your general impressions. Tell the author what landed, what felt off, pacing thoughts, emotional reactions \u2014 anything that doesn\u2019t tie to a specific passage.",
             visual: (
@@ -1013,8 +874,8 @@ export default function ShareReaderPage() {
                 {/* Summary mockup */}
                 <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 14 }}>
                   {[
-                    { count: 4, label: "Notes", color: "#94a3b8" },
-                    { count: 6, label: "Reactions", color: C.accent },
+                    { count: 4, label: "Annotations", color: "#94a3b8" },
+                    { count: 2, label: "Suggestions", color: C.accent },
                     { count: 1, label: "General", color: C.textMuted },
                   ].map(({ count, label, color }, i) => (
                     <div key={label} style={{
@@ -1166,7 +1027,7 @@ export default function ShareReaderPage() {
                     transition: "all 0.2s",
                     boxShadow: `0 2px 12px ${theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.1)"}`,
                   }}>
-                    {onboardingStep === 3 ? "Start Reading" : "Next"}
+                    {onboardingStep === 2 ? "Start Reading" : "Next"}
                   </button>
                 </div>
               </div>
@@ -1177,39 +1038,63 @@ export default function ShareReaderPage() {
 
       <div style={{ display: "flex", maxWidth: 1400, margin: "0 auto", minHeight: "calc(100vh - 59px)" }}>
 
-        {/* ── Chapter sidebar ── */}
-        {multipleChapters && (
-          <aside style={{
-            width: 220, padding: "20px 10px", borderRight: `1px solid ${C.borderLight}`,
-            flexShrink: 0, overflowY: "auto", background: C.surfaceAlt, transition: "background 0.3s",
-          }}>
+        {/* ── Chapter sidebar (always visible) ── */}
+        <aside style={{
+          width: 240, padding: "28px 14px 20px", borderRight: `1px solid ${C.borderLight}`,
+          flexShrink: 0, overflowY: "auto", background: C.surfaceAlt, transition: "background 0.3s",
+          display: "flex", flexDirection: "column",
+        }}>
+          {/* Manuscript info */}
+          <div style={{ padding: "0 10px", marginBottom: 20 }}>
             <p style={{
               fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 10, padding: "0 10px",
+              letterSpacing: "0.08em", marginBottom: 4,
             }}>
-              Chapters
+              Manuscript
             </p>
+            <p style={{ fontSize: 13, color: C.text, fontWeight: 600, margin: 0, lineHeight: 1.4 }}>
+              {data.chapters.length} chapter{data.chapters.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+
+          <div style={{ height: 1, background: C.borderLight, margin: "0 10px 14px" }} />
+
+          <p style={{
+            fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase",
+            letterSpacing: "0.08em", marginBottom: 8, padding: "0 10px",
+          }}>
+            Contents
+          </p>
+          <div style={{ flex: 1, overflowY: "auto" }}>
             {data.chapters.map((ch, idx) => {
               const count = annotations.filter((a) => a.sharedChapterId === ch.id).length;
-              const reactCount = reactions.filter((r) => r.chapterId === ch.id).length;
               const hasNote = generalNotes.some((n) => n.chapterId === ch.id && n.text.trim());
               const active = idx === activeChapterIdx;
-              const totalBadge = count + reactCount + (hasNote ? 1 : 0);
+              const totalBadge = count + (hasNote ? 1 : 0);
               return (
-                <button key={ch.id} onClick={() => { setActiveChapterIdx(idx); setHoveredParaIdx(null); }} style={{
+                <button key={ch.id} onClick={() => { setActiveChapterIdx(idx); window.scrollTo(0, 0); }} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
-                  width: "100%", textAlign: "left", padding: "9px 12px", borderRadius: 8,
-                  border: "none", cursor: "pointer", marginBottom: 2,
-                  background: active ? C.hoverBg : "transparent",
+                  width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 10,
+                  border: active ? `1px solid ${theme === "dark" ? "rgba(163,230,53,0.12)" : "rgba(77,124,15,0.08)"}` : "1px solid transparent",
+                  cursor: "pointer", marginBottom: 3,
+                  background: active ? C.accentMuted : "transparent",
                   color: active ? C.text : C.textMuted,
-                  fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.12s",
+                  fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.15s",
                   fontFamily: "inherit",
                 }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = C.hoverBgSubtle; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = C.hoverBgSubtle; e.currentTarget.style.color = C.text; } }}
+                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.textMuted; } }}
                 >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                    {ch.title || `Chapter ${idx + 1}`}
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden", flex: 1 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: active ? (theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.1)") : (theme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"),
+                      color: active ? C.accent : C.textDim,
+                    }}>{idx + 1}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {ch.title || `Chapter ${idx + 1}`}
+                    </span>
                   </span>
                   {totalBadge > 0 && (
                     <span style={{
@@ -1222,41 +1107,47 @@ export default function ShareReaderPage() {
                 </button>
               );
             })}
+          </div>
 
-            {/* Reading stats */}
-            <div style={{ marginTop: 20, padding: "14px 12px", borderTop: `1px solid ${C.borderLight}` }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-                Stats
-              </p>
-              <p style={{ fontSize: 12, color: C.textMuted, margin: "0 0 4px" }}>
-                {totalWords.toLocaleString()} words total
-              </p>
-              <p style={{ fontSize: 12, color: C.textMuted, margin: 0 }}>
-                {readTime(totalWords)}
-              </p>
+          {/* Reading stats */}
+          <div style={{ padding: "16px 12px 0", borderTop: `1px solid ${C.borderLight}`, marginTop: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Reading Info
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: C.textMuted }}>Total words</span>
+                <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{totalWords.toLocaleString()}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: C.textMuted }}>Est. time</span>
+                <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{readTime(totalWords)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: C.textMuted }}>Progress</span>
+                <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>{readProgress}%</span>
+              </div>
             </div>
-          </aside>
-        )}
+          </div>
+        </aside>
 
         {/* ── Main reading area ── */}
         <main style={{
-          flex: 1, minWidth: 0, padding: "40px 48px 40px 68px", maxWidth: showNotesSidebar ? undefined : 780,
+          flex: 1, minWidth: 0, padding: "48px 56px 48px 72px",
           minHeight: "100%",
           background: C.surface, transition: "background 0.3s",
         }}>
           {activeChapter ? (
             <>
               <div style={{ marginBottom: 28 }}>
-                {multipleChapters && (
-                  <p style={{
-                    fontSize: 11, color: C.textDim, fontWeight: 600, textTransform: "uppercase",
-                    letterSpacing: "0.05em", marginBottom: 6,
-                  }}>
-                    Chapter {activeChapterIdx + 1} of {data.chapters.length}
-                  </p>
-                )}
+                <p style={{
+                  fontSize: 11, color: C.textDim, fontWeight: 600, textTransform: "uppercase",
+                  letterSpacing: "0.05em", marginBottom: 6,
+                }}>
+                  Chapter {activeChapterIdx + 1}{multipleChapters ? ` of ${data.chapters.length}` : ""}
+                </p>
                 <h2 style={{
-                  fontSize: 28, fontWeight: 700, color: C.text,
+                  fontSize: 30, fontWeight: 700, color: C.text,
                   letterSpacing: "-0.02em", margin: 0, lineHeight: 1.3,
                 }}>
                   {activeChapter.title || `Chapter ${activeChapterIdx + 1}`}
@@ -1282,7 +1173,7 @@ export default function ShareReaderPage() {
               <div style={{ height: 1, background: C.borderLight, marginBottom: 32 }} />
 
               {/* Inline hint for first-time users */}
-              {!submitted && annotations.length === 0 && reactions.length === 0 && (
+              {!submitted && annotations.length === 0 && (
                 <div style={{
                   marginBottom: 28, padding: "14px 18px", borderRadius: 12,
                   background: C.accentMuted,
@@ -1304,7 +1195,7 @@ export default function ShareReaderPage() {
                       Select any text to leave a note
                     </p>
                     <p style={{ fontSize: 12, color: C.textMuted, margin: "2px 0 0", lineHeight: 1.4 }}>
-                      Highlight a passage to comment, suggest changes, or flag issues. Hover paragraphs for quick reactions.
+                      Highlight a passage to comment, suggest changes, or flag issues for the author.
                     </p>
                   </div>
                 </div>
@@ -1312,10 +1203,10 @@ export default function ShareReaderPage() {
 
               {activeChapter.content ? (
                 <div ref={contentRef} onMouseUp={handleMouseUp} style={{
-                  fontSize: 16, color: C.prose, userSelect: "text", cursor: "text",
+                  fontSize: 17, color: C.prose, userSelect: "text", cursor: "text",
                   fontFamily: "Georgia, 'Times New Roman', serif",
                   letterSpacing: "0.01em",
-                  maxWidth: 680,
+                  maxWidth: 640,
                 }}>
                   {renderHighlightedContent(activeChapter.content, chapterAnnotations)}
                 </div>
@@ -1374,7 +1265,7 @@ export default function ShareReaderPage() {
                   display: "flex", justifyContent: "space-between", marginTop: 40, paddingTop: 20,
                   borderTop: `1px solid ${C.borderLight}`, maxWidth: 680,
                 }}>
-                  <button onClick={() => { setActiveChapterIdx((i) => Math.max(0, i - 1)); setHoveredParaIdx(null); window.scrollTo(0, 0); }} disabled={activeChapterIdx === 0} style={{
+                  <button onClick={() => { setActiveChapterIdx((i) => Math.max(0, i - 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === 0} style={{
                     fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 8,
                     border: `1px solid ${C.border}`, background: C.surfaceAlt,
                     color: activeChapterIdx === 0 ? C.textDim : C.text,
@@ -1383,7 +1274,7 @@ export default function ShareReaderPage() {
                   }}>
                     &#8592; Previous
                   </button>
-                  <button onClick={() => { setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1)); setHoveredParaIdx(null); window.scrollTo(0, 0); }} disabled={activeChapterIdx === data.chapters.length - 1} style={{
+                  <button onClick={() => { setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === data.chapters.length - 1} style={{
                     fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 8,
                     border: `1px solid ${C.border}`, background: C.surfaceAlt,
                     color: activeChapterIdx === data.chapters.length - 1 ? C.textDim : C.text,
@@ -1424,7 +1315,7 @@ export default function ShareReaderPage() {
               </span>
             </div>
 
-            {chapterAnnotations.length === 0 && chapterReactions.length === 0 && !chapterGeneralNote?.text && (
+            {chapterAnnotations.length === 0 && !chapterGeneralNote?.text && (
               <div style={{
                 padding: "32px 16px", textAlign: "center",
                 borderRadius: 12, background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
@@ -1501,26 +1392,6 @@ export default function ShareReaderPage() {
               </div>
             )}
 
-            {/* Reactions summary */}
-            {chapterReactions.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
-                  Reactions ({chapterReactions.length})
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {chapterReactions.map((r, i) => (
-                    <span key={i} style={{
-                      fontSize: 12, padding: "3px 8px", borderRadius: 6,
-                      background: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
-                      border: `1px solid ${C.borderLight}`,
-                    }}>
-                      {r.emoji} P{r.paragraphIdx + 1}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* General note preview */}
             {chapterGeneralNote?.text && (
               <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 10, background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)", border: `1px solid ${C.borderLight}` }}>
@@ -1541,8 +1412,8 @@ export default function ShareReaderPage() {
                 </p>
                 {data.chapters.map((ch, idx) => {
                   const count = annotations.filter((a) => a.sharedChapterId === ch.id).length;
-                  const reactCount = reactions.filter((r) => r.chapterId === ch.id).length;
-                  const total = count + reactCount;
+                  const hasNote = generalNotes.some((n) => n.chapterId === ch.id && n.text.trim());
+                  const total = count + (hasNote ? 1 : 0);
                   if (total === 0) return null;
                   return (
                     <div key={ch.id} style={{
