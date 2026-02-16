@@ -992,6 +992,7 @@ function NovelWorkspacePage() {
   const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string; done: number } | null>(null);
   const [batchProfileQueue, setBatchProfileQueue] = useState<string[]>([]);
   const batchProfileTotalRef = useRef(0);
+  const batchProfileAllIdsRef = useRef<string[]>([]);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -1168,13 +1169,75 @@ function NovelWorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchProfileQueue]);
 
-  // When queue empties, clear progress
+  // When queue empties, link relationships then clear progress
   useEffect(() => {
-    if (batchProfileQueue.length === 0 && batchProfileTotalRef.current > 0) {
+    if (batchProfileQueue.length !== 0 || batchProfileTotalRef.current === 0) return;
+
+    const allIds = batchProfileAllIdsRef.current;
+    const chars = storyCharacters.filter((c) => allIds.includes(c.id));
+
+    if (chars.length < 2) {
       setProfileGenProgress(null);
       setStoryAiBusyAction(null);
       batchProfileTotalRef.current = 0;
+      batchProfileAllIdsRef.current = [];
+      return;
     }
+
+    let cancelled = false;
+
+    const linkRelationships = async () => {
+      setProfileGenProgress({ current: chars.length, total: chars.length, name: "Linking characters...", done: chars.length });
+
+      try {
+        const nameList = chars.map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ");
+        const ctx = buildStoryBibleContext("characters");
+        const relPrompt = [
+          `Characters: ${nameList}`,
+          `Story: ${ctx.slice(0, 1500)}`,
+          "Return a JSON array of meaningful relationships between these characters.",
+          "Include family (husband/wife/parent/child/sibling), friends, rivals, mentors, colleagues, enemies, lovers etc.",
+          '[{"from":"Full Name","to":"Full Name","type":"spouse/parent/child/sibling/friend/rival/lover/mentor/ally/enemy/colleague","description":"brief description"}]',
+          "Only include real story-relevant relationships. Return ONLY the JSON array.",
+        ].join("\n");
+
+        const data = await requestOpenRouterJson<Array<{ from?: string; to?: string; type?: string; description?: string }>>(
+          relPrompt, 500, { systemMessage: "Relationship mapper. Return ONLY a valid JSON array. No markdown, no explanation." },
+        );
+
+        if (cancelled) return;
+
+        const relArr = Array.isArray(data) ? data : [];
+        for (const rel of relArr) {
+          if (!rel.from || !rel.to || !rel.type) continue;
+          const fromLow = rel.from.trim().toLowerCase();
+          const toLow = rel.to.trim().toLowerCase();
+          const fc = storyCharacters.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+          const tc = storyCharacters.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
+          if (fc && tc && fc.id !== tc.id) {
+            const existing = fc.relationships ?? [];
+            if (!existing.some((r) => r.targetCharacterId === tc.id)) {
+              updateV2Character(fc.id, {
+                relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
+              });
+            }
+          }
+        }
+      } catch {
+        // Relationships are a bonus — don't fail anything
+      }
+
+      if (!cancelled) {
+        setProfileGenProgress(null);
+        setStoryAiBusyAction(null);
+        batchProfileTotalRef.current = 0;
+        batchProfileAllIdsRef.current = [];
+      }
+    };
+
+    void linkRelationships();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchProfileQueue]);
 
   useEffect(() => {
@@ -5372,6 +5435,7 @@ function NovelWorkspacePage() {
     setNameConfirmPopup(null);
     setStoryAiError(null);
     batchProfileTotalRef.current = characterIds.length;
+    batchProfileAllIdsRef.current = [...characterIds];
     setBatchProfileQueue([...characterIds]);
   }
 
@@ -13980,13 +14044,13 @@ function NovelWorkspacePage() {
               </svg>
             </div>
             <div style={{ fontSize: 15, fontWeight: 800, color: "var(--pw-text)", letterSpacing: "-0.01em" }}>
-              {profileGenProgress.name === "Linking..."
+              {profileGenProgress.name === "Linking characters..."
                 ? "Connecting characters"
                 : profileGenProgress.done === profileGenProgress.total
                   ? "Finishing up"
                   : "Building profiles"}
             </div>
-            {profileGenProgress.name && profileGenProgress.name !== "Linking..." && (
+            {profileGenProgress.name && profileGenProgress.name !== "Linking characters..." && (
               <p style={{ marginTop: 4, fontSize: 13, color: "var(--pw-text-dim)", fontWeight: 500 }}>
                 <strong style={{ color: "var(--pw-text)" }}>{profileGenProgress.name}</strong> — {profileGenProgress.current} of {profileGenProgress.total}
               </p>
@@ -14006,6 +14070,11 @@ function NovelWorkspacePage() {
             </div>
             <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 10, fontWeight: 600 }}>
               {profileGenProgress.done} of {profileGenProgress.total} done
+            </p>
+            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, fontWeight: 400, opacity: 0.7 }}>
+              {profileGenProgress.name === "Linking characters..."
+                ? "Almost there — connecting relationships"
+                : "This may take a few minutes. Sit tight, your characters are being crafted."}
             </p>
             <style>{`@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.7; transform:scale(0.95); } }`}</style>
           </div>
