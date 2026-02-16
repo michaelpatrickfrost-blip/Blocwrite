@@ -5322,18 +5322,24 @@ function NovelWorkspacePage() {
     const allChars = novel.storyBible.characters ?? [];
     const sysMsg = "You are a character development specialist for novel drafting. Build vivid, canon-consistent character profiles. Return only valid JSON.";
 
-    // Build a roster summary so the AI knows about all characters for relationships
     const rosterSummary = allChars
       .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? ": " + c.logline : ""}`)
       .join("\n");
 
-    async function generateOneProfile(charId: string) {
+    type ProfileResult = {
+      appearance?: string; personality?: string; goals?: string; fears?: string;
+      backstory?: string; speakingStyle?: string; secrets?: string;
+      readerSecretHint?: string; accent?: string; reactionPattern?: string;
+      voiceNotes?: string; tags?: string[];
+      relationships?: Array<{ targetName?: string; type?: string; description?: string }>;
+    };
+
+    async function generateOneProfile(charId: string): Promise<boolean> {
       const character = allChars.find((c) => c.id === charId);
-      if (!character) return;
+      if (!character) return true;
 
-      setProfileGenProgress((prev) => prev ? { ...prev, current: prev.current + 1, name: character.name } : prev);
+      setProfileGenProgress((prev) => prev ? { ...prev, name: character.name } : prev);
 
-      // Build list of other character names with their IDs for relationship linking
       const otherChars = allChars
         .filter((c) => c.id !== charId)
         .map((c) => ({ id: c.id, name: c.name, role: c.role }));
@@ -5372,15 +5378,11 @@ function NovelWorkspacePage() {
       ].filter(Boolean).join("\n");
 
       try {
-        type ProfileResult = {
-          appearance?: string; personality?: string; goals?: string; fears?: string;
-          backstory?: string; speakingStyle?: string; secrets?: string;
-          readerSecretHint?: string; accent?: string; reactionPattern?: string;
-          voiceNotes?: string; tags?: string[];
-          relationships?: Array<{ targetName?: string; type?: string; description?: string }>;
-        };
+        // Fresh abort controller for each character so previous timeouts don't poison later calls
+        aiAbortRef.current?.abort();
+        aiAbortRef.current = new AbortController();
 
-        const data = await requestOpenRouterJson<ProfileResult>(prompt, 900, { systemMessage: sysMsg, timeoutMs: 120000 });
+        const data = await requestOpenRouterJson<ProfileResult>(prompt, 900, { systemMessage: sysMsg, timeoutMs: 150000 });
 
         const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
         if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
@@ -5397,7 +5399,6 @@ function NovelWorkspacePage() {
         const aiTags = parseStringList(data.tags);
         if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
 
-        // Resolve relationships — match targetName to actual character IDs
         if (Array.isArray(data.relationships) && data.relationships.length > 0) {
           const resolvedRels: Array<{ targetCharacterId: string; type: string; description?: string }> = [];
           for (const rel of data.relationships) {
@@ -5406,13 +5407,11 @@ function NovelWorkspacePage() {
             const target = allChars.find((c) => {
               const cNameLower = c.name.trim().toLowerCase();
               if (cNameLower === targetNameLower) return true;
-              // Match on first name if full name doesn't match
               const cFirst = cNameLower.split(/\s+/)[0];
               const tFirst = targetNameLower.split(/\s+/)[0];
               return cFirst && tFirst && cFirst === tFirst;
             });
             if (target && target.id !== charId) {
-              // Avoid duplicate relationships
               const alreadyLinked = resolvedRels.some((r) => r.targetCharacterId === target.id);
               if (!alreadyLinked) {
                 resolvedRels.push({
@@ -5429,18 +5428,58 @@ function NovelWorkspacePage() {
         }
 
         updateV2Character(character.id, patch);
+        return true;
       } catch (error) {
         if (isCancelledError(error)) throw error;
+        return false;
       }
-
-      setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
     }
 
-    // Run sequentially — one at a time for reliability
+    // Process each character one at a time with a cooldown between calls
+    // and automatic retry for any that fail
+    const failed: string[] = [];
     try {
-      for (const id of characterIds) {
-        if (aiAbortRef.current?.signal.aborted) break;
-        await generateOneProfile(id);
+      for (let i = 0; i < characterIds.length; i++) {
+        const id = characterIds[i];
+        // Cooldown between characters — lets the API breathe
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        setProfileGenProgress((prev) => prev ? { ...prev, current: i + 1 } : prev);
+        const ok = await generateOneProfile(id);
+        if (ok) {
+          setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
+        } else {
+          failed.push(id);
+        }
+      }
+
+      // Retry failed ones — fresh attempt after a longer cooldown
+      if (failed.length > 0) {
+        setProfileGenProgress((prev) => prev ? { ...prev, name: "Retrying..." } : prev);
+        await new Promise((r) => setTimeout(r, 3000));
+        const stillFailed: string[] = [];
+        for (let i = 0; i < failed.length; i++) {
+          if (i > 0) await new Promise((r) => setTimeout(r, 2500));
+          const ok = await generateOneProfile(failed[i]);
+          if (ok) {
+            setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
+          } else {
+            stillFailed.push(failed[i]);
+          }
+        }
+
+        // Last-ditch retry for anything still failing
+        if (stillFailed.length > 0) {
+          await new Promise((r) => setTimeout(r, 4000));
+          for (let i = 0; i < stillFailed.length; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, 3000));
+            const ok = await generateOneProfile(stillFailed[i]);
+            if (ok) {
+              setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
+            }
+          }
+        }
       }
     } catch (error) {
       if (!isCancelledError(error)) {
@@ -5448,6 +5487,7 @@ function NovelWorkspacePage() {
       }
     }
 
+    aiAbortRef.current = null;
     setStoryAiBusyAction(null);
     setProfileGenProgress(null);
   }
@@ -14113,7 +14153,11 @@ function NovelWorkspacePage() {
               Generating profiles
             </div>
             <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
-              {profileGenProgress.name ? <>Building <strong>{profileGenProgress.name}</strong>...</> : "Starting..."}
+              {profileGenProgress.name === "Retrying..."
+                ? <>Retrying a character that needed another go...</>
+                : profileGenProgress.name
+                  ? <>Building <strong>{profileGenProgress.name}</strong>...</>
+                  : "Starting..."}
             </p>
             <p className="pw-delete-modal-copy" style={{ fontSize: 12, marginTop: 2 }}>
               {profileGenProgress.done} of {profileGenProgress.total} complete
@@ -14131,7 +14175,7 @@ function NovelWorkspacePage() {
               }} />
             </div>
             <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
-              This may take a few minutes — building detailed profiles one at a time
+              This may take a few minutes — each profile is built individually for quality
             </p>
           </div>
         </div>
