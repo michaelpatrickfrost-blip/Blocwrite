@@ -990,6 +990,8 @@ function NovelWorkspacePage() {
     addedCharacterIds?: string[];
   } | null>(null);
   const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string; done: number } | null>(null);
+  const [batchProfileQueue, setBatchProfileQueue] = useState<string[]>([]);
+  const batchProfileTotalRef = useRef(0);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -1124,6 +1126,56 @@ function NovelWorkspacePage() {
     }, 1000);
     return () => window.clearInterval(timerId);
   }, [storyAiBusyAction]);
+
+  // Process batch profile queue one character at a time.
+  // Each iteration runs after a React re-render, so all closures are FRESH —
+  // exactly like the user manually pressing the "Full profile" button.
+  useEffect(() => {
+    if (batchProfileQueue.length === 0) return;
+
+    const charId = batchProfileQueue[0];
+    const character = storyCharacters.find((c) => c.id === charId);
+    const total = batchProfileTotalRef.current;
+    const done = total - batchProfileQueue.length;
+
+    if (!character) {
+      // Skip missing character, move to next
+      setBatchProfileQueue((q) => q.slice(1));
+      return;
+    }
+
+    setProfileGenProgress({ current: done + 1, total, name: character.name, done });
+
+    let cancelled = false;
+
+    const run = async () => {
+      // Small delay between characters (skip for first one)
+      if (done > 0) await new Promise((r) => setTimeout(r, 3000));
+      if (cancelled) return;
+
+      // Call the EXACT same function the button calls — with FRESH closures
+      await runCharacterAiForSelected(charId, "profile");
+
+      if (cancelled) return;
+
+      // Remove this character from queue → triggers re-render → next iteration
+      setBatchProfileQueue((q) => q.slice(1));
+    };
+
+    void run();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchProfileQueue]);
+
+  // When queue empties, clear progress
+  useEffect(() => {
+    if (batchProfileQueue.length === 0 && batchProfileTotalRef.current > 0) {
+      setProfileGenProgress(null);
+      setStoryAiBusyAction(null);
+      batchProfileTotalRef.current = 0;
+    }
+  }, [batchProfileQueue]);
 
   useEffect(() => {
     if (!showStoryBibleModal || bibleSection !== "boltons") return;
@@ -5312,43 +5364,15 @@ function NovelWorkspacePage() {
     }
   }
 
-  async function runAutoGenerateAllProfiles(characterIds: string[]) {
+  function runAutoGenerateAllProfiles(characterIds: string[]) {
     if (!novel || !ensureStoryAiReady() || characterIds.length === 0) return;
 
+    // Just set the queue — the useEffect above processes one at a time,
+    // each with a fresh React render (exactly like clicking the button manually).
     setNameConfirmPopup(null);
     setStoryAiError(null);
-    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
-
-    let doneCount = 0;
-
-    for (let i = 0; i < characterIds.length; i++) {
-      const charId = characterIds[i];
-      const character = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
-      if (!character) continue;
-
-      setProfileGenProgress({ current: i + 1, total: characterIds.length, name: character.name, done: doneCount });
-
-      // Wait between characters
-      if (i > 0) await new Promise((r) => setTimeout(r, 3000));
-
-      // Call the EXACT same function the "Full profile" button calls.
-      // await means we wait for it to fully complete before moving on.
-      await runCharacterAiForSelected(charId, "profile");
-
-      // Check if the character got updated (profile fields filled in)
-      const updated = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
-      if (updated && (updated.appearance || updated.personality || updated.backstory)) {
-        doneCount++;
-        setProfileGenProgress((p) => p ? { ...p, done: doneCount } : p);
-      }
-    }
-
-    if (doneCount === 0) {
-      setStoryAiError("Profile generation didn't return usable data. Try again or use a different model.");
-    }
-
-    setStoryAiBusyAction(null);
-    setProfileGenProgress(null);
+    batchProfileTotalRef.current = characterIds.length;
+    setBatchProfileQueue([...characterIds]);
   }
 
   async function runSummaryFieldAi(target: SummaryAiField, mode: string) {
