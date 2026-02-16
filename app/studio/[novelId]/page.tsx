@@ -5316,17 +5316,14 @@ function NovelWorkspacePage() {
     setNameConfirmPopup(null);
     setStoryAiError(null);
     setStoryAiBusyAction("character-profile-batch");
-    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
+    setProfileGenProgress({ current: 0, total: characterIds.length, name: "Preparing...", done: 0 });
 
-    const context = buildStoryBibleContext("characters");
     const allChars = novel.storyBible.characters ?? [];
-    const sysMsg = "You are a character development specialist for novel drafting. Build vivid, canon-consistent character profiles. Return only valid JSON.";
+    const context = buildStoryBibleContext("characters").slice(0, 1800);
+    const targets = characterIds.map((id) => allChars.find((c) => c.id === id)).filter(Boolean) as typeof allChars;
+    if (!targets.length) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
 
-    const rosterSummary = allChars
-      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? ": " + c.logline : ""}`)
-      .join("\n");
-
-    type ProfileResult = {
+    type ProfileFields = {
       appearance?: string; personality?: string; goals?: string; fears?: string;
       backstory?: string; speakingStyle?: string; secrets?: string;
       readerSecretHint?: string; accent?: string; reactionPattern?: string;
@@ -5334,160 +5331,151 @@ function NovelWorkspacePage() {
       relationships?: Array<{ targetName?: string; type?: string; description?: string }>;
     };
 
-    async function generateOneProfile(charId: string): Promise<boolean> {
-      const character = allChars.find((c) => c.id === charId);
-      if (!character) return true;
+    const PROFILE_KEYS: (keyof ProfileFields)[] = [
+      "appearance", "personality", "goals", "fears", "backstory",
+      "speakingStyle", "secrets", "readerSecretHint", "accent",
+      "reactionPattern", "voiceNotes", "tags", "relationships",
+    ];
 
-      setProfileGenProgress((prev) => prev ? { ...prev, name: character.name } : prev);
-
-      const otherChars = allChars
-        .filter((c) => c.id !== charId)
-        .map((c) => ({ id: c.id, name: c.name, role: c.role }));
-
-      const prompt = [
-        `Build a full character profile for: ${character.name} (${character.role || "Supporting"})`,
-        character.logline ? `Character hook: ${character.logline}` : "",
-        "",
-        `All characters in this story:\n${rosterSummary}`,
-        "",
-        `Story context:\n${context.slice(0, 2000)}`,
-        "",
-        "Return JSON with ALL of these fields filled in (do not leave any empty):",
-        `{`,
-        `  "appearance": "Vivid physical description — height, build, hair, eyes, distinguishing features, how they carry themselves",`,
-        `  "personality": "How they act and behave, not just adjectives — show their personality through typical actions and reactions",`,
-        `  "goals": "What they want — tied to the story's central conflict",`,
-        `  "fears": "What they're afraid of — internal and external fears that create tension",`,
-        `  "backstory": "Who they were before the story — the events that shaped them and explain their motivations",`,
-        `  "accent": "Regional accent, dialect, or speech patterns if relevant",`,
-        `  "speakingStyle": "How they talk — formal/casual, verbose/terse, vocabulary level, speech quirks",`,
-        `  "reactionPattern": "How they behave under stress, conflict, or surprise",`,
-        `  "voiceNotes": "Notes for writing authentic dialogue for this character",`,
-        `  "secrets": "What they're hiding — a secret that drives tension in the story",`,
-        `  "readerSecretHint": "A subtle, spoiler-safe hint for readers that something is hidden",`,
-        `  "tags": ["2-4 keyword tags for this character"],`,
-        `  "relationships": [{"targetName": "Other Character Name", "type": "friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague", "description": "Brief description of their dynamic"}]`,
-        `}`,
-        "",
-        "RULES:",
-        "- Fill in EVERY field with real content. Do not leave anything blank or as a placeholder.",
-        "- Each field should be 1-3 vivid sentences.",
-        "- Anchor everything to the story synopsis. Do not invent unrelated plot lines.",
-        "- For relationships, only include connections that make sense based on the story. Use the exact names from the character roster.",
-        otherChars.length > 0 ? `\nAvailable characters to link relationships to:\n${otherChars.map((c) => `- ${c.name} (${c.role})`).join("\n")}` : "",
-      ].filter(Boolean).join("\n");
-
-      try {
-        // Fresh abort controller for each character so previous timeouts don't poison later calls
-        aiAbortRef.current?.abort();
-        aiAbortRef.current = new AbortController();
-
-        const data = await requestOpenRouterJson<ProfileResult>(prompt, 900, { systemMessage: sysMsg, timeoutMs: 150000 });
-
-        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-        if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
-        if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
-        if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
-        if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
-        if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
-        if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
-        if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
-        if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
-        if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
-        if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
-        if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
-        const aiTags = parseStringList(data.tags);
-        if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
-
-        if (Array.isArray(data.relationships) && data.relationships.length > 0) {
-          const resolvedRels: Array<{ targetCharacterId: string; type: string; description?: string }> = [];
-          for (const rel of data.relationships) {
-            if (!rel.targetName || !rel.type) continue;
-            const targetNameLower = rel.targetName.trim().toLowerCase();
-            const target = allChars.find((c) => {
-              const cNameLower = c.name.trim().toLowerCase();
-              if (cNameLower === targetNameLower) return true;
-              const cFirst = cNameLower.split(/\s+/)[0];
-              const tFirst = targetNameLower.split(/\s+/)[0];
-              return cFirst && tFirst && cFirst === tFirst;
-            });
-            if (target && target.id !== charId) {
-              const alreadyLinked = resolvedRels.some((r) => r.targetCharacterId === target.id);
-              if (!alreadyLinked) {
-                resolvedRels.push({
-                  targetCharacterId: target.id,
-                  type: rel.type.trim(),
-                  description: rel.description?.trim() || undefined,
-                });
-              }
-            }
-          }
-          if (resolvedRels.length > 0) {
-            patch.relationships = [...(character.relationships ?? []), ...resolvedRels];
-          }
-        }
-
-        updateV2Character(character.id, patch);
-        return true;
-      } catch (error) {
-        if (isCancelledError(error)) throw error;
-        return false;
+    function isProfileComplete(p: ProfileFields | undefined): boolean {
+      if (!p) return false;
+      let filled = 0;
+      for (const k of PROFILE_KEYS) {
+        if (k === "tags" || k === "relationships") continue;
+        if (typeof p[k] === "string" && (p[k] as string).trim().length > 5) filled++;
       }
+      return filled >= 6;
     }
 
-    // Process each character one at a time with a cooldown between calls
-    // and automatic retry for any that fail
-    const failed: string[] = [];
-    try {
-      for (let i = 0; i < characterIds.length; i++) {
-        const id = characterIds[i];
-        // Cooldown between characters — lets the API breathe
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, 2000));
-        }
-        setProfileGenProgress((prev) => prev ? { ...prev, current: i + 1 } : prev);
-        const ok = await generateOneProfile(id);
-        if (ok) {
-          setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
-        } else {
-          failed.push(id);
-        }
-      }
-
-      // Retry failed ones — fresh attempt after a longer cooldown
-      if (failed.length > 0) {
-        setProfileGenProgress((prev) => prev ? { ...prev, name: "Retrying..." } : prev);
-        await new Promise((r) => setTimeout(r, 3000));
-        const stillFailed: string[] = [];
-        for (let i = 0; i < failed.length; i++) {
-          if (i > 0) await new Promise((r) => setTimeout(r, 2500));
-          const ok = await generateOneProfile(failed[i]);
-          if (ok) {
-            setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
-          } else {
-            stillFailed.push(failed[i]);
+    function applyProfile(charId: string, data: ProfileFields) {
+      const character = allChars.find((c) => c.id === charId);
+      if (!character) return;
+      const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+      if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
+      if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
+      if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
+      if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
+      if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
+      if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
+      if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
+      if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
+      if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
+      if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
+      if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
+      const aiTags = parseStringList(data.tags);
+      if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
+      if (Array.isArray(data.relationships) && data.relationships.length > 0) {
+        const resolvedRels: Array<{ targetCharacterId: string; type: string; description?: string }> = [];
+        for (const rel of data.relationships) {
+          if (!rel.targetName || !rel.type) continue;
+          const targetNameLower = rel.targetName.trim().toLowerCase();
+          const target = allChars.find((c) => {
+            const cNameLower = c.name.trim().toLowerCase();
+            if (cNameLower === targetNameLower) return true;
+            return cNameLower.split(/\s+/)[0] === targetNameLower.split(/\s+/)[0];
+          });
+          if (target && target.id !== charId && !resolvedRels.some((r) => r.targetCharacterId === target.id)) {
+            resolvedRels.push({ targetCharacterId: target.id, type: rel.type.trim(), description: rel.description?.trim() || undefined });
           }
         }
+        if (resolvedRels.length > 0) patch.relationships = [...(character.relationships ?? []), ...resolvedRels];
+      }
+      if (Object.keys(patch).length > 0) updateV2Character(charId, patch);
+    }
 
-        // Last-ditch retry for anything still failing
-        if (stillFailed.length > 0) {
-          await new Promise((r) => setTimeout(r, 4000));
-          for (let i = 0; i < stillFailed.length; i++) {
-            if (i > 0) await new Promise((r) => setTimeout(r, 3000));
-            const ok = await generateOneProfile(stillFailed[i]);
-            if (ok) {
-              setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
-            }
+    function matchCharName(key: string): string | null {
+      const keyLow = key.trim().toLowerCase();
+      for (const t of targets) {
+        if (t.name.trim().toLowerCase() === keyLow) return t.id;
+        if (t.name.trim().toLowerCase().split(/\s+/)[0] === keyLow.split(/\s+/)[0]) return t.id;
+      }
+      return null;
+    }
+
+    const rosterBlock = targets
+      .map((c) => `- ${c.name} (${c.role || "Supporting"})${c.logline ? ": " + c.logline : ""}`)
+      .join("\n");
+
+    const sysMsg = "Character development specialist. Return ONLY valid JSON, no explanation.";
+
+    const profileShape = `"appearance":"...", "personality":"...", "goals":"...", "fears":"...", "backstory":"...", "speakingStyle":"...", "secrets":"...", "readerSecretHint":"...", "accent":"...", "reactionPattern":"...", "voiceNotes":"...", "tags":["..."], "relationships":[{"targetName":"...","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy","description":"..."}]`;
+
+    // ── PHASE 1: Bulk call — ask for ALL profiles in one shot ──
+    const completed = new Set<string>();
+
+    try {
+      setProfileGenProgress((prev) => prev ? { ...prev, name: "Building all profiles..." } : prev);
+
+      const bulkPrompt = [
+        `Build full character profiles for a novel.`,
+        `Story context:\n${context}`,
+        `\nCharacters to profile:\n${rosterBlock}`,
+        `\nReturn a JSON object keyed by exact character name. Each value must have ALL these fields filled with vivid, story-grounded content (1-2 sentences each):`,
+        `{ ${profileShape} }`,
+        `\nExample structure: {"Character Name": {${profileShape}}, "Another Name": {${profileShape}}}`,
+        `\nRULES:\n- Fill EVERY field for EVERY character. Nothing blank.\n- Anchor to the synopsis. Real, vivid detail.\n- For relationships, use exact names from the list above.\n- Return ONLY the JSON object. No markdown, no explanation.`,
+      ].join("\n");
+
+      const tokensPerChar = 350;
+      const maxTokens = Math.min(4000, targets.length * tokensPerChar + 200);
+
+      const rawBulk = await requestOpenRouterText(bulkPrompt, maxTokens, 180000, sysMsg, false, 0.5);
+      const bulkParsed = parseJsonFromAi<Record<string, ProfileFields>>(rawBulk);
+
+      if (bulkParsed && typeof bulkParsed === "object") {
+        for (const [key, profile] of Object.entries(bulkParsed)) {
+          if (!profile || typeof profile !== "object") continue;
+          const charId = matchCharName(key);
+          if (charId && isProfileComplete(profile)) {
+            applyProfile(charId, profile);
+            completed.add(charId);
+            setProfileGenProgress((prev) => prev ? { ...prev, done: completed.size } : prev);
           }
         }
       }
     } catch (error) {
-      if (!isCancelledError(error)) {
-        setStoryAiError(error instanceof Error ? error.message : "Profile generation error.");
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
+    }
+
+    // ── PHASE 2: Fill gaps — one lightweight call per missing character ──
+    const missing = targets.filter((c) => !completed.has(c.id));
+
+    for (let i = 0; i < missing.length; i++) {
+      const character = missing[i];
+      setProfileGenProgress((prev) => prev ? { ...prev, name: character.name, current: completed.size + i + 1 } : prev);
+
+      if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+
+      const soloPrompt = [
+        `Character profile for: ${character.name} (${character.role || "Supporting"})${character.logline ? " — " + character.logline : ""}`,
+        `Story: ${context.slice(0, 800)}`,
+        `Other characters: ${targets.filter((c) => c.id !== character.id).map((c) => c.name).join(", ")}`,
+        `Return JSON: {${profileShape}}`,
+        `Fill EVERY field. 1-2 vivid sentences each. No blanks. ONLY JSON.`,
+      ].join("\n");
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const raw = await requestOpenRouterText(soloPrompt, 700, 120000, sysMsg, false, 0.4);
+          const parsed = parseJsonFromAi<ProfileFields>(raw);
+          if (parsed && isProfileComplete(parsed)) {
+            applyProfile(character.id, parsed);
+            completed.add(character.id);
+            setProfileGenProgress((prev) => prev ? { ...prev, done: completed.size } : prev);
+            break;
+          }
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
+        } catch (error) {
+          if (isCancelledError(error)) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
+        }
       }
     }
 
-    aiAbortRef.current = null;
+    if (completed.size === 0) {
+      setStoryAiError("Profile generation didn't return usable data. Try a different model or add more detail to your synopsis.");
+    }
+
     setStoryAiBusyAction(null);
     setProfileGenProgress(null);
   }
@@ -14076,13 +14064,13 @@ function NovelWorkspacePage() {
               Generating profiles
             </div>
             <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
-              {profileGenProgress.name === "Retrying..."
-                ? <>Retrying a character that needed another go...</>
+              {profileGenProgress.name === "Building all profiles..."
+                ? <>Crafting all characters in one pass...</>
                 : profileGenProgress.name
-                  ? <>Building <strong>{profileGenProgress.name}</strong>...</>
-                  : "Starting..."}
+                  ? <>Filling in <strong>{profileGenProgress.name}</strong>...</>
+                  : "Preparing..."}
             </p>
-            <p className="pw-delete-modal-copy" style={{ fontSize: 12, marginTop: 2 }}>
+            <p className="pw-delete-modal-copy" style={{ fontSize: 12, marginTop: 2, fontWeight: 600 }}>
               {profileGenProgress.done} of {profileGenProgress.total} complete
             </p>
             <div style={{
@@ -14094,11 +14082,11 @@ function NovelWorkspacePage() {
                 height: "100%", borderRadius: 3,
                 background: "var(--pw-accent, #a3e635)",
                 width: `${Math.round((profileGenProgress.done / profileGenProgress.total) * 100)}%`,
-                transition: "width 0.3s ease",
+                transition: "width 0.4s ease",
               }} />
             </div>
             <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
-              This may take a few minutes — each profile is built individually for quality
+              This may take a minute or two — building detailed, connected profiles
             </p>
           </div>
         </div>
