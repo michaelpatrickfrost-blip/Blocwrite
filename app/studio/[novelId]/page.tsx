@@ -1302,8 +1302,10 @@ function NovelWorkspacePage() {
   const tutorialPrevStep = useRef<number>(-1);
 
   // ── Admin push alerts ──
-  const [adminAlert, setAdminAlert] = useState<{ id: string; message: string; durationSec: number } | null>(null);
+  const [adminAlert, setAdminAlert] = useState<{ id: string; message: string } | null>(null);
+  const [adminAlertProgress, setAdminAlertProgress] = useState(100);
   const adminAlertDismissed = useRef<Set<string>>(new Set());
+  const ALERT_DURATION = 15_000;
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -1313,7 +1315,8 @@ function NovelWorkspacePage() {
           const data = await res.json();
           if (data && data.id && !adminAlertDismissed.current.has(data.id)) {
             setAdminAlert(data);
-          } else {
+            setAdminAlertProgress(100);
+          } else if (!data || !data.id) {
             setAdminAlert(null);
           }
         }
@@ -1325,11 +1328,20 @@ function NovelWorkspacePage() {
   }, []);
   useEffect(() => {
     if (!adminAlert) return;
+    const start = Date.now();
+    const frame = () => {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, 100 - (elapsed / ALERT_DURATION) * 100);
+      setAdminAlertProgress(remaining);
+      if (remaining > 0) rafId = requestAnimationFrame(frame);
+      else { adminAlertDismissed.current.add(adminAlert.id); setAdminAlert(null); }
+    };
+    let rafId = requestAnimationFrame(frame);
     const timer = setTimeout(() => {
       adminAlertDismissed.current.add(adminAlert.id);
       setAdminAlert(null);
-    }, adminAlert.durationSec * 1000);
-    return () => clearTimeout(timer);
+    }, ALERT_DURATION + 100);
+    return () => { cancelAnimationFrame(rafId); clearTimeout(timer); };
   }, [adminAlert]);
 
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
@@ -15346,41 +15358,47 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Admin alert popup ── */}
+      {/* ── Admin alert toast ── */}
       {adminAlert && (
         <div style={{
-          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)",
-          zIndex: 99990, maxWidth: 520, width: "calc(100% - 32px)",
-          background: "linear-gradient(135deg, #1c1c28 0%, #1a1a24 100%)",
-          border: "1.5px solid rgba(239,68,68,0.4)",
-          borderRadius: 14, padding: "14px 18px",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(239,68,68,0.1)",
-          display: "flex", alignItems: "flex-start", gap: 12,
-          animation: "pw-tutorial-enter 0.3s cubic-bezier(0.2,0,0,1)",
+          position: "fixed", bottom: 24, right: 24, zIndex: 99990,
+          maxWidth: 340, width: "auto",
+          background: "var(--pw-surface, #18181b)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          borderRadius: 12,
+          boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
+          overflow: "hidden",
+          animation: "pw-alert-in 0.35s cubic-bezier(0.2,0,0.2,1)",
         }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-            background: "rgba(239,68,68,0.12)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#e4e4e7", lineHeight: 1.5 }}>
+          <style>{`
+            @keyframes pw-alert-in {
+              from { opacity: 0; transform: translateY(12px) scale(0.97); }
+              to   { opacity: 1; transform: translateY(0) scale(1); }
+            }
+          `}</style>
+          <div style={{ padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--pw-text, #e4e4e7)", lineHeight: 1.5, flex: 1 }}>
               {adminAlert.message}
             </p>
+            <button
+              type="button"
+              onClick={() => { adminAlertDismissed.current.add(adminAlert.id); setAdminAlert(null); }}
+              style={{
+                flexShrink: 0, background: "none", border: "none", cursor: "pointer",
+                color: "var(--pw-text-dim, rgba(255,255,255,0.35))", padding: 2, lineHeight: 1,
+              }}
+              title="Dismiss"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => { adminAlertDismissed.current.add(adminAlert.id); setAdminAlert(null); }}
-            style={{
-              flexShrink: 0, background: "none", border: "none", cursor: "pointer",
-              color: "rgba(255,255,255,0.4)", padding: 4, lineHeight: 1,
-            }}
-            title="Dismiss"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+          <div style={{
+            height: 2, background: "var(--pw-accent, #a3e635)", opacity: 0.6,
+            width: `${adminAlertProgress}%`,
+            transition: "width 0.1s linear",
+            borderRadius: "0 0 0 12px",
+          }} />
         </div>
       )}
 

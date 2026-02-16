@@ -185,13 +185,14 @@ model BlogPost {
 }
 
 model AdminAlert {
-  id          String   @id @default(cuid())
-  message     String
-  durationSec Int      @default(15)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  message      String
+  durationSec  Int      @default(15)
+  active       Boolean  @default(true)
+  scheduledFor DateTime @default(now())
+  createdAt    DateTime @default(now())
 
-  @@index([active, createdAt])
+  @@index([active, scheduledFor])
 }
 
 model AdminAuditLog {

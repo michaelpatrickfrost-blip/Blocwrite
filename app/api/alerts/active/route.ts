@@ -4,12 +4,16 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** GET /api/alerts/active — return the current active alert (public, polled by studio) */
+/** GET /api/alerts/active — return the latest active alert whose scheduled time has passed */
 export async function GET() {
+  const now = new Date();
   const alert = await prisma.adminAlert.findFirst({
-    where: { active: true },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, message: true, durationSec: true, createdAt: true },
+    where: {
+      active: true,
+      scheduledFor: { lte: now },
+    },
+    orderBy: { scheduledFor: "desc" },
+    select: { id: true, message: true, scheduledFor: true, createdAt: true },
   });
   return NextResponse.json(alert ?? null);
 }

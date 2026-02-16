@@ -28,8 +28,8 @@ type BlogPost = {
 type AdminAlert = {
   id: string;
   message: string;
-  durationSec: number;
   active: boolean;
+  scheduledFor: string;
   createdAt: string;
 };
 
@@ -101,7 +101,7 @@ export default function AdminPage() {
   // ── Alert state ──
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
   const [alertMsg, setAlertMsg] = useState("");
-  const [alertDuration, setAlertDuration] = useState(15);
+  const [alertSchedule, setAlertSchedule] = useState("");
   const [alertSending, setAlertSending] = useState(false);
   const [alertStatusMsg, setAlertStatusMsg] = useState("");
 
@@ -281,11 +281,12 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: alertMsg.trim(), durationSec: alertDuration }),
+        body: JSON.stringify({ message: alertMsg.trim(), scheduledFor: alertSchedule || undefined }),
       });
       if (res.ok) {
-        setAlertStatusMsg("Alert sent to all users!");
+        setAlertStatusMsg(alertSchedule ? "Alert scheduled!" : "Alert sent to all users!");
         setAlertMsg("");
+        setAlertSchedule("");
         void loadData();
       } else {
         setAlertStatusMsg("Failed to send alert.");
@@ -494,10 +495,10 @@ export default function AdminPage() {
                 <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alert</h2>
               </div>
               <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
-                Send an urgent notification to every user&apos;s studio. It will auto-dismiss after the timer or they can close it.
+                Schedule a notification for all users. Shows for 15 seconds then auto-dismisses. Only the latest alert is shown.
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
-                <div style={{ flex: "1 1 300px" }}>
+                <div style={{ flex: "1 1 260px" }}>
                   <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Message</label>
                   <input
                     type="text"
@@ -508,14 +509,12 @@ export default function AdminPage() {
                     maxLength={500}
                   />
                 </div>
-                <div style={{ flex: "0 0 120px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Show for (sec)</label>
+                <div style={{ flex: "0 0 200px" }}>
+                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Show at (leave blank = now)</label>
                   <input
-                    type="number"
-                    min={5}
-                    max={300}
-                    value={alertDuration}
-                    onChange={(e) => setAlertDuration(Number(e.target.value) || 15)}
+                    type="datetime-local"
+                    value={alertSchedule}
+                    onChange={(e) => setAlertSchedule(e.target.value)}
                     style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
                   />
                 </div>
@@ -529,20 +528,22 @@ export default function AdminPage() {
                     opacity: alertSending ? 0.6 : 1,
                   }}
                 >
-                  {alertSending ? "Sending..." : "Send Alert"}
+                  {alertSending ? "Sending..." : "Schedule Alert"}
                 </button>
               </div>
               {alertStatusMsg && (
-                <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>
+                <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") || alertStatusMsg.includes("scheduled") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>
               )}
               {alerts.filter((a) => a.active).length > 0 && (
                 <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.dim, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Active Alerts</p>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.dim, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Scheduled Alerts</p>
                   {alerts.filter((a) => a.active).map((a) => (
                     <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
-                        <p style={{ fontSize: 11, color: C.dim, margin: "2px 0 0" }}>{a.durationSec}s &middot; {formatDate(a.createdAt)}</p>
+                        <p style={{ fontSize: 11, color: C.dim, margin: "2px 0 0" }}>
+                          {new Date(a.scheduledFor) <= new Date() ? "Live now" : `Scheduled: ${formatDate(a.scheduledFor)}`}
+                        </p>
                       </div>
                       <button
                         type="button"

@@ -8,20 +8,9 @@ type Post = {
   slug: string;
   title: string;
   excerpt: string | null;
+  content: string;
   coverImage: string | null;
   publishedAt: string | null;
-};
-
-const C = {
-  bg: "#ffffff",
-  bgSoft: "#f8f8fa",
-  bgDark: "#0e0e12",
-  text: "#111114",
-  textSoft: "#4a4d56",
-  textMuted: "#8c8f98",
-  border: "#e8e9ed",
-  accent: "#c8e630",
-  accentText: "#4d6a00",
 };
 
 function formatDate(iso: string) {
@@ -45,14 +34,51 @@ export default function NewsPage() {
   }, []);
 
   return (
-    <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
-      {/* ── Responsive styles ── */}
+    <main style={{ background: "#ffffff", color: "#111114", fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       <style>{`
+        /* ── Responsive ── */
         @media (max-width: 768px) {
           .news-nav-links { display: none !important; }
-          .news-grid { grid-template-columns: 1fr !important; }
-          .news-hero h1 { font-size: 36px !important; }
-          .news-hero p { font-size: 16px !important; }
+          .news-hero h1 { font-size: 32px !important; }
+          .news-hero p { font-size: 15px !important; }
+          .news-article { padding: 0 20px !important; }
+          .news-article-cover { height: 240px !important; border-radius: 16px !important; }
+          .news-article-title { font-size: 26px !important; }
+        }
+        @media (max-width: 480px) {
+          .news-article-cover { height: 180px !important; border-radius: 12px !important; }
+          .news-article-title { font-size: 22px !important; }
+        }
+
+        /* ── Post body typography ── */
+        .news-post-body h1 { font-size: 26px; font-weight: 800; margin: 28px 0 12px; letter-spacing: -0.02em; line-height: 1.25; color: #111114; }
+        .news-post-body h2 { font-size: 22px; font-weight: 700; margin: 24px 0 10px; letter-spacing: -0.01em; line-height: 1.3; color: #111114; }
+        .news-post-body h3 { font-size: 18px; font-weight: 700; margin: 20px 0 8px; line-height: 1.35; color: #111114; }
+        .news-post-body p { font-size: 16.5px; line-height: 1.85; margin: 0 0 16px; color: #3a3a42; }
+        .news-post-body ul, .news-post-body ol { margin: 0 0 16px; padding-left: 22px; }
+        .news-post-body li { font-size: 16.5px; line-height: 1.85; margin-bottom: 4px; color: #3a3a42; }
+        .news-post-body blockquote {
+          margin: 20px 0; padding: 16px 22px;
+          border-left: 4px solid #c8e630;
+          background: #f8f8fa; border-radius: 0 12px 12px 0;
+          font-style: italic; color: #4a4d56;
+        }
+        .news-post-body blockquote p { margin: 0; }
+        .news-post-body img {
+          max-width: 100%; height: auto; border-radius: 12px;
+          margin: 20px 0; border: 1px solid #e8e9ed;
+        }
+        .news-post-body a { color: #4d6a00; text-decoration: underline; text-underline-offset: 3px; }
+        .news-post-body a:hover { color: #111; }
+        .news-post-body strong { font-weight: 700; color: #111114; }
+
+        /* ── Fade-in animation ── */
+        @keyframes newsFadeUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .news-article-animated {
+          animation: newsFadeUp 0.6s cubic-bezier(0.2,0,0.2,1) both;
         }
       `}</style>
 
@@ -89,7 +115,7 @@ export default function NewsPage() {
             <Link href="/subscribe" style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "10px 24px", fontSize: 13, fontWeight: 600,
-              color: C.text, background: C.accent, border: "none",
+              color: "#111114", background: "#c8e630", border: "none",
               borderRadius: 12, textDecoration: "none",
             }}>
               Start Free Trial
@@ -100,128 +126,130 @@ export default function NewsPage() {
 
       {/* ── Hero ── */}
       <section className="news-hero" style={{
-        background: C.bgDark, color: "#fff",
-        padding: "80px 28px 70px", textAlign: "center",
+        background: "#0e0e12", color: "#fff",
+        padding: "72px 28px 64px", textAlign: "center",
       }}>
-        <div style={{ maxWidth: 700, margin: "0 auto" }}>
+        <div style={{ maxWidth: 660, margin: "0 auto" }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 99,
             background: "rgba(200,230,48,0.1)", border: "1px solid rgba(200,230,48,0.2)",
-            fontSize: 13, fontWeight: 600, color: C.accent, marginBottom: 20,
+            fontSize: 13, fontWeight: 600, color: "#c8e630", marginBottom: 20,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Blocwrite Blog
           </div>
-          <h1 style={{ fontSize: 48, fontWeight: 800, margin: "0 0 16px", letterSpacing: "-0.03em", lineHeight: 1.15 }}>
+          <h1 style={{ fontSize: 46, fontWeight: 800, margin: "0 0 14px", letterSpacing: "-0.03em", lineHeight: 1.15 }}>
             News &amp; Updates
           </h1>
-          <p style={{ fontSize: 18, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, margin: 0 }}>
+          <p style={{ fontSize: 17, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, margin: 0 }}>
             Product updates, writing tips, and insights from the Blocwrite team.
           </p>
         </div>
       </section>
 
-      {/* ── Posts grid ── */}
-      <section style={{ padding: "60px 28px 80px" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+      {/* ── Seamless post feed ── */}
+      <section style={{ padding: "0 0 40px" }}>
+        <div style={{ maxWidth: 740, margin: "0 auto" }}>
           {loading && (
-            <p style={{ textAlign: "center", color: C.textMuted, padding: "60px 0", fontSize: 15 }}>Loading posts...</p>
+            <p style={{ textAlign: "center", color: "#8c8f98", padding: "80px 28px", fontSize: 15 }}>Loading posts...</p>
           )}
 
           {!loading && posts.length === 0 && (
-            <div style={{ textAlign: "center", padding: "80px 0" }}>
+            <div style={{ textAlign: "center", padding: "100px 28px" }}>
               <div style={{
                 width: 64, height: 64, borderRadius: 16, margin: "0 auto 20px",
-                background: C.bgSoft, display: "flex", alignItems: "center", justifyContent: "center",
+                background: "#f8f8fa", display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8c8f98" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </div>
               <p style={{ fontSize: 18, fontWeight: 600, margin: "0 0 6px" }}>No posts yet</p>
-              <p style={{ fontSize: 14, color: C.textMuted }}>Check back soon for news and updates.</p>
+              <p style={{ fontSize: 14, color: "#8c8f98" }}>Check back soon for news and updates.</p>
             </div>
           )}
 
-          {!loading && posts.length > 0 && (
-            <div className="news-grid" style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-              gap: 28,
-            }}>
-              {posts.map((post, i) => (
-                <Link
-                  key={post.id}
-                  href={`/news/${post.slug}`}
-                  style={{ textDecoration: "none", color: "inherit" }}
-                >
-                  <article
-                    style={{
-                      borderRadius: 18,
-                      border: `1px solid ${C.border}`,
-                      background: C.bg,
-                      overflow: "hidden",
-                      transition: "transform 0.2s, box-shadow 0.2s",
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-4px)";
-                      e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  >
-                    {/* Cover image */}
-                    {post.coverImage ? (
-                      <div style={{
-                        width: "100%", height: 200,
-                        background: `url(${post.coverImage}) center/cover no-repeat`,
-                        borderBottom: `1px solid ${C.border}`,
-                      }} />
-                    ) : (
-                      <div style={{
-                        width: "100%", height: 200,
-                        background: i % 2 === 0
-                          ? "linear-gradient(135deg, #0e0e12, #1a1a24)"
-                          : "linear-gradient(135deg, #1a1a24, #252530)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        borderBottom: `1px solid ${C.border}`,
-                      }}>
-                        <img src="/blocwrite-logo-white.png" alt="" style={{ height: 32, opacity: 0.2 }} />
-                      </div>
-                    )}
+          {!loading && posts.map((post, idx) => (
+            <article
+              key={post.id}
+              id={post.slug}
+              className="news-article news-article-animated"
+              style={{
+                padding: "56px 28px 48px",
+                animationDelay: `${idx * 0.1}s`,
+                borderBottom: idx < posts.length - 1 ? "1px solid #e8e9ed" : "none",
+              }}
+            >
+              {/* Cover image */}
+              {post.coverImage && (
+                <div
+                  className="news-article-cover"
+                  style={{
+                    width: "100%",
+                    height: 360,
+                    borderRadius: 18,
+                    overflow: "hidden",
+                    marginBottom: 32,
+                    background: `url(${post.coverImage}) center/cover no-repeat`,
+                    boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
+                  }}
+                />
+              )}
 
-                    {/* Content */}
-                    <div style={{ padding: "22px 24px 26px" }}>
-                      {post.publishedAt && (
-                        <p style={{ fontSize: 12, fontWeight: 600, color: C.accentText, margin: "0 0 8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          {formatDate(post.publishedAt)}
-                        </p>
-                      )}
-                      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>
-                        {post.title}
-                      </h2>
-                      {post.excerpt && (
-                        <p style={{ fontSize: 14, color: C.textSoft, lineHeight: 1.6, margin: 0 }}>
-                          {post.excerpt.length > 140 ? post.excerpt.slice(0, 140) + "..." : post.excerpt}
-                        </p>
-                      )}
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 16, fontSize: 13, fontWeight: 600, color: C.accentText }}>
-                        Read more
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                      </div>
-                    </div>
-                  </article>
-                </Link>
-              ))}
-            </div>
-          )}
+              {/* Date badge */}
+              {post.publishedAt && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "5px 12px", borderRadius: 99,
+                  background: "rgba(200,230,48,0.1)",
+                  fontSize: 12, fontWeight: 600, color: "#4d6a00",
+                  textTransform: "uppercase", letterSpacing: "0.05em",
+                  marginBottom: 16,
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  {formatDate(post.publishedAt)}
+                </div>
+              )}
+
+              {/* Title */}
+              <h2
+                className="news-article-title"
+                style={{
+                  fontSize: 32,
+                  fontWeight: 800,
+                  margin: "0 0 12px",
+                  letterSpacing: "-0.025em",
+                  lineHeight: 1.2,
+                  color: "#111114",
+                }}
+              >
+                {post.title}
+              </h2>
+
+              {/* Excerpt */}
+              {post.excerpt && (
+                <p style={{
+                  fontSize: 17,
+                  color: "#4a4d56",
+                  lineHeight: 1.65,
+                  margin: "0 0 24px",
+                  fontWeight: 400,
+                }}>
+                  {post.excerpt}
+                </p>
+              )}
+
+              {/* Full content */}
+              <div
+                className="news-post-body"
+                dangerouslySetInnerHTML={{ __html: post.content }}
+              />
+            </article>
+          ))}
         </div>
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "52px 0 44px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <footer style={{ padding: "52px 0 44px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />

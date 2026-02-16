@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-/** GET /api/blog — list published posts (public) */
+/** GET /api/blog — list published posts with full content (public) */
 export async function GET() {
   const posts = await prisma.blogPost.findMany({
     where: { published: true },
@@ -13,6 +13,7 @@ export async function GET() {
       slug: true,
       title: true,
       excerpt: true,
+      content: true,
       coverImage: true,
       publishedAt: true,
     },
