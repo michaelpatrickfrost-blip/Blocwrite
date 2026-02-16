@@ -8252,36 +8252,38 @@ function NovelWorkspacePage() {
     });
   }
 
-  /** Position a fixed-position dropdown so it stays fully within the viewport.
-   *  Uses rAF to wait for the browser to lay out the dropdown before measuring. */
+  /** Position a fixed-position dropdown anchored to the trigger icon.
+   *  Dropdown appears directly above or below the icon and stays within viewport. */
   function positionDropdown(trigger: HTMLElement, dropdown: HTMLElement) {
+    dropdown.style.display = "flex";
+    dropdown.style.flexDirection = "column";
+    dropdown.style.visibility = "hidden";
+
     requestAnimationFrame(() => {
       const rect = trigger.getBoundingClientRect();
-      const ddRect = dropdown.getBoundingClientRect();
-      const ddH = ddRect.height || 280;
-      const ddW = ddRect.width || 270;
+      const ddH = dropdown.offsetHeight || 280;
+      const ddW = dropdown.offsetWidth || 270;
       const gap = 6;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const pad = 12; // minimum distance from viewport edges
+      const pad = 8;
 
-      // Prefer above trigger (keeps dropdown in user's visible area)
-      let top = rect.top - ddH - gap;
-      // If not enough room above, fall back to below
-      if (top < pad) {
-        top = rect.bottom + gap;
-      }
-      // Final clamp: ensure dropdown stays within viewport
-      if (top + ddH > vh - pad) top = vh - ddH - pad;
-      if (top < pad) top = pad;
-
-      // Align left edge to trigger's left edge, then clamp
-      let left = rect.left;
+      // Horizontal: center dropdown on the trigger icon, then clamp to viewport
+      let left = rect.left + rect.width / 2 - ddW / 2;
       if (left + ddW > vw - pad) left = vw - ddW - pad;
       if (left < pad) left = pad;
 
+      // Vertical: prefer above trigger
+      let top = rect.top - ddH - gap;
+      if (top < pad) {
+        top = rect.bottom + gap;
+      }
+      if (top + ddH > vh - pad) top = vh - ddH - pad;
+      if (top < pad) top = pad;
+
       dropdown.style.top = `${Math.round(top)}px`;
       dropdown.style.left = `${Math.round(left)}px`;
+      dropdown.style.visibility = "visible";
     });
   }
 
