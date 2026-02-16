@@ -5319,7 +5319,7 @@ function NovelWorkspacePage() {
     setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
     const allChars = novel.storyBible.characters ?? [];
-    const context = buildStoryBibleContext("characters").slice(0, 1000);
+    const context = buildStoryBibleContext("characters").slice(0, 1600);
     const targets = characterIds.map((id) => allChars.find((c) => c.id === id)).filter(Boolean) as typeof allChars;
     if (!targets.length) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
 
@@ -5330,118 +5330,124 @@ function NovelWorkspacePage() {
       voiceNotes?: string; tags?: string[];
     };
 
-    const apiBody = {
-      provider: assistantProvider,
-      apiKey: normalizeClientApiKey(openRouterKey),
-      baseUrl: assistantBaseUrl.trim(),
-      model: openRouterModel,
-      system: "Character profile writer. Return ONLY valid JSON.",
-      jsonMode: false,
-    };
+    const sysMsg = "You are a character development specialist for novel writing. Build vivid, canon-consistent character profiles. Return only valid JSON. No markdown fences, no explanation.";
 
-    async function directAiCall(prompt: string, maxTokens: number, timeoutMs = 60000): Promise<string> {
-      const ctrl = new AbortController();
-      const tid = window.setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const r = await fetch("/api/openrouter/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...apiBody, prompt, maxTokens }),
-          signal: ctrl.signal,
-        });
-        if (!r.ok) return "";
-        const p = await r.json().catch(() => null) as Record<string, unknown> | null;
-        return typeof p?.text === "string" ? (p.text as string).trim() : "";
-      } catch { return ""; }
-      finally { window.clearTimeout(tid); }
+    function buildPrompt(c: typeof targets[0]): string {
+      return [
+        `Build a full character profile for: ${c.name} (${c.role || "Supporting"})`,
+        c.logline ? `Character hook: ${c.logline}` : "",
+        "",
+        `Story context:\n${context}`,
+        "",
+        "Return a JSON object with ALL of these fields filled in:",
+        `{`,
+        `  "appearance": "Vivid physical description — height, build, hair, eyes, distinguishing features",`,
+        `  "personality": "How they act and behave, typical actions and reactions",`,
+        `  "goals": "What they want — tied to the story's central conflict",`,
+        `  "fears": "What they're afraid of — internal and external",`,
+        `  "backstory": "Who they were before the story — events that shaped them",`,
+        `  "speakingStyle": "How they talk — formal/casual, vocabulary, speech quirks",`,
+        `  "secrets": "What they're hiding that drives tension",`,
+        `  "readerSecretHint": "A subtle, spoiler-safe hint for readers",`,
+        `  "accent": "Regional accent or speech patterns",`,
+        `  "reactionPattern": "How they behave under stress or surprise",`,
+        `  "voiceNotes": "Notes for writing authentic dialogue",`,
+        `  "tags": ["2-4 keyword tags"]`,
+        `}`,
+        "",
+        "Fill EVERY field with 1-2 vivid sentences. Do not leave any field empty.",
+      ].filter(Boolean).join("\n");
     }
 
     function applyParsed(charId: string, parsed: CoreProfile): boolean {
       const character = allChars.find((c) => c.id === charId);
       if (!character || !parsed) return false;
       const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-      let n = 0;
-      const s = (k: keyof CoreProfile) => { const v = parsed[k]; if (typeof v === "string" && v.trim().length > 3) { (patch as Record<string, unknown>)[k] = v.trim(); n++; } };
-      s("appearance"); s("personality"); s("goals"); s("fears"); s("backstory");
-      s("speakingStyle"); s("secrets"); s("readerSecretHint"); s("accent");
-      s("reactionPattern"); s("voiceNotes");
-      const t = parseStringList(parsed.tags);
-      if (t.length) { patch.tags = Array.from(new Set([...(character.tags ?? []), ...t])); n++; }
-      if (n < 3) return false;
+      let filled = 0;
+      const set = (key: keyof CoreProfile) => {
+        const v = parsed[key];
+        if (typeof v === "string" && v.trim().length > 3) { (patch as Record<string, unknown>)[key] = v.trim(); filled++; }
+      };
+      set("appearance"); set("personality"); set("goals"); set("fears"); set("backstory");
+      set("speakingStyle"); set("secrets"); set("readerSecretHint"); set("accent");
+      set("reactionPattern"); set("voiceNotes");
+      const tags = parseStringList(parsed.tags);
+      if (tags.length) { patch.tags = Array.from(new Set([...(character.tags ?? []), ...tags])); filled++; }
+      if (filled < 3) return false;
       updateV2Character(charId, patch);
       return true;
-    }
-
-    function buildPrompt(c: typeof targets[0]): string {
-      return [
-        `${c.name} (${c.role || "Supporting"})${c.logline ? " — " + c.logline : ""}`,
-        context.slice(0, 800),
-        `JSON: {"appearance":"...","personality":"...","goals":"...","fears":"...","backstory":"...","speakingStyle":"...","secrets":"...","readerSecretHint":"...","accent":"...","reactionPattern":"...","voiceNotes":"...","tags":["..."]}`,
-        `1-2 vivid sentences per field. All fields filled. ONLY JSON.`,
-      ].join("\n");
     }
 
     const completed = new Set<string>();
     const failed: string[] = [];
 
-    // ── Fast pass: fire each character, short gap between calls ──
+    // ── Build each profile one at a time using requestOpenRouterText ──
+    // Use a short timeout (45s) so it only makes 1 attempt per call (no retry cascade).
+    // This is the same function that works for every other AI feature.
     for (let i = 0; i < targets.length; i++) {
       const c = targets[i];
       setProfileGenProgress({ current: i + 1, total: targets.length, name: c.name, done: completed.size });
 
-      if (i > 0) await new Promise((r) => setTimeout(r, 500));
+      if (i > 0) await new Promise((r) => setTimeout(r, 800));
 
-      const raw = await directAiCall(buildPrompt(c), 550);
-      const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
-      if (parsed && applyParsed(c.id, parsed)) {
-        completed.add(c.id);
-        setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
-      } else {
-        failed.push(c.id);
-      }
-    }
-
-    // ── Retry pass: pick up any that failed on first try ──
-    if (failed.length > 0) {
-      await new Promise((r) => setTimeout(r, 1500));
-      for (let i = 0; i < failed.length; i++) {
-        const c = targets.find((t) => t.id === failed[i]);
-        if (!c) continue;
-        setProfileGenProgress((p) => p ? { ...p, name: c.name } : p);
-        if (i > 0) await new Promise((r) => setTimeout(r, 800));
-        const raw = await directAiCall(buildPrompt(c), 550, 75000);
+      try {
+        const raw = await requestOpenRouterText(buildPrompt(c), 800, 45000, sysMsg, false, 0.4);
         const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
         if (parsed && applyParsed(c.id, parsed)) {
           completed.add(c.id);
           setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
+        } else {
+          failed.push(c.id);
         }
+      } catch {
+        failed.push(c.id);
       }
     }
 
-    // ── Relationship pass: one quick call to connect everyone ──
+    // ── Retry any that failed — longer timeout on second try ──
+    if (failed.length > 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+      for (let i = 0; i < failed.length; i++) {
+        const c = targets.find((t) => t.id === failed[i]);
+        if (!c) continue;
+        setProfileGenProgress((p) => p ? { ...p, name: c.name } : p);
+        if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const raw = await requestOpenRouterText(buildPrompt(c), 800, 60000, sysMsg, false, 0.3);
+          const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
+          if (parsed && applyParsed(c.id, parsed)) {
+            completed.add(c.id);
+            setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
+          }
+        } catch { /* move on */ }
+      }
+    }
+
+    // ── Link relationships in one call ──
     if (completed.size >= 2) {
       setProfileGenProgress((p) => p ? { ...p, name: "Linking..." } : p);
-      const names = targets.map((c) => c.name).join(", ");
-      const relRaw = await directAiCall(
-        `Characters: ${names}\nStory: ${context.slice(0, 500)}\nReturn JSON array: [{"from":"Name","to":"Name","type":"friend/rival/lover/mentor/sibling/ally/enemy","description":"one sentence"}]\nOnly meaningful relationships. ONLY JSON.`,
-        350,
-      );
-      if (relRaw) {
-        const relArr = parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw);
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        const names = targets.map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ");
+        const relPrompt = `Characters: ${names}\nStory: ${context.slice(0, 600)}\nReturn a JSON array of relationships:\n[{"from":"Character Name","to":"Character Name","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"brief description"}]\nOnly include meaningful story relationships. Return ONLY the JSON array.`;
+        const relRaw = await requestOpenRouterText(relPrompt, 400, 30000, "Relationship mapper. Return ONLY a valid JSON array.", false, 0.3);
+        const relArr = relRaw ? parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw) : null;
         if (Array.isArray(relArr)) {
           for (const rel of relArr) {
             if (!rel.from || !rel.to || !rel.type) continue;
-            const fc = allChars.find((c) => c.name.toLowerCase().startsWith(rel.from!.toLowerCase().split(/\s+/)[0]));
-            const tc = allChars.find((c) => c.name.toLowerCase().startsWith(rel.to!.toLowerCase().split(/\s+/)[0]));
+            const fromLow = rel.from.trim().toLowerCase();
+            const toLow = rel.to.trim().toLowerCase();
+            const fc = allChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+            const tc = allChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
             if (fc && tc && fc.id !== tc.id) {
-              const ex = fc.relationships ?? [];
-              if (!ex.some((r) => r.targetCharacterId === tc.id)) {
-                updateV2Character(fc.id, { relationships: [...ex, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }] });
+              const existing = fc.relationships ?? [];
+              if (!existing.some((r) => r.targetCharacterId === tc.id)) {
+                updateV2Character(fc.id, { relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }] });
               }
             }
           }
         }
-      }
+      } catch { /* relationships are a bonus, don't block on failure */ }
     }
 
     if (completed.size === 0) {
