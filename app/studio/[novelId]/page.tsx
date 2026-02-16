@@ -983,9 +983,12 @@ function NovelWorkspacePage() {
     "summary",
   );
   const [selectedV2CharacterId, setSelectedV2CharacterId] = useState<string | null>(null);
-  const [nameConfirmPopup, setNameConfirmPopup] = useState<{ detected: string[]; selected: Set<string> } | null>(null);
-  const [profileOfferPopup, setProfileOfferPopup] = useState<{ characterIds: string[] } | null>(null);
-  const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string } | null>(null);
+  const [nameConfirmPopup, setNameConfirmPopup] = useState<{
+    roster: Array<{ name: string; role: string; logline: string; selected: boolean }>;
+    step: "names" | "profiles";
+    addedCharacterIds?: string[];
+  } | null>(null);
+  const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string; done: number } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -4995,9 +4998,6 @@ function NovelWorkspacePage() {
     }
   }
 
-  /* ── Character generation: entry point ──
-     Scans synopsis for name-like words. If found, shows a confirmation popup.
-     If not found, goes straight to AI generation. */
   function handleGenerateCharacters() {
     if (!novel || !ensureStoryAiReady()) return;
     const hasSummaryInput =
@@ -5008,18 +5008,10 @@ function NovelWorkspacePage() {
       );
       return;
     }
-    // Scan for names the user may have written
-    const detected = extractSummaryNameHints();
-    if (detected.length > 0) {
-      // Show the confirmation popup — user picks which names to include
-      setNameConfirmPopup({ detected, selected: new Set(detected) });
-    } else {
-      // No names found — go straight to AI generation
-      void runGenerateCharactersFromSummary([]);
-    }
+    void runGenerateCharacterNames();
   }
 
-  async function runGenerateCharactersFromSummary(confirmedNames: string[]) {
+  async function runGenerateCharacterNames() {
     if (!novel || !ensureStoryAiReady()) return;
 
     setStoryAiBusyAction("characters-generate");
@@ -5031,15 +5023,12 @@ function NovelWorkspacePage() {
       const tone = (sb.summary.tone ?? []).slice(0, 3).join(", ") || "";
       const synopsis = sb.summary.synopsisShort?.trim() || "";
       const stakes = sb.summary.stakes?.trim() || "";
-      const requestedCount = Math.max(3, Math.min(6, confirmedNames.length + 2));
-
-      // ═══════════════════════════════════════════════════════════════
-      // AI creates characters from story context — not from name hints
-      // ═══════════════════════════════════════════════════════════════
-      type RosterEntry = { name?: string; role?: string; logline?: string };
-
       const themes = (sb.summary.themes ?? []).slice(0, 3).join(", ") || "";
       const premise = sb.summary.premise?.trim() || "";
+      const detected = extractSummaryNameHints();
+      const requestedCount = Math.max(3, Math.min(6, detected.length + 2));
+
+      type RosterEntry = { name?: string; role?: string; logline?: string };
 
       const promptParts = [
         `You are creating characters for a ${genre} novel.`,
@@ -5049,32 +5038,22 @@ function NovelWorkspacePage() {
         tone ? `Tone: ${tone}` : "",
         themes ? `Themes: ${themes}` : "",
         existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
-      ];
-
-      if (confirmedNames.length > 0) {
-        promptParts.push(
-          `The user wants these specific names included: ${confirmedNames.join(", ")}. You MUST use these names (add a fitting surname if only a first name is given).`,
-        );
-      }
-
-      promptParts.push(
+        detected.length > 0 ? `Names mentioned in synopsis (include these): ${detected.join(", ")}. Add fitting surnames if only first names.` : "",
         `Create ${requestedCount} characters with realistic, human-sounding full names (first + last) that fit the story's setting, culture, time period, and geography.`,
         "NAMING RULES:",
-        "- Names must feel like real people — not fantasy placeholders or generic fiction names.",
-        "- Match the cultural background and era of the story (e.g. Victorian England → English names, modern Tokyo → Japanese names, medieval Italy → Italian names).",
-        "- Each character needs a distinct, memorable name. Avoid alliterative pairs or names that sound too similar.",
-        "- If the story setting is ambiguous, use grounded, contemporary names appropriate for the genre.",
+        "- Names must feel like real people — not fantasy placeholders.",
+        "- Match the cultural background and era of the story.",
+        "- Each character needs a distinct, memorable name.",
         "",
-        "Give each character a role (Protagonist, Antagonist, Supporting, Love Interest, or Minor) and a one-sentence hook that fits the synopsis.",
+        "Give each a role (Protagonist, Antagonist, Supporting, Love Interest, or Minor) and a one-sentence hook.",
         `Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
-      );
+      ];
 
       const prompt = promptParts.filter(Boolean).join("\n");
-
       let roster: RosterEntry[] = [];
 
       try {
-        const raw = await requestOpenRouterText(prompt, 400, 180000, "Return JSON array only.", false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 400, 120000, "Return JSON array only.", false, 0.7);
         const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
         if (Array.isArray(parsed)) {
           roster = parsed;
@@ -5086,11 +5065,10 @@ function NovelWorkspacePage() {
         }
       } catch { /* continue */ }
 
-      // Retry if empty
       if (roster.length === 0) {
         try {
           const raw2 = await requestOpenRouterText(
-            `Create 4 characters for a ${genre} novel with this synopsis: ${clampPromptText(synopsis, 300)}\nEach needs a full name (first + last) fitting the story setting, a role, and a one-sentence hook.\nJSON array: [{"name":"First Last","role":"Protagonist","logline":"one sentence"}]`,
+            `Create 4 characters for a ${genre} novel: ${clampPromptText(synopsis, 300)}\nEach needs full name, role, one-sentence hook.\nJSON: [{"name":"First Last","role":"Protagonist","logline":"hook"}]`,
             400, 60000, "Return JSON array only.", false, 0.5,
           );
           const parsed2 = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw2);
@@ -5104,7 +5082,6 @@ function NovelWorkspacePage() {
         } catch { /* continue */ }
       }
 
-      // Light validation — reject obvious garbage
       roster = roster.filter((r) => {
         if (typeof r.name !== "string" || !r.name.trim()) return false;
         const name = r.name.trim();
@@ -5112,8 +5089,22 @@ function NovelWorkspacePage() {
         if (words.length === 0) return false;
         const firstLower = words[0].toLowerCase();
         if (SUMMARY_NAME_BLOCKLIST.has(firstLower)) return false;
-        // Reject names that look like placeholders
         if (/^(new character|character \d|unknown|unnamed|n\/a|the )/i.test(name)) return false;
+        return true;
+      });
+
+      const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
+      const firstNameIndex = new Set<string>();
+      storyCharacters.forEach((c) => {
+        const firstName = c.name.trim().toLowerCase().split(/\s+/)[0];
+        if (firstName) firstNameIndex.add(firstName);
+      });
+      roster = roster.filter((r) => {
+        const k = (r.name ?? "").trim().toLowerCase();
+        const firstName = k.split(/\s+/)[0] ?? "";
+        if (existingNamesSet.has(k)) return false;
+        if (firstName && firstNameIndex.has(firstName)) return false;
+        firstNameIndex.add(firstName);
         return true;
       });
 
@@ -5121,78 +5112,54 @@ function NovelWorkspacePage() {
         throw new Error("Could not generate characters. Try a different model or add more synopsis detail.");
       }
 
-      // Build character shells (name + role + logline only)
-      const nextCharacters = [...storyCharacters];
-      const nameIndex = new Map<string, number>();
-      const firstNameIndex = new Set<string>();
-      const existingNamesSet = new Set(storyCharacters.map((c) => c.name.trim().toLowerCase()));
-      nextCharacters.forEach((c, i) => {
-        const k = c.name.trim().toLowerCase();
-        if (k) {
-          nameIndex.set(k, i);
-          const firstName = k.split(/\s+/)[0];
-          if (firstName) firstNameIndex.add(firstName);
-        }
+      // Show the name confirmation popup — user picks which to keep
+      setNameConfirmPopup({
+        roster: roster.map((r) => ({
+          name: (r.name ?? "").trim(),
+          role: normalizeCharacterRole(r.role),
+          logline: typeof r.logline === "string" ? r.logline.trim() : "",
+          selected: true,
+        })),
+        step: "names",
       });
-
-      let addedCount = 0;
-      roster.forEach((entry) => {
-        const fullName = (entry.name ?? "").trim();
-        if (!fullName) return;
-        const k = fullName.toLowerCase();
-        const firstName = k.split(/\s+/)[0] ?? "";
-        // Skip if exact full name already exists
-        if (nameIndex.has(k) || existingNamesSet.has(k)) return;
-        // Skip if first name already used (prevents dupes)
-        if (firstName && firstNameIndex.has(firstName)) return;
-
-        nextCharacters.push({
-          id: createEntityId("charv2"),
-          name: fullName,
-          role: normalizeCharacterRole(entry.role),
-          logline: typeof entry.logline === "string" ? entry.logline.trim() : "",
-          appearance: "",
-          personality: "",
-          goals: "",
-          fears: "",
-          backstory: "",
-          secrets: "",
-          readerSecretHint: "",
-          accent: "",
-          speakingStyle: "",
-          reactionPattern: "",
-          voiceNotes: "",
-          tags: [],
-          pronouns: "",
-          groups: "",
-          otherNames: "",
-          relationships: [],
-        });
-        nameIndex.set(k, nextCharacters.length - 1);
-        if (firstName) firstNameIndex.add(firstName);
-        addedCount++;
-      });
-
-      if (addedCount === 0) {
-        throw new Error("No new characters to add. They may already exist.");
-      }
-
-      updateStoryBible({ characters: nextCharacters });
-      if (!selectedV2CharacterId && nextCharacters[0]) {
-        setSelectedV2CharacterId(nextCharacters[0].id);
-      }
-
-      // Collect IDs of newly added characters for profile generation offer
-      const newCharIds = nextCharacters.slice(nextCharacters.length - addedCount).map((c) => c.id);
-      if (newCharIds.length > 0) {
-        setProfileOfferPopup({ characterIds: newCharIds });
-      }
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate characters.");
     } finally {
       setStoryAiBusyAction(null);
     }
+  }
+
+  function commitSelectedCharacters() {
+    if (!novel || !nameConfirmPopup) return;
+    const selected = nameConfirmPopup.roster.filter((r) => r.selected);
+    if (selected.length === 0) { setNameConfirmPopup(null); return; }
+
+    const nextCharacters = [...storyCharacters];
+    const addedIds: string[] = [];
+
+    for (const entry of selected) {
+      const id = createEntityId("charv2");
+      nextCharacters.push({
+        id,
+        name: entry.name,
+        role: normalizeCharacterRole(entry.role),
+        logline: entry.logline,
+        appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        secrets: "", readerSecretHint: "", accent: "", speakingStyle: "",
+        reactionPattern: "", voiceNotes: "", tags: [], pronouns: "",
+        groups: "", otherNames: "", relationships: [],
+      });
+      addedIds.push(id);
+    }
+
+    updateStoryBible({ characters: nextCharacters });
+    if (!selectedV2CharacterId && nextCharacters[0]) {
+      setSelectedV2CharacterId(nextCharacters[0].id);
+    }
+
+    // Move to profile generation step
+    setNameConfirmPopup({ ...nameConfirmPopup, step: "profiles", addedCharacterIds: addedIds });
   }
 
   async function runCharacterAiForSelected() {
@@ -5345,102 +5312,74 @@ function NovelWorkspacePage() {
   async function runAutoGenerateAllProfiles(characterIds: string[]) {
     if (!novel || !ensureStoryAiReady() || characterIds.length === 0) return;
 
-    setProfileOfferPopup(null);
+    setNameConfirmPopup(null);
     setStoryAiError(null);
+    setStoryAiBusyAction("character-profile-batch");
+    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
-    for (let i = 0; i < characterIds.length; i++) {
-      const charId = characterIds[i];
-      const character = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
-      if (!character) continue;
+    const context = buildStoryBibleContext("characters");
+    const existingOtherNames = (novel.storyBible.characters ?? [])
+      .map((item) => item.name.trim().toLowerCase())
+      .filter(Boolean);
+    const sysMsg = "Character profile specialist. Vivid, concise, canon-consistent. JSON only.";
 
-      setProfileGenProgress({ current: i + 1, total: characterIds.length, name: character.name });
-      setStoryAiBusyAction(`character-profile-batch`);
-      setSelectedV2CharacterId(charId);
+    async function generateOneProfile(charId: string) {
+      const character = (novel!.storyBible.characters ?? []).find((c) => c.id === charId);
+      if (!character) return;
+
+      setProfileGenProgress((prev) => prev ? { ...prev, current: prev.current + 1, name: character.name } : prev);
+
+      const prompt = [
+        `Profile for: ${character.name} (${character.role || "Supporting"})`,
+        character.logline ? `Hook: ${character.logline}` : "",
+        `Genre/setting context:\n${context.slice(0, 1200)}`,
+        "",
+        "Return JSON: {\"appearance\":\"...\",\"personality\":\"...\",\"goals\":\"...\",\"fears\":\"...\",\"backstory\":\"...\",\"speakingStyle\":\"...\",\"secrets\":\"...\",\"tags\":[]}",
+        "Keep each field 1-3 sentences. Be vivid and specific. Anchor to the story.",
+      ].filter(Boolean).join("\n");
 
       try {
-        const context = buildStoryBibleContext("characters");
-        const summaryNameHints = extractSummaryNameHints();
-        const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "none detected";
-        const existingOtherNames = (novel.storyBible.characters ?? [])
-          .filter((item) => item.id !== character.id)
-          .map((item) => item.name.trim().toLowerCase())
-          .filter(Boolean);
-
-        const systemMsg = "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return only valid JSON.";
-        const prompt = [
-          `Build a full character profile for: ${character.name} (${character.role || "Supporting"})`,
-          character.logline ? `Hook: ${character.logline}` : "",
-          "",
-          "Build a complete, vivid profile — appearance, personality, goals, fears, backstory, speaking style, and voice. Make them feel like a real person grounded in the story world.",
-          "Anchor everything to Summary canon only. Do not invent unrelated storylines.",
-          "Return JSON only in this shape:",
-          `{
-  "name": "string",
-  "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Type|Custom",
-  "logline": "string",
-  "appearance": "string",
-  "personality": "string",
-  "goals": "string",
-  "fears": "string",
-  "backstory": "string",
-  "accent": "string",
-  "speakingStyle": "string",
-  "reactionPattern": "string",
-  "voiceNotes": "string",
-  "secrets": "string",
-  "readerSecretHint": "string",
-  "tags": ["string"]
-}`,
-          "Rules:",
-          "- Keep the character's existing name unless it's a placeholder.",
-          "- Name must be a realistic full name (first + last) fitting the story's culture and setting.",
-          "- Appearance should be vivid and specific — height, build, hair, eyes, distinguishing features.",
-          "- Personality should capture how they act, not just adjectives.",
-          "- Goals and fears must connect to the story's conflict.",
-          "- Backstory should explain who they are and why they want what they want.",
-          "- Speaking style should describe how they talk — formal/casual, verbose/terse, quirks.",
-          "- readerSecretHint must remain spoiler-safe.",
-          `Summary-mentioned names: ${summaryNamesText}`,
-          `Current character:\n${JSON.stringify({ name: character.name, role: character.role, logline: character.logline || "" }, null, 2)}`,
-          `Story context:\n${context}`,
-        ].filter(Boolean).join("\n\n");
-
         const data = await requestOpenRouterJson<{
-          name?: string; role?: string; logline?: string; appearance?: string;
-          personality?: string; goals?: string; fears?: string; backstory?: string;
-          accent?: string; speakingStyle?: string; reactionPattern?: string;
-          voiceNotes?: string; secrets?: string; readerSecretHint?: string; tags?: string[];
-        }>(prompt, 850, { systemMessage: systemMsg });
+          appearance?: string; personality?: string; goals?: string; fears?: string;
+          backstory?: string; speakingStyle?: string; secrets?: string;
+          readerSecretHint?: string; accent?: string; reactionPattern?: string;
+          voiceNotes?: string; tags?: string[];
+        }>(prompt, 500, { systemMessage: sysMsg, timeoutMs: 90000 });
 
         const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-        const aiName = typeof data.name === "string" ? data.name.trim() : "";
-        if (aiName) {
-          const aiFullName = ensureFullCharacterName(aiName, (novel.storyBible.characters ?? []).length);
-          const aiNameKey = aiFullName.toLowerCase();
-          const currentNameKey = character.name.trim().toLowerCase();
-          if (aiNameKey === currentNameKey || !existingOtherNames.includes(aiNameKey)) {
-            patch.name = aiFullName;
-          }
-        }
-        if (typeof data.role === "string" && data.role.trim()) patch.role = normalizeCharacterRole(data.role);
-        if (typeof data.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
         if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
         if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
         if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
         if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
         if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
-        if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
         if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
-        if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
-        if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
         if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
         if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
+        if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
+        if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
+        if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
         const aiTags = parseStringList(data.tags);
         if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
 
         updateV2Character(character.id, patch);
       } catch (error) {
-        if (isCancelledError(error)) break;
+        if (isCancelledError(error)) throw error;
+      }
+
+      setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
+    }
+
+    // Run in parallel batches of 2 for speed
+    const BATCH_SIZE = 2;
+    try {
+      for (let i = 0; i < characterIds.length; i += BATCH_SIZE) {
+        if (aiAbortRef.current?.signal.aborted) break;
+        const batch = characterIds.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map((id) => generateOneProfile(id)));
+      }
+    } catch (error) {
+      if (!isCancelledError(error)) {
+        setStoryAiError(error instanceof Error ? error.message : "Profile generation error.");
       }
     }
 
@@ -12667,8 +12606,8 @@ function NovelWorkspacePage() {
                           disabled={storyAiBusyAction !== null}
                         >
                           {storyAiBusyAction === "characters-generate"
-                            ? "Generating..."
-                            : "Auto generate characters from summary"}
+                            ? "Finding characters..."
+                            : "Generate characters from summary"}
                         </button>
                         )}
                         <button type="button" className="btn btn-primary" onClick={addV2Character}>
@@ -13890,107 +13829,131 @@ function NovelWorkspacePage() {
       )}
 
       {/* ── Name confirmation popup ── */}
-      {nameConfirmPopup && (
+      {/* ── Character generation step-through popup ── */}
+      {nameConfirmPopup && nameConfirmPopup.step === "names" && (
         <div className="pw-modal-overlay" onClick={() => setNameConfirmPopup(null)}>
-          <div className="pw-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
-            <div style={{ textAlign: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 28, marginBottom: 6 }}>👤</div>
-              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
-                We noticed character names
+          <div className="pw-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
+                background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               </div>
-              <p className="pw-delete-modal-copy" style={{ marginTop: 8 }}>
-                These names were found in your synopsis. Select which ones to include — the AI will build characters around them. Unselected slots will get AI-generated names that fit your story.
+              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
+                Step 1: Confirm Characters
+              </div>
+              <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
+                Tick the characters you want to add. Untick any you don&apos;t need.
               </p>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", margin: "20px 0" }}>
-              {nameConfirmPopup.detected.map((name) => {
-                const isSelected = nameConfirmPopup.selected.has(name);
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => {
-                      setNameConfirmPopup((prev) => {
-                        if (!prev) return prev;
-                        const next = new Set(prev.selected);
-                        if (next.has(name)) next.delete(name); else next.add(name);
-                        return { ...prev, selected: next };
-                      });
-                    }}
-                    style={{
-                      padding: "8px 18px",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      borderRadius: 12,
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                      border: isSelected ? "2px solid var(--pw-accent, #556b2f)" : "1.5px solid var(--pw-border, #e5e6ea)",
-                      background: isSelected ? "var(--pw-accent-light, rgba(85,107,47,0.1))" : "var(--pw-bg-soft, #f6f6f8)",
-                      color: isSelected ? "var(--pw-accent, #556b2f)" : "var(--pw-text-dim, #999)",
-                    }}
-                  >
-                    {isSelected ? "✓ " : ""}{name}
-                  </button>
-                );
-              })}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "0 0 20px" }}>
+              {nameConfirmPopup.roster.map((entry, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setNameConfirmPopup((prev) => {
+                      if (!prev) return prev;
+                      const next = [...prev.roster];
+                      next[idx] = { ...next[idx], selected: !next[idx].selected };
+                      return { ...prev, roster: next };
+                    });
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    padding: "10px 14px", borderRadius: 12,
+                    cursor: "pointer", transition: "all 0.15s",
+                    textAlign: "left", width: "100%",
+                    border: entry.selected ? "2px solid var(--pw-accent, #556b2f)" : "1.5px solid var(--pw-border, #e5e6ea)",
+                    background: entry.selected ? "var(--pw-accent-light, rgba(85,107,47,0.08))" : "var(--pw-bg-soft, transparent)",
+                  }}
+                >
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                    border: entry.selected ? "2px solid var(--pw-accent, #a3e635)" : "2px solid var(--pw-border, #444)",
+                    background: entry.selected ? "var(--pw-accent, #a3e635)" : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "all 0.15s",
+                  }}>
+                    {entry.selected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={document.documentElement.classList.contains("pw-light") ? "#fff" : "#111"} strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)" }}>{entry.name}</div>
+                    {entry.logline && (
+                      <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {entry.logline}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, flexShrink: 0,
+                    background: entry.role === "Protagonist" ? "rgba(163,230,53,0.12)" : entry.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                    color: entry.role === "Protagonist" ? "var(--pw-accent)" : entry.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                    textTransform: "uppercase", letterSpacing: "0.03em",
+                  }}>{entry.role || "Supporting"}</span>
+                </button>
+              ))}
             </div>
 
-            <div className="pw-delete-modal-actions" style={{ marginTop: 20 }}>
+            <div className="pw-delete-modal-actions" style={{ marginTop: 16 }}>
               <button
                 type="button"
                 className="btn pw-cancel-btn"
-                onClick={() => {
-                  setNameConfirmPopup(null);
-                  void runGenerateCharactersFromSummary([]);
-                }}
+                onClick={() => setNameConfirmPopup(null)}
               >
-                Skip — let AI choose all names
+                Cancel
               </button>
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => {
-                  const confirmed = [...nameConfirmPopup.selected];
-                  setNameConfirmPopup(null);
-                  void runGenerateCharactersFromSummary(confirmed);
-                }}
+                disabled={nameConfirmPopup.roster.filter((r) => r.selected).length === 0}
+                onClick={() => commitSelectedCharacters()}
+                style={{ opacity: nameConfirmPopup.roster.filter((r) => r.selected).length === 0 ? 0.4 : 1 }}
               >
-                Continue with {nameConfirmPopup.selected.size} name{nameConfirmPopup.selected.size !== 1 ? "s" : ""}
+                Add {nameConfirmPopup.roster.filter((r) => r.selected).length} character{nameConfirmPopup.roster.filter((r) => r.selected).length !== 1 ? "s" : ""}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Profile generation offer popup ── */}
-      {profileOfferPopup && (
-        <div className="pw-modal-overlay" onClick={() => setProfileOfferPopup(null)}>
+      {/* ── Step 2: Generate profiles offer ── */}
+      {nameConfirmPopup && nameConfirmPopup.step === "profiles" && nameConfirmPopup.addedCharacterIds && (
+        <div className="pw-modal-overlay" onClick={() => setNameConfirmPopup(null)}>
           <div className="pw-modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
-            <div style={{ textAlign: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 28, marginBottom: 6 }}>✦</div>
-              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
-                Characters created!
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
+                background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
-              <p className="pw-delete-modal-copy" style={{ marginTop: 8 }}>
-                {profileOfferPopup.characterIds.length} character{profileOfferPopup.characterIds.length !== 1 ? "s were" : " was"} added with names and roles. Would you like the AI to auto-generate full profiles for each one? This fills in appearance, personality, goals, fears, backstory, and speaking style.
+              <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
+                Step 2: Generate Profiles?
+              </div>
+              <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
+                {nameConfirmPopup.addedCharacterIds.length} character{nameConfirmPopup.addedCharacterIds.length !== 1 ? "s" : ""} added. Generate full profiles (appearance, personality, backstory, speaking style)?
               </p>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "16px 0" }}>
-              {profileOfferPopup.characterIds.map((cid) => {
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "0 0 16px" }}>
+              {nameConfirmPopup.addedCharacterIds.map((cid) => {
                 const ch = storyCharacters.find((c) => c.id === cid);
                 if (!ch) return null;
                 return (
                   <div key={cid} style={{
                     display: "flex", alignItems: "center", gap: 10,
-                    padding: "8px 14px", borderRadius: 10,
+                    padding: "8px 12px", borderRadius: 10,
                     background: "var(--pw-surface-alt, rgba(255,255,255,0.04))",
                     border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
                   }}>
                     <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{ch.name}</span>
                     <span style={{
-                      fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+                      fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
                       background: ch.role === "Protagonist" ? "rgba(163,230,53,0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
                       color: ch.role === "Protagonist" ? "var(--pw-accent)" : ch.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
                     }}>{ch.role || "Supporting"}</span>
@@ -13999,20 +13962,20 @@ function NovelWorkspacePage() {
               })}
             </div>
 
-            <div className="pw-delete-modal-actions" style={{ marginTop: 20 }}>
+            <div className="pw-delete-modal-actions" style={{ marginTop: 16 }}>
               <button
                 type="button"
                 className="btn pw-cancel-btn"
-                onClick={() => setProfileOfferPopup(null)}
+                onClick={() => setNameConfirmPopup(null)}
               >
-                Skip — I'll do it manually
+                Skip - I&apos;ll fill them in
               </button>
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => void runAutoGenerateAllProfiles(profileOfferPopup.characterIds)}
+                onClick={() => void runAutoGenerateAllProfiles(nameConfirmPopup.addedCharacterIds!)}
               >
-                Auto-generate all profiles
+                Generate all profiles
               </button>
             </div>
           </div>
@@ -14023,27 +13986,38 @@ function NovelWorkspacePage() {
       {profileGenProgress && (
         <div className="pw-modal-overlay">
           <div className="pw-modal" style={{ maxWidth: 400, textAlign: "center" }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>✦</div>
-            <div className="pw-delete-modal-title" style={{ fontSize: 16, fontWeight: 800 }}>
-              Generating profile {profileGenProgress.current} of {profileGenProgress.total}
+            <div style={{
+              width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
+              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round">
+                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+              </svg>
             </div>
-            <p className="pw-delete-modal-copy" style={{ marginTop: 8, fontSize: 14 }}>
-              Building profile for <strong>{profileGenProgress.name}</strong>...
+            <div className="pw-delete-modal-title" style={{ fontSize: 16, fontWeight: 800 }}>
+              Generating profiles
+            </div>
+            <p className="pw-delete-modal-copy" style={{ marginTop: 6, fontSize: 13 }}>
+              {profileGenProgress.name ? <>Building <strong>{profileGenProgress.name}</strong>...</> : "Starting..."}
+            </p>
+            <p className="pw-delete-modal-copy" style={{ fontSize: 12, marginTop: 2 }}>
+              {profileGenProgress.done} of {profileGenProgress.total} complete
             </p>
             <div style={{
-              marginTop: 16, height: 6, borderRadius: 3,
+              marginTop: 14, height: 6, borderRadius: 3,
               background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
               overflow: "hidden",
             }}>
               <div style={{
                 height: "100%", borderRadius: 3,
                 background: "var(--pw-accent, #a3e635)",
-                width: `${Math.round((profileGenProgress.current / profileGenProgress.total) * 100)}%`,
-                transition: "width 0.4s ease",
+                width: `${Math.round((profileGenProgress.done / profileGenProgress.total) * 100)}%`,
+                transition: "width 0.3s ease",
               }} />
             </div>
-            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
-              Each profile is generated individually for best quality
+            <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 8 }}>
+              Running {Math.min(2, profileGenProgress.total - profileGenProgress.done)} in parallel for speed
             </p>
           </div>
         </div>
