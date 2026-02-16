@@ -9735,10 +9735,12 @@ function NovelWorkspacePage() {
                           /
                         </button>
                       </div>
+                      {/* ── Blocks with interleaved prose ── */}
                       {!hideBlocks && blocks.length > 0 && (
                       <div className="pw-chapter-blocks" dir="ltr">
                         {blocks.map((block, idx) => {
                           const isBlockBusy = storyAiBusyAction === `block-prose-${idx}`;
+                          const editorFont = EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ?? "Georgia, serif";
                           return (
                           <div key={idx} className="pw-block-wrap">
                             <div className="pw-block-card">
@@ -9850,57 +9852,72 @@ function NovelWorkspacePage() {
                                 <button type="button" className="pw-block-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)}>×</button>
                               </div>
                             </div>
-                            {/* ── Per-bloc prose area ── */}
-                            <div className="pw-block-prose-area" style={{ marginTop: 6, marginBottom: 10 }}>
-                              {!aiOff && block.synopsis?.trim() && (
-                                <button
-                                  type="button"
-                                  className="pw-block-generate-btn"
-                                  disabled={isBlockBusy || !!storyAiBusyAction}
-                                  onClick={() => void runGenerateBlockProse(idx)}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 6,
-                                    padding: "6px 14px", marginBottom: 6, borderRadius: 8,
-                                    fontSize: 12, fontWeight: 600,
-                                    background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.10)",
-                                    color: "var(--pw-accent)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.25)",
-                                    cursor: isBlockBusy || storyAiBusyAction ? "not-allowed" : "pointer",
-                                    opacity: isBlockBusy || storyAiBusyAction ? 0.6 : 1,
-                                  }}
-                                >
-                                  {isBlockBusy ? "Generating…" : "✦ Generate Prose"}
-                                </button>
-                              )}
-                              <textarea
-                                className="pw-block-prose-input"
+                            {/* ── Seamless prose area (styled like main editor) ── */}
+                            {!aiOff && block.synopsis?.trim() && !block.prose?.trim() && (
+                              <button
+                                type="button"
+                                disabled={isBlockBusy || !!storyAiBusyAction}
+                                onClick={() => void runGenerateBlockProse(idx)}
                                 style={{
-                                  width: "100%", boxSizing: "border-box",
-                                  minHeight: block.prose?.trim() ? 120 : 60,
-                                  padding: "10px 12px", borderRadius: 8,
-                                  border: "1px solid var(--pw-border)",
-                                  background: "var(--pw-surface-alt)",
-                                  color: "var(--pw-text)", fontSize: 14, lineHeight: 1.7,
-                                  fontFamily: EDITOR_FONT_OPTIONS.find((f) => f.id === editorFontFamily)?.font ?? "Georgia, serif",
-                                  resize: "vertical", outline: "none",
+                                  display: "inline-flex", alignItems: "center", gap: 5,
+                                  padding: "4px 12px", margin: "8px 0 4px",
+                                  borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                  background: "none", border: "none",
+                                  color: "var(--pw-accent)", cursor: isBlockBusy || storyAiBusyAction ? "not-allowed" : "pointer",
+                                  opacity: isBlockBusy || storyAiBusyAction ? 0.5 : 0.8,
+                                  transition: "opacity 0.15s",
+                                  fontFamily: "inherit",
                                 }}
-                                placeholder="Scene prose..."
-                                value={block.prose || ""}
-                                onChange={(e) => {
-                                  const next = [...blocks];
-                                  next[idx] = { ...block, prose: e.target.value };
-                                  updateSceneBlocks(activeChapter.id, next);
-                                  syncChapterContentFromBlocks(activeChapter.id, next);
-                                }}
-                                onInput={(event) => autoSizeEditorInput(event.currentTarget)}
-                              />
-                            </div>
+                                onMouseEnter={(e) => { if (!isBlockBusy && !storyAiBusyAction) e.currentTarget.style.opacity = "1"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.opacity = isBlockBusy || storyAiBusyAction ? "0.5" : "0.8"; }}
+                              >
+                                {isBlockBusy ? (
+                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Generating...</>
+                                ) : "✦ Generate prose for this scene"}
+                              </button>
+                            )}
+                            {isBlockBusy && block.prose?.trim() && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", fontSize: 12, color: "var(--pw-accent)", fontWeight: 600 }}>
+                                <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                                Regenerating...
+                              </div>
+                            )}
+                            <textarea
+                              ref={(el) => { blockProseRefs.current[idx] = el; }}
+                              className="pw-editor-input pw-block-prose-seamless"
+                              style={{
+                                fontFamily: editorFont,
+                                textAlign: editorTextAlign,
+                                fontSize: editorFontSize,
+                                minHeight: block.prose?.trim() ? 80 : 36,
+                                border: "none",
+                                background: "transparent",
+                                padding: "8px 0 16px",
+                                width: "100%",
+                                boxSizing: "border-box",
+                                outline: "none",
+                                resize: "none",
+                              }}
+                              dir="ltr"
+                              spellCheck
+                              placeholder={block.prose?.trim() ? undefined : "Start writing this scene..."}
+                              value={block.prose || ""}
+                              onChange={(e) => {
+                                const next = [...blocks];
+                                next[idx] = { ...block, prose: e.target.value };
+                                updateSceneBlocks(activeChapter.id, next);
+                                syncChapterContentFromBlocks(activeChapter.id, next);
+                              }}
+                              onInput={(event) => autoSizeEditorInput(event.currentTarget)}
+                              onMouseUp={(e) => handleEditorMouseUp(e, idx)}
+                            />
                           </div>
                           );
                         })}
                       </div>
                       )}
-                      {/* Combined chapter view (read-only when blocks exist, editable otherwise) */}
-                      {blocks.length === 0 && (
+                      {/* ── Unified chapter editor (no blocks, or blocks hidden) ── */}
+                      {(blocks.length === 0 || hideBlocks) && (
                       <textarea
                         ref={editorInputRef}
                         data-pw-plain-editor
