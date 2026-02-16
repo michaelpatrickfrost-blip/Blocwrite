@@ -1,9 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 900;
-
-/* ───────────────────── Types ───────────────────── */
 
 type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 
@@ -23,29 +21,13 @@ interface BatchRequest {
   storyContext: string;
 }
 
-interface ProfileData {
-  appearance?: string;
-  personality?: string;
-  goals?: string;
-  fears?: string;
-  backstory?: string;
-  accent?: string;
-  speakingStyle?: string;
-  reactionPattern?: string;
-  voiceNotes?: string;
-  secrets?: string;
-  readerSecretHint?: string;
-  tags?: string[];
+interface ProfileResult {
+  characterId: string;
+  profile: Record<string, unknown> | null;
+  error?: string;
 }
 
-interface RelationshipData {
-  from: string;
-  to: string;
-  type: string;
-  description?: string;
-}
-
-/* ───────────────────── AI Call ───────────────────── */
+/* ───────────────────── Provider URL ───────────────────── */
 
 const PROVIDER_BASE: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
@@ -80,6 +62,8 @@ function cleanBaseUrl(raw: string, provider: ProviderId): string {
   }
   return normalized;
 }
+
+/* ───────────────────── AI Call ───────────────────── */
 
 async function callAi(
   provider: ProviderId,
@@ -116,29 +100,44 @@ async function callAi(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90_000);
+  const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
   try {
+    console.log(`[batch-profiles] Calling ${provider} model=${model} endpoint=${endpoint}`);
+    const t0 = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+    const rawText = await response.text();
+    console.log(`[batch-profiles] Response status=${response.status} time=${Date.now() - t0}ms bodyLen=${rawText.length}`);
 
     if (!response.ok) {
-      const errorMsg =
-        typeof payload.error === "string"
-          ? payload.error
-          : typeof (payload.error as Record<string, unknown>)?.message === "string"
-            ? (payload.error as Record<string, string>).message
-            : `API error ${response.status}`;
-      throw new Error(errorMsg);
+      console.error(`[batch-profiles] API error: ${rawText.slice(0, 500)}`);
+      throw new Error(`API error ${response.status}: ${rawText.slice(0, 200)}`);
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(rawText);
+    } catch {
+      console.error(`[batch-profiles] Failed to parse API response as JSON: ${rawText.slice(0, 300)}`);
+      throw new Error("API response was not JSON");
     }
 
     const choices = payload.choices as Array<{ message?: { content?: string } }> | undefined;
-    return choices?.[0]?.message?.content ?? "";
+    const content = choices?.[0]?.message?.content ?? "";
+    console.log(`[batch-profiles] AI content length=${content.length}, first 200 chars: ${content.slice(0, 200)}`);
+    return content;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      console.error(`[batch-profiles] Timeout after 120s`);
+      throw new Error("AI request timed out after 120 seconds");
+    }
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -198,7 +197,10 @@ function parseJson<T>(raw: string): T | null {
   if (!cleaned) return null;
 
   const candidates: string[] = [];
-  const push = (v: string) => { const t = v.trim(); if (t && !candidates.includes(t)) candidates.push(t); };
+  const push = (v: string) => {
+    const t = v.trim();
+    if (t && !candidates.includes(t)) candidates.push(t);
+  };
 
   push(cleaned);
   push(stripJsonFence(cleaned));
@@ -211,180 +213,159 @@ function parseJson<T>(raw: string): T | null {
   if (extracted2) push(extracted2);
 
   for (const candidate of candidates) {
-    try { return JSON.parse(candidate) as T; } catch { /* continue */ }
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      /* continue */
+    }
   }
   return null;
 }
 
-/* ───────────────────── SSE Helpers ───────────────────── */
-
-function sseMessage(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
 /* ───────────────────── Main Handler ───────────────────── */
+
+const PROFILE_SHAPE = `{
+  "appearance": "2-3 sentences describing physical appearance",
+  "personality": "2-3 sentences on personality traits",
+  "goals": "1-2 sentences on what they want",
+  "fears": "1-2 sentences on their deepest fears",
+  "backstory": "2-3 sentences on their background",
+  "accent": "dialect or accent notes",
+  "speakingStyle": "how they talk — formal, slang, etc.",
+  "reactionPattern": "how they react under stress",
+  "voiceNotes": "unique vocal characteristics",
+  "secrets": "1-2 hidden facts about them",
+  "readerSecretHint": "a spoiler-safe hint for the reader",
+  "tags": ["keyword1", "keyword2", "keyword3"]
+}`;
 
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as BatchRequest;
   const { provider, apiKey, model, characters, storyContext } = body;
   const baseUrl = cleanBaseUrl(body.baseUrl, provider);
 
+  console.log(`[batch-profiles] START: ${characters.length} characters, provider=${provider}, model=${model}`);
+
   if (!model || !characters?.length) {
-    return new Response(JSON.stringify({ error: "Missing model or characters" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return NextResponse.json({ error: "Missing model or characters" }, { status: 400 });
+  }
+  if (!apiKey && (provider === "openrouter" || provider === "infermatic" || provider === "huggingface")) {
+    return NextResponse.json({ error: "Missing API key" }, { status: 400 });
   }
 
-  const encoder = new TextEncoder();
+  const results: ProfileResult[] = [];
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(sseMessage(event, data)));
-      };
+  /* ── Generate each profile ── */
+  for (let i = 0; i < characters.length; i++) {
+    const char = characters[i];
+    console.log(`[batch-profiles] Processing ${i + 1}/${characters.length}: ${char.name}`);
 
-      const completedIds: string[] = [];
-      const PROFILE_SHAPE = `{
-  "appearance": "string (2-3 sentences describing physical appearance)",
-  "personality": "string (2-3 sentences on personality traits)",
-  "goals": "string (1-2 sentences on what they want)",
-  "fears": "string (1-2 sentences on their deepest fears)",
-  "backstory": "string (2-3 sentences on their background)",
-  "accent": "string (dialect or accent notes)",
-  "speakingStyle": "string (how they talk — formal, slang, etc.)",
-  "reactionPattern": "string (how they react under stress)",
-  "voiceNotes": "string (unique vocal characteristics)",
-  "secrets": "string (1-2 hidden facts about them)",
-  "readerSecretHint": "string (a spoiler-safe hint for the reader)",
-  "tags": ["string (keywords like 'brave', 'cunning')"]
-}`;
+    if (i > 0) {
+      console.log(`[batch-profiles] Waiting 2.5s before next character...`);
+      await new Promise((r) => setTimeout(r, 2500));
+    }
 
-      /* ── Phase 1: Generate profiles one by one ── */
-      for (let i = 0; i < characters.length; i++) {
-        const char = characters[i];
+    const systemMsg =
+      "You are a character development specialist for novels. Return ONLY valid JSON. No markdown fences, no explanation, no thinking tags, no extra text.";
 
-        send("progress", {
-          current: i + 1,
-          total: characters.length,
-          name: char.name,
-          phase: "profile",
-        });
+    const prompt = [
+      `Create a detailed character profile for: ${char.name} (Role: ${char.role || "Supporting"})`,
+      char.logline ? `Character hook: ${char.logline}` : null,
+      "",
+      "Return a JSON object with EXACTLY these fields, each filled with 1-3 vivid sentences:",
+      PROFILE_SHAPE,
+      "",
+      "CRITICAL RULES:",
+      "- Output ONLY the JSON object. Nothing else.",
+      "- Every field MUST have a non-empty string value.",
+      "- tags MUST be an array of 3-6 keyword strings.",
+      "- Anchor to the story context below. Do not invent unrelated storylines.",
+      "",
+      `Story context:\n${storyContext.slice(0, 3000)}`,
+    ]
+      .filter((line) => line !== null)
+      .join("\n");
 
-        if (i > 0) await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const raw = await callAi(provider, apiKey, baseUrl, model, systemMsg, prompt, 900, 0.4);
+      let profile = parseJson<Record<string, unknown>>(raw);
 
-        const systemMsg =
-          "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return ONLY valid JSON. No markdown fences, no explanation, no thinking tags.";
-
-        const prompt = [
-          `Build a full profile for: ${char.name} (${char.role || "Supporting"})`,
-          char.logline ? `Character hook: ${char.logline}` : "",
-          "Build a vivid, detailed character profile — appearance, personality, goals, fears, backstory, and voice.",
-          "Anchor everything to the Story canon only. Do not invent unrelated storylines.",
-          `Return JSON ONLY in this exact shape:\n${PROFILE_SHAPE}`,
-          "Rules:",
-          "- Fill in EVERY field with 1-3 vivid sentences. Do NOT leave any field blank or empty.",
-          "- tags should be an array of 3-6 keyword strings.",
-          "- readerSecretHint must remain spoiler-safe.",
-          `\nStory context:\n${storyContext.slice(0, 3000)}`,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-
-        try {
-          const raw = await callAi(provider, apiKey, baseUrl, model, systemMsg, prompt, 850, 0.4);
-          let profile = parseJson<ProfileData>(raw);
-
-          // Retry once with stricter prompt if parsing failed
-          if (!profile) {
-            await new Promise((r) => setTimeout(r, 1500));
-            const retryPrompt = `Your previous response was not valid JSON. Return ONLY the JSON object.\n\nOriginal request:\n${prompt.slice(0, 2500)}`;
-            const raw2 = await callAi(
-              provider, apiKey, baseUrl, model,
-              "Return ONLY valid JSON. No markdown, no text, no explanation.",
-              retryPrompt, 850, 0.1,
-            );
-            profile = parseJson<ProfileData>(raw2);
-          }
-
-          if (profile && typeof profile === "object") {
-            const fields = Object.entries(profile).filter(
-              ([, v]) => (typeof v === "string" && v.trim()) || (Array.isArray(v) && v.length > 0),
-            );
-
-            if (fields.length >= 3) {
-              completedIds.push(char.id);
-              send("profile", { characterId: char.id, profile });
-            } else {
-              send("error", {
-                characterId: char.id,
-                message: `Only ${fields.length} fields filled — skipped`,
-              });
-            }
-          } else {
-            send("error", { characterId: char.id, message: "Could not parse profile JSON" });
-          }
-        } catch (err) {
-          send("error", {
-            characterId: char.id,
-            message: err instanceof Error ? err.message : "Unknown error",
-          });
-        }
-      }
-
-      /* ── Phase 2: Link relationships ── */
-      if (completedIds.length >= 2) {
-        send("progress", {
-          current: characters.length,
-          total: characters.length,
-          name: "Linking...",
-          phase: "relationships",
-        });
-
+      if (!profile) {
+        console.log(`[batch-profiles] First parse failed for ${char.name}, retrying with strict prompt...`);
         await new Promise((r) => setTimeout(r, 2000));
-
-        const nameList = characters
-          .filter((c) => completedIds.includes(c.id))
-          .map((c) => `${c.name} (${c.role || "Supporting"})`)
-          .join(", ");
-
-        const relPrompt = [
-          `Characters: ${nameList}`,
-          `Story: ${storyContext.slice(0, 1500)}`,
-          "Return a JSON array of meaningful relationships between these characters:",
-          '[{"from":"Name","to":"Name","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"brief description"}]',
-          "Only include meaningful, story-relevant relationships. Return ONLY the JSON array.",
-        ].join("\n");
-
-        try {
-          const raw = await callAi(
-            provider, apiKey, baseUrl, model,
-            "Relationship mapper. Return ONLY a valid JSON array. No markdown, no explanation.",
-            relPrompt, 500, 0.3,
-          );
-          const parsed = parseJson<RelationshipData[]>(raw);
-          const relationships = Array.isArray(parsed) ? parsed : [];
-
-          if (relationships.length > 0) {
-            send("relationships", {
-              relationships: relationships.filter((r) => r.from && r.to && r.type),
-            });
-          }
-        } catch {
-          // Relationships are a bonus — don't fail the whole batch
-        }
+        const retryRaw = await callAi(
+          provider,
+          apiKey,
+          baseUrl,
+          model,
+          "Return ONLY valid JSON. No markdown fences, no text.",
+          `Return a character profile as JSON for ${char.name}. Fields: appearance, personality, goals, fears, backstory, accent, speakingStyle, reactionPattern, voiceNotes, secrets, readerSecretHint, tags. Each field 1-3 sentences. tags is array of strings.\n\nStory: ${storyContext.slice(0, 1500)}`,
+          900,
+          0.1,
+        );
+        profile = parseJson<Record<string, unknown>>(retryRaw);
       }
 
-      send("done", { completedIds });
-      controller.close();
-    },
-  });
+      if (profile && typeof profile === "object") {
+        const filledFields = Object.entries(profile).filter(
+          ([, v]) => (typeof v === "string" && v.trim().length > 0) || (Array.isArray(v) && v.length > 0),
+        );
+        console.log(`[batch-profiles] ${char.name}: parsed OK, ${filledFields.length} fields filled`);
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+        if (filledFields.length >= 3) {
+          results.push({ characterId: char.id, profile });
+        } else {
+          console.warn(`[batch-profiles] ${char.name}: only ${filledFields.length} fields, skipping`);
+          results.push({ characterId: char.id, profile: null, error: `Only ${filledFields.length} fields filled` });
+        }
+      } else {
+        console.error(`[batch-profiles] ${char.name}: could not parse JSON from AI response`);
+        results.push({ characterId: char.id, profile: null, error: "Could not parse AI response as JSON" });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error(`[batch-profiles] ${char.name}: error — ${msg}`);
+      results.push({ characterId: char.id, profile: null, error: msg });
+    }
+  }
+
+  /* ── Link relationships ── */
+  let relationships: Array<{ from: string; to: string; type: string; description?: string }> = [];
+  const completedNames = results
+    .filter((r) => r.profile)
+    .map((r) => {
+      const char = characters.find((c) => c.id === r.characterId);
+      return char ? `${char.name} (${char.role || "Supporting"})` : null;
+    })
+    .filter(Boolean);
+
+  if (completedNames.length >= 2) {
+    console.log(`[batch-profiles] Generating relationships for ${completedNames.length} characters...`);
+    await new Promise((r) => setTimeout(r, 2500));
+
+    try {
+      const relRaw = await callAi(
+        provider,
+        apiKey,
+        baseUrl,
+        model,
+        "Relationship mapper. Return ONLY a valid JSON array. No markdown, no explanation.",
+        `Characters: ${completedNames.join(", ")}\nStory: ${storyContext.slice(0, 1500)}\n\nReturn a JSON array of relationships:\n[{"from":"CharName","to":"CharName","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"brief"}]\nOnly meaningful relationships.`,
+        500,
+        0.3,
+      );
+      const parsed = parseJson<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw);
+      if (Array.isArray(parsed)) {
+        relationships = parsed.filter((r) => r.from && r.to && r.type) as typeof relationships;
+      }
+      console.log(`[batch-profiles] Parsed ${relationships.length} relationships`);
+    } catch (err) {
+      console.warn(`[batch-profiles] Relationship generation failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  const successCount = results.filter((r) => r.profile).length;
+  console.log(`[batch-profiles] DONE: ${successCount}/${characters.length} profiles generated, ${relationships.length} relationships`);
+
+  return NextResponse.json({ results, relationships });
 }

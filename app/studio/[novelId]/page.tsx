@@ -5316,7 +5316,7 @@ function NovelWorkspacePage() {
     setNameConfirmPopup(null);
     setStoryAiError(null);
     setStoryAiBusyAction("character-profile-batch");
-    setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
+    setProfileGenProgress({ current: 0, total: characterIds.length, name: "Building profiles...", done: 0 });
 
     const normalizedKey = normalizeClientApiKey(openRouterKey);
     const allChars = novel.storyBible.characters ?? [];
@@ -5331,7 +5331,6 @@ function NovelWorkspacePage() {
       }));
 
     const storyContext = buildStoryBibleContext("characters");
-    const completed = new Set<string>();
 
     try {
       const response = await fetch("/api/characters/batch-profiles", {
@@ -5347,101 +5346,77 @@ function NovelWorkspacePage() {
         }),
       });
 
-      if (!response.ok || !response.body) {
-        const errPayload = await response.json().catch(() => null);
-        throw new Error(
-          (errPayload && typeof errPayload === "object" && typeof (errPayload as Record<string, unknown>).error === "string"
-            ? (errPayload as Record<string, string>).error
-            : `Server error ${response.status}`),
-        );
+      if (!response.ok) {
+        const errPayload = await response.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error(typeof errPayload.error === "string" ? errPayload.error : `Server error ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      const payload = await response.json() as {
+        results: Array<{ characterId: string; profile: Record<string, unknown> | null; error?: string }>;
+        relationships: Array<{ from: string; to: string; type: string; description?: string }>;
+      };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+      let doneCount = 0;
 
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
+      for (const result of payload.results) {
+        if (!result.profile) continue;
+        const profile = result.profile;
+        const charId = result.characterId;
 
-        for (const part of parts) {
-          const eventMatch = part.match(/^event:\s*(\w+)\ndata:\s*([\s\S]*)$/m);
-          if (!eventMatch) continue;
-          const [, event, rawData] = eventMatch;
-          let data: Record<string, unknown>;
-          try { data = JSON.parse(rawData); } catch { continue; }
+        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+        const str = (key: string) => typeof profile[key] === "string" && (profile[key] as string).trim() ? (profile[key] as string).trim() : "";
+        if (str("appearance")) patch.appearance = str("appearance");
+        if (str("personality")) patch.personality = str("personality");
+        if (str("goals")) patch.goals = str("goals");
+        if (str("fears")) patch.fears = str("fears");
+        if (str("backstory")) patch.backstory = str("backstory");
+        if (str("speakingStyle")) patch.speakingStyle = str("speakingStyle");
+        if (str("secrets")) patch.secrets = str("secrets");
+        if (str("readerSecretHint")) patch.readerSecretHint = str("readerSecretHint");
+        if (str("accent")) patch.accent = str("accent");
+        if (str("reactionPattern")) patch.reactionPattern = str("reactionPattern");
+        if (str("voiceNotes")) patch.voiceNotes = str("voiceNotes");
+        const aiTags = parseStringList(profile.tags);
+        if (aiTags.length) {
+          const existingChar = allChars.find((c) => c.id === charId);
+          patch.tags = Array.from(new Set([...(existingChar?.tags ?? []), ...aiTags]));
+        }
 
-          if (event === "progress") {
-            setProfileGenProgress({
-              current: (data.current as number) || 0,
-              total: (data.total as number) || characterIds.length,
-              name: (data.name as string) || "",
-              done: completed.size,
-            });
-          } else if (event === "profile") {
-            const charId = data.characterId as string;
-            const profile = data.profile as Record<string, unknown>;
-            if (!charId || !profile) continue;
+        if (Object.keys(patch).length > 0) {
+          updateV2Character(charId, patch);
+          doneCount++;
+          setProfileGenProgress({ current: doneCount, total: characterIds.length, name: "", done: doneCount });
+        }
+      }
 
-            const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-            const str = (key: string) => typeof profile[key] === "string" && (profile[key] as string).trim() ? (profile[key] as string).trim() : "";
-            if (str("appearance")) patch.appearance = str("appearance");
-            if (str("personality")) patch.personality = str("personality");
-            if (str("goals")) patch.goals = str("goals");
-            if (str("fears")) patch.fears = str("fears");
-            if (str("backstory")) patch.backstory = str("backstory");
-            if (str("speakingStyle")) patch.speakingStyle = str("speakingStyle");
-            if (str("secrets")) patch.secrets = str("secrets");
-            if (str("readerSecretHint")) patch.readerSecretHint = str("readerSecretHint");
-            if (str("accent")) patch.accent = str("accent");
-            if (str("reactionPattern")) patch.reactionPattern = str("reactionPattern");
-            if (str("voiceNotes")) patch.voiceNotes = str("voiceNotes");
-            const aiTags = parseStringList(profile.tags);
-            if (aiTags.length) {
-              const existingChar = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
-              patch.tags = Array.from(new Set([...(existingChar?.tags ?? []), ...aiTags]));
-            }
-
-            if (Object.keys(patch).length > 0) {
-              updateV2Character(charId, patch);
-              completed.add(charId);
-              setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
-            }
-          } else if (event === "relationships") {
-            const rels = (data.relationships as Array<{ from?: string; to?: string; type?: string; description?: string }>) ?? [];
-            const latestChars = novel.storyBible.characters ?? [];
-            for (const rel of rels) {
-              if (!rel.from || !rel.to || !rel.type) continue;
-              const fromLow = rel.from.trim().toLowerCase();
-              const toLow = rel.to.trim().toLowerCase();
-              const fc = latestChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
-              const tc = latestChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
-              if (fc && tc && fc.id !== tc.id) {
-                const existing = fc.relationships ?? [];
-                if (!existing.some((r) => r.targetCharacterId === tc.id)) {
-                  updateV2Character(fc.id, {
-                    relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
-                  });
-                }
-              }
+      // Apply relationships
+      if (payload.relationships?.length) {
+        const latestChars = novel.storyBible.characters ?? [];
+        for (const rel of payload.relationships) {
+          if (!rel.from || !rel.to || !rel.type) continue;
+          const fromLow = rel.from.trim().toLowerCase();
+          const toLow = rel.to.trim().toLowerCase();
+          const fc = latestChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+          const tc = latestChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
+          if (fc && tc && fc.id !== tc.id) {
+            const existing = fc.relationships ?? [];
+            if (!existing.some((r) => r.targetCharacterId === tc.id)) {
+              updateV2Character(fc.id, {
+                relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
+              });
             }
           }
         }
       }
+
+      if (doneCount === 0) {
+        const errors = payload.results.filter((r) => r.error).map((r) => r.error).join("; ");
+        setStoryAiError(`No profiles generated. ${errors || "Check your API key and model."}`);
+      }
     } catch (err) {
       if (!isCancelledError(err)) {
-        setStoryAiError(
-          err instanceof Error ? err.message : "Profile generation failed. Check your API key and model.",
-        );
+        setStoryAiError(err instanceof Error ? err.message : "Profile generation failed. Check your API key and model.");
       }
-    }
-
-    if (completed.size === 0 && !storyAiError) {
-      setStoryAiError("Profile generation didn't return usable data. Check your API key and model, or try a different model.");
     }
 
     setStoryAiBusyAction(null);
