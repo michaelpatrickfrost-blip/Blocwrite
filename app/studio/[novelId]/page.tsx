@@ -8253,37 +8253,47 @@ function NovelWorkspacePage() {
   }
 
   /** Position a fixed-position dropdown anchored to the trigger icon.
-   *  Dropdown appears directly above or below the icon and stays within viewport. */
+   *  Measures synchronously by temporarily making the dropdown visible off-screen,
+   *  then moves it to the correct position. */
   function positionDropdown(trigger: HTMLElement, dropdown: HTMLElement) {
-    // Use a two-frame approach: first frame forces layout, second positions
-    // We do NOT set display inline — the CSS .open / .pw-bolton-open class handles that.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const rect = trigger.getBoundingClientRect();
-        const ddH = dropdown.offsetHeight || 280;
-        const ddW = dropdown.offsetWidth || 270;
-        const gap = 6;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const pad = 8;
+    const rect = trigger.getBoundingClientRect();
+    const gap = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pad = 8;
 
-        // Horizontal: center dropdown on the trigger icon, then clamp to viewport
-        let left = rect.left + rect.width / 2 - ddW / 2;
-        if (left + ddW > vw - pad) left = vw - ddW - pad;
-        if (left < pad) left = pad;
+    // Temporarily show off-screen to get real dimensions
+    const prevTop = dropdown.style.top;
+    const prevLeft = dropdown.style.left;
+    const prevVis = dropdown.style.visibility;
+    dropdown.style.visibility = "hidden";
+    dropdown.style.top = "0px";
+    dropdown.style.left = "-9999px";
+    dropdown.style.display = "flex";
+    dropdown.style.flexDirection = "column";
 
-        // Vertical: prefer above trigger
-        let top = rect.top - ddH - gap;
-        if (top < pad) {
-          top = rect.bottom + gap;
-        }
-        if (top + ddH > vh - pad) top = vh - ddH - pad;
-        if (top < pad) top = pad;
+    // Force synchronous layout
+    const ddW = dropdown.offsetWidth || 270;
+    const ddH = dropdown.offsetHeight || 280;
 
-        dropdown.style.top = `${Math.round(top)}px`;
-        dropdown.style.left = `${Math.round(left)}px`;
-      });
-    });
+    // Now compute final position
+    // Horizontal: center on trigger, clamp to viewport
+    let left = rect.left + rect.width / 2 - ddW / 2;
+    if (left + ddW > vw - pad) left = vw - ddW - pad;
+    if (left < pad) left = pad;
+
+    // Vertical: prefer above trigger
+    let top = rect.top - ddH - gap;
+    if (top < pad) top = rect.bottom + gap;
+    if (top + ddH > vh - pad) top = vh - ddH - pad;
+    if (top < pad) top = pad;
+
+    dropdown.style.top = `${Math.round(top)}px`;
+    dropdown.style.left = `${Math.round(left)}px`;
+    // Remove the inline display so the CSS class controls visibility
+    dropdown.style.removeProperty("display");
+    dropdown.style.removeProperty("flex-direction");
+    dropdown.style.visibility = "";
   }
 
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {
