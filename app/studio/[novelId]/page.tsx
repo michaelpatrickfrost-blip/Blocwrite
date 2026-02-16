@@ -5318,139 +5318,129 @@ function NovelWorkspacePage() {
     setStoryAiBusyAction("character-profile-batch");
     setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
+    const normalizedKey = normalizeClientApiKey(openRouterKey);
     const allChars = novel.storyBible.characters ?? [];
-    const context = buildStoryBibleContext("characters").slice(0, 1600);
-    const targets = characterIds.map((id) => allChars.find((c) => c.id === id)).filter(Boolean) as typeof allChars;
-    if (!targets.length) { setStoryAiBusyAction(null); setProfileGenProgress(null); return; }
+    const characters = characterIds
+      .map((id) => allChars.find((c) => c.id === id))
+      .filter(Boolean)
+      .map((c) => ({
+        id: c!.id,
+        name: c!.name,
+        role: c!.role || "Supporting",
+        logline: c!.logline || "",
+      }));
 
-    type CoreProfile = {
-      appearance?: string; personality?: string; goals?: string; fears?: string;
-      backstory?: string; speakingStyle?: string; secrets?: string;
-      readerSecretHint?: string; accent?: string; reactionPattern?: string;
-      voiceNotes?: string; tags?: string[];
-    };
-
-    const sysMsg = "You are a character development specialist for novel writing. Build vivid, canon-consistent character profiles. Return only valid JSON. No markdown fences, no explanation.";
-
-    function buildPrompt(c: typeof targets[0]): string {
-      return [
-        `Build a full character profile for: ${c.name} (${c.role || "Supporting"})`,
-        c.logline ? `Character hook: ${c.logline}` : "",
-        "",
-        `Story context:\n${context}`,
-        "",
-        "Return a JSON object with ALL of these fields filled in:",
-        `{`,
-        `  "appearance": "Vivid physical description — height, build, hair, eyes, distinguishing features",`,
-        `  "personality": "How they act and behave, typical actions and reactions",`,
-        `  "goals": "What they want — tied to the story's central conflict",`,
-        `  "fears": "What they're afraid of — internal and external",`,
-        `  "backstory": "Who they were before the story — events that shaped them",`,
-        `  "speakingStyle": "How they talk — formal/casual, vocabulary, speech quirks",`,
-        `  "secrets": "What they're hiding that drives tension",`,
-        `  "readerSecretHint": "A subtle, spoiler-safe hint for readers",`,
-        `  "accent": "Regional accent or speech patterns",`,
-        `  "reactionPattern": "How they behave under stress or surprise",`,
-        `  "voiceNotes": "Notes for writing authentic dialogue",`,
-        `  "tags": ["2-4 keyword tags"]`,
-        `}`,
-        "",
-        "Fill EVERY field with 1-2 vivid sentences. Do not leave any field empty.",
-      ].filter(Boolean).join("\n");
-    }
-
-    function applyParsed(charId: string, parsed: CoreProfile): boolean {
-      const character = allChars.find((c) => c.id === charId);
-      if (!character || !parsed) return false;
-      const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-      let filled = 0;
-      const set = (key: keyof CoreProfile) => {
-        const v = parsed[key];
-        if (typeof v === "string" && v.trim().length > 3) { (patch as Record<string, unknown>)[key] = v.trim(); filled++; }
-      };
-      set("appearance"); set("personality"); set("goals"); set("fears"); set("backstory");
-      set("speakingStyle"); set("secrets"); set("readerSecretHint"); set("accent");
-      set("reactionPattern"); set("voiceNotes");
-      const tags = parseStringList(parsed.tags);
-      if (tags.length) { patch.tags = Array.from(new Set([...(character.tags ?? []), ...tags])); filled++; }
-      if (filled < 3) return false;
-      updateV2Character(charId, patch);
-      return true;
-    }
-
+    const storyContext = buildStoryBibleContext("characters");
     const completed = new Set<string>();
-    const failed: string[] = [];
 
-    // ── Build each profile one at a time using requestOpenRouterText ──
-    // Use a short timeout (45s) so it only makes 1 attempt per call (no retry cascade).
-    // This is the same function that works for every other AI feature.
-    for (let i = 0; i < targets.length; i++) {
-      const c = targets[i];
-      setProfileGenProgress({ current: i + 1, total: targets.length, name: c.name, done: completed.size });
+    try {
+      const response = await fetch("/api/characters/batch-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: assistantProvider,
+          apiKey: normalizedKey,
+          baseUrl: assistantBaseUrl.trim(),
+          model: openRouterModel,
+          characters,
+          storyContext,
+        }),
+      });
 
-      if (i > 0) await new Promise((r) => setTimeout(r, 800));
-
-      try {
-        const raw = await requestOpenRouterText(buildPrompt(c), 800, 45000, sysMsg, false, 0.4);
-        const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
-        if (parsed && applyParsed(c.id, parsed)) {
-          completed.add(c.id);
-          setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
-        } else {
-          failed.push(c.id);
-        }
-      } catch {
-        failed.push(c.id);
+      if (!response.ok || !response.body) {
+        const errPayload = await response.json().catch(() => null);
+        throw new Error(
+          (errPayload && typeof errPayload === "object" && typeof (errPayload as Record<string, unknown>).error === "string"
+            ? (errPayload as Record<string, string>).error
+            : `Server error ${response.status}`),
+        );
       }
-    }
 
-    // ── Retry any that failed — longer timeout on second try ──
-    if (failed.length > 0) {
-      await new Promise((r) => setTimeout(r, 2000));
-      for (let i = 0; i < failed.length; i++) {
-        const c = targets.find((t) => t.id === failed[i]);
-        if (!c) continue;
-        setProfileGenProgress((p) => p ? { ...p, name: c.name } : p);
-        if (i > 0) await new Promise((r) => setTimeout(r, 1500));
-        try {
-          const raw = await requestOpenRouterText(buildPrompt(c), 800, 60000, sysMsg, false, 0.3);
-          const parsed = raw ? parseJsonFromAi<CoreProfile>(raw) : null;
-          if (parsed && applyParsed(c.id, parsed)) {
-            completed.add(c.id);
-            setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
-          }
-        } catch { /* move on */ }
-      }
-    }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-    // ── Link relationships in one call ──
-    if (completed.size >= 2) {
-      setProfileGenProgress((p) => p ? { ...p, name: "Linking..." } : p);
-      await new Promise((r) => setTimeout(r, 500));
-      try {
-        const names = targets.map((c) => `${c.name} (${c.role || "Supporting"})`).join(", ");
-        const relPrompt = `Characters: ${names}\nStory: ${context.slice(0, 600)}\nReturn a JSON array of relationships:\n[{"from":"Character Name","to":"Character Name","type":"friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague","description":"brief description"}]\nOnly include meaningful story relationships. Return ONLY the JSON array.`;
-        const relRaw = await requestOpenRouterText(relPrompt, 400, 30000, "Relationship mapper. Return ONLY a valid JSON array.", false, 0.3);
-        const relArr = relRaw ? parseJsonFromAi<Array<{ from?: string; to?: string; type?: string; description?: string }>>(relRaw) : null;
-        if (Array.isArray(relArr)) {
-          for (const rel of relArr) {
-            if (!rel.from || !rel.to || !rel.type) continue;
-            const fromLow = rel.from.trim().toLowerCase();
-            const toLow = rel.to.trim().toLowerCase();
-            const fc = allChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
-            const tc = allChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
-            if (fc && tc && fc.id !== tc.id) {
-              const existing = fc.relationships ?? [];
-              if (!existing.some((r) => r.targetCharacterId === tc.id)) {
-                updateV2Character(fc.id, { relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }] });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          const eventMatch = part.match(/^event:\s*(\w+)\ndata:\s*([\s\S]*)$/m);
+          if (!eventMatch) continue;
+          const [, event, rawData] = eventMatch;
+          let data: Record<string, unknown>;
+          try { data = JSON.parse(rawData); } catch { continue; }
+
+          if (event === "progress") {
+            setProfileGenProgress({
+              current: (data.current as number) || 0,
+              total: (data.total as number) || characterIds.length,
+              name: (data.name as string) || "",
+              done: completed.size,
+            });
+          } else if (event === "profile") {
+            const charId = data.characterId as string;
+            const profile = data.profile as Record<string, unknown>;
+            if (!charId || !profile) continue;
+
+            const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+            const str = (key: string) => typeof profile[key] === "string" && (profile[key] as string).trim() ? (profile[key] as string).trim() : "";
+            if (str("appearance")) patch.appearance = str("appearance");
+            if (str("personality")) patch.personality = str("personality");
+            if (str("goals")) patch.goals = str("goals");
+            if (str("fears")) patch.fears = str("fears");
+            if (str("backstory")) patch.backstory = str("backstory");
+            if (str("speakingStyle")) patch.speakingStyle = str("speakingStyle");
+            if (str("secrets")) patch.secrets = str("secrets");
+            if (str("readerSecretHint")) patch.readerSecretHint = str("readerSecretHint");
+            if (str("accent")) patch.accent = str("accent");
+            if (str("reactionPattern")) patch.reactionPattern = str("reactionPattern");
+            if (str("voiceNotes")) patch.voiceNotes = str("voiceNotes");
+            const aiTags = parseStringList(profile.tags);
+            if (aiTags.length) {
+              const existingChar = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
+              patch.tags = Array.from(new Set([...(existingChar?.tags ?? []), ...aiTags]));
+            }
+
+            if (Object.keys(patch).length > 0) {
+              updateV2Character(charId, patch);
+              completed.add(charId);
+              setProfileGenProgress((p) => p ? { ...p, done: completed.size } : p);
+            }
+          } else if (event === "relationships") {
+            const rels = (data.relationships as Array<{ from?: string; to?: string; type?: string; description?: string }>) ?? [];
+            const latestChars = novel.storyBible.characters ?? [];
+            for (const rel of rels) {
+              if (!rel.from || !rel.to || !rel.type) continue;
+              const fromLow = rel.from.trim().toLowerCase();
+              const toLow = rel.to.trim().toLowerCase();
+              const fc = latestChars.find((c) => c.name.toLowerCase() === fromLow || c.name.toLowerCase().split(/\s+/)[0] === fromLow.split(/\s+/)[0]);
+              const tc = latestChars.find((c) => c.name.toLowerCase() === toLow || c.name.toLowerCase().split(/\s+/)[0] === toLow.split(/\s+/)[0]);
+              if (fc && tc && fc.id !== tc.id) {
+                const existing = fc.relationships ?? [];
+                if (!existing.some((r) => r.targetCharacterId === tc.id)) {
+                  updateV2Character(fc.id, {
+                    relationships: [...existing, { targetCharacterId: tc.id, type: rel.type.trim(), description: rel.description?.trim() || undefined }],
+                  });
+                }
               }
             }
           }
         }
-      } catch { /* relationships are a bonus, don't block on failure */ }
+      }
+    } catch (err) {
+      if (!isCancelledError(err)) {
+        setStoryAiError(
+          err instanceof Error ? err.message : "Profile generation failed. Check your API key and model.",
+        );
+      }
     }
 
-    if (completed.size === 0) {
+    if (completed.size === 0 && !storyAiError) {
       setStoryAiError("Profile generation didn't return usable data. Check your API key and model, or try a different model.");
     }
 
