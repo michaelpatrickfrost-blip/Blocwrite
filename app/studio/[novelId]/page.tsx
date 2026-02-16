@@ -5318,33 +5318,68 @@ function NovelWorkspacePage() {
     setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
 
     const context = buildStoryBibleContext("characters");
-    const existingOtherNames = (novel.storyBible.characters ?? [])
-      .map((item) => item.name.trim().toLowerCase())
-      .filter(Boolean);
-    const sysMsg = "Character profile specialist. Vivid, concise, canon-consistent. JSON only.";
+    const allChars = novel.storyBible.characters ?? [];
+    const sysMsg = "You are a character development specialist for novel drafting. Build vivid, canon-consistent character profiles. Return only valid JSON.";
+
+    // Build a roster summary so the AI knows about all characters for relationships
+    const rosterSummary = allChars
+      .map((c) => `${c.name} (${c.role || "Supporting"})${c.logline ? ": " + c.logline : ""}`)
+      .join("\n");
 
     async function generateOneProfile(charId: string) {
-      const character = (novel!.storyBible.characters ?? []).find((c) => c.id === charId);
+      const character = allChars.find((c) => c.id === charId);
       if (!character) return;
 
       setProfileGenProgress((prev) => prev ? { ...prev, current: prev.current + 1, name: character.name } : prev);
 
+      // Build list of other character names with their IDs for relationship linking
+      const otherChars = allChars
+        .filter((c) => c.id !== charId)
+        .map((c) => ({ id: c.id, name: c.name, role: c.role }));
+
       const prompt = [
-        `Profile for: ${character.name} (${character.role || "Supporting"})`,
-        character.logline ? `Hook: ${character.logline}` : "",
-        `Genre/setting context:\n${context.slice(0, 1200)}`,
+        `Build a full character profile for: ${character.name} (${character.role || "Supporting"})`,
+        character.logline ? `Character hook: ${character.logline}` : "",
         "",
-        "Return JSON: {\"appearance\":\"...\",\"personality\":\"...\",\"goals\":\"...\",\"fears\":\"...\",\"backstory\":\"...\",\"speakingStyle\":\"...\",\"secrets\":\"...\",\"tags\":[]}",
-        "Keep each field 1-3 sentences. Be vivid and specific. Anchor to the story.",
+        `All characters in this story:\n${rosterSummary}`,
+        "",
+        `Story context:\n${context.slice(0, 2000)}`,
+        "",
+        "Return JSON with ALL of these fields filled in (do not leave any empty):",
+        `{`,
+        `  "appearance": "Vivid physical description — height, build, hair, eyes, distinguishing features, how they carry themselves",`,
+        `  "personality": "How they act and behave, not just adjectives — show their personality through typical actions and reactions",`,
+        `  "goals": "What they want — tied to the story's central conflict",`,
+        `  "fears": "What they're afraid of — internal and external fears that create tension",`,
+        `  "backstory": "Who they were before the story — the events that shaped them and explain their motivations",`,
+        `  "accent": "Regional accent, dialect, or speech patterns if relevant",`,
+        `  "speakingStyle": "How they talk — formal/casual, verbose/terse, vocabulary level, speech quirks",`,
+        `  "reactionPattern": "How they behave under stress, conflict, or surprise",`,
+        `  "voiceNotes": "Notes for writing authentic dialogue for this character",`,
+        `  "secrets": "What they're hiding — a secret that drives tension in the story",`,
+        `  "readerSecretHint": "A subtle, spoiler-safe hint for readers that something is hidden",`,
+        `  "tags": ["2-4 keyword tags for this character"],`,
+        `  "relationships": [{"targetName": "Other Character Name", "type": "friend/rival/lover/mentor/sibling/parent/child/ally/enemy/colleague", "description": "Brief description of their dynamic"}]`,
+        `}`,
+        "",
+        "RULES:",
+        "- Fill in EVERY field with real content. Do not leave anything blank or as a placeholder.",
+        "- Each field should be 1-3 vivid sentences.",
+        "- Anchor everything to the story synopsis. Do not invent unrelated plot lines.",
+        "- For relationships, only include connections that make sense based on the story. Use the exact names from the character roster.",
+        otherChars.length > 0 ? `\nAvailable characters to link relationships to:\n${otherChars.map((c) => `- ${c.name} (${c.role})`).join("\n")}` : "",
       ].filter(Boolean).join("\n");
 
       try {
-        const data = await requestOpenRouterJson<{
+        type ProfileResult = {
           appearance?: string; personality?: string; goals?: string; fears?: string;
           backstory?: string; speakingStyle?: string; secrets?: string;
           readerSecretHint?: string; accent?: string; reactionPattern?: string;
           voiceNotes?: string; tags?: string[];
-        }>(prompt, 500, { systemMessage: sysMsg, timeoutMs: 90000 });
+          relationships?: Array<{ targetName?: string; type?: string; description?: string }>;
+        };
+
+        const data = await requestOpenRouterJson<ProfileResult>(prompt, 900, { systemMessage: sysMsg, timeoutMs: 120000 });
 
         const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
         if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
@@ -5360,6 +5395,37 @@ function NovelWorkspacePage() {
         if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
         const aiTags = parseStringList(data.tags);
         if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
+
+        // Resolve relationships — match targetName to actual character IDs
+        if (Array.isArray(data.relationships) && data.relationships.length > 0) {
+          const resolvedRels: Array<{ targetCharacterId: string; type: string; description?: string }> = [];
+          for (const rel of data.relationships) {
+            if (!rel.targetName || !rel.type) continue;
+            const targetNameLower = rel.targetName.trim().toLowerCase();
+            const target = allChars.find((c) => {
+              const cNameLower = c.name.trim().toLowerCase();
+              if (cNameLower === targetNameLower) return true;
+              // Match on first name if full name doesn't match
+              const cFirst = cNameLower.split(/\s+/)[0];
+              const tFirst = targetNameLower.split(/\s+/)[0];
+              return cFirst && tFirst && cFirst === tFirst;
+            });
+            if (target && target.id !== charId) {
+              // Avoid duplicate relationships
+              const alreadyLinked = resolvedRels.some((r) => r.targetCharacterId === target.id);
+              if (!alreadyLinked) {
+                resolvedRels.push({
+                  targetCharacterId: target.id,
+                  type: rel.type.trim(),
+                  description: rel.description?.trim() || undefined,
+                });
+              }
+            }
+          }
+          if (resolvedRels.length > 0) {
+            patch.relationships = [...(character.relationships ?? []), ...resolvedRels];
+          }
+        }
 
         updateV2Character(character.id, patch);
       } catch (error) {
