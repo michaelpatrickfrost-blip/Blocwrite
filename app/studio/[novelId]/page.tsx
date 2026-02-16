@@ -8051,17 +8051,6 @@ function NovelWorkspacePage() {
     if (!novel) return;
     setNewCharPopup((p) => p ? { ...p, generating: true } : p);
 
-    // Create character placeholder first
-    const newChar = {
-      id: charId, name: "Generating...", role: "Supporting" as CharacterRole,
-      logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
-      secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
-      relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
-      voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
-    };
-    updateStoryBible({ characters: [...(novel.storyBible.characters || []), newChar] });
-    setSelectedV2CharacterId(charId);
-
     try {
       const context = buildStoryBibleContext("characters");
       const existingNames = storyCharacters.map((c) => c.name.trim().toLowerCase()).filter(Boolean);
@@ -8073,26 +8062,30 @@ function NovelWorkspacePage() {
         "",
         "Use the story context and existing characters to make this character fit naturally.",
         "Give them a real, full human name (first and last) that suits the genre and setting.",
+        "Write detailed, rich content for EVERY field — do not leave anything empty or brief.",
         "",
         "Return JSON only in this shape:",
         `{
   "name": "string (full first and last name)",
   "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Custom",
   "logline": "one-sentence summary of who they are",
-  "appearance": "physical description",
-  "personality": "personality traits and demeanour",
-  "goals": "what they want",
-  "fears": "what they're afraid of",
-  "backstory": "brief background",
-  "accent": "how they sound",
-  "speakingStyle": "speech patterns and vocabulary",
-  "secrets": "hidden information about them",
-  "readerSecretHint": "spoiler-safe hint for readers",
+  "appearance": "detailed physical description — height, build, hair, eyes, distinguishing features, how they dress",
+  "personality": "detailed personality traits, temperament, habits, quirks, demeanour",
+  "goals": "what they want — short-term and long-term motivations",
+  "fears": "what they're afraid of — surface fears and deeper anxieties",
+  "backstory": "detailed background — upbringing, key events, how they became who they are",
+  "accent": "how they sound — regional accent, vocal quality, tone",
+  "speakingStyle": "speech patterns, vocabulary level, verbal habits, catchphrases",
+  "reactionPattern": "how they behave under stress, conflict, joy, grief",
+  "secrets": "hidden information only the author knows",
+  "readerSecretHint": "spoiler-safe hint that foreshadows the secret for readers",
+  "voiceNotes": "notes on how to write authentic dialogue for this character",
   "tags": ["string"]
 }`,
         "",
         "Rules:",
         "- Name must be a realistic full name, never a placeholder.",
+        "- EVERY field must have substantial content (2+ sentences minimum for appearance, personality, goals, fears, backstory).",
         `- Do NOT reuse these existing names: ${existingNames.join(", ") || "none yet"}`,
         "- Anchor everything to the story context. Don't invent unrelated storylines.",
         "- readerSecretHint must be spoiler-safe.",
@@ -8104,33 +8097,52 @@ function NovelWorkspacePage() {
         name?: string; role?: string; logline?: string;
         appearance?: string; personality?: string; goals?: string; fears?: string;
         backstory?: string; accent?: string; speakingStyle?: string;
+        reactionPattern?: string; voiceNotes?: string;
         secrets?: string; readerSecretHint?: string; tags?: string[];
-      }>(prompt, 900, { systemMessage: "Character creation specialist. Return only valid JSON. No markdown." });
+      }>(prompt, 1200, { systemMessage: "Character creation specialist. Build rich, detailed character profiles. Return only valid JSON. No markdown.", timeoutMs: 45000 });
 
-      const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-      if (typeof data.name === "string" && data.name.trim()) {
-        patch.name = ensureFullCharacterName(data.name.trim(), storyCharacters.length + 1);
-      } else {
-        patch.name = "New Character";
-      }
-      if (typeof data.role === "string" && data.role.trim()) patch.role = normalizeCharacterRole(data.role);
-      if (typeof data.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
-      if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
-      if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
-      if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
-      if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
-      if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
-      if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
-      if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
-      if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
-      if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
-      const aiTags = parseStringList(data.tags);
-      if (aiTags.length) patch.tags = aiTags;
+      // Build the COMPLETE character in one shot — no placeholder then patch (avoids stale closure)
+      const aiName = (typeof data.name === "string" && data.name.trim())
+        ? ensureFullCharacterName(data.name.trim(), storyCharacters.length + 1)
+        : "New Character";
 
-      updateV2Character(charId, patch);
-    } catch (err) {
-      // If AI fails, just leave as blank character so nothing is lost
-      updateV2Character(charId, { name: "New Character" });
+      const fullChar = {
+        id: charId,
+        name: aiName,
+        role: (typeof data.role === "string" && data.role.trim()) ? normalizeCharacterRole(data.role) : ("Supporting" as CharacterRole),
+        logline: (typeof data.logline === "string" && data.logline.trim()) ? data.logline.trim() : "",
+        appearance: (typeof data.appearance === "string" && data.appearance.trim()) ? data.appearance.trim() : "",
+        personality: (typeof data.personality === "string" && data.personality.trim()) ? data.personality.trim() : "",
+        goals: (typeof data.goals === "string" && data.goals.trim()) ? data.goals.trim() : "",
+        fears: (typeof data.fears === "string" && data.fears.trim()) ? data.fears.trim() : "",
+        backstory: (typeof data.backstory === "string" && data.backstory.trim()) ? data.backstory.trim() : "",
+        secrets: (typeof data.secrets === "string" && data.secrets.trim()) ? data.secrets.trim() : "",
+        readerSecretHint: (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) ? data.readerSecretHint.trim() : "",
+        accent: (typeof data.accent === "string" && data.accent.trim()) ? data.accent.trim() : "",
+        speakingStyle: (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) ? data.speakingStyle.trim() : "",
+        reactionPattern: (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) ? data.reactionPattern.trim() : "",
+        voiceNotes: (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) ? data.voiceNotes.trim() : "",
+        relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
+        tags: parseStringList(data.tags),
+        pronouns: "",
+        groups: "",
+        otherNames: "",
+      };
+
+      // Add the COMPLETE character in one atomic update — uses mutateNovel callback so state is always fresh
+      updateStoryBible({ characters: [...(novel.storyBible.characters || []), fullChar] });
+      setSelectedV2CharacterId(charId);
+    } catch {
+      // AI failed — create a blank character so nothing is lost
+      const blankChar = {
+        id: charId, name: "New Character", role: "Supporting" as CharacterRole,
+        logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
+        relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
+        voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
+      };
+      updateStoryBible({ characters: [...(novel.storyBible.characters || []), blankChar] });
+      setSelectedV2CharacterId(charId);
     }
     setNewCharPopup(null);
   }
