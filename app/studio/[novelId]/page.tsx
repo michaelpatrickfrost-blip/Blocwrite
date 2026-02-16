@@ -866,8 +866,8 @@ function NovelWorkspacePage() {
   const [sharePassword, setSharePassword] = useState("");
   const [shareExpiryDays, setShareExpiryDays] = useState(7);
   const [shareRecipientEmail, setShareRecipientEmail] = useState("");
-  const [shareSendingEmail, setShareSendingEmail] = useState(false);
-  const [shareEmailSentMsg, setShareEmailSentMsg] = useState<string | null>(null);
+  // shareSendingEmail removed — now just opens email app directly
+  // shareEmailSentMsg removed — single email button opens app directly
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
@@ -7382,47 +7382,7 @@ function NovelWorkspacePage() {
     });
   }
 
-  /** Send branded HTML invitation email via the server. Falls back to email client. */
-  async function sendShareEmail() {
-    if (!shareResult || !novel) return;
-    const recipient = shareRecipientEmail.trim();
-    if (!recipient) return;
-
-    setShareSendingEmail(true);
-    setShareEmailSentMsg(null);
-
-    try {
-      const res = await fetch("/api/share/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: shareResult.token,
-          recipientEmail: recipient,
-          password: sharePassword.trim() || undefined,
-        }),
-      });
-
-      if (res.ok) {
-        setShareEmailSentMsg(`Invitation sent to ${recipient}`);
-        setShareRecipientEmail("");
-        return;
-      }
-
-      const data = await res.json().catch(() => ({})) as { error?: string };
-      if (data.error?.includes("not configured")) {
-        setShareEmailSentMsg("Server email not configured. Use 'Open in email app' instead.");
-        return;
-      }
-
-      setShareEmailSentMsg(data.error || "Failed to send. Try 'Open in email app' instead.");
-    } catch {
-      setShareEmailSentMsg("Connection error. Try 'Open in email app' instead.");
-    } finally {
-      setShareSendingEmail(false);
-    }
-  }
-
-  /** Fallback: open the user's email client with a polished plain-text invitation. */
+  /** Open the user's email client with a polished plain-text invitation. */
   function openShareEmailInClient() {
     if (!shareResult || !novel) return;
     const novelTitle = novel.title || "Untitled Novel";
@@ -9567,7 +9527,6 @@ function NovelWorkspacePage() {
                 setSharePassword("");
                 setShareExpiryDays(7);
                 setShareRecipientEmail("");
-                setShareEmailSentMsg(null);
                 setShowShareModal(true);
                 setShareLinksLoading(true);
                 fetch("/api/share").then((r) => r.ok ? r.json() : []).then((data) => {
@@ -11415,7 +11374,7 @@ function NovelWorkspacePage() {
                   </p>
                 </div>
 
-                {/* Send branded invitation email */}
+                {/* Invite by email — opens email app */}
                 <div style={{
                   marginTop: 10, padding: "12px 14px", borderRadius: 10,
                   background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
@@ -11430,61 +11389,27 @@ function NovelWorkspacePage() {
                       type="email"
                       placeholder="reader@example.com"
                       value={shareRecipientEmail}
-                      onChange={(e) => { setShareRecipientEmail(e.target.value); setShareEmailSentMsg(null); }}
+                      onChange={(e) => setShareRecipientEmail(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && shareRecipientEmail.trim() && !shareSendingEmail) {
+                        if (e.key === "Enter" && shareRecipientEmail.trim()) {
                           e.preventDefault();
-                          void sendShareEmail();
+                          openShareEmailInClient();
                         }
                       }}
                       style={{ flex: 1, fontSize: 13 }}
                     />
-                  </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={!shareRecipientEmail.trim() || shareSendingEmail}
-                      style={{ flex: 1, padding: "8px 14px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: (!shareRecipientEmail.trim() || shareSendingEmail) ? 0.4 : 1 }}
-                      onClick={() => void sendShareEmail()}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
-                      {shareSendingEmail ? "Sending..." : "Send branded invitation"}
-                    </button>
-                    <button
-                      type="button"
                       disabled={!shareRecipientEmail.trim()}
+                      style={{ padding: "8px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: shareRecipientEmail.trim() ? 1 : 0.4 }}
                       onClick={openShareEmailInClient}
-                      style={{
-                        flex: 1, padding: "8px 14px", fontSize: 12, whiteSpace: "nowrap",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                        background: "var(--pw-surface-alt, rgba(255,255,255,0.04))",
-                        border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
-                        borderRadius: 8, cursor: "pointer", color: "var(--pw-text)",
-                        fontFamily: "inherit", fontWeight: 600,
-                        opacity: shareRecipientEmail.trim() ? 1 : 0.4,
-                        transition: "all 0.15s",
-                      }}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      Open in email app
+                      Email
                     </button>
                   </div>
-                  {shareEmailSentMsg && (
-                    <p style={{
-                      fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4,
-                      color: shareEmailSentMsg.includes("sent") ? "var(--pw-accent, #a3e635)" : "var(--pw-danger, #ef4444)",
-                      display: "flex", alignItems: "center", gap: 5,
-                    }}>
-                      {shareEmailSentMsg.includes("sent") ? (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                      ) : (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      )}
-                      {shareEmailSentMsg}
-                    </p>
-                  )}
-                  {shareResult.hasPassword && sharePassword.trim() && !shareEmailSentMsg && (
+                  {shareResult.hasPassword && sharePassword.trim() && (
                     <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #a3e635)", display: "flex", alignItems: "center", gap: 5 }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       Password will be included in the email
@@ -11651,7 +11576,6 @@ function NovelWorkspacePage() {
                       setSharePassword("");
                       setShareExpiryDays(7);
                       setShareRecipientEmail("");
-                      setShareEmailSentMsg(null);
                       setShowShareModal(true);
                       setShareLinksLoading(true);
                       fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
@@ -12256,7 +12180,6 @@ function NovelWorkspacePage() {
                       setSharePassword("");
                       setShareExpiryDays(7);
                       setShareRecipientEmail("");
-                      setShareEmailSentMsg(null);
                       setShowShareModal(true);
                       setShareLinksLoading(true);
                       fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
