@@ -82,7 +82,7 @@ export type Location = {
 export type LoreEntry = {
   id: string;
   title: string;
-  category: "Magic" | "Tech" | "Culture" | "History" | "Religion" | "Politics" | "Other";
+  category: "Magic" | "Tech" | "Culture" | "History" | "Religion" | "Politics" | "Law" | "Society" | "Psychology" | "Procedure" | "Setting" | "Rules" | "Other";
   content: string;
   constraints?: string[];
 };

@@ -36,6 +36,7 @@ import {
   type ThematicAnalysis,
   type ThemeEntry,
   type ThemePresence,
+  type LoreEntry,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -1224,7 +1225,7 @@ function NovelWorkspacePage() {
     // 6. Canon — Worldbuilding tab
     {
       target: "canon-worldbuilding", title: "Step 6 — Canon: Worldbuilding",
-      desc: "Add lore, rules, history, magic systems, technology — anything that makes your world unique. The AI respects these rules in every generation, so your world stays internally consistent no matter how complex it gets.",
+      desc: "Add world-building notes relevant to your genre — rules, systems, procedures, social dynamics, or anything that keeps your story consistent. For a thriller, that might be police procedure; for fantasy, magic systems. The AI tailors entries to your genre automatically.",
       onEnter: () => { setShowStoryBibleModal(true); setBibleSection("worldbuilding"); },
       onLeave: () => setShowStoryBibleModal(false),
     },
@@ -8704,7 +8705,8 @@ function NovelWorkspacePage() {
       const sb = novel.storyBible;
       const synopsis = sb.summary.synopsisShort?.trim() || "";
       const stakes = sb.summary.stakes?.trim() || "";
-      const genre = sb.summary.genre.slice(0, 4).join(", ") || "fiction";
+      const genres = sb.summary.genre.slice(0, 4);
+      const genre = genres.join(", ") || "fiction";
       const tone = sb.summary.tone.slice(0, 3).join(", ") || "";
       const themes = (sb.summary.themes ?? []).slice(0, 5).join(", ");
       const charNames = (sb.characters ?? []).map((c) => c.name).filter(Boolean).join(", ") || "none";
@@ -8713,20 +8715,59 @@ function NovelWorkspacePage() {
 
       const synopsisBlock = [synopsis, stakes ? `Stakes: ${stakes}` : "", themes ? `Themes: ${themes}` : ""].filter(Boolean).join("\n");
 
-      const sysMsg = "Worldbuilding architect. Create ONLY lore (rules, systems, culture, history). NO characters or locations. Return valid JSON.";
+      // Build genre-aware guidance so AI generates relevant world-building
+      const genreLower = genre.toLowerCase();
+      const isFantasySciFi = /fantasy|sci-fi|science fiction|supernatural|paranormal|dystopi|steampunk|mytholog/i.test(genreLower);
+      const isCrimeThriller = /thriller|crime|mystery|detective|suspense|noir|espionage|spy|police|forensic|legal/i.test(genreLower);
+      const isRomance = /romance|love|erotic|chick.lit/i.test(genreLower);
+      const isHistorical = /historic|period|war|regency|medieval|ancient|wwii|civil war/i.test(genreLower);
+      const isHorror = /horror|gothic|dark|occult|creepy/i.test(genreLower);
+      const isLitFic = /literary|contemporary|realistic|family|drama|coming.of.age/i.test(genreLower);
+
+      let genreGuidance: string;
+      let suggestedCategories: string;
+
+      if (isFantasySciFi) {
+        genreGuidance = "This is a speculative-fiction story. Generate world-building entries about magic systems, technology, races/species, world rules, power structures, history of the world, cosmology, or unique cultural systems. Focus on what makes this world different from reality.";
+        suggestedCategories = "Magic|Tech|Culture|History|Religion|Politics|Rules|Other";
+      } else if (isCrimeThriller) {
+        genreGuidance = "This is a crime/thriller story. Do NOT generate fantasy lore. Instead generate entries about: how the criminal world operates in this story, law enforcement procedures, legal systems, forensic methods, surveillance/intelligence tradecraft, power dynamics between factions, psychological profiles, the 'rules of engagement' between antagonist and protagonist, key plot devices or MacGuffins, and any real-world systems (finance, government, tech) that drive the plot.";
+        suggestedCategories = "Law|Procedure|Psychology|Politics|Society|Tech|Setting|Rules|Other";
+      } else if (isRomance) {
+        genreGuidance = "This is a romance story. Do NOT generate fantasy lore. Instead generate entries about: social dynamics and expectations in this world, relationship rules/barriers, cultural norms around love and marriage, workplace/community politics, family dynamics, class or social divides, the setting's atmosphere and how it shapes relationships.";
+        suggestedCategories = "Society|Culture|Setting|Psychology|Rules|Other";
+      } else if (isHistorical) {
+        genreGuidance = "This is a historical story. Generate entries about: period-accurate social rules, political landscape of the era, technology and daily life, class structures, relevant historical events the characters live through, cultural norms and taboos, language or dialect notes.";
+        suggestedCategories = "History|Culture|Politics|Society|Setting|Rules|Other";
+      } else if (isHorror) {
+        genreGuidance = "This is a horror/dark story. Generate entries about: the rules of the threat/entity, how the horror operates and its limitations, psychological vulnerabilities it exploits, the mythology or backstory behind the horror, setting atmosphere rules, survival rules the characters must discover.";
+        suggestedCategories = "Rules|Psychology|History|Setting|Culture|Religion|Other";
+      } else if (isLitFic) {
+        genreGuidance = "This is a literary/contemporary story. Do NOT generate fantasy lore. Instead generate entries about: the social world of the characters, community or family dynamics, cultural context, psychological underpinnings, recurring motifs or symbols, rules of the setting, thematic ground rules the story follows.";
+        suggestedCategories = "Society|Psychology|Culture|Setting|Rules|Other";
+      } else {
+        genreGuidance = "Consider the genre carefully. Generate world-building entries that are actually relevant to this type of story. For realistic fiction: social rules, setting details, power dynamics, procedural details. For speculative fiction: magic systems, technology, world rules. Never generate fantasy lore for a realistic story.";
+        suggestedCategories = "Culture|History|Politics|Society|Psychology|Setting|Rules|Tech|Other";
+      }
+
+      const sysMsg = `World-building architect. You generate world-building notes tailored to the story's genre. ${genreGuidance} Return ONLY entries that the author needs to keep the story internally consistent. NO character bios or location descriptions. Return valid JSON.`;
 
       const userPrompt = [
-        `${genre} novel${tone ? ` (${tone})` : ""}. ${synopsisBlock}`,
-        existingLoreNames !== "none" ? `Existing (skip): ${existingLoreNames}` : "",
-        `Create 4-8 lore entries. Return JSON:`,
-        `{"entries":[{"title":"Name","category":"Magic|Tech|Culture|History|Religion|Politics|Other","content":"2-4 sentences","constraints":["rule the story must follow"]}]}`,
+        `Genre: ${genre}${tone ? ` | Tone: ${tone}` : ""}`,
+        `Synopsis: ${synopsisBlock}`,
+        charNames !== "none" ? `Characters: ${charNames}` : "",
+        locNames !== "none" ? `Locations: ${locNames}` : "",
+        existingLoreNames !== "none" ? `Already exists (do NOT duplicate): ${existingLoreNames}` : "",
+        "",
+        `Think about what world-building notes a ${genre} author actually needs. What rules, systems, or context must be established so the story stays consistent?`,
+        `Create 4-8 entries. Return JSON:`,
+        `{"entries":[{"title":"Short descriptive name","category":"${suggestedCategories}","content":"2-4 sentences explaining this world-building element and why it matters to the story","constraints":["a concrete rule the story must follow because of this"]}]}`,
       ].filter(Boolean).join("\n");
 
-      // ── Call WITHOUT jsonMode — works with any model ──
       type LoreGenResult = {
         entries?: Array<{
           title?: string;
-          category?: "Magic" | "Tech" | "Culture" | "History" | "Religion" | "Politics" | "Other";
+          category?: string;
           content?: string;
           constraints?: string[];
         }>;
@@ -8735,14 +8776,14 @@ function NovelWorkspacePage() {
       let data: LoreGenResult | null = null;
 
       try {
-        const raw = await requestOpenRouterText(userPrompt, 800, 180000, sysMsg, false, 0.7);
+        const raw = await requestOpenRouterText(userPrompt, 900, 180000, sysMsg, false, 0.7);
         data = parseJsonFromAi<LoreGenResult>(raw);
       } catch { /* continue */ }
 
       if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
         try {
           const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 800, 180000, sysMsg, false, 0.4);
+          const raw2 = await requestOpenRouterText(retryPrompt, 900, 180000, sysMsg, false, 0.4);
           data = parseJsonFromAi<LoreGenResult>(raw2);
         } catch { /* continue */ }
       }
@@ -8751,7 +8792,7 @@ function NovelWorkspacePage() {
         throw new Error("Worldbuilding generation failed. Try a different model or add more detail to your synopsis.");
       }
 
-      const VALID_CATEGORIES = new Set(["Magic", "Tech", "Culture", "History", "Religion", "Politics", "Other"]);
+      const VALID_CATEGORIES = new Set(["Magic", "Tech", "Culture", "History", "Religion", "Politics", "Law", "Society", "Psychology", "Procedure", "Setting", "Rules", "Other"]);
 
       const charNamesLowerLore = new Set((sb.characters ?? []).map((c) => c.name.trim().toLowerCase()).filter(Boolean));
       const locNamesLowerLore = new Set(storyLocations.map((l) => l.name.trim().toLowerCase()).filter(Boolean));
@@ -8786,7 +8827,8 @@ function NovelWorkspacePage() {
           const content = typeof item.content === "string" ? item.content.trim() : "";
           if (!title || !content) return null;
           if (isNotLore(item)) return null;
-          const cat = VALID_CATEGORIES.has(item.category ?? "") ? item.category! : "Other";
+          const rawCat = (item.category ?? "").trim();
+          const cat = VALID_CATEGORIES.has(rawCat) ? rawCat as LoreEntry["category"] : "Other" as const;
           return {
             id: createEntityId("lore"),
             title,
@@ -8847,14 +8889,16 @@ function NovelWorkspacePage() {
         .slice(0, 5)
         .map((e) => `${e.title}: ${e.constraints!.join("; ")}`)
         .join("\n");
-      const systemMsg = "You are a worldbuilding editor. Refine lore entries for clarity and drafting use while preserving all established constraints and cross-references. Return only valid JSON.";
+      const storyGenre = (novel.storyBible.summary.genre ?? []).slice(0, 4).join(", ") || "fiction";
+      const systemMsg = `You are a world-building editor for a ${storyGenre} story. Refine entries for clarity and drafting use while preserving all established constraints and cross-references. Match your language and focus to the genre — no fantasy language for realistic fiction. Return only valid JSON.`;
       const prompt = [
-        "Refine this worldbuilding entry for clarity and practical drafting use.",
-        "Preserve existing constraints and ensure consistency with related lore entries.",
+        "Refine this world-building entry for clarity and practical drafting use.",
+        `This is a ${storyGenre} story — make sure the entry is relevant and useful for this genre.`,
+        "Preserve existing constraints and ensure consistency with related entries.",
         "Return JSON only in this shape:",
         `{
   "title": "string",
-  "category": "Magic|Tech|Culture|History|Religion|Politics|Other",
+  "category": "Magic|Tech|Culture|History|Religion|Politics|Law|Society|Psychology|Procedure|Setting|Rules|Other",
   "content": "string",
   "constraints": ["string"]
 }`,
@@ -8863,20 +8907,22 @@ function NovelWorkspacePage() {
         `Entry category: ${entry.category}`,
         `Entry content:\n${entry.content || "(empty)"}`,
         `Entry constraints: ${(entry.constraints ?? []).join(", ") || "(none)"}`,
-        relatedConstraints ? `Related lore constraints (preserve cross-references):\n${relatedConstraints}` : "",
+        relatedConstraints ? `Related world-building constraints (preserve cross-references):\n${relatedConstraints}` : "",
         `Story context:\n${context}`,
       ].filter(Boolean).join("\n\n");
 
       const data = await requestOpenRouterJson<{
         title?: string;
-        category?: "Magic" | "Tech" | "Culture" | "History" | "Religion" | "Politics" | "Other";
+        category?: string;
         content?: string;
         constraints?: string[];
       }>(prompt, 650, { systemMessage: systemMsg });
 
+      const ENHANCE_VALID_CATS = new Set(["Magic", "Tech", "Culture", "History", "Religion", "Politics", "Law", "Society", "Psychology", "Procedure", "Setting", "Rules", "Other"]);
+      const enhancedCat = ENHANCE_VALID_CATS.has(data.category ?? "") ? data.category as LoreEntry["category"] : entry.category;
       updateLoreEntry(loreId, {
         title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : entry.title,
-        category: data.category ?? entry.category,
+        category: enhancedCat,
         content: typeof data.content === "string" && data.content.trim() ? data.content.trim() : entry.content,
         constraints: parseStringList(data.constraints),
       });
@@ -9304,7 +9350,7 @@ function NovelWorkspacePage() {
     if (storyAiBusyAction === "characters-generate") return "Generating characters";
     if (storyAiBusyAction === "character-profile-batch") return "Building character profiles";
     if (storyAiBusyAction === "locations-generate") return "Generating locations";
-    if (storyAiBusyAction === "worldbuilding-generate") return "Generating lore";
+    if (storyAiBusyAction === "worldbuilding-generate") return "Generating world-building";
     return "Working with AI";
   })();
   const aiBusyDuration =
@@ -13232,11 +13278,11 @@ function NovelWorkspacePage() {
                           onClick={() => void runGenerateWorldbuildingFromStoryBible()}
                           disabled={storyAiBusyAction !== null}
                         >
-                          {storyAiBusyAction === "worldbuilding-generate" ? "Generating..." : "Generate lore"}
+                          {storyAiBusyAction === "worldbuilding-generate" ? "Generating..." : "Generate world-building"}
                         </button>
                         )}
                         <button type="button" className="btn" onClick={addLoreEntry}>
-                          + Add lore entry
+                          + Add entry
                         </button>
                       </div>
                     </div>
@@ -13258,7 +13304,7 @@ function NovelWorkspacePage() {
 
                     {(novel.storyBible.lore ?? []).length === 0 ? (
                       <p className="pw-overview-empty">
-                        No lore entries yet. Add entries manually or generate lore from Canon.
+                        No world-building entries yet. Add entries manually or generate from your synopsis and genre.
                       </p>
                     ) : (
                       <div className="pw-bible-events-list">
@@ -13294,6 +13340,12 @@ function NovelWorkspacePage() {
                                   <option value="History">History</option>
                                   <option value="Religion">Religion</option>
                                   <option value="Politics">Politics</option>
+                                  <option value="Law">Law &amp; Justice</option>
+                                  <option value="Society">Society</option>
+                                  <option value="Psychology">Psychology</option>
+                                  <option value="Procedure">Procedure</option>
+                                  <option value="Setting">Setting</option>
+                                  <option value="Rules">Story Rules</option>
                                   <option value="Other">Other</option>
                                 </select>
                               </div>
