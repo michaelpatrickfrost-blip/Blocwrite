@@ -5315,13 +5315,40 @@ function NovelWorkspacePage() {
 
     setNameConfirmPopup(null);
     setStoryAiError(null);
+    setStoryAiBusyAction("character-profile-batch");
     setProfileGenProgress({ current: 0, total: characterIds.length, name: "", done: 0 });
+
+    // Standalone fetch — completely independent of requestOpenRouterText/Json
+    // and aiAbortRef. Each call is its own isolated fetch with its own timeout.
+    async function profileFetch(system: string, prompt: string): Promise<string> {
+      const controller = new AbortController();
+      const tid = window.setTimeout(() => controller.abort(), 120_000);
+      try {
+        const res = await fetch("/api/openrouter/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: assistantProvider,
+            apiKey: normalizeClientApiKey(openRouterKey),
+            baseUrl: assistantBaseUrl.trim(),
+            model: openRouterModel,
+            prompt,
+            system,
+            maxTokens: 900,
+            temperature: 0.4,
+          }),
+          signal: controller.signal,
+        });
+        const payload = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) throw new Error(typeof payload.error === "string" ? payload.error : `Error ${res.status}`);
+        return typeof payload.text === "string" ? payload.text : "";
+      } finally {
+        window.clearTimeout(tid);
+      }
+    }
 
     let doneCount = 0;
 
-    // Loop through each character and run the EXACT same code as the
-    // working "Full profile" button (runCharacterAiForSelected).
-    // freshAiAbort() before each one to simulate pressing the button fresh.
     for (let i = 0; i < characterIds.length; i++) {
       const charId = characterIds[i];
       const character = (novel.storyBible.characters ?? []).find((c) => c.id === charId);
@@ -5329,36 +5356,29 @@ function NovelWorkspacePage() {
 
       setProfileGenProgress({ current: i + 1, total: characterIds.length, name: character.name, done: doneCount });
 
-      // Wait between characters to let the provider breathe
+      // 3s pause between characters
       if (i > 0) await new Promise((r) => setTimeout(r, 3000));
 
-      // Fresh abort controller — exactly like starting a new AI operation
-      freshAiAbort();
-      setStoryAiBusyAction(`character-profile`);
-      setStoryAiError(null);
+      // Same prompt as the working "Full profile" button
+      const context = buildStoryBibleContext("characters");
+      const summaryNameHints = extractSummaryNameHints();
+      const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "none detected";
+      const existingOtherNames = storyCharacters
+        .filter((item) => item.id !== character.id)
+        .map((item) => item.name.trim().toLowerCase())
+        .filter(Boolean);
+      const hasPlaceholderName =
+        !character.name.trim() ||
+        character.name.trim().toLowerCase() === "new character" ||
+        /^character\s+\d+$/i.test(character.name.trim());
 
-      try {
-        // ── EXACT same logic as runCharacterAiForSelected ──
-        const context = buildStoryBibleContext("characters");
-        const summaryNameHints = extractSummaryNameHints();
-        const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "none detected";
-        const existingOtherNames = storyCharacters
-          .filter((item) => item.id !== character.id)
-          .map((item) => item.name.trim().toLowerCase())
-          .filter(Boolean);
-        const hasPlaceholderName =
-          !character.name.trim() ||
-          character.name.trim().toLowerCase() === "new character" ||
-          /^character\s+\d+$/i.test(character.name.trim());
-
-        const focusInstruction = "Build a full character profile — appearance, personality, goals, fears, and backstory. Make them vivid and grounded in the Canon.";
-        const systemMsg = "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return only valid JSON.";
-        const prompt = [
-          `Refine this character: ${character.name}`,
-          focusInstruction,
-          "Anchor everything to Summary canon only. Do not invent unrelated storylines.",
-          "Return JSON only in this shape:",
-          `{
+      const systemMsg = "You are a character development specialist. Build vivid, Canon-consistent profiles for novel drafting. Return only valid JSON.";
+      const prompt = [
+        `Refine this character: ${character.name}`,
+        "Build a full character profile — appearance, personality, goals, fears, and backstory. Make them vivid and grounded in the Canon.",
+        "Anchor everything to Summary canon only. Do not invent unrelated storylines.",
+        "Return JSON only in this shape:",
+        `{
   "name": "string",
   "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Type|Custom",
   "logline": "string",
@@ -5375,27 +5395,32 @@ function NovelWorkspacePage() {
   "readerSecretHint": "string",
   "tags": ["string"]
 }`,
-          "Rules:",
-          "- Always return a valid name and role.",
-          "- Name must be full first and last name.",
-          "- If only one name token is available, keep it as first name and add a fitting last name.",
-          "- If this character is one of the summary-mentioned full names, keep exact spelling.",
-          "Important: readerSecretHint must remain spoiler-safe and cannot reveal the secret directly.",
-          `Summary-mentioned names: ${summaryNamesText}`,
-          `Current character:\n${JSON.stringify(trimCharacterForAiMode(character, "profile"), null, 2)}`,
-          `Story context:\n${context}`,
-        ].join("\n\n");
+        "Rules:",
+        "- Always return a valid name and role.",
+        "- Name must be full first and last name.",
+        "- If only one name token is available, keep it as first name and add a fitting last name.",
+        "- If this character is one of the summary-mentioned full names, keep exact spelling.",
+        "Important: readerSecretHint must remain spoiler-safe and cannot reveal the secret directly.",
+        `Summary-mentioned names: ${summaryNamesText}`,
+        `Current character:\n${JSON.stringify(trimCharacterForAiMode(character, "profile"), null, 2)}`,
+        `Story context:\n${context}`,
+      ].join("\n\n");
 
-        const data = await requestOpenRouterJson<{
-          name?: string; role?: string; logline?: string;
-          appearance?: string; personality?: string; goals?: string; fears?: string;
-          backstory?: string; accent?: string; speakingStyle?: string;
-          reactionPattern?: string; voiceNotes?: string; secrets?: string;
-          readerSecretHint?: string; tags?: string[];
-        }>(prompt, 850, { systemMessage: systemMsg });
+      try {
+        console.log(`[batch-profile] Starting ${character.name} (${i + 1}/${characterIds.length})`);
+        const raw = await profileFetch(systemMsg, prompt);
+        console.log(`[batch-profile] ${character.name} raw response length: ${raw.length}`);
+
+        const data = parseJsonFromAi<Record<string, unknown>>(raw);
+        if (!data) {
+          console.warn(`[batch-profile] ${character.name}: JSON parse failed, raw: ${raw.slice(0, 200)}`);
+          continue;
+        }
+
+        console.log(`[batch-profile] ${character.name}: parsed OK, keys: ${Object.keys(data).join(", ")}`);
 
         const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
-        const aiName = typeof data.name === "string" ? data.name.trim() : "";
+        const aiName = typeof data.name === "string" ? (data.name as string).trim() : "";
         if (aiName) {
           const aiFullName = ensureFullCharacterName(aiName, storyCharacters.length);
           const aiNameKey = aiFullName.toLowerCase();
@@ -5405,24 +5430,25 @@ function NovelWorkspacePage() {
           }
         }
 
-        if (typeof data.role === "string" && data.role.trim()) {
+        if (typeof data.role === "string" && (data.role as string).trim()) {
           patch.role = normalizeCharacterRole(data.role);
         } else if (!character.role || character.role === "Type") {
           patch.role = "Supporting";
         }
 
-        if (typeof data.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
-        if (typeof data.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
-        if (typeof data.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
-        if (typeof data.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
-        if (typeof data.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
-        if (typeof data.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
-        if (typeof data.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
-        if (typeof data.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
-        if (typeof data.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
-        if (typeof data.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
-        if (typeof data.secrets === "string" && data.secrets.trim()) patch.secrets = data.secrets.trim();
-        if (typeof data.readerSecretHint === "string" && data.readerSecretHint.trim()) patch.readerSecretHint = data.readerSecretHint.trim();
+        const s = (k: string) => typeof data[k] === "string" && (data[k] as string).trim() ? (data[k] as string).trim() : "";
+        if (s("logline")) patch.logline = s("logline");
+        if (s("appearance")) patch.appearance = s("appearance");
+        if (s("personality")) patch.personality = s("personality");
+        if (s("goals")) patch.goals = s("goals");
+        if (s("fears")) patch.fears = s("fears");
+        if (s("backstory")) patch.backstory = s("backstory");
+        if (s("accent")) patch.accent = s("accent");
+        if (s("speakingStyle")) patch.speakingStyle = s("speakingStyle");
+        if (s("reactionPattern")) patch.reactionPattern = s("reactionPattern");
+        if (s("voiceNotes")) patch.voiceNotes = s("voiceNotes");
+        if (s("secrets")) patch.secrets = s("secrets");
+        if (s("readerSecretHint")) patch.readerSecretHint = s("readerSecretHint");
         const aiTags = parseStringList(data.tags);
         if (aiTags.length) patch.tags = Array.from(new Set([...(character.tags ?? []), ...aiTags]));
 
@@ -5430,20 +5456,16 @@ function NovelWorkspacePage() {
           const availableSummaryName =
             summaryNameHints.find((name) => !existingOtherNames.includes(name.trim().toLowerCase())) ??
             summaryNameHints[0] ?? "";
-          if (availableSummaryName) {
-            patch.name = ensureFullCharacterName(availableSummaryName, storyCharacters.length);
-          } else {
-            patch.name = ensureFullCharacterName("Alex", storyCharacters.length + 1);
-          }
+          patch.name = ensureFullCharacterName(availableSummaryName || "Alex", storyCharacters.length + 1);
         }
 
+        console.log(`[batch-profile] ${character.name}: applying patch with ${Object.keys(patch).length} fields`);
         updateV2Character(character.id, patch);
         doneCount++;
         setProfileGenProgress((p) => p ? { ...p, done: doneCount } : p);
       } catch (error) {
-        if (isCancelledError(error)) break;
-        console.warn(`[batch-profile] ${character.name} failed:`, error);
-        // Continue to next character
+        console.error(`[batch-profile] ${character.name} error:`, error);
+        // DON'T break — continue to next character no matter what
       }
     }
 
