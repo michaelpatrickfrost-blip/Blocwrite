@@ -5436,13 +5436,11 @@ function NovelWorkspacePage() {
       setProfileGenProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
     }
 
-    // Run in parallel batches of 2 for speed
-    const BATCH_SIZE = 2;
+    // Run sequentially — one at a time for reliability
     try {
-      for (let i = 0; i < characterIds.length; i += BATCH_SIZE) {
+      for (const id of characterIds) {
         if (aiAbortRef.current?.signal.aborted) break;
-        const batch = characterIds.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map((id) => generateOneProfile(id)));
+        await generateOneProfile(id);
       }
     } catch (error) {
       if (!isCancelledError(error)) {
@@ -14132,8 +14130,8 @@ function NovelWorkspacePage() {
                 transition: "width 0.3s ease",
               }} />
             </div>
-            <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 8 }}>
-              Running {Math.min(2, profileGenProgress.total - profileGenProgress.done)} in parallel for speed
+            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8 }}>
+              This may take a few minutes — building detailed profiles one at a time
             </p>
           </div>
         </div>
