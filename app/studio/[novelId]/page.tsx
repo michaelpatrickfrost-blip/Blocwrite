@@ -7305,19 +7305,19 @@ function NovelWorkspacePage() {
 
       const data = await res.json().catch(() => ({})) as { error?: string };
       if (data.error?.includes("not configured")) {
-        openShareEmailInClient();
+        setShareEmailSentMsg("Server email not configured. Use 'Open in email app' instead.");
         return;
       }
 
-      setShareEmailSentMsg(data.error || "Failed to send. Try opening in your email app instead.");
+      setShareEmailSentMsg(data.error || "Failed to send. Try 'Open in email app' instead.");
     } catch {
-      openShareEmailInClient();
+      setShareEmailSentMsg("Connection error. Try 'Open in email app' instead.");
     } finally {
       setShareSendingEmail(false);
     }
   }
 
-  /** Fallback: open the user's email client with a premium plain-text invitation. */
+  /** Fallback: open the user's email client with a polished plain-text invitation. */
   function openShareEmailInClient() {
     if (!shareResult || !novel) return;
     const novelTitle = novel.title || "Untitled Novel";
@@ -7325,54 +7325,49 @@ function NovelWorkspacePage() {
     const expiryDate = new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     const authorName = novel.authorName?.trim() || "";
 
-    const subject = `You're invited to read "${novelTitle}" — Manuscript Review`;
+    const subject = `You're invited to review "${novelTitle}" on Blocwrite`;
 
     const lines: string[] = [
-      `You've been personally invited to review a manuscript on Blocwrite.`,
+      `Hi,`,
       "",
-      `──────────────────────────────────────`,
+      `I'd love your feedback on my manuscript. I've shared it with you on Blocwrite, where you can read it, leave comments, and share your thoughts.`,
       "",
-      `  "${novelTitle}"`,
-      authorName ? `  by ${authorName}` : "",
       "",
-      `──────────────────────────────────────`,
+      `${novelTitle}`,
+      authorName ? `by ${authorName}` : "",
       "",
-      `Open this link to begin reading:`,
       "",
-      `  ${shareResult.url}`,
+      `Read & review here:`,
+      shareResult.url,
       "",
     ];
 
     if (pw) {
       lines.push(
-        `Your access password:  ${pw}`,
+        `Password: ${pw}`,
         "",
       );
     } else if (shareResult.hasPassword) {
       lines.push(
-        `This manuscript is password protected — the password will be provided separately.`,
+        `(This manuscript is password protected - I'll send the password separately.)`,
         "",
       );
     }
 
     lines.push(
-      `──────────────────────────────────────`,
       "",
-      `What to do:`,
+      `How it works:`,
+      `1. Open the link above`,
+      pw ? `2. Enter the password when prompted` : `2. Start reading`,
+      `3. Highlight any text to leave a note`,
+      `4. Hit submit when you're done`,
       "",
-      `  1.  Open the link above`,
-      pw ? `  2.  Enter the password when prompted` : `  2.  The manuscript will open for you`,
-      `  3.  Read at your own pace`,
-      `  4.  Highlight any text to leave a comment or note`,
-      `  5.  Submit your feedback when you're done`,
+      `Your feedback goes straight to me and helps shape the final draft.`,
       "",
-      `Your insights will go directly to the author and help shape the final draft.`,
+      `This link expires on ${expiryDate}.`,
       "",
-      `This invitation expires on ${expiryDate}.`,
       "",
-      `──────────────────────────────────────`,
-      `Blocwrite  ·  The AI writing studio for novelists`,
-      `blocwrite.com`,
+      `Sent via Blocwrite - blocwrite.com`,
     );
 
     const body = lines.filter((l) => l !== undefined).join("\n");
@@ -11277,7 +11272,7 @@ function NovelWorkspacePage() {
                 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    Send invitation
+                    Invite by email
                   </p>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input
@@ -11294,15 +11289,35 @@ function NovelWorkspacePage() {
                       }}
                       style={{ flex: 1, fontSize: 13 }}
                     />
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                     <button
                       type="button"
                       className="btn btn-primary"
                       disabled={!shareRecipientEmail.trim() || shareSendingEmail}
-                      style={{ padding: "7px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5, opacity: shareSendingEmail ? 0.6 : 1 }}
+                      style={{ flex: 1, padding: "8px 14px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: (!shareRecipientEmail.trim() || shareSendingEmail) ? 0.4 : 1 }}
                       onClick={() => void sendShareEmail()}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
-                      {shareSendingEmail ? "Sending..." : "Send"}
+                      {shareSendingEmail ? "Sending..." : "Send branded invitation"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!shareRecipientEmail.trim()}
+                      onClick={openShareEmailInClient}
+                      style={{
+                        flex: 1, padding: "8px 14px", fontSize: 12, whiteSpace: "nowrap",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        background: "var(--pw-surface-alt, rgba(255,255,255,0.04))",
+                        border: "1px solid var(--pw-border, rgba(255,255,255,0.08))",
+                        borderRadius: 8, cursor: "pointer", color: "var(--pw-text)",
+                        fontFamily: "inherit", fontWeight: 600,
+                        opacity: shareRecipientEmail.trim() ? 1 : 0.4,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      Open in email app
                     </button>
                   </div>
                   {shareEmailSentMsg && (
@@ -11325,23 +11340,6 @@ function NovelWorkspacePage() {
                       Password will be included in the email
                     </p>
                   )}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
-                    <p style={{ fontSize: 10, color: "var(--pw-text-dim)", margin: 0 }}>
-                      Sends a branded invitation with your manuscript link{shareResult.hasPassword && sharePassword.trim() ? " and password" : ""}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={openShareEmailInClient}
-                      disabled={!shareRecipientEmail.trim()}
-                      style={{
-                        fontSize: 10, color: "var(--pw-text-dim)", background: "none",
-                        border: "none", cursor: "pointer", textDecoration: "underline",
-                        padding: 0, whiteSpace: "nowrap", opacity: shareRecipientEmail.trim() ? 1 : 0.4,
-                      }}
-                    >
-                      Open in email app instead
-                    </button>
-                  </div>
                 </div>
 
                 {/* Warning about editing */}

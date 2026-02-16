@@ -77,18 +77,24 @@ export async function POST(request: Request) {
   const smtpPort = process.env.SMTP_PORT;
   const smtpFrom = process.env.SMTP_FROM || "noreply@blocwrite.com";
 
-  if (!smtpHost || !smtpUser || !smtpPass) {
+  if (!smtpHost) {
     return NextResponse.json({ error: "Email sending is not configured on this server." }, { status: 500 });
   }
 
   try {
     const nodemailer = await import("nodemailer");
-    const transporter = nodemailer.createTransport({
+    const transportOpts: Record<string, unknown> = {
       host: smtpHost,
-      port: parseInt(smtpPort || "587", 10),
+      port: parseInt(smtpPort || "25", 10),
       secure: smtpPort === "465",
-      auth: { user: smtpUser, pass: smtpPass },
-    });
+    };
+    // Only add auth if credentials are provided (localhost postfix doesn't need auth)
+    if (smtpUser && smtpPass) {
+      transportOpts.auth = { user: smtpUser, pass: smtpPass };
+    } else {
+      transportOpts.tls = { rejectUnauthorized: false };
+    }
+    const transporter = nodemailer.createTransport(transportOpts);
     await transporter.sendMail({
       from: `"Blocwrite" <${smtpFrom}>`,
       to: recipientEmail.trim().toLowerCase(),
