@@ -27,16 +27,21 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { id, title, excerpt, content, coverImage, published } = body as {
+  const { id, title, excerpt, content, coverImage, published, publishAt } = body as {
     id?: string;
     title?: string;
     excerpt?: string;
     content?: string;
     coverImage?: string | null;
     published?: boolean;
+    publishAt?: string;
   };
 
   if (!title?.trim()) return NextResponse.json({ error: "Title required" }, { status: 400 });
+
+  const publishedAt = published
+    ? (publishAt ? new Date(publishAt) : new Date())
+    : null;
 
   if (id) {
     const post = await prisma.blogPost.update({
@@ -48,7 +53,7 @@ export async function POST(req: NextRequest) {
         content: content || "",
         coverImage: coverImage ?? null,
         published: published ?? false,
-        publishedAt: published ? new Date() : null,
+        publishedAt,
       },
     });
     return NextResponse.json({ ok: true, post });
@@ -66,7 +71,7 @@ export async function POST(req: NextRequest) {
       content: content || "",
       coverImage: coverImage ?? null,
       published: published ?? false,
-      publishedAt: published ? new Date() : null,
+      publishedAt,
     },
   });
   return NextResponse.json({ ok: true, post });

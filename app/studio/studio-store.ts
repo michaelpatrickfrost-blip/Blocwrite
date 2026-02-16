@@ -1410,23 +1410,13 @@ export function countWords(text: string) {
   return trimmed.split(/\s+/).length;
 }
 
-/** Extract only prose text from chapter content (strips block synopses, metadata, delimiters). */
+/** Extract prose text from chapter content. With the new architecture, content IS prose. */
 export function extractProseFromContent(content: string): string {
-  if (!content.includes("<<<BLOCK>>>")) return content;
-  const parts = content.split("<<<BLOCK>>>").filter(Boolean);
-  const proseChunks: string[] = [];
-  for (const part of parts) {
-    const proseIdx = part.indexOf("<<<PROSE>>>");
-    const endIdx = part.indexOf("<<<ENDBLOCK>>>");
-    if (proseIdx === -1 || endIdx === -1) continue;
-    const prose = part.slice(proseIdx + "<<<PROSE>>>".length, endIdx).trim();
-    if (prose) proseChunks.push(prose);
-  }
-  return proseChunks.join("\n\n");
+  return content;
 }
 
 export function countChapterWords(chapter: Chapter) {
-  return countWords(extractProseFromContent(chapter.content));
+  return countWords(chapter.content);
 }
 
 export function countNovelWords(novel: Novel) {

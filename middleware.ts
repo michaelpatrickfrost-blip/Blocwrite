@@ -45,6 +45,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/register",    // legacy registration
   "/api/stripe/webhook", // Stripe webhook (verified by signature)
   "/api/contact",     // public contact form
+  "/api/blog",        // public blog listing + individual posts
+  "/api/alerts/active", // public alert polling (studio + unauthenticated)
 ];
 
 /** Share token routes are public (readers don't need auth), but /api/share and /api/share/feedback are protected. */
