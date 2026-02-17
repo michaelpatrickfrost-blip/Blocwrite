@@ -1004,6 +1004,7 @@ function NovelWorkspacePage() {
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
   const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
   const [boltonLibraryOpen, setBoltonLibraryOpen] = useState(false);
+  const [openBoltonDropdownId, setOpenBoltonDropdownId] = useState<string | null>(null);
   const [writingPacksOpen, setWritingPacksOpen] = useState(false);
   const [expandedPack, setExpandedPack] = useState<string | null>(null);
   const [packInstallFlash, setPackInstallFlash] = useState<string | null>(null);
@@ -8655,15 +8656,23 @@ function NovelWorkspacePage() {
   }
 
   /** Close all open bolton dropdowns */
-  const boltonCloseHandlersRef = useRef<Array<(ev: MouseEvent) => void>>([]);
   function closeBoltonDropdowns() {
     document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open"));
-    // Clean up all registered outside-click handlers
-    for (const handler of boltonCloseHandlersRef.current) {
-      document.removeEventListener("click", handler, true);
-    }
-    boltonCloseHandlersRef.current = [];
+    setOpenBoltonDropdownId(null);
   }
+
+  // Close bolton dropdown when clicking outside
+  useEffect(() => {
+    if (!openBoltonDropdownId) return;
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (target.closest(".pw-block-bolton-wrap")) return;
+      closeBoltonDropdowns();
+    }
+    document.addEventListener("click", handleClickOutside, true);
+    return () => document.removeEventListener("click", handleClickOutside, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openBoltonDropdownId]);
 
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {
     if (!activeChapter) return;
@@ -10088,27 +10097,22 @@ function NovelWorkspacePage() {
                         )}
                       </div>
                     )}
-                    <div className="pw-chapter-bolton-wrap pw-block-bolton-wrap">
+                    <div className={`pw-chapter-bolton-wrap pw-block-bolton-wrap ${openBoltonDropdownId === "chapter" ? "pw-bolton-open" : ""}`}>
                       <button
                         type="button"
                         className={`pw-chapter-bolton-trigger ${chapterBoltonId ? "pw-bolton-active" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const wrap = e.currentTarget.parentElement;
-                          if (!wrap) return;
-                          const wasOpen = wrap.classList.contains("pw-bolton-open");
-                          closeBoltonDropdowns();
-                          if (!wasOpen) {
-                            wrap.classList.add("pw-bolton-open");
-                            const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
-                            if (dd) positionDropdown(e.currentTarget, dd);
-                            const closeHandler = (ev: MouseEvent) => {
-                              if (!wrap.contains(ev.target as Node)) {
-                                closeBoltonDropdowns();
-                              }
-                            };
-                            boltonCloseHandlersRef.current.push(closeHandler);
-                            setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
+                          if (openBoltonDropdownId === "chapter") {
+                            closeBoltonDropdowns();
+                          } else {
+                            closeBoltonDropdowns();
+                            setOpenBoltonDropdownId("chapter");
+                            const wrap = e.currentTarget.parentElement;
+                            if (wrap) {
+                              const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                              if (dd) positionDropdown(e.currentTarget, dd);
+                            }
                           }
                         }}
                         title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Bolt-On: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Bolt-On"; })() : "Apply Bolt-On to chapter"}
@@ -10262,27 +10266,23 @@ function NovelWorkspacePage() {
                                         </span>
                                       </div>
                                     ) : (
-                                      <div className="pw-block-bolton-wrap pw-block-bolton-hover">
+                                      <div className={`pw-block-bolton-wrap pw-block-bolton-hover ${openBoltonDropdownId === `block-${idx}` ? "pw-bolton-open" : ""}`}>
                                         <button
                                           type="button"
                                           className={`pw-block-bolton-trigger ${block.notes ? "pw-bolton-active" : ""}`}
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            const wrap = e.currentTarget.parentElement;
-                                            if (!wrap) return;
-                                            const wasOpen = wrap.classList.contains("pw-bolton-open");
-                                            closeBoltonDropdowns();
-                                            if (!wasOpen) {
-                                              wrap.classList.add("pw-bolton-open");
-                                              const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
-                                              if (dd) positionDropdown(e.currentTarget, dd);
-                                              const closeHandler = (ev: MouseEvent) => {
-                                                if (!wrap.contains(ev.target as Node)) {
-                                                  closeBoltonDropdowns();
-                                                }
-                                              };
-                                              boltonCloseHandlersRef.current.push(closeHandler);
-                                              setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
+                                            const blockKey = `block-${idx}`;
+                                            if (openBoltonDropdownId === blockKey) {
+                                              closeBoltonDropdowns();
+                                            } else {
+                                              closeBoltonDropdowns();
+                                              setOpenBoltonDropdownId(blockKey);
+                                              const wrap = e.currentTarget.parentElement;
+                                              if (wrap) {
+                                                const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
+                                                if (dd) positionDropdown(e.currentTarget, dd);
+                                              }
                                             }
                                           }}
                                           title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
