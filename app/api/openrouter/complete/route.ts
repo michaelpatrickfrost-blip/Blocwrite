@@ -208,6 +208,22 @@ export async function POST(request: Request) {
 
     const text = payload.choices?.[0]?.message?.content ?? "";
     const finishReason = payload.choices?.[0]?.finish_reason ?? "";
+
+    // Debug logging for empty responses
+    if (!text) {
+      console.error("[AI EMPTY RESPONSE]", JSON.stringify({
+        model,
+        provider,
+        finishReason,
+        choicesLength: payload.choices?.length ?? 0,
+        hasMessage: !!payload.choices?.[0]?.message,
+        contentType: typeof payload.choices?.[0]?.message?.content,
+        payloadKeys: Object.keys(payload),
+        usage: payload.usage,
+        rawFirstChoice: JSON.stringify(payload.choices?.[0])?.slice(0, 500),
+      }));
+    }
+
     return NextResponse.json({ text, finishReason });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Provider request failed.";
