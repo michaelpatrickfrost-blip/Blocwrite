@@ -338,16 +338,39 @@ export function ProfilePopup({
           const payload = (await res.json().catch(() => ({}))) as {
             models?: Array<{ name?: string; model?: string; size?: number; details?: { parameter_size?: string } }>;
           };
-          const ollamaModels = (payload.models ?? [])
+          const pulledModels = (payload.models ?? [])
             .filter((m): m is { name: string } => typeof m.name === "string" && m.name.length > 0)
             .map((m) => ({
               id: m.name,
               name: m.name,
               contextLength: null as number | null,
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-          setModels(ollamaModels);
-          if (ollamaModels.length > 0) setShowModelDropdown(true);
+            }));
+          const pulledIds = new Set(pulledModels.map((m) => m.id));
+
+          // Known Ollama cloud models — append any not already pulled
+          const OLLAMA_CLOUD_MODELS = [
+            "deepseek-v3.1:671b-cloud", "deepseek-v3.2:671b-cloud",
+            "gpt-oss:20b-cloud", "gpt-oss:120b-cloud",
+            "qwen3-coder:480b-cloud", "qwen3-coder-next:cloud",
+            "qwen3.5:cloud", "qwen3-next:cloud", "qwen3-vl:235b-cloud",
+            "minimax-m2:cloud", "minimax-m2.1:cloud", "minimax-m2.5:cloud",
+            "glm-4.6:cloud", "glm-4.7:cloud", "glm-5:cloud",
+            "gemini-3-flash-preview:cloud",
+            "kimi-k2.5:cloud", "kimi-k2-thinking:cloud",
+            "mistral-large-3:cloud", "ministral-3:cloud",
+            "devstral-2:cloud", "devstral-small-2:cloud",
+            "nemotron-3-nano:cloud", "cogito-2.1:cloud", "rnj-1:cloud",
+          ];
+          const cloudExtras = OLLAMA_CLOUD_MODELS
+            .filter((id) => !pulledIds.has(id))
+            .map((id) => ({ id, name: `${id}`, contextLength: null as number | null }));
+
+          const allModels = [
+            ...pulledModels.sort((a, b) => a.name.localeCompare(b.name)),
+            ...cloudExtras,
+          ];
+          setModels(allModels);
+          if (allModels.length > 0) setShowModelDropdown(true);
         } catch (e) {
           window.clearTimeout(timeoutId);
           if (e instanceof DOMException && e.name === "AbortError") {
@@ -717,7 +740,9 @@ export function ProfilePopup({
                         if (filtered.length === 0) {
                           return <div className="pw-settings-model-empty">No models match &ldquo;{modelSearch}&rdquo;</div>;
                         }
-                        return filtered.map((m) => (
+                        return filtered.map((m) => {
+                          const isCloud = m.id.endsWith("-cloud") || m.id.includes(":cloud");
+                          return (
                           <button
                             key={m.id}
                             type="button"
@@ -728,13 +753,16 @@ export function ProfilePopup({
                               setModelSearch("");
                             }}
                           >
-                            <div className="pw-settings-model-name">{m.name}</div>
+                            <div className="pw-settings-model-name">
+                              {m.name}
+                              {isCloud && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(56,189,248,0.15)", color: "#38bdf8" }}>CLOUD</span>}
+                            </div>
                             <div className="pw-settings-model-meta">
                               <code>{m.id}</code>
                               {m.contextLength ? ` · ${Math.round(m.contextLength / 1024)}K ctx` : ""}
                             </div>
-                          </button>
-                        ));
+                          </button>);
+                        });
                       })()}
                     </div>
                   </div>
