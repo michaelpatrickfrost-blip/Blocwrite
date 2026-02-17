@@ -4686,6 +4686,10 @@ function NovelWorkspacePage() {
   }
 
   async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 180000, systemMessage?: string, jsonMode = false, temperature?: number) {
+    // Ensure we have a live abort controller (create if null/cancelled)
+    if (!aiAbortRef.current || aiAbortRef.current.signal.aborted) {
+      aiAbortRef.current = new AbortController();
+    }
     const normalizedApiKey = normalizeClientApiKey(openRouterKey);
     const startMs = Date.now();
     const latencyProfile = getAiLatencyProfile(openRouterModel, assistantProvider);
@@ -8651,8 +8655,14 @@ function NovelWorkspacePage() {
   }
 
   /** Close all open bolton dropdowns */
+  const boltonCloseHandlersRef = useRef<Array<(ev: MouseEvent) => void>>([]);
   function closeBoltonDropdowns() {
     document.querySelectorAll(".pw-bolton-open").forEach((el) => el.classList.remove("pw-bolton-open"));
+    // Clean up all registered outside-click handlers
+    for (const handler of boltonCloseHandlersRef.current) {
+      document.removeEventListener("click", handler, true);
+    }
+    boltonCloseHandlersRef.current = [];
   }
 
   function setChapterBoltonForActiveChapter(nextBoltonId: string) {
@@ -10087,19 +10097,17 @@ function NovelWorkspacePage() {
                           const wrap = e.currentTarget.parentElement;
                           if (!wrap) return;
                           const wasOpen = wrap.classList.contains("pw-bolton-open");
-                          // Close any other open bolton dropdowns first
                           closeBoltonDropdowns();
                           if (!wasOpen) {
                             wrap.classList.add("pw-bolton-open");
                             const dd = wrap.querySelector(".pw-block-bolton-dropdown") as HTMLElement | null;
                             if (dd) positionDropdown(e.currentTarget, dd);
-                            // Click outside to close
                             const closeHandler = (ev: MouseEvent) => {
                               if (!wrap.contains(ev.target as Node)) {
                                 closeBoltonDropdowns();
-                                document.removeEventListener("click", closeHandler, true);
                               }
                             };
+                            boltonCloseHandlersRef.current.push(closeHandler);
                             setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
                           }
                         }}
@@ -10271,9 +10279,9 @@ function NovelWorkspacePage() {
                                               const closeHandler = (ev: MouseEvent) => {
                                                 if (!wrap.contains(ev.target as Node)) {
                                                   closeBoltonDropdowns();
-                                                  document.removeEventListener("click", closeHandler, true);
                                                 }
                                               };
+                                              boltonCloseHandlersRef.current.push(closeHandler);
                                               setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
                                             }
                                           }}
