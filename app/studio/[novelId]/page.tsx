@@ -7076,6 +7076,7 @@ function NovelWorkspacePage() {
             tense: "",
             comps: [],
             bannedWords: [],
+            voiceNotes: "",
             voiceRules: "",
           },
         });
@@ -7092,6 +7093,8 @@ function NovelWorkspacePage() {
         updateStoryBible({ worldbuilding: "", lore: [] });
         break;
     }
+    // Force immediate server save so the clear persists even if user navigates away quickly
+    flushServerSave();
   }
 
   /** Push a content snapshot onto the undo stack for a chapter (max 5 entries). */
