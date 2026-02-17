@@ -25,6 +25,8 @@ type BlogPost = {
   createdAt: string;
 };
 
+type BlogPublishMode = "draft" | "publish" | "schedule";
+
 type AdminAlert = {
   id: string;
   message: string;
@@ -71,6 +73,23 @@ function formatNumber(n: number) {
   return n.toLocaleString();
 }
 
+function toLocalDatetimeStr(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function timeUntil(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return "now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -92,7 +111,8 @@ export default function AdminPage() {
   const [blogTitle, setBlogTitle] = useState("");
   const [blogExcerpt, setBlogExcerpt] = useState("");
   const [blogCover, setBlogCover] = useState<string | null>(null);
-  const [blogPublished, setBlogPublished] = useState(false);
+  const [blogPublishMode, setBlogPublishMode] = useState<BlogPublishMode>("draft");
+  const [blogScheduleDate, setBlogScheduleDate] = useState("");
   const [blogSaving, setBlogSaving] = useState(false);
   const [blogMsg, setBlogMsg] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
@@ -171,7 +191,8 @@ export default function AdminPage() {
     setBlogTitle("");
     setBlogExcerpt("");
     setBlogCover(null);
-    setBlogPublished(false);
+    setBlogPublishMode("draft");
+    setBlogScheduleDate("");
     setBlogMsg("");
     setTimeout(() => { if (editorRef.current) editorRef.current.innerHTML = ""; }, 50);
   }
@@ -181,17 +202,34 @@ export default function AdminPage() {
     setBlogTitle(post.title);
     setBlogExcerpt(post.excerpt || "");
     setBlogCover(post.coverImage);
-    setBlogPublished(post.published);
+    // Determine mode from existing data
+    if (post.published && post.publishedAt && new Date(post.publishedAt) > new Date()) {
+      setBlogPublishMode("schedule");
+      setBlogScheduleDate(toLocalDatetimeStr(post.publishedAt));
+    } else if (post.published) {
+      setBlogPublishMode("publish");
+    } else {
+      setBlogPublishMode("draft");
+    }
+    setBlogScheduleDate(
+      post.published && post.publishedAt && new Date(post.publishedAt) > new Date()
+        ? toLocalDatetimeStr(post.publishedAt)
+        : ""
+    );
     setBlogMsg("");
     setTimeout(() => { if (editorRef.current) editorRef.current.innerHTML = post.content; }, 50);
   }
 
   async function saveBlogPost() {
     if (!blogTitle.trim()) { setBlogMsg("Title is required."); return; }
+    if (blogPublishMode === "schedule" && !blogScheduleDate) { setBlogMsg("Select a date and time to schedule."); return; }
+    if (blogPublishMode === "schedule" && new Date(blogScheduleDate) <= new Date()) { setBlogMsg("Scheduled date must be in the future."); return; }
     setBlogSaving(true);
     setBlogMsg("");
     try {
       const content = editorRef.current?.innerHTML || "";
+      const published = blogPublishMode !== "draft";
+      const publishAt = blogPublishMode === "schedule" ? new Date(blogScheduleDate).toISOString() : undefined;
       const res = await fetch("/api/admin/blog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,11 +239,16 @@ export default function AdminPage() {
           excerpt: blogExcerpt.trim() || null,
           content,
           coverImage: blogCover,
-          published: blogPublished,
+          published,
+          publishAt,
         }),
       });
       if (res.ok) {
-        setBlogMsg(blogPublished ? "Published!" : "Saved as draft.");
+        setBlogMsg(
+          blogPublishMode === "schedule" ? "Scheduled!"
+            : blogPublishMode === "publish" ? "Published!"
+            : "Saved as draft."
+        );
         startNewPost();
         void loadData();
       } else {
@@ -214,6 +257,19 @@ export default function AdminPage() {
       }
     } catch { setBlogMsg("Connection error."); }
     setBlogSaving(false);
+  }
+
+  async function publishPostNow(postId: string) {
+    try {
+      const post = blogPosts.find((p) => p.id === postId);
+      if (!post) return;
+      await fetch("/api/admin/blog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: postId, title: post.title, excerpt: post.excerpt, content: post.content, coverImage: post.coverImage, published: true }),
+      });
+      void loadData();
+    } catch { /* ignore */ }
   }
 
   async function deleteBlogPost(id: string) {
@@ -275,13 +331,18 @@ export default function AdminPage() {
   // ── Alert helpers ──
   async function sendAlert() {
     if (!alertMsg.trim()) return;
+    if (alertSchedule && new Date(alertSchedule) <= new Date()) {
+      setAlertStatusMsg("Scheduled time must be in the future.");
+      return;
+    }
     setAlertSending(true);
     setAlertStatusMsg("");
     try {
+      const scheduledFor = alertSchedule ? new Date(alertSchedule).toISOString() : undefined;
       const res = await fetch("/api/admin/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: alertMsg.trim(), scheduledFor: alertSchedule || undefined }),
+        body: JSON.stringify({ message: alertMsg.trim(), scheduledFor }),
       });
       if (res.ok) {
         setAlertStatusMsg(alertSchedule ? "Alert scheduled!" : "Alert sent to all users!");
@@ -492,11 +553,13 @@ export default function AdminPage() {
                 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
                 </div>
-                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alert</h2>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alerts</h2>
               </div>
               <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
-                Schedule a notification for all users. Shows for 15 seconds then auto-dismisses. Only the latest alert is shown.
+                Send a notification to all users. Shows for 15 seconds then auto-dismisses. Only the latest active alert is shown.
               </p>
+
+              {/* Create alert form */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
                 <div style={{ flex: "1 1 260px" }}>
                   <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Message</label>
@@ -515,6 +578,7 @@ export default function AdminPage() {
                     type="datetime-local"
                     value={alertSchedule}
                     onChange={(e) => setAlertSchedule(e.target.value)}
+                    min={toLocalDatetimeStr(new Date().toISOString())}
                     style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
                   />
                 </div>
@@ -524,38 +588,129 @@ export default function AdminPage() {
                   disabled={alertSending || !alertMsg.trim()}
                   style={{
                     padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                    background: C.danger, color: "#fff", border: "none", cursor: "pointer",
+                    background: alertSchedule ? "#3b82f6" : C.danger,
+                    color: "#fff", border: "none", cursor: "pointer",
                     opacity: alertSending ? 0.6 : 1,
                   }}
                 >
-                  {alertSending ? "Sending..." : "Schedule Alert"}
+                  {alertSending ? "Sending..." : alertSchedule ? "Schedule Alert" : "Send Now"}
                 </button>
               </div>
               {alertStatusMsg && (
                 <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") || alertStatusMsg.includes("scheduled") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>
               )}
-              {alerts.filter((a) => a.active).length > 0 && (
-                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.dim, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Scheduled Alerts</p>
-                  {alerts.filter((a) => a.active).map((a) => (
-                    <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
-                        <p style={{ fontSize: 11, color: C.dim, margin: "2px 0 0" }}>
-                          {new Date(a.scheduledFor) <= new Date() ? "Live now" : `Scheduled: ${formatDate(a.scheduledFor)}`}
-                        </p>
+
+              {/* Alert list split into Live vs Scheduled */}
+              {(() => {
+                const now = new Date();
+                const activeAlerts = alerts.filter((a) => a.active);
+                const liveAlerts = activeAlerts.filter((a) => new Date(a.scheduledFor) <= now);
+                const scheduledAlerts = activeAlerts.filter((a) => new Date(a.scheduledFor) > now);
+                const pastAlerts = alerts.filter((a) => !a.active).slice(0, 5);
+
+                if (activeAlerts.length === 0 && pastAlerts.length === 0) return null;
+
+                return (
+                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+                    {/* Live alerts */}
+                    {liveAlerts.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.danger, animation: "alertPulse 2s ease-in-out infinite" }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.danger }}>
+                            Live Now ({liveAlerts.length})
+                          </span>
+                        </div>
+                        {liveAlerts.map((a) => (
+                          <div key={a.id} style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "10px 12px", borderRadius: 8, marginBottom: 6,
+                            background: C.dangerDim, border: `1px solid rgba(239,68,68,0.2)`,
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
+                              <p style={{ fontSize: 10, color: C.dim, margin: "3px 0 0" }}>
+                                Sent {formatDate(a.scheduledFor)} — auto-expires after 15 seconds for each user
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void dismissAlert(a.id)}
+                              style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.15)", color: C.danger, border: `1px solid rgba(239,68,68,0.25)`, cursor: "pointer", flexShrink: 0 }}
+                            >
+                              Deactivate
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void dismissAlert(a.id)}
-                        style={{ padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}
-                      >
-                        Deactivate
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    )}
+
+                    {/* Scheduled alerts */}
+                    {scheduledAlerts.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#60a5fa" }}>
+                            Scheduled ({scheduledAlerts.length})
+                          </span>
+                        </div>
+                        {scheduledAlerts.map((a) => (
+                          <div key={a.id} style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "10px 12px", borderRadius: 8, marginBottom: 6,
+                            background: "rgba(59,130,246,0.06)", border: `1px solid rgba(59,130,246,0.15)`,
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(59,130,246,0.1)", color: "#60a5fa" }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                  in {timeUntil(a.scheduledFor)}
+                                </span>
+                                <span style={{ fontSize: 10, color: C.dim }}>{formatDate(a.scheduledFor)}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void dismissAlert(a.id)}
+                              style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Past (deactivated) alerts */}
+                    {pastAlerts.length > 0 && (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.dim, opacity: 0.4 }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.dim }}>
+                            Past ({pastAlerts.length})
+                          </span>
+                        </div>
+                        {pastAlerts.map((a) => (
+                          <div key={a.id} style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "8px 12px", borderRadius: 8, marginBottom: 4,
+                            background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, opacity: 0.6,
+                          }}>
+                            <div>
+                              <p style={{ fontSize: 12, margin: 0, fontWeight: 500 }}>{a.message}</p>
+                              <p style={{ fontSize: 10, color: C.dim, margin: "2px 0 0" }}>{formatDate(a.scheduledFor)}</p>
+                            </div>
+                            <span style={{ fontSize: 10, color: C.dim, fontWeight: 600 }}>Expired</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <style>{`@keyframes alertPulse { 0%,100% { opacity:1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { opacity:0.6; box-shadow: 0 0 0 4px rgba(239,68,68,0); } }`}</style>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* ══════════ Section 4: Blog Manager ══════════ */}
@@ -677,12 +832,52 @@ export default function AdminPage() {
                   }}
                 />
 
+                {/* Publish mode radios */}
+                <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  {([
+                    { mode: "draft" as BlogPublishMode, label: "Save as Draft", desc: "Not visible to users" },
+                    { mode: "publish" as BlogPublishMode, label: "Publish Now", desc: "Goes live immediately" },
+                    { mode: "schedule" as BlogPublishMode, label: "Schedule", desc: "Publish at a future date" },
+                  ]).map(({ mode, label, desc }) => (
+                    <label key={mode} style={{
+                      display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600,
+                      padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                      background: blogPublishMode === mode ? (mode === "publish" ? C.accentDim : mode === "schedule" ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.06)") : "transparent",
+                      border: `1px solid ${blogPublishMode === mode ? (mode === "publish" ? "rgba(163,230,53,0.3)" : mode === "schedule" ? "rgba(59,130,246,0.3)" : C.border) : C.border}`,
+                      color: blogPublishMode === mode ? (mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text) : C.dim,
+                      transition: "all 0.15s",
+                    }}>
+                      <input
+                        type="radio"
+                        name="blogPublishMode"
+                        checked={blogPublishMode === mode}
+                        onChange={() => setBlogPublishMode(mode)}
+                        style={{ accentColor: mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text, margin: 0 }}
+                      />
+                      <span>{label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>{desc}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {/* Schedule datetime picker */}
+                {blogPublishMode === "schedule" && (
+                  <div style={{ marginTop: 10 }}>
+                    <label style={{ display: "block", fontSize: 11, color: "#60a5fa", marginBottom: 4, fontWeight: 600 }}>
+                      Publish date & time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={blogScheduleDate}
+                      onChange={(e) => setBlogScheduleDate(e.target.value)}
+                      min={toLocalDatetimeStr(new Date().toISOString())}
+                      style={{ ...inputStyle, maxWidth: 240, boxSizing: "border-box" }}
+                    />
+                  </div>
+                )}
+
                 {/* Actions */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.text, cursor: "pointer" }}>
-                    <input type="checkbox" checked={blogPublished} onChange={(e) => setBlogPublished(e.target.checked)} style={{ accentColor: C.accent }} />
-                    Publish immediately
-                  </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
                   <div style={{ flex: 1 }} />
                   {blogEditing && (
                     <button type="button" onClick={startNewPost} style={{ padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>
@@ -695,11 +890,19 @@ export default function AdminPage() {
                     disabled={blogSaving || !blogTitle.trim()}
                     style={{
                       padding: "8px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                      background: C.accent, color: "#111", border: "none", cursor: "pointer",
+                      background: blogPublishMode === "schedule" ? "#3b82f6" : C.accent,
+                      color: blogPublishMode === "schedule" ? "#fff" : "#111",
+                      border: "none", cursor: "pointer",
                       opacity: blogSaving ? 0.6 : 1,
                     }}
                   >
-                    {blogSaving ? "Saving..." : blogEditing ? "Update Post" : "Save Post"}
+                    {blogSaving
+                      ? "Saving..."
+                      : blogPublishMode === "schedule"
+                        ? (blogEditing ? "Update Schedule" : "Schedule Post")
+                        : blogPublishMode === "publish"
+                          ? (blogEditing ? "Update & Publish" : "Publish Post")
+                          : (blogEditing ? "Update Draft" : "Save Draft")}
                   </button>
                 </div>
                 {blogMsg && (
@@ -707,41 +910,102 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* ─── Post list ─── */}
-              {blogPosts.length === 0 ? (
-                <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "16px 0" }}>No posts yet. Write your first one above.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {blogPosts.map((post) => (
-                    <div key={post.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {post.coverImage && <img src={post.coverImage} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}` }} />}
-                          <div>
-                            <p style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.title}</p>
-                            <p style={{ fontSize: 11, color: C.dim, margin: "1px 0 0" }}>
-                              {post.published ? (
-                                <span style={{ color: C.accent }}>Published</span>
-                              ) : (
-                                <span style={{ color: C.warn }}>Draft</span>
-                              )}
-                              {" · "}{formatDate(post.createdAt)}
-                            </p>
-                          </div>
+              {/* ─── Post list split by status ─── */}
+              {(() => {
+                const now = new Date();
+                const scheduled = blogPosts.filter((p) => p.published && p.publishedAt && new Date(p.publishedAt) > now);
+                const published = blogPosts.filter((p) => p.published && (!p.publishedAt || new Date(p.publishedAt) <= now));
+                const drafts = blogPosts.filter((p) => !p.published);
+
+                const renderPostRow = (post: BlogPost, statusBadge: React.ReactNode) => (
+                  <div key={post.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                      {post.coverImage && <img src={post.coverImage} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}`, flexShrink: 0 }} />}
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.title}</p>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                          {statusBadge}
+                          <span style={{ fontSize: 11, color: C.dim }}>{formatDate(post.createdAt)}</span>
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button type="button" onClick={() => editPost(post)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => setBlogDeleteId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>
-                          Delete
-                        </button>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      {/* Publish now action for scheduled posts */}
+                      {post.published && post.publishedAt && new Date(post.publishedAt) > now && (
+                        <button type="button" onClick={() => void publishPostNow(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}>
+                          Publish Now
+                        </button>
+                      )}
+                      <button type="button" onClick={() => editPost(post)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => setBlogDeleteId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+
+                if (blogPosts.length === 0) {
+                  return <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "16px 0" }}>No posts yet. Write your first one above.</p>;
+                }
+
+                return (
+                  <>
+                    {/* Scheduled */}
+                    {scheduled.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#60a5fa" }}>
+                            Scheduled ({scheduled.length})
+                          </span>
+                        </div>
+                        {scheduled.map((post) => renderPostRow(post,
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(59,130,246,0.1)", color: "#60a5fa" }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            in {timeUntil(post.publishedAt!)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Published */}
+                    {published.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.accent }}>
+                            Published ({published.length})
+                          </span>
+                        </div>
+                        {published.map((post) => renderPostRow(post,
+                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: C.accentDim, color: C.accent }}>
+                            Live
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Drafts */}
+                    {drafts.length > 0 && (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.warn, opacity: 0.6 }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.warn }}>
+                            Drafts ({drafts.length})
+                          </span>
+                        </div>
+                        {drafts.map((post) => renderPostRow(post,
+                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(245,158,11,0.1)", color: C.warn }}>
+                            Draft
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* ══════════ Section 5: Reporting ══════════ */}
