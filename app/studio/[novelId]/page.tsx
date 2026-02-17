@@ -63,7 +63,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -598,6 +598,13 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     requiresKey: true,
     defaultBaseUrl: "https://router.huggingface.co/v1",
     defaultModel: "deepseek-ai/DeepSeek-R1",
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    requiresKey: false,
+    defaultBaseUrl: "http://127.0.0.1:11434",
+    defaultModel: "",
   },
 ];
 
@@ -2307,26 +2314,11 @@ function NovelWorkspacePage() {
       }
       contextPrompt += `Author: ${userMsg}\n\n${charChatTarget.name}:`;
 
-      const res = await fetch("/api/openrouter/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: assistantProvider,
-          apiKey: normalizeClientApiKey(openRouterKey),
-          baseUrl: assistantBaseUrl.trim(),
-          model: openRouterModel || getProviderOption(assistantProvider).defaultModel,
-          system: systemPrompt,
-          prompt: contextPrompt,
-          maxTokens: 800,
-          temperature: 0.85,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-      const reply = (data.text || "").trim();
-      if (reply) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: reply }]);
+      const reply = await requestOpenRouterText(contextPrompt, 800, 120000, systemPrompt, false, 0.85);
+      if (reply.trim()) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
       } else {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: data.error || "…" }]);
+        setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
     } catch {
       setCharChatMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
@@ -2417,26 +2409,11 @@ function NovelWorkspacePage() {
       }
       contextPrompt += `Author: ${userMsg}\n\nCo-Author:`;
 
-      const res = await fetch("/api/openrouter/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: assistantProvider,
-          apiKey: normalizeClientApiKey(openRouterKey),
-          baseUrl: assistantBaseUrl.trim(),
-          model: openRouterModel || getProviderOption(assistantProvider).defaultModel,
-          system: systemPrompt,
-          prompt: contextPrompt,
-          maxTokens: 1000,
-          temperature: 0.75,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-      const reply = (data.text || "").trim();
-      if (reply) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: reply }]);
+      const reply = await requestOpenRouterText(contextPrompt, 1000, 120000, systemPrompt, false, 0.75);
+      if (reply.trim()) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
       } else {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: data.error || "…" }]);
+        setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
     } catch {
       setCharChatMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
@@ -4596,35 +4573,41 @@ function NovelWorkspacePage() {
       const onGlobalAbort = () => controller.abort();
       aiAbortRef.current?.signal.addEventListener("abort", onGlobalAbort);
 
-      // LM Studio runs locally — call it directly from the browser instead of the server proxy
-      if (assistantProvider === "lmstudio") {
-        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+      // LM Studio / Ollama run locally — call directly from the browser instead of the server proxy
+      if (assistantProvider === "lmstudio" || assistantProvider === "ollama") {
+        const isOllama = assistantProvider === "ollama";
+        const defaultUrl = isOllama ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
+        const rawBase = (assistantBaseUrl.trim() || defaultUrl).replace(/\/+$/, "");
+        const localBaseUrl = isOllama
+          ? (rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`)
+          : rawBase;
         const messages: Array<{ role: string; content: string }> = [];
         if (systemMessage) messages.push({ role: "system", content: systemMessage });
         messages.push({ role: "user", content: prompt });
-        const lmBody: Record<string, unknown> = {
-          model: openRouterModel || "local-model",
+        const localBody: Record<string, unknown> = {
+          model: openRouterModel || (isOllama ? "" : "local-model"),
           max_tokens: maxTokens,
           messages,
           stream: false,
         };
-        if (temperature != null) lmBody.temperature = temperature;
-        if (jsonMode) lmBody.response_format = { type: "json_object" };
+        if (temperature != null) localBody.temperature = temperature;
+        if (jsonMode) localBody.response_format = { type: "json_object" };
+        const providerLabel = isOllama ? "Ollama" : "LM Studio";
         try {
-          const lmRes = await fetch(`${lmBaseUrl}/chat/completions`, {
+          const localRes = await fetch(`${localBaseUrl}/chat/completions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(lmBody),
+            body: JSON.stringify(localBody),
             signal: controller.signal,
           });
-          const lmPayload = (await lmRes.json().catch(() => ({}))) as Record<string, unknown>;
-          const choices = lmPayload.choices as Array<{ message?: { content?: string } }> | undefined;
+          const localPayload = (await localRes.json().catch(() => ({}))) as Record<string, unknown>;
+          const choices = localPayload.choices as Array<{ message?: { content?: string } }> | undefined;
           const text = choices?.[0]?.message?.content ?? "";
-          if (!lmRes.ok) {
-            const errMsg = typeof lmPayload.error === "string" ? lmPayload.error
-              : lmPayload.error && typeof (lmPayload.error as Record<string, unknown>).message === "string" ? ((lmPayload.error as Record<string, unknown>).message as string)
-              : `LM Studio error ${lmRes.status}`;
-            return { ok: false, status: lmRes.status, text: "", apiError: errMsg };
+          if (!localRes.ok) {
+            const errMsg = typeof localPayload.error === "string" ? localPayload.error
+              : localPayload.error && typeof (localPayload.error as Record<string, unknown>).message === "string" ? ((localPayload.error as Record<string, unknown>).message as string)
+              : `${providerLabel} error ${localRes.status}`;
+            return { ok: false, status: localRes.status, text: "", apiError: errMsg };
           }
           return { ok: true, status: 200, text: text.trim() };
         } catch (error) {
@@ -4632,7 +4615,7 @@ function NovelWorkspacePage() {
             if (aiAbortRef.current?.signal.aborted) return { ok: false, status: 0, text: "", apiError: "cancelled" };
             return { ok: false, status: 0, text: "", apiError: "timeout" };
           }
-          return { ok: false, status: 0, text: "", apiError: "Could not reach LM Studio. Make sure it is running on your computer with the server enabled." };
+          return { ok: false, status: 0, text: "", apiError: `Could not reach ${providerLabel}. Make sure it is running on your computer${isOllama ? "." : " with the server enabled."}` };
         } finally {
           window.clearTimeout(timeoutId);
           aiAbortRef.current?.signal.removeEventListener("abort", onGlobalAbort);
@@ -12042,59 +12025,47 @@ function NovelWorkspacePage() {
                           // Re-generate — call AI again
                           setFbPreviewGenerating(true);
                           try {
-                            const res = await fetch("/api/openrouter/complete", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                provider: assistantProvider,
-                                apiKey: openRouterKey,
-                                baseUrl: assistantBaseUrl,
-                                model: openRouterModel || "openai/gpt-4o-mini",
-                                systemMessage: [
-                                  "You are a careful, skilled prose editor working on a novel manuscript.",
-                                  "A beta reader highlighted a passage and left feedback. Your previous revision was rejected, so produce a DIFFERENT approach.",
-                                  "1. Revise ONLY the highlighted passage to address the reader's concern — with a fresh take.",
-                                  "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
-                                  "3. Keep the same tense, POV, and narrative perspective.",
-                                  "4. Do NOT add new plot points, characters, or information not implied by the original.",
-                                  "5. Do NOT expand the passage significantly — keep roughly the same length.",
-                                  "6. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
-                                ].join("\n"),
-                                prompt: [
-                                  `HIGHLIGHTED PASSAGE:`,
-                                  `"""`,
-                                  item.ann.selectedText,
-                                  `"""`,
-                                  ``,
-                                  `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
-                                  ``,
-                                  `PREVIOUS REJECTED REVISION:`,
-                                  `"""`,
-                                  fbPreviewRevised ?? "",
-                                  `"""`,
-                                  ``,
-                                  `SURROUNDING CONTEXT (for tone/flow — do NOT modify):`,
-                                  `"""`,
-                                  item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
-                                  `[HIGHLIGHTED PASSAGE GOES HERE]`,
-                                  item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
-                                  `"""`,
-                                  ``,
-                                  `Produce a DIFFERENT revision. Return ONLY the revised text:`,
-                                ].join("\n"),
-                                maxTokens: 1200,
-                                timeoutMs: 120000,
-                              }),
-                            });
-                            const aiData = await res.json() as { text?: string; error?: string };
-                            if (aiData.text) {
-                              let revised = aiData.text.trim();
+                            const sysMsg = [
+                              "You are a careful, skilled prose editor working on a novel manuscript.",
+                              "A beta reader highlighted a passage and left feedback. Your previous revision was rejected, so produce a DIFFERENT approach.",
+                              "1. Revise ONLY the highlighted passage to address the reader's concern — with a fresh take.",
+                              "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
+                              "3. Keep the same tense, POV, and narrative perspective.",
+                              "4. Do NOT add new plot points, characters, or information not implied by the original.",
+                              "5. Do NOT expand the passage significantly — keep roughly the same length.",
+                              "6. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
+                            ].join("\n");
+                            const userPrompt = [
+                              `HIGHLIGHTED PASSAGE:`,
+                              `"""`,
+                              item.ann.selectedText,
+                              `"""`,
+                              ``,
+                              `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+                              ``,
+                              `PREVIOUS REJECTED REVISION:`,
+                              `"""`,
+                              fbPreviewRevised ?? "",
+                              `"""`,
+                              ``,
+                              `SURROUNDING CONTEXT (for tone/flow — do NOT modify):`,
+                              `"""`,
+                              item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+                              `[HIGHLIGHTED PASSAGE GOES HERE]`,
+                              item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+                              `"""`,
+                              ``,
+                              `Produce a DIFFERENT revision. Return ONLY the revised text:`,
+                            ].join("\n");
+                            const aiText = await requestOpenRouterText(userPrompt, 1200, 120000, sysMsg, false);
+                            if (aiText.trim()) {
+                              let revised = aiText.trim();
                               if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
                                 revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
                               }
                               setFbPreviewRevised(revised);
                             } else {
-                              alert(aiData.error || "AI could not regenerate. Try again.");
+                              alert("AI could not regenerate. Try again.");
                             }
                           } catch {
                             alert("Failed to regenerate. Check your AI connection.");
@@ -12241,58 +12212,45 @@ function NovelWorkspacePage() {
                           setFbPreviewGenerating(true);
                           setFbPreviewOriginal(item.ann.selectedText);
                           try {
-                            const res = await fetch("/api/openrouter/complete", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                provider: assistantProvider,
-                                apiKey: openRouterKey,
-                                baseUrl: assistantBaseUrl,
-                                model: openRouterModel || "openai/gpt-4o-mini",
-                                systemMessage: [
-                                  "You are a careful, skilled prose editor working on a novel manuscript.",
-                                  "A beta reader highlighted a passage and left feedback. Your job:",
-                                  "1. Revise ONLY the highlighted passage to address the reader's concern.",
-                                  "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
-                                  "3. Keep the same tense, POV, and narrative perspective.",
-                                  "4. Do NOT add new plot points, characters, or information not implied by the original.",
-                                  "5. Do NOT expand the passage significantly — keep roughly the same length.",
-                                  "6. Do NOT rewrite surrounding text — only revise what was highlighted.",
-                                  "7. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
-                                  "8. If the feedback is vague or you're unsure, make the smallest meaningful improvement.",
-                                ].join("\n"),
-                                prompt: [
-                                  `HIGHLIGHTED PASSAGE:`,
-                                  `"""`,
-                                  item.ann.selectedText,
-                                  `"""`,
-                                  ``,
-                                  `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
-                                  ``,
-                                  `SURROUNDING CONTEXT (for tone/flow — do NOT modify this, only use for reference):`,
-                                  `"""`,
-                                  item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
-                                  `[HIGHLIGHTED PASSAGE GOES HERE]`,
-                                  item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
-                                  `"""`,
-                                  ``,
-                                  `Now revise the highlighted passage. Return ONLY the revised text, nothing else:`,
-                                ].join("\n"),
-                                maxTokens: 1200,
-                                timeoutMs: 120000,
-                              }),
-                            });
-                            const aiData = await res.json() as { text?: string; error?: string };
-                            if (aiData.text) {
-                              let revised = aiData.text.trim();
-                              // Strip wrapping quotes/triple-quotes if the AI added them
+                            const fbSysMsg = [
+                              "You are a careful, skilled prose editor working on a novel manuscript.",
+                              "A beta reader highlighted a passage and left feedback. Your job:",
+                              "1. Revise ONLY the highlighted passage to address the reader's concern.",
+                              "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
+                              "3. Keep the same tense, POV, and narrative perspective.",
+                              "4. Do NOT add new plot points, characters, or information not implied by the original.",
+                              "5. Do NOT expand the passage significantly — keep roughly the same length.",
+                              "6. Do NOT rewrite surrounding text — only revise what was highlighted.",
+                              "7. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
+                              "8. If the feedback is vague or you're unsure, make the smallest meaningful improvement.",
+                            ].join("\n");
+                            const fbUserPrompt = [
+                              `HIGHLIGHTED PASSAGE:`,
+                              `"""`,
+                              item.ann.selectedText,
+                              `"""`,
+                              ``,
+                              `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+                              ``,
+                              `SURROUNDING CONTEXT (for tone/flow — do NOT modify this, only use for reference):`,
+                              `"""`,
+                              item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+                              `[HIGHLIGHTED PASSAGE GOES HERE]`,
+                              item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+                              `"""`,
+                              ``,
+                              `Now revise the highlighted passage. Return ONLY the revised text, nothing else:`,
+                            ].join("\n");
+                            const fbAiText = await requestOpenRouterText(fbUserPrompt, 1200, 120000, fbSysMsg, false);
+                            if (fbAiText.trim()) {
+                              let revised = fbAiText.trim();
                               if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
                                 revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
                               }
                               setFbPreviewRevised(revised);
                             } else {
                               setFbPreviewOriginal(null);
-                              alert(aiData.error || "AI could not generate a revision. Try again.");
+                              alert("AI could not generate a revision. Try again.");
                             }
                           } catch {
                             setFbPreviewOriginal(null);

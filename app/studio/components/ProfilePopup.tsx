@@ -17,7 +17,7 @@ type ModelOption = {
   contextLength: number | null;
 };
 
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
 
 const ASSISTANT_PROVIDER_OPTIONS: Array<{
   id: AssistantProviderId;
@@ -53,6 +53,13 @@ const ASSISTANT_PROVIDER_OPTIONS: Array<{
     requiresKey: true,
     defaultBaseUrl: "https://router.huggingface.co/v1",
     defaultModel: "deepseek-ai/DeepSeek-R1",
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    requiresKey: false,
+    defaultBaseUrl: "http://127.0.0.1:11434",
+    defaultModel: "",
   },
 ];
 
@@ -228,15 +235,20 @@ export function ProfilePopup({
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
-      if (assistantProvider === "lmstudio") {
-        // LM Studio runs locally — call it directly from the browser
-        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+      if (assistantProvider === "lmstudio" || assistantProvider === "ollama") {
+        const isOllama = assistantProvider === "ollama";
+        const providerLabel = isOllama ? "Ollama" : "LM Studio";
+        const defaultUrl = isOllama ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
+        const rawBase = (assistantBaseUrl.trim() || defaultUrl).replace(/\/+$/, "");
+        const localBaseUrl = isOllama
+          ? (rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`)
+          : rawBase;
         try {
-          const res = await fetch(`${lmBaseUrl}/chat/completions`, {
+          const res = await fetch(`${localBaseUrl}/chat/completions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: openRouterModel || "local-model",
+              model: openRouterModel || (isOllama ? "" : "local-model"),
               max_tokens: 2,
               messages: [{ role: "user", content: "hi" }],
               stream: false,
@@ -247,15 +259,17 @@ export function ProfilePopup({
           if (res.ok) {
             setOpenRouterStatus("ok");
           } else {
-            setOpenRouterError(`LM Studio returned status ${res.status}. Make sure a model is loaded.`);
+            setOpenRouterError(`${providerLabel} returned status ${res.status}. Make sure a model is ${isOllama ? "pulled and available" : "loaded"}.`);
             setOpenRouterStatus("error");
           }
         } catch (e) {
           window.clearTimeout(timeoutId);
           if (e instanceof DOMException && e.name === "AbortError") {
-            setOpenRouterError("Connection timed out. Make sure LM Studio is running.");
+            setOpenRouterError(`Connection timed out. Make sure ${providerLabel} is running.`);
           } else {
-            setOpenRouterError("Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
+            setOpenRouterError(isOllama
+              ? "Could not reach Ollama. Make sure it is running on your computer (run 'ollama serve' in your terminal)."
+              : "Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
           }
           setOpenRouterStatus("error");
         }
@@ -300,6 +314,44 @@ export function ProfilePopup({
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
+      // Ollama runs locally — fetch models directly from the browser
+      if (assistantProvider === "ollama") {
+        const rawBase = (assistantBaseUrl.trim() || "http://127.0.0.1:11434").replace(/\/+$/, "");
+        try {
+          const res = await fetch(`${rawBase}/api/tags`, {
+            method: "GET",
+            signal: controller.signal,
+          });
+          window.clearTimeout(timeoutId);
+          if (!res.ok) {
+            setModelsError(`Ollama returned status ${res.status}. Make sure it is running.`);
+            return;
+          }
+          const payload = (await res.json().catch(() => ({}))) as {
+            models?: Array<{ name?: string; model?: string; size?: number; details?: { parameter_size?: string } }>;
+          };
+          const ollamaModels = (payload.models ?? [])
+            .filter((m): m is { name: string } => typeof m.name === "string" && m.name.length > 0)
+            .map((m) => ({
+              id: m.name,
+              name: m.name,
+              contextLength: null as number | null,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          setModels(ollamaModels);
+          if (ollamaModels.length > 0) setShowModelDropdown(true);
+        } catch (e) {
+          window.clearTimeout(timeoutId);
+          if (e instanceof DOMException && e.name === "AbortError") {
+            setModelsError("Model list request timed out. Make sure Ollama is running.");
+          } else {
+            setModelsError("Could not reach Ollama. Make sure it is running on your computer (run 'ollama serve' in your terminal).");
+          }
+        }
+        return;
+      }
+
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
         headers: {
@@ -414,8 +466,8 @@ export function ProfilePopup({
   ];
 
   return (
-    <div className="pw-modal-overlay" onClick={onClose}>
-      <div className="pw-settings-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="pw-modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="pw-settings-panel" onMouseDown={(e) => e.stopPropagation()}>
         {/* ── Header ── */}
         <div className="pw-settings-head">
           <h3>Settings</h3>

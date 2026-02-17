@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 // Force long-lived connections for slow model providers
 export const maxDuration = 900; // 15 minutes for self-hosted/slow providers
 
-type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
 type CompletionRequest = {
   provider?: ProviderId;
   model?: string;
@@ -31,16 +31,18 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
   huggingface: "https://router.huggingface.co/v1",
+  ollama: "http://127.0.0.1:11434/v1",
 };
 const PROVIDER_TIMEOUT_MS: Record<ProviderId, number> = {
   openrouter: 300000,
   infermatic: 420000,
   lmstudio: 300000,
   huggingface: 300000,
+  ollama: 300000,
 };
 
 function normalizeProvider(raw: unknown): ProviderId {
-  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface") return raw;
+  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface" || raw === "ollama") return raw;
   return "openrouter";
 }
 
@@ -75,6 +77,10 @@ function cleanBaseUrl(raw: unknown, provider: ProviderId) {
     if (normalized.endsWith("/v1")) return normalized;
     return `${normalized}/v1`;
   }
+  if (provider === "ollama") {
+    if (normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/v1`;
+  }
   return normalized;
 }
 
@@ -102,7 +108,7 @@ function extractUpstreamError(payload: OpenRouterErrorPayload) {
 }
 
 function normalizeProviderError(message: string, status: number, model: string, provider: ProviderId) {
-  const providerLabel = provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : "LM Studio";
+  const providerLabel = provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : provider === "ollama" ? "Ollama" : "LM Studio";
   if (message === '{"detail":"Bad Request"}' || message.toLowerCase() === "bad request") {
     return `${providerLabel} rejected this request for model "${model}". Choose a different model or shorten the request.`;
   }
@@ -133,7 +139,7 @@ export async function POST(request: Request) {
       typeof body.temperature === "number" && Number.isFinite(body.temperature)
         ? Math.max(0, Math.min(2, body.temperature))
         : undefined;
-    const requiresKey = provider === "openrouter" || provider === "infermatic" || provider === "huggingface";
+    const requiresKey = provider !== "lmstudio" && provider !== "ollama";
 
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });
