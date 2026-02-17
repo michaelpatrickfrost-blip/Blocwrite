@@ -6424,32 +6424,38 @@ function NovelWorkspacePage() {
     try {
       // Now make the focused AI call to rewrite chapter synopses for this arc
       const chapterOutline = plan.chapters.map((ch, i) =>
-        `${i + 1}. "${ch.title}": ${(ch.synopsis || "").slice(0, 200)}`
-      ).join("\n");
+        `Chapter ${i + 1} — "${ch.title}":\n${ch.synopsis || "(no synopsis yet)"}`
+      ).join("\n\n");
 
       const rewritePrompt = [
         `Novel: "${novel.title}"`,
         `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
-        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 400)}`,
+        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 800)}`,
         "",
         `Chosen arc direction: "${choice.name}"`,
         `Arc description: ${choice.description}`,
+        `Arc rationale: ${choice.rationale}`,
         "",
-        "Current chapters:",
+        "Current chapter synopses (use these as the foundation — keep the detail and depth):",
         chapterOutline,
         "",
-        `Rewrite each chapter synopsis to follow the "${choice.name}" arc direction.`,
-        "Keep the same characters and world. Reshape the narrative arc, pacing, and emotional beats.",
-        "Each synopsis should be 2-3 sentences.",
+        `Rewrite every chapter synopsis to follow the "${choice.name}" arc direction.`,
+        "IMPORTANT RULES:",
+        "- Each synopsis MUST be detailed — at least 4-6 sentences per chapter.",
+        "- Include specific character actions, emotional beats, key plot developments, and scene-setting.",
+        "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
+        "- Maintain or exceed the level of detail from the originals. Never shorten or summarise — expand and reshape.",
+        "- Make each chapter feel like it belongs to this arc direction with clear cause-and-effect between chapters.",
         "",
         `Return JSON: { "synopses": ["chapter 1 synopsis", "chapter 2 synopsis", ...] }`,
-        `Exactly ${plan.chapters.length} entries.`,
+        `Exactly ${plan.chapters.length} entries. Each entry must be a detailed paragraph.`,
       ].join("\n");
 
+      const tokenBudget = Math.max(1500, Math.min(plan.chapters.length * 250, 4000));
       const result = await requestOpenRouterJson<{ synopses?: string[] }>(
         rewritePrompt,
-        Math.min(plan.chapters.length * 120, 2000),
-        { systemMessage: "Story arc writer. Return ONLY valid JSON with rewritten synopses." },
+        tokenBudget,
+        { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON." },
       );
 
       const synopses = Array.isArray(result?.synopses) ? result.synopses : [];
