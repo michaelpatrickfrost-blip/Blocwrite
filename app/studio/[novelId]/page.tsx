@@ -5587,22 +5587,60 @@ function NovelWorkspacePage() {
           novel.storyBible.summary.stakes ? `\nCore conflict:\n${novel.storyBible.summary.stakes}` : "",
           `\nStory context:\n${context}`,
         ].filter(Boolean).join("\n\n");
-        const raw = await requestOpenRouterText(prompt, 2000, 120000, sysMsg, false, 0.8);
-        const parts = raw.split(/---OPTION---/i).map((s) => s.trim()).filter((s) => s.length > 30);
-        if (parts.length === 0) {
-          // Fallback: treat the whole response as a single option
-          const cleaned = raw.replace(/^#+\s.*/gm, "").replace(/^\*\*.+\*\*\s*/gm, "").replace(/^(Option|Version)\s*\d+[:\s]*/gim, "").trim();
+        const raw = await requestOpenRouterText(prompt, 1800, 240000, sysMsg, false, 0.8);
+
+        // Try multiple split strategies to reliably separate the 3 options
+        let parts: string[] = [];
+
+        // Strategy 1: explicit ---OPTION--- separator
+        parts = raw.split(/---OPTION---/i).map((s) => s.trim()).filter((s) => s.length > 30);
+
+        // Strategy 2: numbered headers like "Option 1:", "Version 1:", "1.", "**Option 1**"
+        if (parts.length < 2) {
+          parts = raw
+            .split(/\n\s*(?:\*{0,2}(?:Option|Version)\s*\d+\*{0,2}\s*[:\-—]|\d+\.\s+\*{0,2}(?:Option|Version))/i)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 30);
+        }
+
+        // Strategy 3: markdown headers like "### Option 1"
+        if (parts.length < 2) {
+          parts = raw
+            .split(/\n\s*#{1,4}\s*(?:Option|Version)\s*\d+/i)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 30);
+        }
+
+        // Strategy 4: double newline + numbered pattern like "\n\n1." or "\n\n**1"
+        if (parts.length < 2) {
+          parts = raw
+            .split(/\n{2,}(?=\d+[\.\)]\s|\*{2}\d)/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 30);
+        }
+
+        // Clean each option — strip labels, markdown bold headers, leading numbers
+        const cleanOption = (text: string) =>
+          text
+            .replace(/^\*{0,2}(?:Option|Version)\s*\d+\*{0,2}\s*[:\-—]?\s*/i, "")
+            .replace(/^\d+[\.\)]\s*/, "")
+            .replace(/^\*\*.+\*\*\s*\n?/, "")
+            .trim();
+
+        if (parts.length >= 2) {
+          const options = parts.slice(0, 3).map((text, i) => ({
+            label: `Option ${i + 1}`,
+            text: cleanOption(text),
+          }));
+          setSynopsisOptions(options);
+        } else {
+          // Fallback: whole response as single option
+          const cleaned = cleanOption(raw);
           if (cleaned.length > 30) {
             setSynopsisOptions([{ label: "Option 1", text: cleaned }]);
           } else {
             setStoryAiError("AI returned an empty result. Try again or switch model.");
           }
-        } else {
-          const options = parts.slice(0, 3).map((text, i) => ({
-            label: `Option ${i + 1}`,
-            text: text.replace(/^(Option|Version)\s*\d+[:\s]*/i, "").replace(/^\*\*.+\*\*\s*\n?/, "").trim(),
-          }));
-          setSynopsisOptions(options);
         }
       }
 
@@ -9711,6 +9749,16 @@ function NovelWorkspacePage() {
           <div className="pw-sidebar-foot">
             <span>{activeChapter ? "Editing chapter" : "Novel overview"}</span>
           </div>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="pw-admin-sidebar-link"
+              title="Admin Hub"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              Admin Hub
+            </Link>
+          )}
           <div style={{ fontSize: 9, color: "var(--pw-text-dim)", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>&copy; {new Date().getFullYear()} Blocwrite</div>
         </aside>
 
@@ -9823,25 +9871,6 @@ function NovelWorkspacePage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </button>
             <span data-tutorial="settings"><ProfileButton onClick={() => setProfileOpen(true)} /></span>
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className="pw-admin-link"
-                title="Admin Hub"
-                style={{
-                  fontSize: 11,
-                  padding: "5px 10px",
-                  borderRadius: 6,
-                  border: "1px solid var(--pw-border-light)",
-                  color: "var(--pw-text-dim)",
-                  textDecoration: "none",
-                  fontWeight: 500,
-                  transition: "color 0.15s, border-color 0.15s",
-                }}
-              >
-                Admin
-              </Link>
-            )}
           </div>
         </div>
 
@@ -10329,7 +10358,6 @@ function NovelWorkspacePage() {
                                       </div>
                                     )}
                                 <button type="button" className="pw-block-btn" title="Insert bloc after" onClick={() => insertSceneBlockAt(blocks, idx)}>/</button>
-                                <button type="button" className="pw-block-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)}>×</button>
                               </div>
                             </div>
                             {/* ── Seamless prose area (styled like main editor) ── */}
@@ -12871,7 +12899,7 @@ function NovelWorkspacePage() {
                           disabled={storyAiBusyAction !== null}
                           onClick={() => void runSummaryFieldAi("synopsis", summaryAiMode.synopsis)}
                         >
-                          {storyAiBusyAction === "summary-field-synopsis" ? "Running..." : "Run Assistant"}
+                          {storyAiBusyAction === "summary-field-synopsis" ? "Generating options..." : "Run Assistant"}
                         </button>
                       </div>}
                     </div>
@@ -12888,38 +12916,7 @@ function NovelWorkspacePage() {
                     <p className="pw-field-help">
                       {novel.storyBible.summary.synopsisShort.length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}
                     </p>
-                    {synopsisOptions.length > 0 && (
-                      <div className="pw-synopsis-options">
-                        <div className="pw-synopsis-options-header">
-                          <span>Pick a version to use:</span>
-                          <button
-                            type="button"
-                            className="pw-synopsis-options-close"
-                            onClick={() => setSynopsisOptions([])}
-                          >
-                            Dismiss
-                          </button>
-                        </div>
-                        {synopsisOptions.map((opt, i) => (
-                          <div key={i} className="pw-synopsis-option-card">
-                            <div className="pw-synopsis-option-label">{opt.label}</div>
-                            <p className="pw-synopsis-option-text">{opt.text}</p>
-                            <button
-                              type="button"
-                              className="pw-ai-mini-btn"
-                              onClick={() => {
-                                updateStoryBible({
-                                  summary: { ...novel.storyBible.summary, synopsisShort: opt.text },
-                                });
-                                setSynopsisOptions([]);
-                              }}
-                            >
-                              Use this version
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Synopsis options are shown in a modal popup below */}
                     {!aiOff && storyAiError && storyAiBusyAction === null && (
                       <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>
                     )}
@@ -15748,6 +15745,46 @@ function NovelWorkspacePage() {
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button type="button" className="btn pw-cancel-btn" onClick={() => setRegenConfirm(null)}>Cancel</button>
               <button type="button" className="btn btn-primary" onClick={regenConfirm.onConfirm}>Continue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Synopsis options popup ── */}
+      {synopsisOptions.length > 0 && (
+        <div className="pw-modal-overlay" style={{ zIndex: 190 }} onClick={() => setSynopsisOptions([])}>
+          <div className="pw-modal pw-synopsis-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pw-synopsis-modal-header">
+              <h3>Choose a version</h3>
+              <button
+                type="button"
+                className="pw-synopsis-modal-close"
+                onClick={() => setSynopsisOptions([])}
+                title="Close"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <p className="pw-synopsis-modal-sub">Select the version you'd like to use for your synopsis.</p>
+            <div className="pw-synopsis-modal-options">
+              {synopsisOptions.map((opt, i) => (
+                <div key={i} className="pw-synopsis-modal-card">
+                  <div className="pw-synopsis-modal-label">{opt.label}</div>
+                  <p className="pw-synopsis-modal-text">{opt.text}</p>
+                  <button
+                    type="button"
+                    className="pw-synopsis-modal-use-btn"
+                    onClick={() => {
+                      updateStoryBible({
+                        summary: { ...novel!.storyBible.summary, synopsisShort: opt.text },
+                      });
+                      setSynopsisOptions([]);
+                    }}
+                  >
+                    Use this version
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -16,7 +16,7 @@ export async function GET() {
   try {
     const guests = await prisma.guestAccess.findMany({
       include: {
-        user: { select: { email: true, name: true, createdAt: true } },
+        user: { select: { email: true, name: true, createdAt: true, isAdmin: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -26,6 +26,7 @@ export async function GET() {
       id: g.id,
       email: g.user.email,
       name: g.user.name,
+      isAdmin: g.user.isAdmin,
       duration: g.duration,
       expiresAt: g.expiresAt?.toISOString() ?? null,
       createdAt: g.createdAt.toISOString(),

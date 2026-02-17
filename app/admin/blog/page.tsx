@@ -338,17 +338,12 @@ export default function AdminBlogPage() {
       : "";
   const editorWords = wordCount(editorText);
 
-  const navLinkStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: active ? 700 : 500,
-    background: active ? C.accentDim : "transparent",
-    color: active ? C.accent : C.dim,
-    textDecoration: "none",
-    border: active ? `1px solid rgba(22,163,74,0.3)` : `1px solid transparent`,
-    transition: "all 0.15s",
-  });
+  const NAV_LINKS: { href: string; label: string; icon: string }[] = [
+    { href: "/admin", label: "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1" },
+    { href: "/admin/blog", label: "Blog", icon: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" },
+    { href: "/admin/alerts", label: "Alerts", icon: "M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" },
+    { href: "/studio", label: "Studio", icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" },
+  ];
 
   return (
     <div
@@ -359,38 +354,37 @@ export default function AdminBlogPage() {
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "14px 28px",
-          borderBottom: `1px solid ${C.border}`,
-          background: "rgba(255,255,255,0.95)",
-          backdropFilter: "blur(12px)",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <Link href="/admin" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 28px", borderBottom: `1px solid ${C.border}`,
+        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
+        position: "sticky", top: 0, zIndex: 100,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Link href="/admin" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
             <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28 }} />
           </Link>
-          <h1 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>News / Blog</h1>
-          <nav style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 16 }}>
-            <Link href="/admin" style={navLinkStyle(false)}>
-              Dashboard
-            </Link>
-            <Link href="/admin/alerts" style={navLinkStyle(false)}>
-              Alerts
-            </Link>
-            <Link href="/studio" style={navLinkStyle(false)}>
-              Studio
-            </Link>
-            <span style={navLinkStyle(true)}>Blog</span>
-          </nav>
+          <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.5 }}>Admin Hub</span>
         </div>
+        <nav style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {NAV_LINKS.map((link) => {
+            const isActive = link.href === "/admin/blog";
+            return (
+              <Link key={link.href} href={link.href} style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: isActive ? C.accentDim : "transparent",
+                color: isActive ? C.accent : C.dim,
+                textDecoration: "none",
+                border: `1px solid ${isActive ? "rgba(22,163,74,0.25)" : C.border}`,
+                transition: "all 0.15s",
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={link.icon}/></svg>
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
       </header>
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: "36px 28px" }}>

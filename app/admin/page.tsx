@@ -7,6 +7,7 @@ type Guest = {
   id: string;
   email: string;
   name: string | null;
+  isAdmin: boolean;
   duration: string;
   expiresAt: string | null;
   createdAt: string;
@@ -145,6 +146,25 @@ export default function AdminPage() {
       setPendingDeleteId(null);
       void loadData();
     } catch { /* ignore */ }
+  }
+
+  async function toggleAdmin(email: string, makeAdmin: boolean) {
+    try {
+      const res = await fetch("/api/admin/toggle-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, isAdmin: makeAdmin }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string };
+      if (res.ok && data.ok) {
+        setGuests((prev) => prev.map((g) => g.email === email ? { ...g, isAdmin: makeAdmin } : g));
+        setGuestMsg(makeAdmin ? `${email} is now an admin.` : `Admin rights removed from ${email}.`);
+      } else {
+        setGuestMsg(data.error || "Failed to update admin status.");
+      }
+    } catch {
+      setGuestMsg("Connection failed.");
+    }
   }
 
   async function generateTrialCode() {
@@ -340,17 +360,17 @@ export default function AdminPage() {
                     {addingGuest ? "Adding..." : "Grant Access"}
                   </button>
                 </div>
-                {guestMsg && <p style={{ fontSize: 12, color: guestMsg.includes("granted") ? C.accent : C.danger, margin: "-12px 0 16px" }}>{guestMsg}</p>}
+                {guestMsg && <p style={{ fontSize: 12, color: guestMsg.includes("granted") || guestMsg.includes("admin") ? C.accent : C.danger, margin: "-12px 0 16px" }}>{guestMsg}</p>}
 
                 {guests.length === 0 ? (
                   <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "20px 0" }}>No guest users yet.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, padding: "0 8px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.dim }}>
-                      <span>Email</span><span>Duration</span><span>Expires</span><span>Status</span><span></span>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 70px 60px", gap: 8, padding: "0 8px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.dim }}>
+                      <span>Email</span><span>Duration</span><span>Expires</span><span>Status</span><span>Admin</span><span></span>
                     </div>
                     {guests.map((g) => (
-                      <div key={g.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: C.surface, border: `1px solid ${C.border}` }}>
+                      <div key={g.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 70px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: C.surface, border: `1px solid ${C.border}` }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>{g.email}</div>
                           {g.name && <div style={{ fontSize: 11, color: C.dim }}>{g.name}</div>}
@@ -360,6 +380,20 @@ export default function AdminPage() {
                         <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: g.status === "active" ? C.accentDim : C.dangerDim, color: g.status === "active" ? C.accent : C.danger }}>
                           {g.status === "active" ? "Active" : "Expired"}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => void toggleAdmin(g.email!, !g.isAdmin)}
+                          title={g.isAdmin ? "Revoke admin rights" : "Grant admin rights"}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                            background: g.isAdmin ? "rgba(22,163,74,0.1)" : "rgba(0,0,0,0.04)",
+                            color: g.isAdmin ? C.accent : C.dim,
+                            border: `1px solid ${g.isAdmin ? "rgba(22,163,74,0.25)" : C.border}`,
+                            cursor: "pointer", transition: "all 0.15s",
+                          }}
+                        >
+                          {g.isAdmin ? "Yes" : "No"}
+                        </button>
                         <button type="button" onClick={() => setPendingDeleteId(g.id)} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>Revoke</button>
                       </div>
                     ))}

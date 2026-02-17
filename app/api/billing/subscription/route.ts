@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensurePrismaUserForSessionEmail } from "@/lib/session-user";
+import { isAdminUser } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
-
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
 
 /**
  * GET /api/billing/subscription
@@ -19,8 +18,9 @@ export async function GET() {
 
     const email = sessionUser.email.trim().toLowerCase();
 
-    // Admin bypass — they never have a real subscription
-    if (email === ADMIN_EMAIL) {
+    // Admin bypass — admins never need a real subscription
+    const admin = await isAdminUser(email);
+    if (admin) {
       return NextResponse.json({
         email,
         plan: "admin",
