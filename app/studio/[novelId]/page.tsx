@@ -4669,9 +4669,9 @@ function NovelWorkspacePage() {
       throw new Error(`${selectedProviderOption.label} rejected this request. Check your model and connection settings, then try again.`);
     }
     if (first.text === "") {
-      throw new Error("Model returned an empty response. Try again or switch to a different model.");
+      throw new Error("The AI model returned an empty response. This usually means the model is temporarily overloaded — try again in a moment. If it keeps happening, try a different model in Settings.");
     }
-    throw new Error("Assistant request failed.");
+    throw new Error("Assistant request failed — try again or check your model settings.");
   }
 
   function stripJsonMarkdownFence(text: string) {
@@ -6433,7 +6433,12 @@ function NovelWorkspacePage() {
       updateBookPlan({ arcAnalysis: analysis });
 
     } catch (err) {
-      setArcError(err instanceof Error ? err.message : "Arc analysis failed.");
+      const msg = err instanceof Error ? err.message : "Arc analysis failed.";
+      if (msg.includes("empty response")) {
+        setArcError("Arc Intelligence got an empty response from the model. This can happen when the model is busy — hit the refresh button to try again.");
+      } else {
+        setArcError(msg);
+      }
     } finally {
       setArcBusy(false);
     }
