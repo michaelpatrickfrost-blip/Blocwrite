@@ -4593,10 +4593,12 @@ function NovelWorkspacePage() {
         if (temperature != null) localBody.temperature = temperature;
         if (jsonMode) localBody.response_format = { type: "json_object" };
         const providerLabel = isOllama ? "Ollama" : "LM Studio";
+        const localHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (normalizedApiKey) localHeaders["Authorization"] = `Bearer ${normalizedApiKey}`;
         try {
           const localRes = await fetch(`${localBaseUrl}/chat/completions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: localHeaders,
             body: JSON.stringify(localBody),
             signal: controller.signal,
           });

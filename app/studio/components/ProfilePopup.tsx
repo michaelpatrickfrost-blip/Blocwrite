@@ -244,9 +244,12 @@ export function ProfilePopup({
           ? (rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`)
           : rawBase;
         try {
+          const localHeaders: Record<string, string> = { "Content-Type": "application/json" };
+          const localKey = normalizeClientApiKey(openRouterKey);
+          if (localKey) localHeaders["Authorization"] = `Bearer ${localKey}`;
           const res = await fetch(`${localBaseUrl}/chat/completions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: localHeaders,
             body: JSON.stringify({
               model: openRouterModel || (isOllama ? "" : "local-model"),
               max_tokens: 2,
@@ -319,8 +322,12 @@ export function ProfilePopup({
       if (assistantProvider === "ollama") {
         const rawBase = (assistantBaseUrl.trim() || "http://127.0.0.1:11434").replace(/\/+$/, "");
         try {
+          const ollamaHeaders: Record<string, string> = {};
+          const ollamaKey = normalizeClientApiKey(openRouterKey);
+          if (ollamaKey) ollamaHeaders["Authorization"] = `Bearer ${ollamaKey}`;
           const res = await fetch(`${rawBase}/api/tags`, {
             method: "GET",
+            headers: ollamaHeaders,
             signal: controller.signal,
           });
           window.clearTimeout(timeoutId);
@@ -615,10 +622,9 @@ export function ProfilePopup({
                   <input
                     className="pw-settings-input"
                     type="password"
-                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Optional for this provider"}
+                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Optional — needed for cloud models"}
                     value={openRouterKey}
                     onChange={(e) => persistKey(e.target.value)}
-                    disabled={!selectedProvider.requiresKey}
                   />
                   <button
                     type="button"
