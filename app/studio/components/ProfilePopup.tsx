@@ -590,7 +590,7 @@ export function ProfilePopup({
                 <input
                   className="pw-settings-input"
                   type="text"
-                  placeholder={selectedProvider.defaultBaseUrl}
+                  placeholder={selectedProvider.requiresKey ? selectedProvider.defaultBaseUrl : "Leave blank for default"}
                   value={assistantBaseUrl}
                   onChange={(e) => persistBaseUrl(e.target.value)}
                 />
