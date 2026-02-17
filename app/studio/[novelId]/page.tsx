@@ -947,16 +947,8 @@ function NovelWorkspacePage() {
   useEffect(() => {
     charChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [charChatMessages, charChatLoading]);
-  // Auto-clear stale chats (older than 5 minutes) when reopening
-  useEffect(() => {
-    if (!charChatOpen) return;
-    const elapsed = Date.now() - chatOpenedAt.current;
-    if (elapsed > 5 * 60 * 1000 && charChatMessages.length > 0) {
-      setCharChatMessages([]);
-      setChatIsStale(false);
-      chatOpenedAt.current = Date.now();
-    }
-  }, [charChatOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // No chat persistence — chats clear on close, review happens automatically
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<AssistantProviderId>(() => getStoredProvider());
@@ -1005,6 +997,7 @@ function NovelWorkspacePage() {
     generating: boolean;
   } | null>(null);
   const [storyAiBusyAction, setStoryAiBusyAction] = useState<string | null>(null);
+  const [synopsisOptions, setSynopsisOptions] = useState<Array<{ label: string; text: string }>>([]);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
   const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
@@ -1045,6 +1038,77 @@ function NovelWorkspacePage() {
   const [editorTextAlign, setEditorTextAlign] = useState<"left" | "center" | "right" | "justify">("left");
   const [editorFontSize, setEditorFontSize] = useState<number>(17.5);
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+
+  // ── Prose reader (TTS) ──
+  const [readerActive, setReaderActive] = useState(false);
+  const [readerPaused, setReaderPaused] = useState(false);
+  const [readerSpeed, setReaderSpeed] = useState(1.0);
+  const [readerVoice, setReaderVoice] = useState<string>("");
+  const [readerVoices, setReaderVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const readerUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [readerShowControls, setReaderShowControls] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) return;
+      setReaderVoices(voices);
+      // Pick the best default voice — prefer natural/premium English voices
+      const preferred = voices.find((v) =>
+        v.lang.startsWith("en") && (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("premium") || v.name.toLowerCase().includes("samantha"))
+      ) ?? voices.find((v) => v.lang.startsWith("en") && v.default) ?? voices.find((v) => v.lang.startsWith("en")) ?? voices[0];
+      if (preferred && !readerVoice) setReaderVoice(preferred.name);
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function startReader() {
+    if (!activeChapter || typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const prose = extractProseFromContent(activeChapter.content).trim();
+    if (!prose) return;
+    const utterance = new SpeechSynthesisUtterance(prose);
+    const voice = readerVoices.find((v) => v.name === readerVoice);
+    if (voice) utterance.voice = voice;
+    utterance.rate = readerSpeed;
+    utterance.pitch = 1.0;
+    utterance.onend = () => { setReaderActive(false); setReaderPaused(false); };
+    utterance.onerror = () => { setReaderActive(false); setReaderPaused(false); };
+    readerUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    setReaderActive(true);
+    setReaderPaused(false);
+  }
+
+  function pauseReader() {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.pause();
+      setReaderPaused(true);
+    }
+  }
+
+  function resumeReader() {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.resume();
+      setReaderPaused(false);
+    }
+  }
+
+  function stopReader() {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setReaderActive(false);
+    setReaderPaused(false);
+  }
+
+  // Clean up TTS on chapter change or unmount
+  useEffect(() => {
+    return () => { if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel(); };
+  }, [activeChapterId]);
 
   // ── Right-click prose context menu ──
   const [proseCtx, setProseCtx] = useState<{
@@ -2252,38 +2316,63 @@ function NovelWorkspacePage() {
 
   // ── Talk to Your Characters ──────────────────────────
   function buildCharacterSystemPrompt(char: Character): string {
-    const parts: string[] = [];
-    parts.push(`You ARE ${char.name}. You are being interviewed by the author of the story you exist in.`);
-    parts.push(`Stay completely in character at all times. Respond as ${char.name} would — using their vocabulary, speech patterns, emotional tendencies, and worldview.`);
-    parts.push(`Never break character. Never say you are an AI. You are ${char.name}.`);
-    if (char.role) parts.push(`Role in the story: ${char.role}.`);
-    if (char.pronouns) parts.push(`Pronouns: ${char.pronouns}.`);
-    if (char.personality) parts.push(`Personality: ${char.personality}`);
-    if (char.backstory) parts.push(`Backstory: ${char.backstory}`);
-    if (char.goals) parts.push(`Goals and motivations: ${char.goals}`);
-    if (char.fears) parts.push(`Fears: ${char.fears}`);
-    if (char.accent) parts.push(`Accent/dialect: ${char.accent}`);
-    if (char.speakingStyle) parts.push(`Speaking style: ${char.speakingStyle}`);
-    if (char.voiceNotes) parts.push(`Voice notes: ${char.voiceNotes}`);
-    if (char.reactionPattern) parts.push(`How they typically react: ${char.reactionPattern}`);
-    if (char.secrets) parts.push(`Secrets they carry (they may hint at but not reveal directly unless pressed): ${char.secrets}`);
-    if (char.appearance) parts.push(`Physical appearance: ${char.appearance}`);
-    if (char.logline) parts.push(`One-line description: ${char.logline}`);
+    if (!novel) return "";
+    const bibleContext = buildStoryBibleContext("default");
+
+    const planChapters = novel.storyBible.bookPlan?.chapters ?? [];
+    const chapterSummary = novel.chapters.map((ch, i) => {
+      const planEntry = planChapters.find((pc) => pc.manuscriptChapterId === ch.id);
+      const prose = extractProseFromContent(ch.content ?? "");
+      const excerpt = prose.length > 300 ? prose.slice(0, 300) + "..." : prose;
+      const parts = [`Ch${i + 1}: "${ch.title || "Untitled"}"`];
+      if (planEntry?.synopsis) parts.push(`Synopsis: ${planEntry.synopsis}`);
+      if (excerpt.trim()) parts.push(`Content: ${excerpt}`);
+      return parts.join(" | ");
+    }).join("\n");
+
+    const charParts: string[] = [];
+    charParts.push(`You ARE ${char.name}. You are being interviewed by the author of the story you exist in.`);
+    charParts.push(`Stay completely in character at all times. Respond as ${char.name} would — using their vocabulary, speech patterns, emotional tendencies, and worldview.`);
+    charParts.push(`Never break character. Never say you are an AI. You are ${char.name}.`);
+    if (char.role) charParts.push(`Role in the story: ${char.role}.`);
+    if (char.pronouns) charParts.push(`Pronouns: ${char.pronouns}.`);
+    if (char.personality) charParts.push(`Personality: ${char.personality}`);
+    if (char.backstory) charParts.push(`Backstory: ${char.backstory}`);
+    if (char.goals) charParts.push(`Goals and motivations: ${char.goals}`);
+    if (char.fears) charParts.push(`Fears: ${char.fears}`);
+    if (char.accent) charParts.push(`Accent/dialect: ${char.accent}`);
+    if (char.speakingStyle) charParts.push(`Speaking style: ${char.speakingStyle}`);
+    if (char.voiceNotes) charParts.push(`Voice notes: ${char.voiceNotes}`);
+    if (char.reactionPattern) charParts.push(`How they typically react: ${char.reactionPattern}`);
+    if (char.secrets) charParts.push(`Secrets they carry (they may hint at but not reveal directly unless pressed): ${char.secrets}`);
+    if (char.appearance) charParts.push(`Physical appearance: ${char.appearance}`);
+    if (char.logline) charParts.push(`One-line description: ${char.logline}`);
     const relationships = char.relationships?.filter((r) => r.targetCharacterId) ?? [];
     if (relationships.length > 0) {
       const relLines = relationships.map((r) => {
         const target = storyCharacters.find((c) => c.id === r.targetCharacterId);
         return target ? `${target.name}: ${r.type || r.description || "connected"}` : null;
       }).filter(Boolean);
-      if (relLines.length) parts.push(`Key relationships: ${relLines.join("; ")}`);
+      if (relLines.length) charParts.push(`Key relationships: ${relLines.join("; ")}`);
     }
-    // If character has almost no profile, encourage discovery
     const hasDetail = !!(char.personality || char.backstory || char.goals || char.fears || char.speakingStyle || char.logline);
     if (!hasDetail) {
-      parts.push(`This character's profile is mostly blank — the author is discovering who you are through conversation. Be creative. Invent details about yourself that feel authentic for the story. Let your personality emerge naturally.`);
+      charParts.push(`This character's profile is mostly blank — the author is discovering who you are through conversation. Be creative. Invent details about yourself that feel authentic for the story. Let your personality emerge naturally.`);
     }
-    parts.push(`Keep responses concise and natural — like real dialogue, not essays. Show personality through word choice, rhythm, and attitude.`);
-    return parts.join("\n\n");
+    charParts.push(`Keep responses concise and natural — like real dialogue, not essays. Show personality through word choice, rhythm, and attitude.`);
+
+    return [
+      `=== YOUR CHARACTER ===`,
+      charParts.join("\n\n"),
+      ``,
+      `=== STORY BIBLE (your world) ===`,
+      bibleContext,
+      ``,
+      `=== CHAPTERS ===`,
+      chapterSummary || "(No chapters yet)",
+      ``,
+      `You know this story from the inside — you live in it. Use this knowledge naturally when it's relevant to the conversation, but don't info-dump. React to story events as someone who experienced them.`,
+    ].join("\n");
   }
 
   async function sendCharacterChat() {
@@ -2320,19 +2409,16 @@ function NovelWorkspacePage() {
     }
   }
 
-  function openCharacterChat(char: Character) {
-    const isSameChat = !coAuthorMode && charChatTarget?.id === char.id;
-    const elapsed = Date.now() - chatOpenedAt.current;
-    const stale = elapsed > 5 * 60 * 1000; // 5 minutes
-
-    if (isSameChat && !stale && charChatMessages.length > 0) {
-      // Reopen existing chat — mark stale so End & Review won't apply changes
-      setChatIsStale(true);
-      setCharChatOpen(true);
+  function closeChat() {
+    if (!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && !charChatReviewing) {
+      void endChatAndReview();
       return;
     }
+    setCharChatOpen(false);
+    saveNow();
+  }
 
-    // Fresh chat
+  function openCharacterChat(char: Character) {
     setCoAuthorMode(false);
     setCharChatTarget(char);
     setCharChatMessages([]);
@@ -2346,16 +2432,6 @@ function NovelWorkspacePage() {
   }
 
   function openCoAuthorChat() {
-    const isSameChat = coAuthorMode;
-    const elapsed = Date.now() - chatOpenedAt.current;
-    const stale = elapsed > 5 * 60 * 1000;
-
-    if (isSameChat && !stale && charChatMessages.length > 0) {
-      setChatIsStale(true);
-      setCharChatOpen(true);
-      return;
-    }
-
     setCoAuthorMode(true);
     setCharChatTarget(null);
     setCharChatMessages([]);
@@ -2375,23 +2451,44 @@ function NovelWorkspacePage() {
     setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
     setCharChatLoading(true);
     try {
-      // Build context about the current state
-      const chapterCtx = activeChapter
-        ? `The author is currently working on Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1}: "${activeChapter.title || "Untitled"}". Chapter content (excerpt): ${extractProseFromContent(activeChapter.content ?? "").slice(0, 800)}`
-        : `The author is on the novel overview.`;
+      // Full story bible context so the co-author knows everything
+      const bibleContext = buildStoryBibleContext("default");
 
-      const charNames = novel.storyBible.characters.slice(0, 6).map((c) => `${c.name} (${c.role})`).join(", ");
-      const chapList = novel.chapters.map((ch, i) => `Ch${i + 1}: ${ch.title || "Untitled"}`).join(", ");
+      // Build detailed chapter listing with synopses and prose excerpts
+      const planChapters = novel.storyBible.bookPlan?.chapters ?? [];
+      const chapterDetails = novel.chapters.map((ch, i) => {
+        const planEntry = planChapters.find((pc) => pc.manuscriptChapterId === ch.id);
+        const prose = extractProseFromContent(ch.content ?? "");
+        const excerpt = prose.length > 400 ? prose.slice(0, 400) + "..." : prose;
+        const parts = [`Ch${i + 1}: "${ch.title || "Untitled"}"`];
+        if (planEntry?.synopsis) parts.push(`Synopsis: ${planEntry.synopsis}`);
+        if (excerpt.trim()) parts.push(`Content: ${excerpt}`);
+        else parts.push("(not yet written)");
+        return parts.join("\n  ");
+      }).join("\n");
+
+      const activeChapterCtx = activeChapter
+        ? `The author is currently working on Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1}: "${activeChapter.title || "Untitled"}".`
+        : `The author is on the novel overview.`;
 
       const systemPrompt = [
         `You are The Co-Author — a sharp, knowledgeable writing partner for the novel "${novel.title}".`,
-        `Genre: ${novel.storyBible.genre || "general fiction"}.`,
-        `Characters: ${charNames || "None yet"}.`,
-        `Chapters: ${chapList || "None yet"}.`,
-        chapterCtx,
-        `You know the story intimately. Answer questions about plot, characters, structure, prose, or give creative suggestions.`,
-        `Be concise, specific, and useful — like a real co-author in a writing room. Not an essay. Not a lecture.`,
-        `If asked about a character, reference what you know. If asked for ideas, make them specific to THIS story.`,
+        `You have complete knowledge of the entire novel: its synopsis, characters, plot, themes, chapters, locations, lore, and everything in the story bible. Use this knowledge when the author asks about any aspect of their story.`,
+        ``,
+        `=== FULL STORY BIBLE ===`,
+        bibleContext,
+        ``,
+        `=== CHAPTERS ===`,
+        chapterDetails || "(No chapters yet)",
+        ``,
+        `=== CURRENT STATE ===`,
+        activeChapterCtx,
+        ``,
+        `=== BEHAVIOUR ===`,
+        `Answer based on what you know about THIS story. Be concise, specific, and useful — like a real co-author in a writing room.`,
+        `When the author asks for a title, synopsis, character detail, plot point, or anything about the story, draw on the full context above.`,
+        `Don't dump information unprompted — only reference details when relevant to the author's question.`,
+        `If asked for creative suggestions, make them specific to this story and consistent with existing canon.`,
       ].join("\n");
 
       // Include conversation history
@@ -2423,6 +2520,9 @@ function NovelWorkspacePage() {
       .map((m) => `${m.role === "user" ? "Author" : charChatTarget.name}: ${m.text}`)
       .join("\n\n");
 
+    // Full story context for continuity awareness
+    const bibleContext = buildStoryBibleContext("planCompact");
+
     // Gather plan chapters without prose
     const planChapters = novel.storyBible.bookPlan.chapters.map((pc, idx) => {
       const manuscript = novel.chapters.find((c) => c.id === pc.manuscriptChapterId);
@@ -2430,36 +2530,55 @@ function NovelWorkspacePage() {
       return { ...pc, idx, hasProse };
     }).filter((pc) => !pc.hasProse && pc.synopsis.trim());
 
+    // Gather all characters for cross-character awareness
+    const otherChars = novel.storyBible.characters
+      .filter((c) => c.id !== charChatTarget.id)
+      .slice(0, 8)
+      .map((c) => `${c.name} (${c.role}): ${c.logline || c.personality || "no detail yet"}`);
+
     const charProfile = charChatTarget;
 
     const systemPrompt = [
-      "You are a story development analyst. You just observed a conversation between an author and their character.",
-      "Based on what was revealed in the conversation, recommend SPECIFIC changes to:",
-      "1. Future chapter synopses (where prose hasn't been written yet) — if the conversation revealed new motivations, plot directions, or character dynamics",
-      "2. The character's profile — if the conversation revealed new personality traits, fears, goals, backstory, or secrets not yet captured",
-      "Be specific and actionable. Only recommend changes that are clearly supported by the conversation.",
-      "If nothing meaningful was revealed, return empty arrays.",
-      "Return ONLY valid JSON.",
+      "You are a sharp story continuity analyst. An author just had an in-character conversation with one of their characters.",
+      "Your job: scan the conversation for anything that GENUINELY changes what we know about this character or the story direction.",
+      "",
+      "RULES — read carefully:",
+      "- Only recommend changes that are CLEARLY and DIRECTLY supported by something specific said in the conversation.",
+      "- Do NOT recommend changes just because the conversation touched on a topic — the character must have revealed something NEW that isn't already captured in their profile or the story.",
+      "- Do NOT rewrite things that are already accurate. If the current profile already captures the trait, skip it.",
+      "- Do NOT add generic filler. Every recommendation must point to a specific moment in the conversation.",
+      "- PROTECT CONTINUITY: if a change would contradict established events, character arcs, or written prose, do NOT recommend it.",
+      "- Be conservative. 0 recommendations is a perfectly valid outcome for a casual chat.",
+      "- For chapter synopses: only suggest changes if the conversation revealed a concrete plot shift, new motivation, or relationship change that directly affects that chapter's direction.",
+      "- For profile fields: only suggest changes if the character said or implied something that genuinely updates, deepens, or corrects their current profile entry.",
+      "- New values should INCORPORATE existing content where relevant, not replace it entirely.",
+      "- Return ONLY valid JSON. No explanation outside the JSON.",
     ].join("\n");
 
     const userPrompt = [
-      `Character being interviewed: ${charProfile.name} (${charProfile.role})`,
-      charProfile.logline ? `Logline: ${charProfile.logline}` : "",
-      charProfile.goals ? `Current goals: ${charProfile.goals}` : "",
-      charProfile.fears ? `Current fears: ${charProfile.fears}` : "",
-      charProfile.backstory ? `Current backstory: ${charProfile.backstory}` : "",
-      charProfile.secrets ? `Current secrets: ${charProfile.secrets}` : "",
-      charProfile.personality ? `Current personality: ${charProfile.personality}` : "",
+      `=== CHARACTER PROFILE ===`,
+      `Name: ${charProfile.name} (${charProfile.role})`,
+      charProfile.logline ? `Logline: ${charProfile.logline}` : `Logline: (empty)`,
+      `Personality: ${charProfile.personality || "(empty)"}`,
+      `Backstory: ${charProfile.backstory || "(empty)"}`,
+      `Goals: ${charProfile.goals || "(empty)"}`,
+      `Fears: ${charProfile.fears || "(empty)"}`,
+      `Secrets: ${charProfile.secrets || "(empty)"}`,
       "",
-      `CONVERSATION TRANSCRIPT:`,
+      `=== STORY CONTEXT ===`,
+      bibleContext,
+      "",
+      otherChars.length > 0 ? `=== OTHER CHARACTERS ===\n${otherChars.join("\n")}` : "",
+      "",
+      `=== CONVERSATION TRANSCRIPT ===`,
       chatTranscript,
       "",
-      planChapters.length > 0 ? `FUTURE CHAPTERS (no prose yet):\n${planChapters.map((pc) => `Ch${pc.idx + 1} (id: "${pc.id}"): ${pc.synopsis}`).join("\n")}` : "No future chapters without prose.",
+      planChapters.length > 0 ? `=== FUTURE CHAPTERS (no prose written yet — these CAN be modified) ===\n${planChapters.map((pc) => `Ch${pc.idx + 1} (id: "${pc.id}", title: "${pc.title || "Untitled"}"): ${pc.synopsis}`).join("\n")}` : "No future chapters without prose — skip chapter recommendations.",
       "",
-      `Return JSON with two arrays:`,
-      `{"chapterChanges": [{"chapterId": string, "chapterTitle": string, "currentSynopsis": string, "newSynopsis": string, "reason": string}],`,
-      ` "profileChanges": [{"field": "goals"|"fears"|"backstory"|"secrets"|"personality"|"logline", "currentValue": string, "newValue": string, "reason": string}]}`,
-      `Only include changes that are directly supported by what ${charProfile.name} revealed in conversation.`,
+      `Return JSON:`,
+      `{"chapterChanges": [{"chapterId": "string", "chapterTitle": "string", "currentSynopsis": "string", "newSynopsis": "string", "reason": "Quote or reference the specific conversation moment"}],`,
+      ` "profileChanges": [{"field": "goals"|"fears"|"backstory"|"secrets"|"personality"|"logline", "currentValue": "string", "newValue": "string", "reason": "Quote or reference the specific conversation moment"}]}`,
+      `If nothing meaningful was revealed, return {"chapterChanges": [], "profileChanges": []}.`,
     ].filter(Boolean).join("\n");
 
     try {
@@ -5433,6 +5552,7 @@ function NovelWorkspacePage() {
     }
     setStoryAiBusyAction(`summary-field-${target}`);
     setStoryAiError(null);
+    if (target === "synopsis") setSynopsisOptions([]);
     try {
       const context = buildStoryBibleContext("summary");
       const summarySystemMsg = "Canon refinement specialist. Return only valid JSON.";
@@ -5443,48 +5563,46 @@ function NovelWorkspacePage() {
           setStoryAiError("Write a synopsis first before using AI tools on it. Describe your story idea in the synopsis box above.");
           return;
         }
+        const modeInstruction = mode === "tighten"
+          ? "Make each version more concise, vivid, and punchy (110-170 words). Cut flab, sharpen verbs, tighten pacing."
+          : mode === "expand"
+            ? "Expand each version with richer narrative detail, emotional depth, causality, and texture about setting, motivations, and consequences (190-320 words each)."
+            : mode === "blurb"
+              ? "Rewrite each as compelling back-cover copy that hooks a reader — dramatic, enticing, with a sense of stakes and mystery."
+              : mode === "beats"
+                ? "Rewrite each as a chapter-ready arc summary with clear beginning, escalation, climax, and resolution beats."
+                : "Improve clarity, pacing, tension, and emotional pull. Each version should take a different creative approach — one tighter, one more atmospheric, one more character-focused.";
+        const sysMsg = [
+          "You are an expert fiction editor helping refine a novel synopsis.",
+          "Preserve any character names the author already wrote. Do NOT invent new character names.",
+          "Return ONLY the 3 versions separated by ---OPTION--- on its own line.",
+          "No numbering, no labels, no explanations. Just the synopsis text for each option.",
+        ].join("\n");
         const prompt = [
-          "Refine a novel synopsis for planning and drafting.",
-          mode === "tighten"
-            ? "Tighten this synopsis to be concise, vivid, and clear (110-170 words)."
-            : mode === "expand"
-              ? "Expand this synopsis with richer narrative detail, emotional depth, and causality (190-320 words). Add texture about setting, character motivations, and consequences."
-              : mode === "blurb"
-                ? "Rewrite this as compelling back-cover copy while preserving canon facts."
-                : mode === "beats"
-                  ? "Rewrite this synopsis as a chapter-ready arc summary with clear progression."
-                  : "Improve clarity, pacing, tension, and emotional pull while preserving canon.",
-          "Preserve any character names the user already wrote, but do NOT invent new character names. Refer to unnamed characters by role or description.",
-          "Return JSON only: {\"synopsis\":\"string\"}",
-          `Current synopsis:\n${currentSynopsis}`,
-          `Core conflict:\n${novel.storyBible.summary.stakes || "(not set yet)"}`,
-          `Story context:\n${context}`,
-        ].join("\n\n");
-        const data = await requestOpenRouterJson<Record<string, unknown>>(prompt, 700, { systemMessage: summarySystemMsg });
-        // Accept multiple possible key names the AI might use
-        let newSynopsis = "";
-        for (const key of ["synopsis", "result", "text", "refined_synopsis", "improved_synopsis", "synopsisShort", "content", "output"]) {
-          const val = data[key];
-          if (typeof val === "string" && val.trim().length > 20) {
-            newSynopsis = val.trim();
-            break;
+          `Write 3 different improved versions of this synopsis.`,
+          modeInstruction,
+          `Each version should feel distinctly different while staying faithful to the story.`,
+          `Separate each version with ---OPTION--- on its own line.`,
+          `\nCurrent synopsis:\n${currentSynopsis}`,
+          novel.storyBible.summary.stakes ? `\nCore conflict:\n${novel.storyBible.summary.stakes}` : "",
+          `\nStory context:\n${context}`,
+        ].filter(Boolean).join("\n\n");
+        const raw = await requestOpenRouterText(prompt, 2000, 120000, sysMsg, false, 0.8);
+        const parts = raw.split(/---OPTION---/i).map((s) => s.trim()).filter((s) => s.length > 30);
+        if (parts.length === 0) {
+          // Fallback: treat the whole response as a single option
+          const cleaned = raw.replace(/^#+\s.*/gm, "").replace(/^\*\*.+\*\*\s*/gm, "").replace(/^(Option|Version)\s*\d+[:\s]*/gim, "").trim();
+          if (cleaned.length > 30) {
+            setSynopsisOptions([{ label: "Option 1", text: cleaned }]);
+          } else {
+            setStoryAiError("AI returned an empty result. Try again or switch model.");
           }
-        }
-        // Fallback: grab the first string value that's long enough
-        if (!newSynopsis) {
-          for (const val of Object.values(data)) {
-            if (typeof val === "string" && val.trim().length > 20) {
-              newSynopsis = val.trim();
-              break;
-            }
-          }
-        }
-        if (newSynopsis) {
-          updateStoryBible({
-            summary: { ...novel.storyBible.summary, synopsisShort: newSynopsis },
-          });
         } else {
-          setStoryAiError("AI returned an empty or too-short result. Try again or switch model.");
+          const options = parts.slice(0, 3).map((text, i) => ({
+            label: `Option ${i + 1}`,
+            text: text.replace(/^(Option|Version)\s*\d+[:\s]*/i, "").replace(/^\*\*.+\*\*\s*\n?/, "").trim(),
+          }));
+          setSynopsisOptions(options);
         }
       }
 
@@ -10019,7 +10137,77 @@ function NovelWorkspacePage() {
                         <button type="button" className="pw-toolbar-btn" title="Add scene block (or type /)" onClick={() => { const b = getSceneBlocks(activeChapter); insertSceneBlockAt(b, b.length); }}>
                           /
                         </button>
+                        <span className="pw-toolbar-sep" />
+                        {/* Reader controls */}
+                        {!readerActive ? (
+                          <button
+                            type="button"
+                            className="pw-toolbar-btn pw-reader-btn"
+                            title="Read chapter aloud"
+                            disabled={!activeChapter?.content?.trim()}
+                            onClick={() => { setReaderShowControls(true); startReader(); }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
+                            <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>Read</span>
+                          </button>
+                        ) : (
+                          <div className="pw-reader-controls">
+                            {readerPaused ? (
+                              <button type="button" className="pw-toolbar-btn pw-reader-play" title="Resume" onClick={resumeReader}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                              </button>
+                            ) : (
+                              <button type="button" className="pw-toolbar-btn pw-reader-pause" title="Pause" onClick={pauseReader}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                              </button>
+                            )}
+                            <button type="button" className="pw-toolbar-btn pw-reader-stop" title="Stop" onClick={stopReader}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                            </button>
+                            <button type="button" className="pw-toolbar-btn" title="Reader settings" onClick={() => setReaderShowControls((v) => !v)}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                            </button>
+                          </div>
+                        )}
                       </div>
+                      {/* Reader settings dropdown */}
+                      {readerShowControls && (
+                        <div className="pw-reader-settings">
+                          <div className="pw-reader-settings-row">
+                            <label>Speed</label>
+                            <div className="pw-reader-speed-btns">
+                              {[0.75, 1.0, 1.25, 1.5].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  className={`pw-reader-speed-btn${readerSpeed === s ? " active" : ""}`}
+                                  onClick={() => {
+                                    setReaderSpeed(s);
+                                    if (readerActive) { stopReader(); setTimeout(() => startReader(), 100); }
+                                  }}
+                                >{s}x</button>
+                              ))}
+                            </div>
+                          </div>
+                          {readerVoices.filter((v) => v.lang.startsWith("en")).length > 1 && (
+                            <div className="pw-reader-settings-row">
+                              <label>Voice</label>
+                              <select
+                                className="pw-reader-voice-select"
+                                value={readerVoice}
+                                onChange={(e) => {
+                                  setReaderVoice(e.target.value);
+                                  if (readerActive) { stopReader(); setTimeout(() => startReader(), 100); }
+                                }}
+                              >
+                                {readerVoices.filter((v) => v.lang.startsWith("en")).map((v) => (
+                                  <option key={v.name} value={v.name}>{v.name.replace(/\(.*?\)/, "").trim()}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {/* ── Blocks with interleaved prose ── */}
                       {!hideBlocks && blocks.length > 0 && (
                       <div className="pw-chapter-blocks" dir="ltr">
@@ -12700,6 +12888,38 @@ function NovelWorkspacePage() {
                     <p className="pw-field-help">
                       {novel.storyBible.summary.synopsisShort.length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}
                     </p>
+                    {synopsisOptions.length > 0 && (
+                      <div className="pw-synopsis-options">
+                        <div className="pw-synopsis-options-header">
+                          <span>Pick a version to use:</span>
+                          <button
+                            type="button"
+                            className="pw-synopsis-options-close"
+                            onClick={() => setSynopsisOptions([])}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                        {synopsisOptions.map((opt, i) => (
+                          <div key={i} className="pw-synopsis-option-card">
+                            <div className="pw-synopsis-option-label">{opt.label}</div>
+                            <p className="pw-synopsis-option-text">{opt.text}</p>
+                            <button
+                              type="button"
+                              className="pw-ai-mini-btn"
+                              onClick={() => {
+                                updateStoryBible({
+                                  summary: { ...novel.storyBible.summary, synopsisShort: opt.text },
+                                });
+                                setSynopsisOptions([]);
+                              }}
+                            >
+                              Use this version
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {!aiOff && storyAiError && storyAiBusyAction === null && (
                       <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>
                     )}
@@ -14968,13 +15188,13 @@ function NovelWorkspacePage() {
 
       {/* ── Chat Modal (Co-Author + Character) ── */}
       {charChatOpen && (coAuthorMode || charChatTarget) && (
-        <div className="pw-modal-overlay" onClick={() => { setCharChatOpen(false); saveNow(); }}>
+        <div className="pw-modal-overlay" onClick={() => closeChat()}>
           <div className="pw-chat-modal" style={{
             maxWidth: charChatReviewDone && !coAuthorMode ? 820 : 520,
             flexDirection: charChatReviewDone && !coAuthorMode ? "row" : "column",
           }} onClick={(e) => e.stopPropagation()}>
             {/* Chat panel */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
               {/* Header */}
               <div style={{
                 padding: "14px 16px", borderBottom: "1px solid var(--pw-border-light)",
@@ -15000,26 +15220,17 @@ function NovelWorkspacePage() {
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                  {/* End & Review (character chat only, not for stale/resumed chats) */}
-                  {!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && !chatIsStale && (
-                    <button type="button" disabled={charChatReviewing}
-                      onClick={() => void endChatAndReview()}
-                      style={{
-                        padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        background: charChatReviewing ? "rgba(163,230,53,0.05)" : "rgba(163,230,53,0.1)",
-                        color: "var(--pw-accent)", border: "1px solid rgba(163,230,53,0.2)",
-                        cursor: charChatReviewing ? "default" : "pointer",
-                        display: "flex", alignItems: "center", gap: 5,
-                      }}
-                    >
-                      {charChatReviewing ? (
-                        <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(163,230,53,0.3)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...</>
-                      ) : (
-                        <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> End &amp; Review</>
-                      )}
-                    </button>
+                  {charChatReviewing && (
+                    <span style={{
+                      padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                      background: "rgba(163,230,53,0.05)", color: "var(--pw-accent)",
+                      border: "1px solid rgba(163,230,53,0.2)",
+                      display: "flex", alignItems: "center", gap: 5,
+                    }}>
+                      <span style={{ width: 10, height: 10, border: "1.5px solid rgba(163,230,53,0.3)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...
+                    </span>
                   )}
-                  <button type="button" onClick={() => { setCharChatOpen(false); saveNow(); }} style={{
+                  <button type="button" onClick={() => closeChat()} style={{
                     background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
                     width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                     color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
@@ -15028,7 +15239,7 @@ function NovelWorkspacePage() {
               </div>
 
               {/* Messages */}
-              <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 20px" }}>
                 {charChatMessages.length === 0 && coAuthorMode && (
                   <div style={{ textAlign: "center", padding: "40px 16px" }}>
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.4 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
