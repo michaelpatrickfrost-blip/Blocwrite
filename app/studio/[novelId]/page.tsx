@@ -851,9 +851,11 @@ function NovelWorkspacePage() {
   const [novelSyncDone, setNovelSyncDone] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
-  // Undo history: maps chapterId → array of previous content strings (max 5)
-  const chapterUndoHistory = useRef<Record<string, string[]>>({});
+  // Undo history: maps chapterId → array of previous { content, sceneBlocks } snapshots (max 20)
+  const chapterUndoHistory = useRef<Record<string, Array<{ content: string; sceneBlocks?: SceneBlock[] }>>>({});
   const [canUndo, setCanUndo] = useState(false);
+  const undoSnapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSnapshotContent = useRef<Record<string, string>>({});
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<"general" | "ai" | "account" | undefined>(undefined);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1937,6 +1939,15 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Cmd+Z / Ctrl+Z: undo (only when not inside a textarea/input)
+      if (event.key === "z" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        const tag = (event.target as HTMLElement)?.tagName?.toLowerCase();
+        if (tag !== "textarea" && tag !== "input") {
+          event.preventDefault();
+          handleUndo();
+          return;
+        }
+      }
       if (event.key !== "Escape") return;
       if (rewritePreview) {
         setRewritePreview(null);
@@ -3778,7 +3789,7 @@ function NovelWorkspacePage() {
 
       // Replace the selected text in the chapter body
       const newContent = fullProse.slice(0, selStart) + cleaned + fullProse.slice(selEnd);
-      updateChapter(activeChapter.id, { content: newContent });
+      updateChapter(activeChapter.id, { content: newContent }, true);
     } catch (err) {
       console.error("Prose context action failed:", err);
     } finally {
@@ -3940,7 +3951,8 @@ function NovelWorkspacePage() {
     const newText = fullContent.slice(0, selStart) + revised + fullContent.slice(selEnd);
 
     if (blockIdx >= 0) {
-      // Block mode: update only the block's prose, then sync to chapter content
+      // Block mode: push immediate undo snapshot, then update block prose
+      pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
       const blocks = getSceneBlocks(activeChapter);
       if (blockIdx < blocks.length) {
         const next = [...blocks];
@@ -3949,8 +3961,8 @@ function NovelWorkspacePage() {
         syncChapterContentFromBlocks(activeChapter.id, next);
       }
     } else {
-      // Plain editor mode: update chapter content directly
-      updateChapter(activeChapter.id, { content: newText });
+      // Plain editor mode: update chapter content directly (immediate undo)
+      updateChapter(activeChapter.id, { content: newText }, true);
     }
     setRewritePreview(null);
     saveNow();
@@ -3992,7 +4004,7 @@ function NovelWorkspacePage() {
     try {
       const result = await requestOpenRouterText(userMsg, Math.max(2000, Math.round(countWords(prose) * 1.5)), 180000, systemMsg);
       if (result && result.trim()) {
-        updateChapter(activeChapter.id, { content: result.trim() });
+        updateChapter(activeChapter.id, { content: result.trim() }, true);
       }
     } catch { /* ignore */ } finally {
       setChapterRewriteBusy(false);
@@ -4196,8 +4208,8 @@ function NovelWorkspacePage() {
   }
 
   /** Update scene blocks (planning layer only — does NOT touch chapter.content) */
-  function updateSceneBlocks(chapterId: string, blocks: SceneBlock[]) {
-    updateChapter(chapterId, { sceneBlocks: blocks });
+  function updateSceneBlocks(chapterId: string, blocks: SceneBlock[], immediateUndo?: boolean) {
+    updateChapter(chapterId, { sceneBlocks: blocks }, immediateUndo);
   }
 
   function insertSceneBlockAt(blocks: SceneBlock[], atIndex: number) {
@@ -4660,7 +4672,7 @@ function NovelWorkspacePage() {
 
       const updatedBlocks = [...blocks];
       updatedBlocks[blockIndex] = { ...block, prose };
-      updateSceneBlocks(targetChapterId, updatedBlocks);
+      updateSceneBlocks(targetChapterId, updatedBlocks, true);
       syncChapterContentFromBlocks(targetChapterId, updatedBlocks);
       requestAnimationFrame(() => {
         const el = blockProseRefs.current[blockIndex];
@@ -7458,46 +7470,92 @@ function NovelWorkspacePage() {
     flushServerSave();
   }
 
-  /** Push a content snapshot onto the undo stack for a chapter (max 5 entries). */
-  function pushUndoSnapshot(chapterId: string, content: string) {
-    const stack = chapterUndoHistory.current[chapterId] ?? [];
-    // Don't push if identical to top of stack
-    if (stack.length > 0 && stack[stack.length - 1] === content) return;
-    stack.push(content);
-    if (stack.length > 5) stack.shift();
-    chapterUndoHistory.current[chapterId] = stack;
-    if (chapterId === activeChapterId) setCanUndo(stack.length > 0);
+  /** Push a content+blocks snapshot onto the undo stack for a chapter (max 20 entries).
+   *  immediate=true bypasses debounce (use for AI/programmatic changes). */
+  function pushUndoSnapshot(chapterId: string, content: string, blocks?: SceneBlock[], immediate?: boolean) {
+    const doSnapshot = () => {
+      const stack = chapterUndoHistory.current[chapterId] ?? [];
+      const top = stack.length > 0 ? stack[stack.length - 1] : null;
+      if (top && top.content === content) return;
+      stack.push({ content, sceneBlocks: blocks ? blocks.map(b => ({ ...b })) : undefined });
+      if (stack.length > 20) stack.shift();
+      chapterUndoHistory.current[chapterId] = stack;
+      lastSnapshotContent.current[chapterId] = content;
+      if (chapterId === activeChapterId) setCanUndo(stack.length > 0);
+    };
+
+    if (immediate) {
+      if (undoSnapshotTimer.current) { clearTimeout(undoSnapshotTimer.current); undoSnapshotTimer.current = null; }
+      doSnapshot();
+      return;
+    }
+
+    // Debounce: only snapshot after 1s pause in typing
+    if (undoSnapshotTimer.current) clearTimeout(undoSnapshotTimer.current);
+    undoSnapshotTimer.current = setTimeout(doSnapshot, 1000);
   }
 
   /** Pop the most recent undo snapshot for the active chapter. */
   function handleUndo() {
     if (!activeChapterId) return;
+    // Flush any pending debounced snapshot first so we don't lose it
+    if (undoSnapshotTimer.current) {
+      clearTimeout(undoSnapshotTimer.current);
+      undoSnapshotTimer.current = null;
+      // Push current state before undoing
+      if (novel) {
+        const ch = novel.chapters.find(c => c.id === activeChapterId);
+        if (ch) {
+          const stack = chapterUndoHistory.current[activeChapterId] ?? [];
+          const top = stack.length > 0 ? stack[stack.length - 1] : null;
+          if (!top || top.content !== ch.content) {
+            stack.push({ content: ch.content, sceneBlocks: ch.sceneBlocks?.map(b => ({ ...b })) });
+            if (stack.length > 20) stack.shift();
+            chapterUndoHistory.current[activeChapterId] = stack;
+          }
+        }
+      }
+    }
     const stack = chapterUndoHistory.current[activeChapterId];
     if (!stack || stack.length === 0) return;
-    const previousContent = stack.pop()!;
+    const snapshot = stack.pop()!;
     chapterUndoHistory.current[activeChapterId] = stack;
+    lastSnapshotContent.current[activeChapterId] = snapshot.content;
     setCanUndo(stack.length > 0);
-    // Apply without pushing to undo (to avoid infinite loop)
+    // Apply both content and sceneBlocks without pushing to undo
     mutateNovel((current) => {
       const now = new Date().toISOString();
       return {
         ...current,
         chapters: current.chapters.map((ch) =>
-          ch.id === activeChapterId ? { ...ch, content: previousContent, updatedAt: now } : ch
+          ch.id === activeChapterId
+            ? {
+                ...ch,
+                content: snapshot.content,
+                ...(snapshot.sceneBlocks ? { sceneBlocks: snapshot.sceneBlocks } : {}),
+                updatedAt: now,
+              }
+            : ch
         ),
       };
     });
+    saveNow();
   }
 
   function updateChapter(
     chapterId: string,
     patch: { title?: string; subtitle?: string; content?: string; goalWords?: number; sceneBlocks?: SceneBlock[] },
+    immediateUndo?: boolean,
   ) {
-    // If content is changing, save current content to undo history
-    if (typeof patch.content === "string" && novel) {
+    // If content or sceneBlocks are changing, save current state to undo history
+    if ((typeof patch.content === "string" || patch.sceneBlocks) && novel) {
       const existing = novel.chapters.find((c) => c.id === chapterId);
-      if (existing && existing.content !== patch.content) {
-        pushUndoSnapshot(chapterId, existing.content);
+      if (existing) {
+        const contentChanged = typeof patch.content === "string" && existing.content !== patch.content;
+        const blocksChanged = !!patch.sceneBlocks;
+        if (contentChanged || blocksChanged) {
+          pushUndoSnapshot(chapterId, existing.content, existing.sceneBlocks, immediateUndo);
+        }
       }
     }
 
@@ -9849,7 +9907,7 @@ function NovelWorkspacePage() {
                 type="button"
                 className="btn"
                 onClick={handleUndo}
-                title="Undo last change (up to 5 steps)"
+                title="Undo last change (⌘Z)"
                 style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.85 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
@@ -12363,7 +12421,7 @@ function NovelWorkspacePage() {
                                 idx = origChars;
                                 const origSelectedLen = endOrig - origChars;
                                 const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + origSelectedLen);
-                                updateChapter(matchChapter.id, { content: newContent });
+                                updateChapter(matchChapter.id, { content: newContent }, true);
                                 setFeedbackReviewAccepted((c) => c + 1);
                                 idx = -2; // sentinel: already applied
                               }
@@ -12380,7 +12438,7 @@ function NovelWorkspacePage() {
                                 if (sIdx !== -1 && eIdx !== -1) {
                                   const end = eIdx + endPhrase.length;
                                   const newContent = currentContent.slice(0, sIdx) + fbPreviewRevised + currentContent.slice(end);
-                                  updateChapter(matchChapter.id, { content: newContent });
+                                  updateChapter(matchChapter.id, { content: newContent }, true);
                                   setFeedbackReviewAccepted((c) => c + 1);
                                   idx = -2; // sentinel: already applied
                                 }
@@ -12390,7 +12448,7 @@ function NovelWorkspacePage() {
                             if (idx >= 0) {
                               // Exact match found — apply directly
                               const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + selectedText.length);
-                              updateChapter(matchChapter.id, { content: newContent });
+                              updateChapter(matchChapter.id, { content: newContent }, true);
                               setFeedbackReviewAccepted((c) => c + 1);
                             } else if (idx === -1) {
                               alert("Could not locate this passage in the current chapter. The text may have changed since sharing. Skipping this note.");
@@ -12572,7 +12630,7 @@ function NovelWorkspacePage() {
               onFixIssues={runEditorFixIssues}
               onApply={(revisedText) => {
                 if (!activeChapter) return;
-                updateChapter(activeChapter.id, { content: revisedText });
+                updateChapter(activeChapter.id, { content: revisedText }, true);
                 setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
               }}
               chapterProse={chProse}
