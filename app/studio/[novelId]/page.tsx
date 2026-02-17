@@ -3734,14 +3734,15 @@ function NovelWorkspacePage() {
     const novelGenre = novel.storyBible.summary.genre.join(", ") || "fiction";
 
     const actionInstructions: Record<string, string> = {
-      rewrite: `Rewrite the SELECTED TEXT to be clearer, more engaging, and better crafted. Keep the same meaning, events, and intent. Match the surrounding voice and rhythm.`,
-      expand: `Expand the SELECTED TEXT with more detail, sensory description, interiority, or dialogue. Keep it grounded in the same scene and voice. Don't change the events — enrich them.`,
-      tighten: `Tighten the SELECTED TEXT. Cut filler, reduce wordiness, sharpen sentences. Keep every important beat but make it leaner and punchier.`,
-      natural: `Make the SELECTED TEXT sound more natural and human. Remove any AI-sounding patterns: excessive em dashes, overly formal phrasing, "a testament to", "the weight of", "couldn't help but", "a sense of". Replace with plain, direct prose that sounds like a real person wrote it.`,
+      rewrite: `Rewrite the SELECTED TEXT to be clearer, more engaging, and better crafted. Change sentence structures, word choices, and phrasing. Keep the same meaning, events, and intent. The result MUST be noticeably different from the original.`,
+      expand: `Expand the SELECTED TEXT with more detail, sensory description, interiority, or dialogue. Add new phrasing and restructure existing sentences. Keep it grounded in the same scene and voice. Don't change the events — enrich them.`,
+      tighten: `Tighten the SELECTED TEXT. Cut filler, reduce wordiness, sharpen sentences, combine where possible. Keep every important beat but make it leaner and punchier. The result MUST be shorter than the original.`,
+      natural: `Make the SELECTED TEXT sound more natural and human. Restructure sentences, swap out stiff phrasing for conversational flow. Remove any AI-sounding patterns: excessive em dashes, overly formal phrasing, "a testament to", "the weight of", "couldn't help but", "a sense of". The result MUST read differently from the original.`,
     };
 
     const systemMsg = [
       `You are a prose editor working on a ${novelGenre} novel.`,
+      `CRITICAL: You MUST produce a genuinely DIFFERENT version of the text. Do NOT return the original text or something nearly identical. Change sentence structures, word choices, and phrasing.`,
       `You MUST return ONLY the replacement prose — nothing else. No quotes, no labels, no "Here is the rewritten text:", no explanations.`,
       `NEVER include your thinking, notes, word counts, or meta-commentary.`,
       `The replacement must flow naturally with the text before and after it.`,
@@ -3753,18 +3754,19 @@ function NovelWorkspacePage() {
       `TEXT BEFORE (for context only — do NOT include in output):`,
       `"""${before}"""`,
       ``,
-      `SELECTED TEXT (rewrite this):`,
+      `SELECTED TEXT (you MUST rewrite this — do NOT return it unchanged):`,
       `"""${selectedText}"""`,
       ``,
       `TEXT AFTER (for context only — do NOT include in output):`,
       `"""${after}"""`,
       ``,
       actionInstructions[action],
+      `IMPORTANT: The rewritten version MUST be noticeably different from the original. Do NOT echo the original back.`,
       `Return ONLY the replacement prose. Nothing else.`,
     ].join("\n");
 
     try {
-      const result = await requestOpenRouterText(prompt, Math.max(500, Math.round(selectedText.split(/\s+/).length * 3)), 120000, systemMsg, false, 0.7);
+      const result = await requestOpenRouterText(prompt, Math.max(500, Math.round(selectedText.split(/\s+/).length * 3)), 180000, systemMsg, false, 0.85);
       if (!result || !result.trim()) { setProseCtxBusy(false); return; }
 
       // Clean any wrapping quotes the AI might add
@@ -3839,15 +3841,17 @@ function NovelWorkspacePage() {
     const novelGenre = novel.storyBible.summary.genre.join(", ") || "fiction";
 
     const modeInstructions: Record<string, string> = {
-      emotional: `Rewrite the SELECTED TEXT to be more emotionally resonant. Deepen interiority, let the reader feel what the character feels. Add sensory and emotional depth. Keep the same events and meaning.`,
-      suspenseful: `Rewrite the SELECTED TEXT to be more suspenseful. Build tension, add dread, shorten sentences where needed, use pacing tricks. Make the reader need to keep reading. Keep the same events and meaning.`,
-      poetic: `Rewrite the SELECTED TEXT with richer, more poetic prose. Use imagery, metaphor, rhythm, and lyrical phrasing. Make it beautiful without being purple. Keep the same events and meaning.`,
-      tighter: `Rewrite the SELECTED TEXT to be shorter and tighter. Cut every unnecessary word, eliminate filler, sharpen sentences. Keep every important beat but make it leaner and punchier. Aim for 60-75% of the original length.`,
-      bestseller: `Rewrite the SELECTED TEXT in a bestseller tone — punchy, commercial, page-turning prose. Short sentences mixed with longer ones. Active voice. Direct. Makes you want to keep reading. Think of the pacing in a Colleen Hoover, Lee Child, or Gillian Flynn novel. Keep the same events and meaning.`,
+      emotional: `Rewrite the SELECTED TEXT to be MORE EMOTIONALLY RESONANT. Deepen interiority, let the reader feel what the character feels. Add sensory and emotional depth. Restructure sentences, change word choices, vary rhythm. Keep the same events and meaning but the prose MUST read differently.`,
+      suspenseful: `Rewrite the SELECTED TEXT to be MORE SUSPENSEFUL. Build tension, add dread, shorten sentences where needed, use pacing tricks. Restructure the prose, change word choices, vary sentence length dramatically. Keep the same events and meaning but the prose MUST read differently.`,
+      poetic: `Rewrite the SELECTED TEXT with RICHER, MORE POETIC prose. Use fresh imagery, metaphor, rhythm, and lyrical phrasing. Restructure sentences, find new word choices, create beauty without being purple. Keep the same events and meaning but the prose MUST read differently.`,
+      tighter: `Rewrite the SELECTED TEXT to be SHORTER AND TIGHTER. Cut every unnecessary word, eliminate filler, sharpen sentences. Combine sentences, remove redundancy, use stronger verbs. Aim for 60-75% of the original length. The result MUST be noticeably more concise.`,
+      bestseller: `Rewrite the SELECTED TEXT in a BESTSELLER TONE — punchy, commercial, page-turning prose. Short sentences mixed with longer ones. Active voice. Direct. Restructure for pace and impact. Think Colleen Hoover, Lee Child, or Gillian Flynn. Keep the same events and meaning but the prose MUST read differently.`,
     };
 
     const systemMsg = [
       `You are a prose rewriting specialist for a ${novelGenre} novel.`,
+      `CRITICAL: You MUST produce a genuinely DIFFERENT version of the text. Do NOT return the original text or something nearly identical.`,
+      `Change sentence structures, word choices, rhythm, and phrasing. The rewrite should be clearly improved and noticeably different from the original.`,
       `Return ONLY the replacement prose — nothing else. No quotes, no labels, no explanations, no "Here is the rewritten text:".`,
       `NEVER include thinking, notes, word counts, or meta-commentary.`,
       `The replacement must flow naturally with the text before and after it.`,
@@ -3859,27 +3863,58 @@ function NovelWorkspacePage() {
       `TEXT BEFORE (context only — do NOT include in output):`,
       `"""${before}"""`,
       ``,
-      `SELECTED TEXT (rewrite this):`,
+      `SELECTED TEXT (you MUST rewrite this — do NOT return it unchanged):`,
       `"""${selectedText}"""`,
       ``,
       `TEXT AFTER (context only — do NOT include in output):`,
       `"""${after}"""`,
       ``,
       modeInstructions[modeId] || modeInstructions.emotional,
+      `IMPORTANT: The rewritten version MUST be noticeably different from the original. Change sentence structures, word choices, and phrasing. Do NOT echo the original back.`,
       `Return ONLY the replacement prose. Nothing else.`,
     ].join("\n");
 
-    try {
-      const result = await requestOpenRouterText(
-        prompt,
-        Math.max(500, Math.round(selectedText.split(/\s+/).length * 3)),
-        120000, systemMsg, false, 0.7,
-      );
-      if (!result || !result.trim()) { setRewriteBusy(false); setRewriteMode(null); return; }
+    // Helper: measure how similar two strings are (0 = identical, 1 = completely different)
+    function textDifference(a: string, b: string): number {
+      const na = a.toLowerCase().replace(/\s+/g, " ").trim();
+      const nb = b.toLowerCase().replace(/\s+/g, " ").trim();
+      if (na === nb) return 0;
+      const wordsA = na.split(" ");
+      const wordsB = nb.split(" ");
+      const setA = new Set(wordsA);
+      const setB = new Set(wordsB);
+      const intersection = [...setA].filter((w) => setB.has(w)).length;
+      const union = new Set([...setA, ...setB]).size;
+      return union === 0 ? 0 : 1 - intersection / union;
+    }
 
-      let cleaned = result.trim();
-      if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
-      if (cleaned.startsWith("'") && cleaned.endsWith("'")) cleaned = cleaned.slice(1, -1);
+    try {
+      const maxTokens = Math.max(500, Math.round(selectedText.split(/\s+/).length * 3));
+      let cleaned = "";
+      let attempts = 0;
+      const maxAttempts = 2;
+
+      while (attempts < maxAttempts) {
+        attempts++;
+        const temp = attempts === 1 ? 0.85 : 1.0;
+        const result = await requestOpenRouterText(prompt, maxTokens, 180000, systemMsg, false, temp);
+        if (!result || !result.trim()) continue;
+
+        cleaned = result.trim();
+        if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+        if (cleaned.startsWith("'") && cleaned.endsWith("'")) cleaned = cleaned.slice(1, -1);
+
+        const diff = textDifference(selectedText, cleaned);
+        if (diff > 0.08) break; // sufficiently different — use it
+        // Too similar — retry with higher temperature
+        cleaned = "";
+      }
+
+      if (!cleaned) {
+        setRewriteBusy(false);
+        setRewriteMode(null);
+        return;
+      }
 
       setRewritePreview({
         original: selectedText,
