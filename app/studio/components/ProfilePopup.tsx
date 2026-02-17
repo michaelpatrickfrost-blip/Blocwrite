@@ -17,7 +17,7 @@ type ModelOption = {
   contextLength: number | null;
 };
 
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
+type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 
 const ASSISTANT_PROVIDER_OPTIONS: Array<{
   id: AssistantProviderId;
@@ -53,13 +53,6 @@ const ASSISTANT_PROVIDER_OPTIONS: Array<{
     requiresKey: true,
     defaultBaseUrl: "https://router.huggingface.co/v1",
     defaultModel: "deepseek-ai/DeepSeek-R1",
-  },
-  {
-    id: "ollama",
-    label: "Ollama",
-    requiresKey: false,
-    defaultBaseUrl: "http://127.0.0.1:11434",
-    defaultModel: "",
   },
 ];
 
@@ -235,23 +228,14 @@ export function ProfilePopup({
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
-      if (assistantProvider === "lmstudio" || assistantProvider === "ollama") {
-        const isOllama = assistantProvider === "ollama";
-        const providerLabel = isOllama ? "Ollama" : "LM Studio";
-        const defaultUrl = isOllama ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
-        const rawBase = (assistantBaseUrl.trim() || defaultUrl).replace(/\/+$/, "");
-        const localBaseUrl = isOllama
-          ? (rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`)
-          : rawBase;
+      if (assistantProvider === "lmstudio") {
+        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
         try {
-          const localHeaders: Record<string, string> = { "Content-Type": "application/json" };
-          const localKey = normalizeClientApiKey(openRouterKey);
-          if (localKey) localHeaders["Authorization"] = `Bearer ${localKey}`;
-          const res = await fetch(`${localBaseUrl}/chat/completions`, {
+          const res = await fetch(`${lmBaseUrl}/chat/completions`, {
             method: "POST",
-            headers: localHeaders,
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: openRouterModel || (isOllama ? "" : "local-model"),
+              model: openRouterModel || "local-model",
               max_tokens: 2,
               messages: [{ role: "user", content: "hi" }],
               stream: false,
@@ -262,17 +246,15 @@ export function ProfilePopup({
           if (res.ok) {
             setOpenRouterStatus("ok");
           } else {
-            setOpenRouterError(`${providerLabel} returned status ${res.status}. Make sure a model is ${isOllama ? "pulled and available" : "loaded"}.`);
+            setOpenRouterError(`LM Studio returned status ${res.status}. Make sure a model is loaded.`);
             setOpenRouterStatus("error");
           }
         } catch (e) {
           window.clearTimeout(timeoutId);
           if (e instanceof DOMException && e.name === "AbortError") {
-            setOpenRouterError(`Connection timed out. Make sure ${providerLabel} is running.`);
+            setOpenRouterError("Connection timed out. Make sure LM Studio is running.");
           } else {
-            setOpenRouterError(isOllama
-              ? "Could not reach Ollama. Make sure it is running on your computer (run 'ollama serve' in your terminal)."
-              : "Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
+            setOpenRouterError("Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
           }
           setOpenRouterStatus("error");
         }
@@ -317,67 +299,6 @@ export function ProfilePopup({
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 15000);
-
-      // Ollama runs locally — fetch models directly from the browser
-      if (assistantProvider === "ollama") {
-        const rawBase = (assistantBaseUrl.trim() || "http://127.0.0.1:11434").replace(/\/+$/, "");
-        try {
-          const ollamaHeaders: Record<string, string> = {};
-          const ollamaKey = normalizeClientApiKey(openRouterKey);
-          if (ollamaKey) ollamaHeaders["Authorization"] = `Bearer ${ollamaKey}`;
-          const res = await fetch(`${rawBase}/api/tags`, {
-            method: "GET",
-            headers: ollamaHeaders,
-            signal: controller.signal,
-          });
-          window.clearTimeout(timeoutId);
-          if (!res.ok) {
-            setModelsError(`Ollama returned status ${res.status}. Make sure it is running.`);
-            return;
-          }
-          const payload = (await res.json().catch(() => ({}))) as {
-            models?: Array<{ name?: string; model?: string; size?: number; details?: { parameter_size?: string } }>;
-          };
-          const pulledModels = (payload.models ?? [])
-            .filter((m): m is { name: string } => typeof m.name === "string" && m.name.length > 0)
-            .map((m) => ({
-              id: m.name,
-              name: m.name,
-              contextLength: null as number | null,
-            }));
-          const pulledIds = new Set(pulledModels.map((m) => m.id));
-
-          // Verified Ollama cloud models — append any not already pulled
-          const OLLAMA_CLOUD_MODELS = [
-            "deepseek-v3.1:671b-cloud", "deepseek-v3.2:cloud",
-            "gpt-oss:20b-cloud", "gpt-oss:120b-cloud",
-            "qwen3-coder:480b-cloud", "qwen3-coder-next:cloud",
-            "qwen3.5:cloud", "qwen3-vl:235b-cloud",
-            "minimax-m2:cloud", "minimax-m2.1:cloud", "minimax-m2.5:cloud",
-            "glm-4.6:cloud", "glm-4.7:cloud", "glm-5:cloud",
-            "gemini-3-flash-preview:cloud",
-            "kimi-k2.5:cloud", "kimi-k2-thinking:cloud",
-          ];
-          const cloudExtras = OLLAMA_CLOUD_MODELS
-            .filter((id) => !pulledIds.has(id))
-            .map((id) => ({ id, name: `${id}`, contextLength: null as number | null }));
-
-          const allModels = [
-            ...pulledModels.sort((a, b) => a.name.localeCompare(b.name)),
-            ...cloudExtras,
-          ];
-          setModels(allModels);
-          if (allModels.length > 0) setShowModelDropdown(true);
-        } catch (e) {
-          window.clearTimeout(timeoutId);
-          if (e instanceof DOMException && e.name === "AbortError") {
-            setModelsError("Model list request timed out. Make sure Ollama is running.");
-          } else {
-            setModelsError("Could not reach Ollama. Make sure it is running on your computer (run 'ollama serve' in your terminal).");
-          }
-        }
-        return;
-      }
 
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
@@ -642,9 +563,10 @@ export function ProfilePopup({
                   <input
                     className="pw-settings-input"
                     type="password"
-                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Optional — needed for cloud models"}
+                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Not required for this provider"}
                     value={openRouterKey}
                     onChange={(e) => persistKey(e.target.value)}
+                    disabled={!selectedProvider.requiresKey}
                   />
                   <button
                     type="button"
@@ -737,9 +659,7 @@ export function ProfilePopup({
                         if (filtered.length === 0) {
                           return <div className="pw-settings-model-empty">No models match &ldquo;{modelSearch}&rdquo;</div>;
                         }
-                        return filtered.map((m) => {
-                          const isCloud = m.id.endsWith("-cloud") || m.id.includes(":cloud");
-                          return (
+                        return filtered.map((m) => (
                           <button
                             key={m.id}
                             type="button"
@@ -750,16 +670,13 @@ export function ProfilePopup({
                               setModelSearch("");
                             }}
                           >
-                            <div className="pw-settings-model-name">
-                              {m.name}
-                              {isCloud && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(56,189,248,0.15)", color: "#38bdf8" }}>CLOUD</span>}
-                            </div>
+                            <div className="pw-settings-model-name">{m.name}</div>
                             <div className="pw-settings-model-meta">
                               <code>{m.id}</code>
                               {m.contextLength ? ` · ${Math.round(m.contextLength / 1024)}K ctx` : ""}
                             </div>
-                          </button>);
-                        });
+                          </button>
+                        ));
                       })()}
                     </div>
                   </div>

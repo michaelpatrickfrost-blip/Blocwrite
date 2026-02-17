@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
+type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 type OpenRouterModel = {
   id?: string;
   name?: string;
@@ -29,16 +29,15 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
   huggingface: "https://router.huggingface.co/v1",
-  ollama: "http://127.0.0.1:11434/v1",
 };
 const MODELS_TIMEOUT_MS = 15000;
 
 function providerLabel(provider: ProviderId) {
-  return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : provider === "ollama" ? "Ollama" : "LM Studio";
+  return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : "LM Studio";
 }
 
 function normalizeProvider(raw: string | null): ProviderId {
-  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface" || raw === "ollama") return raw;
+  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface") return raw;
   return "openrouter";
 }
 
@@ -66,10 +65,6 @@ function cleanBaseUrl(raw: string | null, provider: ProviderId) {
     return `${fixed}/v1`;
   }
   if (provider === "huggingface") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
-  if (provider === "ollama") {
     if (normalized.endsWith("/v1")) return normalized;
     return `${normalized}/v1`;
   }
@@ -111,7 +106,7 @@ export async function GET(request: Request) {
     const provider = normalizeProvider(request.headers.get("x-provider"));
     const apiKey = normalizeApiKey(request.headers.get("x-provider-key") || request.headers.get("x-openrouter-key"));
     const baseUrl = cleanBaseUrl(request.headers.get("x-provider-base-url"), provider);
-    const requiresKey = provider !== "lmstudio" && provider !== "ollama";
+    const requiresKey = provider !== "lmstudio";
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });
     }

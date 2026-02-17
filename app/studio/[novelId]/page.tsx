@@ -63,7 +63,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface" | "ollama";
+type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -598,13 +598,6 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     requiresKey: true,
     defaultBaseUrl: "https://router.huggingface.co/v1",
     defaultModel: "deepseek-ai/DeepSeek-R1",
-  },
-  {
-    id: "ollama",
-    label: "Ollama",
-    requiresKey: false,
-    defaultBaseUrl: "http://127.0.0.1:11434",
-    defaultModel: "",
   },
 ];
 
@@ -4573,28 +4566,22 @@ function NovelWorkspacePage() {
       const onGlobalAbort = () => controller.abort();
       aiAbortRef.current?.signal.addEventListener("abort", onGlobalAbort);
 
-      // LM Studio / Ollama run locally — call directly from the browser instead of the server proxy
-      if (assistantProvider === "lmstudio" || assistantProvider === "ollama") {
-        const isOllama = assistantProvider === "ollama";
-        const defaultUrl = isOllama ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
-        const rawBase = (assistantBaseUrl.trim() || defaultUrl).replace(/\/+$/, "");
-        const localBaseUrl = isOllama
-          ? (rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`)
-          : rawBase;
+      // LM Studio runs locally — call directly from the browser instead of the server proxy
+      if (assistantProvider === "lmstudio") {
+        const rawBase = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        const localBaseUrl = rawBase;
         const messages: Array<{ role: string; content: string }> = [];
         if (systemMessage) messages.push({ role: "system", content: systemMessage });
         messages.push({ role: "user", content: prompt });
         const localBody: Record<string, unknown> = {
-          model: openRouterModel || (isOllama ? "" : "local-model"),
+          model: openRouterModel || "local-model",
           max_tokens: maxTokens,
           messages,
           stream: false,
         };
         if (temperature != null) localBody.temperature = temperature;
         if (jsonMode) localBody.response_format = { type: "json_object" };
-        const providerLabel = isOllama ? "Ollama" : "LM Studio";
         const localHeaders: Record<string, string> = { "Content-Type": "application/json" };
-        if (normalizedApiKey) localHeaders["Authorization"] = `Bearer ${normalizedApiKey}`;
         try {
           const localRes = await fetch(`${localBaseUrl}/chat/completions`, {
             method: "POST",
@@ -4608,7 +4595,7 @@ function NovelWorkspacePage() {
           if (!localRes.ok) {
             const errMsg = typeof localPayload.error === "string" ? localPayload.error
               : localPayload.error && typeof (localPayload.error as Record<string, unknown>).message === "string" ? ((localPayload.error as Record<string, unknown>).message as string)
-              : `${providerLabel} error ${localRes.status}`;
+              : `LM Studio error ${localRes.status}`;
             return { ok: false, status: localRes.status, text: "", apiError: errMsg };
           }
           return { ok: true, status: 200, text: text.trim() };
@@ -4617,7 +4604,7 @@ function NovelWorkspacePage() {
             if (aiAbortRef.current?.signal.aborted) return { ok: false, status: 0, text: "", apiError: "cancelled" };
             return { ok: false, status: 0, text: "", apiError: "timeout" };
           }
-          return { ok: false, status: 0, text: "", apiError: `Could not reach ${providerLabel}. Make sure it is running on your computer${isOllama ? "." : " with the server enabled."}` };
+          return { ok: false, status: 0, text: "", apiError: "Could not reach LM Studio. Make sure it is running on your computer with the server enabled." };
         } finally {
           window.clearTimeout(timeoutId);
           aiAbortRef.current?.signal.removeEventListener("abort", onGlobalAbort);
