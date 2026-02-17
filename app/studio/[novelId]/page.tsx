@@ -1075,8 +1075,8 @@ function NovelWorkspacePage() {
     if (voice) utterance.voice = voice;
     utterance.rate = readerSpeed;
     utterance.pitch = 1.0;
-    utterance.onend = () => { setReaderActive(false); setReaderPaused(false); };
-    utterance.onerror = () => { setReaderActive(false); setReaderPaused(false); };
+    utterance.onend = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
+    utterance.onerror = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
     readerUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
     setReaderActive(true);
@@ -1103,6 +1103,7 @@ function NovelWorkspacePage() {
     }
     setReaderActive(false);
     setReaderPaused(false);
+    setReaderShowControls(false);
   }
 
   // Clean up TTS on chapter change or unmount
@@ -10202,76 +10203,25 @@ function NovelWorkspacePage() {
                           /
                         </button>
                         <span className="pw-toolbar-sep" />
-                        {/* Reader controls */}
-                        {!readerActive ? (
-                          <button
-                            type="button"
-                            className="pw-toolbar-btn pw-reader-btn"
-                            title="Read chapter aloud"
-                            disabled={!activeChapter?.content?.trim()}
-                            onClick={() => { setReaderShowControls(true); startReader(); }}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
-                            <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>Read</span>
-                          </button>
-                        ) : (
-                          <div className="pw-reader-controls">
-                            {readerPaused ? (
-                              <button type="button" className="pw-toolbar-btn pw-reader-play" title="Resume" onClick={resumeReader}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                              </button>
-                            ) : (
-                              <button type="button" className="pw-toolbar-btn pw-reader-pause" title="Pause" onClick={pauseReader}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                              </button>
-                            )}
-                            <button type="button" className="pw-toolbar-btn pw-reader-stop" title="Stop" onClick={stopReader}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-                            </button>
-                            <button type="button" className="pw-toolbar-btn" title="Reader settings" onClick={() => setReaderShowControls((v) => !v)}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                            </button>
-                          </div>
-                        )}
+                        {/* Reader button */}
+                        <button
+                          type="button"
+                          className={`pw-toolbar-btn pw-reader-btn${readerActive ? " pw-reader-active" : ""}`}
+                          title={readerActive ? "Reading aloud..." : "Read chapter aloud"}
+                          disabled={!activeChapter?.content?.trim()}
+                          onClick={() => {
+                            if (readerActive) {
+                              setReaderShowControls((v) => !v);
+                            } else {
+                              startReader();
+                              setReaderShowControls(true);
+                            }
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
+                          <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>{readerActive ? (readerPaused ? "Paused" : "Reading...") : "Read"}</span>
+                        </button>
                       </div>
-                      {/* Reader settings dropdown */}
-                      {readerShowControls && (
-                        <div className="pw-reader-settings">
-                          <div className="pw-reader-settings-row">
-                            <label>Speed</label>
-                            <div className="pw-reader-speed-btns">
-                              {[0.75, 1.0, 1.25, 1.5].map((s) => (
-                                <button
-                                  key={s}
-                                  type="button"
-                                  className={`pw-reader-speed-btn${readerSpeed === s ? " active" : ""}`}
-                                  onClick={() => {
-                                    setReaderSpeed(s);
-                                    if (readerActive) { stopReader(); setTimeout(() => startReader(), 100); }
-                                  }}
-                                >{s}x</button>
-                              ))}
-                            </div>
-                          </div>
-                          {readerVoices.filter((v) => v.lang.startsWith("en")).length > 1 && (
-                            <div className="pw-reader-settings-row">
-                              <label>Voice</label>
-                              <select
-                                className="pw-reader-voice-select"
-                                value={readerVoice}
-                                onChange={(e) => {
-                                  setReaderVoice(e.target.value);
-                                  if (readerActive) { stopReader(); setTimeout(() => startReader(), 100); }
-                                }}
-                              >
-                                {readerVoices.filter((v) => v.lang.startsWith("en")).map((v) => (
-                                  <option key={v.name} value={v.name}>{v.name.replace(/\(.*?\)/, "").trim()}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      )}
                       {/* ── Blocks with interleaved prose ── */}
                       {!hideBlocks && blocks.length > 0 && (
                       <div className="pw-chapter-blocks" dir="ltr">
@@ -15821,6 +15771,70 @@ function NovelWorkspacePage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reader floating player ── */}
+      {readerShowControls && (
+        <div className="pw-reader-player">
+          <div className="pw-reader-player-main">
+            <div className="pw-reader-player-btns">
+              {readerActive && !readerPaused ? (
+                <button type="button" className="pw-reader-player-btn" title="Pause" onClick={pauseReader}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                </button>
+              ) : (
+                <button type="button" className="pw-reader-player-btn pw-reader-player-play" title={readerPaused ? "Resume" : "Play"} onClick={() => readerPaused ? resumeReader() : startReader()}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                </button>
+              )}
+              <button type="button" className="pw-reader-player-btn pw-reader-player-stop" title="Stop" onClick={stopReader}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              </button>
+            </div>
+            <div className="pw-reader-player-info">
+              <span className="pw-reader-player-status">{readerActive ? (readerPaused ? "Paused" : "Reading aloud") : "Ready"}</span>
+              <span className="pw-reader-player-chapter">{activeChapter?.title || "Chapter"}</span>
+            </div>
+            <button type="button" className="pw-reader-player-close" title="Close" onClick={stopReader}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div className="pw-reader-player-settings">
+            <div className="pw-reader-settings-row">
+              <label>Speed</label>
+              <div className="pw-reader-speed-btns">
+                {[0.75, 1.0, 1.25, 1.5].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`pw-reader-speed-btn${readerSpeed === s ? " active" : ""}`}
+                    onClick={() => {
+                      setReaderSpeed(s);
+                      if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
+                    }}
+                  >{s}x</button>
+                ))}
+              </div>
+            </div>
+            {readerVoices.filter((v) => v.lang.startsWith("en")).length > 1 && (
+              <div className="pw-reader-settings-row">
+                <label>Voice</label>
+                <select
+                  className="pw-reader-voice-select"
+                  value={readerVoice}
+                  onChange={(e) => {
+                    setReaderVoice(e.target.value);
+                    if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
+                  }}
+                >
+                  {readerVoices.filter((v) => v.lang.startsWith("en")).map((v) => (
+                    <option key={v.name} value={v.name}>{v.name.replace(/\(.*?\)/, "").trim()}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       )}
