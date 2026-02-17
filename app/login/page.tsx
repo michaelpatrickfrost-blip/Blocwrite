@@ -24,6 +24,11 @@ function LoginForm() {
   const [forgotStatus, setForgotStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [forgotMsg, setForgotMsg] = useState("");
   const [activeSessionWarning, setActiveSessionWarning] = useState(false);
+  const [trialMode, setTrialMode] = useState(false);
+  const [trialCode, setTrialCode] = useState("");
+  const [trialPassword, setTrialPassword] = useState("");
+  const [trialLoading, setTrialLoading] = useState(false);
+  const [trialError, setTrialError] = useState("");
   const reason = searchParams.get("reason");
 
   async function handleForgotPassword(e: FormEvent) {
@@ -47,6 +52,29 @@ function LoginForm() {
     } catch {
       setForgotStatus("error");
       setForgotMsg("Connection failed. Please try again.");
+    }
+  }
+
+  async function handleRedeemTrial(e: FormEvent) {
+    e.preventDefault();
+    setTrialError("");
+    setTrialLoading(true);
+    try {
+      const res = await fetch("/api/auth/redeem-trial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: trialCode.trim(), password: trialPassword.trim() }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; redirectTo?: string; error?: string } | null;
+      if (res.ok && data?.ok) {
+        router.push(data.redirectTo || "/studio");
+      } else {
+        setTrialError(data?.error || "Invalid code or password.");
+      }
+    } catch {
+      setTrialError("Connection failed. Please try again.");
+    } finally {
+      setTrialLoading(false);
     }
   }
 
@@ -469,6 +497,83 @@ function LoginForm() {
                 ? "Don't have an account? Sign up"
                 : "Already have an account? Sign in"}
             </button>
+          </div>
+
+          {/* ── Trial code section ── */}
+          <div style={{ marginTop: 20, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16 }}>
+            {!trialMode ? (
+              <button
+                type="button"
+                onClick={() => { setTrialMode(true); setTrialError(""); }}
+                style={{
+                  width: "100%", textAlign: "center",
+                  fontSize: 13, color: "rgba(255,255,255,0.35)", background: "none",
+                  border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
+                  padding: "10px 0", cursor: "pointer", transition: "all 0.15s",
+                }}
+              >
+                Have a trial code?
+              </button>
+            ) : (
+              <form onSubmit={handleRedeemTrial} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.6)", textAlign: "center", margin: "0 0 4px" }}>
+                  Enter your trial credentials
+                </p>
+                <div>
+                  <label htmlFor="trial-code" style={{ display: "block", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.4)", marginBottom: 6 }}>Code</label>
+                  <input
+                    id="trial-code"
+                    type="text"
+                    required
+                    autoFocus
+                    value={trialCode}
+                    onChange={(e) => setTrialCode(e.target.value.toUpperCase())}
+                    placeholder="BW-XXXXXX"
+                    style={{ ...inputStyle, fontFamily: "monospace", letterSpacing: "0.08em", fontSize: 16, textAlign: "center" }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="trial-password" style={{ display: "block", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.4)", marginBottom: 6 }}>Password</label>
+                  <input
+                    id="trial-password"
+                    type="text"
+                    required
+                    value={trialPassword}
+                    onChange={(e) => setTrialPassword(e.target.value)}
+                    placeholder="Enter trial password"
+                    style={inputStyle}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                  />
+                </div>
+                {trialError && (
+                  <p style={{
+                    fontSize: 13, color: "#ff6b6b", margin: 0, textAlign: "center",
+                    padding: "8px 12px", borderRadius: 8,
+                    background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.15)",
+                  }}>{trialError}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={trialLoading || !trialCode.trim() || !trialPassword.trim()}
+                  style={{
+                    width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
+                    borderRadius: 10, border: "none", background: "#e6ff4b", color: "#1e1c1c",
+                    cursor: trialLoading ? "wait" : "pointer",
+                    opacity: trialLoading ? 0.6 : 1, transition: "opacity 0.15s",
+                  }}
+                >{trialLoading ? "Activating..." : "Activate Trial"}</button>
+                <button
+                  type="button"
+                  onClick={() => { setTrialMode(false); setTrialError(""); }}
+                  style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer", textAlign: "center" }}
+                >
+                  Back to login
+                </button>
+              </form>
+            )}
           </div>
           </>
           )}

@@ -168,6 +168,19 @@ model GuestAccess {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model TrialCode {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  passwordHash String
+  note         String?
+  expiresAt    DateTime
+  redeemedBy   String?
+  redeemedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([code])
+}
+
 model BlogPost {
   id          String    @id @default(cuid())
   slug        String    @unique

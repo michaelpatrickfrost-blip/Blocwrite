@@ -28,7 +28,18 @@ type Stats = {
   avgNovelsPerUser: number;
 };
 
-type AdminSection = "overview" | "guests" | "reports";
+type TrialCode = {
+  id: string;
+  code: string;
+  note: string | null;
+  expiresAt: string;
+  redeemedBy: string | null;
+  redeemedAt: string | null;
+  createdAt: string;
+  status: "active" | "redeemed" | "expired";
+};
+
+type AdminSection = "overview" | "guests" | "trials" | "reports";
 
 const C = {
   bg: "#f8f9fb",
@@ -63,6 +74,7 @@ const NAV_LINKS: { href: string; label: string; icon: string; external?: boolean
 const SECTION_TABS: { id: AdminSection; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1" },
   { id: "guests", label: "Guest Access", icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
+  { id: "trials", label: "Trial Codes", icon: "M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" },
   { id: "reports", label: "Reports", icon: "M18 20V10M12 20V4M6 20v-6" },
 ];
 
@@ -79,15 +91,25 @@ export default function AdminPage() {
   const [guestMsg, setGuestMsg] = useState("");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+  // Trial codes state
+  const [trialCodes, setTrialCodes] = useState<TrialCode[]>([]);
+  const [trialNote, setTrialNote] = useState("");
+  const [generatingTrial, setGeneratingTrial] = useState(false);
+  const [newTrialCreds, setNewTrialCreds] = useState<{ code: string; password: string } | null>(null);
+  const [trialCopied, setTrialCopied] = useState(false);
+  const [pendingTrialDeleteId, setPendingTrialDeleteId] = useState<string | null>(null);
+
   async function loadData() {
     setLoading(true);
     try {
-      const [statsRes, guestsRes] = await Promise.all([
+      const [statsRes, guestsRes, trialsRes] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/admin/guests"),
+        fetch("/api/admin/trials"),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (guestsRes.ok) setGuests(await guestsRes.json());
+      if (trialsRes.ok) setTrialCodes(await trialsRes.json());
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -123,6 +145,47 @@ export default function AdminPage() {
       setPendingDeleteId(null);
       void loadData();
     } catch { /* ignore */ }
+  }
+
+  async function generateTrialCode() {
+    setGeneratingTrial(true);
+    setNewTrialCreds(null);
+    try {
+      const res = await fetch("/api/admin/trials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: trialNote.trim() || undefined }),
+      });
+      const data = await res.json() as { ok?: boolean; code?: string; password?: string; error?: string };
+      if (res.ok && data.ok && data.code && data.password) {
+        setNewTrialCreds({ code: data.code, password: data.password });
+        setTrialNote("");
+        void loadData();
+      }
+    } catch { /* ignore */ }
+    setGeneratingTrial(false);
+  }
+
+  async function deleteTrialCode(id: string) {
+    try {
+      await fetch("/api/admin/trials", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      setPendingTrialDeleteId(null);
+      void loadData();
+    } catch { /* ignore */ }
+  }
+
+  function copyTrialCredentials(code: string, password: string) {
+    const text = `Your Blocwrite Trial\n\nCode: ${code}\nPassword: ${password}\n\nGo to https://blocwrite.com/login and click "Have a trial code?" to get started.\n\nYour trial lasts 30 days.`;
+    navigator.clipboard.writeText(text).then(() => {
+      setTrialCopied(true);
+      setTimeout(() => setTrialCopied(false), 2000);
+    });
+  }
+
+  function openMailtoTrial(code: string, password: string) {
+    const subject = encodeURIComponent("Your Blocwrite Trial Access");
+    const body = encodeURIComponent(`Hi,\n\nYou've been invited to try Blocwrite for 30 days!\n\nHere are your credentials:\n\nCode: ${code}\nPassword: ${password}\n\nTo get started:\n1. Go to https://blocwrite.com/login\n2. Click "Have a trial code?"\n3. Enter the code and password above\n\nEnjoy writing!\n`);
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
   }
 
   const inputStyle: React.CSSProperties = {
@@ -305,6 +368,89 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* ══════════ TRIAL CODES ══════════ */}
+            {activeSection === "trials" && (
+              <div style={cardStyle}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Trial Code Generator</h2>
+                <p style={{ fontSize: 12, color: C.dim, margin: "0 0 20px" }}>Generate 30-day trial codes to share with people you want to try Blocwrite.</p>
+
+                {/* Generate form */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: "1 1 240px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Note (optional)</label>
+                    <input type="text" placeholder="e.g. For Sarah at XYZ Publishing" value={trialNote} onChange={(e) => setTrialNote(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <button type="button" onClick={() => void generateTrialCode()} disabled={generatingTrial} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8, background: C.accent, color: "#fff", border: "none", cursor: "pointer", opacity: generatingTrial ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    {generatingTrial ? "Generating..." : "Generate Code"}
+                  </button>
+                </div>
+
+                {/* Newly generated credentials (one-time display) */}
+                {newTrialCreds && (
+                  <div style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 12, padding: "18px 20px", marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.accent }}>Trial code generated!</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: C.dim, marginBottom: 4, letterSpacing: "0.04em" }}>Code</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "monospace", letterSpacing: "0.05em" }}>{newTrialCreds.code}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: C.dim, marginBottom: 4, letterSpacing: "0.04em" }}>Password</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "monospace" }}>{newTrialCreds.password}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" onClick={() => copyTrialCredentials(newTrialCreds.code, newTrialCreds.password)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8, background: C.surface, color: trialCopied ? C.accent : C.text, border: `1px solid ${trialCopied ? C.accent : C.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                        {trialCopied ? "Copied!" : "Copy Credentials"}
+                      </button>
+                      <button type="button" onClick={() => openMailtoTrial(newTrialCreds.code, newTrialCreds.password)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        Send via Email
+                      </button>
+                      <button type="button" onClick={() => setNewTrialCreds(null)} style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, background: "transparent", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                        Dismiss
+                      </button>
+                    </div>
+                    <p style={{ fontSize: 11, color: C.dim, margin: "10px 0 0", fontStyle: "italic" }}>Save these credentials now — the password won&apos;t be shown again.</p>
+                  </div>
+                )}
+
+                {/* Trial codes list */}
+                {trialCodes.length === 0 ? (
+                  <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "20px 0" }}>No trial codes generated yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 90px 120px 80px 60px", gap: 8, padding: "0 8px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.dim }}>
+                      <span>Code</span><span>Note</span><span>Created</span><span>Redeemed</span><span>Status</span><span></span>
+                    </div>
+                    {trialCodes.map((tc) => (
+                      <div key={tc.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr 90px 120px 80px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: C.surface, border: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.02em" }}>{tc.code}</span>
+                        <span style={{ fontSize: 12, color: C.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.note || "—"}</span>
+                        <span style={{ fontSize: 12, color: C.dim }}>{formatDate(tc.createdAt)}</span>
+                        <span style={{ fontSize: 12, color: C.dim }}>{tc.redeemedAt ? formatDate(tc.redeemedAt) : "—"}</span>
+                        <span style={{
+                          display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                          background: tc.status === "active" ? C.accentDim : tc.status === "redeemed" ? "rgba(37,99,235,0.08)" : C.dangerDim,
+                          color: tc.status === "active" ? C.accent : tc.status === "redeemed" ? "#2563eb" : C.danger,
+                        }}>
+                          {tc.status === "active" ? "Active" : tc.status === "redeemed" ? "Used" : "Expired"}
+                        </span>
+                        {tc.status === "active" ? (
+                          <button type="button" onClick={() => setPendingTrialDeleteId(tc.id)} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>Delete</button>
+                        ) : <span />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ══════════ REPORTS ══════════ */}
             {activeSection === "reports" && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -394,6 +540,23 @@ export default function AdminPage() {
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button type="button" onClick={() => setPendingDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
               <button type="button" onClick={() => void removeGuest(pendingDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Revoke</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Trial delete confirmation modal ── */}
+      {pendingTrialDeleteId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPendingTrialDeleteId(null)}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Delete trial code?</h3>
+            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>This code will no longer be redeemable.</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button type="button" onClick={() => setPendingTrialDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={() => void deleteTrialCode(pendingTrialDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Delete</button>
             </div>
           </div>
         </div>
