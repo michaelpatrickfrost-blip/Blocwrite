@@ -347,19 +347,16 @@ export function ProfilePopup({
             }));
           const pulledIds = new Set(pulledModels.map((m) => m.id));
 
-          // Known Ollama cloud models — append any not already pulled
+          // Verified Ollama cloud models — append any not already pulled
           const OLLAMA_CLOUD_MODELS = [
-            "deepseek-v3.1:671b-cloud", "deepseek-v3.2:671b-cloud",
+            "deepseek-v3.1:671b-cloud", "deepseek-v3.2:cloud",
             "gpt-oss:20b-cloud", "gpt-oss:120b-cloud",
             "qwen3-coder:480b-cloud", "qwen3-coder-next:cloud",
-            "qwen3.5:cloud", "qwen3-next:cloud", "qwen3-vl:235b-cloud",
+            "qwen3.5:cloud", "qwen3-vl:235b-cloud",
             "minimax-m2:cloud", "minimax-m2.1:cloud", "minimax-m2.5:cloud",
             "glm-4.6:cloud", "glm-4.7:cloud", "glm-5:cloud",
             "gemini-3-flash-preview:cloud",
             "kimi-k2.5:cloud", "kimi-k2-thinking:cloud",
-            "mistral-large-3:cloud", "ministral-3:cloud",
-            "devstral-2:cloud", "devstral-small-2:cloud",
-            "nemotron-3-nano:cloud", "cogito-2.1:cloud", "rnj-1:cloud",
           ];
           const cloudExtras = OLLAMA_CLOUD_MODELS
             .filter((id) => !pulledIds.has(id))
