@@ -708,22 +708,27 @@ const CHARACTER_SURNAME_FALLBACKS = [
 ] as const;
 
 const ROLE_ALIAS_TOKENS = [
-  "anonymous",
-  "stranger",
-  "blackmailer",
-  "killer",
-  "informant",
-  "witness",
-  "caller",
-  "sender",
-  "hacker",
-  "stalker",
+  "anonymous", "stranger", "blackmailer", "killer", "informant", "witness",
+  "caller", "sender", "hacker", "stalker", "protagonist", "antagonist",
+  "villain", "hero", "heroine", "sidekick", "mentor", "love interest",
+  "bad guy", "good guy", "narrator", "detective", "victim", "suspect",
+  "guardian", "leader", "rival", "boss", "henchman", "accomplice",
+  "mastermind", "fugitive", "traitor", "spy", "assassin", "thief",
+  "servant", "companion", "ally", "enemy", "bystander", "bodyguard",
+  "mysterious man", "mysterious woman", "mysterious figure", "dark figure",
+  "old man", "old woman", "young man", "young woman", "child",
+  "unknown man", "unknown woman", "unnamed", "main character",
 ] as const;
 
 function isRoleLikeCharacterLabel(value: string) {
   const lower = value.trim().toLowerCase();
   if (!lower) return false;
-  return ROLE_ALIAS_TOKENS.some((token) => lower.includes(token));
+  if (ROLE_ALIAS_TOKENS.some((token) => lower.includes(token))) return true;
+  // Reject anything starting with "the" (e.g. "The Bad Guy", "The Ones")
+  if (/^the\s/i.test(lower)) return true;
+  // Reject generic descriptors (e.g. "Bad Guy", "Mysterious Stranger")
+  if (/^(a |an |some )/i.test(lower)) return true;
+  return false;
 }
 
 function isLikelyHumanName(name: string) {
@@ -731,8 +736,9 @@ function isLikelyHumanName(name: string) {
   if (!cleaned) return false;
   if (isRoleLikeCharacterLabel(cleaned)) return false;
   const words = cleaned.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 3) return false;
-  if (/^(new character|character \d+|unknown|unnamed|n\/a|the )/i.test(cleaned)) return false;
+  if (words.length < 1 || words.length > 3) return false;
+  if (/^(new character|character \d+|unknown|unnamed|n\/a|the |a |an )/i.test(cleaned)) return false;
+  // Each word must start with a capital letter and look like a name
   return words.every((word) => /^[A-Z][a-zA-Z'-]{1,24}$/.test(word));
 }
 
@@ -1240,6 +1246,7 @@ function NovelWorkspacePage() {
   const [arcExpandedDimension, setArcExpandedDimension] = useState<string | null>(null);
   const [arcRegenWarning, setArcRegenWarning] = useState(false);
   const [arcApplyingChoice, setArcApplyingChoice] = useState<number | null>(null);
+  const [profileOfferPopup, setProfileOfferPopup] = useState<{ characterIds: string[]; source: string } | null>(null);
 
   // ── Tutorial walkthrough ──
   type TutorialStep = { target: string; title: string; desc: string; onEnter?: () => void; onLeave?: () => void };
@@ -5383,6 +5390,26 @@ function NovelWorkspacePage() {
     setBatchProfileQueue([...characterIds]);
   }
 
+  function getUnprofiledCharacterIds(characterIds?: string[]): string[] {
+    const chars = novel?.storyBible.characters ?? [];
+    const candidates = characterIds
+      ? chars.filter((c) => characterIds.includes(c.id))
+      : chars;
+    return candidates
+      .filter((c) => {
+        const hasProfile = (c.appearance?.trim() || c.personality?.trim() || c.backstory?.trim() || c.goals?.trim());
+        return !hasProfile;
+      })
+      .map((c) => c.id);
+  }
+
+  function offerProfileGeneration(characterIds: string[], source: string) {
+    const unprofiled = getUnprofiledCharacterIds(characterIds);
+    if (unprofiled.length > 0) {
+      setProfileOfferPopup({ characterIds: unprofiled, source });
+    }
+  }
+
   async function runSummaryFieldAi(target: SummaryAiField, mode: string) {
     if (!novel) return;
     if (!ensureStoryAiReady()) {
@@ -5907,6 +5934,7 @@ function NovelWorkspacePage() {
     setPlanGenerateProgressIdx(null);
     setPlanGenerateTotal(0);
     let planGenFailed = false;
+    let planNewCharIds: string[] = [];
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
       const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
@@ -5948,7 +5976,7 @@ function NovelWorkspacePage() {
         "- Each synopsis must be 5-8 detailed sentences describing WHAT HAPPENS in order.",
         "- Synopses are internal drafting notes for AI, NOT reader-facing blurbs.",
         "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
-        "- Name specific characters (First Last) who appear in each chapter.",
+        "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Detective', 'The Killer', 'Mysterious Stranger', etc. Even if the story hasn't revealed someone's identity yet, give them a real name — the story can reveal it later but the AI needs a proper name to track them.",
         "- Name the specific location where each chapter takes place.",
         "- Each chapter should primarily use ONE location.",
         "- Include at least 1-2 key events per chapter.",
@@ -6026,6 +6054,7 @@ function NovelWorkspacePage() {
       setPlanGenerateTotal(allTitles.length);
 
       /* ── Resolve entities from batch results ── */
+      const existingCharIdsBefore = new Set((novel.storyBible.characters ?? []).map((c) => c.id));
       const characterByName = new Map<string, Novel["storyBible"]["characters"][number]>();
       const mergedCharacters = [...(novel.storyBible.characters ?? [])];
       mergedCharacters.forEach((character) => {
@@ -6226,6 +6255,11 @@ function NovelWorkspacePage() {
       }
       setPlanGenerateProgressIdx(null);
 
+      // Track new characters added during plan generation
+      planNewCharIds = mergedCharacters
+        .filter((c) => !existingCharIdsBefore.has(c.id))
+        .map((c) => c.id);
+
       /* ── Quick repair pass for any chapters that got truncated/empty ── */
       if (emptyChapterIndices.length > 0 && emptyChapterIndices.length <= 6) {
         for (const idx of emptyChapterIndices) {
@@ -6294,9 +6328,16 @@ function NovelWorkspacePage() {
       setStoryAiBusyAction(null);
       setPlanGenerateProgressIdx(null);
       setPlanGenerateTotal(0);
-      // Offer Arc Intelligence after successful generation
       if (!planGenFailed) {
-        setTimeout(() => setShowArcOfferPopup(true), 600);
+        // Give React a tick to settle after mutateNovel, then check for unprofiled characters
+        setTimeout(() => {
+          const unprofiled = getUnprofiledCharacterIds();
+          if (unprofiled.length > 0) {
+            setProfileOfferPopup({ characterIds: unprofiled, source: "Chapter Plan" });
+          } else {
+            setShowArcOfferPopup(true);
+          }
+        }, 800);
       }
     }
   }
@@ -6427,6 +6468,9 @@ function NovelWorkspacePage() {
       const allChapters = plan.chapters;
       const totalChapters = allChapters.length;
       const finalSynopses: string[] = new Array(totalChapters).fill("");
+      const allMentionedCharNames: string[] = [];
+
+      const existingCharNames = (novel.storyBible.characters ?? []).map((c) => c.name).filter(Boolean);
 
       const storyContext = [
         `Novel: "${novel.title}"`,
@@ -6436,7 +6480,8 @@ function NovelWorkspacePage() {
         `Chosen arc direction: "${choice.name}"`,
         `Arc description: ${choice.description}`,
         `Arc rationale: ${choice.rationale}`,
-      ].join("\n");
+        existingCharNames.length > 0 ? `Existing characters: ${existingCharNames.join(", ")}` : "",
+      ].filter(Boolean).join("\n");
 
       const allTitles = allChapters.map((ch, i) => `${i + 1}. ${ch.title}`).join("\n");
 
@@ -6466,13 +6511,15 @@ function NovelWorkspacePage() {
           "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
           "- Maintain or exceed the detail from the originals. Never shorten — expand and reshape.",
           "- Ensure continuity: each chapter leads naturally into the next.",
+          "- Every character must have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Killer'. Give every character a real name.",
+          "- Also return the full list of character names mentioned across all synopses in this batch.",
           "",
-          `Return JSON: { "synopses": [${batchSize} entries — one per chapter in this batch] }`,
-          `Exactly ${batchSize} entries. Each must be a detailed paragraph.`,
+          `Return JSON: { "synopses": [${batchSize} entries], "characters": ["First Last", ...] }`,
+          `Exactly ${batchSize} synopsis entries. Each must be a detailed paragraph.`,
         ].join("\n");
 
-        const tokenBudget = Math.max(1500, batchSize * 250);
-        const result = await requestOpenRouterJson<{ synopses?: string[] }>(
+        const tokenBudget = Math.max(1500, batchSize * 280);
+        const result = await requestOpenRouterJson<{ synopses?: string[]; characters?: string[] }>(
           batchPrompt,
           tokenBudget,
           { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.", timeoutMs: Math.max(240000, batchSize * 20000) },
@@ -6484,10 +6531,44 @@ function NovelWorkspacePage() {
           finalSynopses[batchStart + j] = (typeof syn === "string" && syn.trim()) ? syn.trim() : (allChapters[batchStart + j]?.synopsis || "");
         }
 
+        // Collect character names from this batch
+        if (Array.isArray(result?.characters)) {
+          result.characters.forEach((n) => { if (typeof n === "string" && n.trim()) allMentionedCharNames.push(n.trim()); });
+        }
+
         // Small delay between batches to avoid rate limits
         if (batchEnd < totalChapters) {
           await new Promise((r) => setTimeout(r, 2000));
         }
+      }
+
+      // Merge any new characters into Canon
+      const charByName = new Map<string, string>();
+      (novel.storyBible.characters ?? []).forEach((c) => {
+        if (c.name) charByName.set(normalizeLookup(c.name), c.id);
+        (c.otherNames || "").split(/[;,]/).map((a) => normalizeLookup(a)).filter(Boolean).forEach((k) => charByName.set(k, c.id));
+      });
+      const newCharIds: string[] = [];
+      const newChars = [...(novel.storyBible.characters ?? [])];
+      const uniqueNames = [...new Set(allMentionedCharNames.map((n) => n.trim()).filter(Boolean))];
+      for (const name of uniqueNames) {
+        if (isRoleLikeCharacterLabel(name) || !isLikelyHumanName(name)) continue;
+        const key = normalizeLookup(name);
+        if (charByName.has(key)) continue;
+        // Check first-name match
+        const first = key.split(/\s+/)[0];
+        const firstMatches = newChars.filter((c) => normalizeLookup(c.name || "").split(/\s+/)[0] === first);
+        if (firstMatches.length === 1) continue;
+        const newChar: typeof newChars[number] = {
+          id: createEntityId("char"), name, role: "Supporting", logline: "",
+          appearance: "", personality: "", goals: "", fears: "", backstory: "",
+          secrets: "", readerSecretHint: "", accent: "", speakingStyle: "",
+          reactionPattern: "", relationships: [], voiceNotes: "", tags: [],
+          pronouns: "", groups: "", otherNames: "",
+        };
+        newChars.push(newChar);
+        charByName.set(key, newChar.id);
+        newCharIds.push(newChar.id);
       }
 
       mutateNovel((current) => {
@@ -6510,18 +6591,30 @@ function NovelWorkspacePage() {
           chapters: updatedChapters,
           storyBible: {
             ...current.storyBible,
+            characters: newChars.length > (current.storyBible.characters ?? []).length ? newChars : current.storyBible.characters,
             bookPlan: {
               ...curPlan,
               chapters: updatedPlanChapters,
               arcAnalysis: {
                 ...analysis,
-              selectedChoiceIndex: choiceIndex,
+                selectedChoiceIndex: choiceIndex,
+              },
+              updatedAt: new Date().toISOString(),
             },
-            updatedAt: new Date().toISOString(),
           },
-        },
-      };
-    });
+        };
+      });
+
+      // After arc apply, offer to generate profiles for characters without them
+      // Use a timeout so React state has settled after mutateNovel
+      setTimeout(() => {
+        // New characters from arc have no profile, plus check existing ones
+        const existingUnprofiled = getUnprofiledCharacterIds();
+        const allUnprofiled = [...new Set([...newCharIds, ...existingUnprofiled])];
+        if (allUnprofiled.length > 0) {
+          setProfileOfferPopup({ characterIds: allUnprofiled, source: "Arc Intelligence" });
+        }
+      }, 1000);
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to apply arc.";
@@ -14335,6 +14428,110 @@ function NovelWorkspacePage() {
                 }}
               >
                 Generate Arc Paths
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profile generation offer popup (shown after plan/arc generation) ── */}
+      {profileOfferPopup && !aiOff && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10001,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          animation: "pw-fade-in 0.2s ease-out",
+        }}
+          onClick={() => { setProfileOfferPopup(null); if (profileOfferPopup.source === "Chapter Plan") setTimeout(() => setShowArcOfferPopup(true), 300); }}
+        >
+          <div
+            style={{
+              background: "var(--pw-bg)",
+              border: "1px solid var(--pw-border)",
+              borderRadius: 20, width: "92%", maxWidth: 440,
+              padding: "32px 28px 28px",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
+              textAlign: "center",
+              animation: "pw-content-in 0.25s ease-out",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
+              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <line x1="19" y1="8" x2="19" y2="14"/>
+                <line x1="22" y1="11" x2="16" y2="11"/>
+              </svg>
+            </div>
+
+            <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Generate Character Profiles?</h3>
+            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 14px", lineHeight: 1.5 }}>
+              {profileOfferPopup.source} found <strong>{profileOfferPopup.characterIds.length}</strong> character{profileOfferPopup.characterIds.length !== 1 ? "s" : ""} without profiles. Generate full profiles (appearance, personality, backstory, speaking style) so everything links together?
+            </p>
+
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 4, margin: "0 0 18px", maxHeight: 160, overflowY: "auto",
+              padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-border)",
+            }}>
+              {profileOfferPopup.characterIds.map((cid) => {
+                const ch = storyCharacters.find((c) => c.id === cid);
+                return ch ? (
+                  <div key={cid} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 11, fontWeight: 700, color: "var(--pw-accent, #a3e635)",
+                    }}>
+                      {(ch.name || "?")[0]}
+                    </div>
+                    <span style={{ fontWeight: 600 }}>{ch.name || "Unnamed"}</span>
+                    {ch.role && <span style={{ fontSize: 10, opacity: 0.5 }}>{ch.role}</span>}
+                  </div>
+                ) : null;
+              })}
+            </div>
+
+            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7, margin: "0 0 16px" }}>
+              This may take a few minutes depending on the number of characters.
+            </p>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileOfferPopup(null);
+                  if (profileOfferPopup.source === "Chapter Plan") setTimeout(() => setShowArcOfferPopup(true), 300);
+                }}
+                style={{
+                  padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10,
+                  background: "var(--pw-overlay-bg-hover)", color: "var(--pw-text)", border: "1px solid var(--pw-border)",
+                  cursor: "pointer",
+                }}
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = [...profileOfferPopup.characterIds];
+                  setProfileOfferPopup(null);
+                  void runAutoGenerateAllProfiles(ids);
+                  // After plan gen, also show arc offer when profiles finish
+                  // (handled naturally since profiles run in background)
+                }}
+                style={{
+                  padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
+                  background: "var(--pw-accent, #a3e635)", color: "#111", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                }}
+              >
+                Generate All Profiles
               </button>
             </div>
           </div>
