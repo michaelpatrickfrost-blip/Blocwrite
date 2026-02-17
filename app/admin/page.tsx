@@ -50,6 +50,16 @@ type Stats = {
   avgNovelsPerUser: number;
 };
 
+type AdminTab = "overview" | "guests" | "alerts" | "blog" | "reports";
+
+const TAB_META: { id: AdminTab; label: string; icon: string }[] = [
+  { id: "overview", label: "Overview", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1" },
+  { id: "guests", label: "Guests", icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
+  { id: "alerts", label: "Alerts", icon: "M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" },
+  { id: "blog", label: "Blog", icon: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" },
+  { id: "reports", label: "Reports", icon: "M18 20V10M12 20V4M6 20v-6" },
+];
+
 const C = {
   bg: "#111114",
   surface: "#1c1c20",
@@ -61,10 +71,18 @@ const C = {
   danger: "#ef4444",
   dangerDim: "rgba(239,68,68,0.1)",
   warn: "#f59e0b",
+  blue: "#3b82f6",
+  blueDim: "rgba(59,130,246,0.1)",
 };
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDateTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) + " at " +
+    d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatNumber(n: number) {
@@ -90,7 +108,24 @@ function timeUntil(iso: string): string {
   return `${days}d ${hrs % 24}h`;
 }
 
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, "").slice(0, 120);
+}
+
+function stripHtml(html: string): string {
+  const div = typeof document !== "undefined" ? document.createElement("div") : null;
+  if (!div) return html.replace(/<[^>]*>/g, " ");
+  div.innerHTML = html;
+  return div.textContent || div.innerText || "";
+}
+
+function wordCount(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length;
+}
+
 export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [stats, setStats] = useState<Stats | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +152,9 @@ export default function AdminPage() {
   const [blogMsg, setBlogMsg] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
   const [blogDeleteId, setBlogDeleteId] = useState<string | null>(null);
+  const [blogSearch, setBlogSearch] = useState("");
+  const [blogFilter, setBlogFilter] = useState<"all" | "published" | "scheduled" | "draft">("all");
+  const [publishConfirmId, setPublishConfirmId] = useState<string | null>(null);
 
   // ── Alert state ──
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
@@ -124,6 +162,13 @@ export default function AdminPage() {
   const [alertSchedule, setAlertSchedule] = useState("");
   const [alertSending, setAlertSending] = useState(false);
   const [alertStatusMsg, setAlertStatusMsg] = useState("");
+
+  // ── Live countdowns ──
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function loadData() {
     setLoading(true);
@@ -268,8 +313,15 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: postId, title: post.title, excerpt: post.excerpt, content: post.content, coverImage: post.coverImage, published: true }),
       });
+      setPublishConfirmId(null);
       void loadData();
     } catch { /* ignore */ }
+  }
+
+  async function resendAlert(originalAlert: AdminAlert) {
+    setAlertMsg(originalAlert.message);
+    setAlertSchedule("");
+    setAlertStatusMsg("Alert message loaded — adjust and send when ready.");
   }
 
   async function deleteBlogPost(id: string) {
@@ -378,6 +430,31 @@ export default function AdminPage() {
     border: `1px solid ${C.border}`, padding: "20px 22px",
   };
 
+  // ── Computed blog counts for tab badges ──
+  const now = new Date();
+  const scheduledPosts = blogPosts.filter((p) => p.published && p.publishedAt && new Date(p.publishedAt) > now);
+  const publishedPosts = blogPosts.filter((p) => p.published && (!p.publishedAt || new Date(p.publishedAt) <= now));
+  const draftPosts = blogPosts.filter((p) => !p.published);
+  const liveAlerts = alerts.filter((a) => a.active && new Date(a.scheduledFor) <= now);
+  const scheduledAlerts = alerts.filter((a) => a.active && new Date(a.scheduledFor) > now);
+  const pastAlerts = alerts.filter((a) => !a.active).slice(0, 10);
+
+  // Blog search/filter
+  const filteredPosts = blogPosts.filter((p) => {
+    if (blogSearch) {
+      const q = blogSearch.toLowerCase();
+      if (!p.title.toLowerCase().includes(q) && !(p.excerpt || "").toLowerCase().includes(q)) return false;
+    }
+    if (blogFilter === "published") return p.published && (!p.publishedAt || new Date(p.publishedAt) <= now);
+    if (blogFilter === "scheduled") return p.published && p.publishedAt && new Date(p.publishedAt) > now;
+    if (blogFilter === "draft") return !p.published;
+    return true;
+  });
+
+  // Editor word count
+  const editorText = typeof document !== "undefined" && editorRef.current ? stripHtml(editorRef.current.innerHTML) : "";
+  const editorWords = wordCount(editorText);
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* ── Top bar ── */}
@@ -400,7 +477,51 @@ export default function AdminPage() {
         </Link>
       </header>
 
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px" }}>
+      {/* ── Tab navigation ── */}
+      <nav style={{
+        display: "flex", gap: 2, padding: "0 28px",
+        background: "rgba(20,20,24,0.8)", borderBottom: `1px solid ${C.border}`,
+        overflowX: "auto",
+      }}>
+        {TAB_META.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const badge = tab.id === "alerts" && (liveAlerts.length + scheduledAlerts.length) > 0
+            ? liveAlerts.length + scheduledAlerts.length
+            : tab.id === "blog" && scheduledPosts.length > 0
+              ? scheduledPosts.length
+              : 0;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "12px 18px", fontSize: 13, fontWeight: isActive ? 700 : 500,
+                color: isActive ? C.accent : C.dim,
+                background: "transparent", border: "none", cursor: "pointer",
+                borderBottom: isActive ? `2px solid ${C.accent}` : "2px solid transparent",
+                transition: "all 0.15s", whiteSpace: "nowrap", position: "relative",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={tab.icon}/></svg>
+              {tab.label}
+              {badge > 0 && (
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  minWidth: 18, height: 18, borderRadius: 9, fontSize: 10, fontWeight: 800,
+                  background: tab.id === "alerts" ? C.danger : C.blue,
+                  color: "#fff", padding: "0 5px",
+                }}>
+                  {badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
 
         {loading && (
           <p style={{ textAlign: "center", color: C.dim, padding: "60px 0" }}>Loading dashboard...</p>
@@ -408,258 +529,196 @@ export default function AdminPage() {
 
         {!loading && stats && (
           <>
-            {/* ══════════ Section 1: Stats Cards ══════════ */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 32 }}>
-              {[
-                { label: "Registered Users", value: stats.userCount, icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
-                { label: "Active Subscriptions", value: stats.activeSubCount + stats.trialSubCount, icon: "M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" },
-                { label: "Guest Users", value: stats.guestCount, icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4-4v2M12 7a4 4 0 100-8 4 4 0 000 8z" },
-                { label: "Total Novels", value: stats.totalNovels, icon: "M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" },
-                { label: "Total Words", value: formatNumber(stats.totalWords), icon: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" },
-                { label: "Avg Novels/User", value: stats.avgNovelsPerUser, icon: "M18 20V10M12 20V4M6 20v-6" },
-              ].map((card) => (
-                <div key={card.label} style={cardStyle}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 8, background: C.accentDim,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={card.icon}/></svg>
-                    </div>
-                    <span style={{ fontSize: 11, color: C.dim, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{card.label}</span>
-                  </div>
-                  <div style={{ fontSize: 28, fontWeight: 800 }}>{card.value}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* ══════════ Section 2: Guest Access Manager ══════════ */}
-            <div style={{ ...cardStyle, marginBottom: 32 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Guest Access Manager</h2>
-              <p style={{ fontSize: 12, color: C.dim, margin: "0 0 20px" }}>
-                Grant users free access to the studio without a subscription.
-              </p>
-
-              {/* Add guest form */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ flex: "1 1 200px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Email</label>
-                  <input
-                    type="email"
-                    placeholder="user@example.com"
-                    value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
-                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div style={{ flex: "0 0 140px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Duration</label>
-                  <select
-                    value={guestDuration}
-                    onChange={(e) => setGuestDuration(e.target.value as "7days" | "1month" | "forever")}
-                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box", cursor: "pointer" }}
-                  >
-                    <option value="7days">7 Days</option>
-                    <option value="1month">1 Month</option>
-                    <option value="forever">Forever</option>
-                  </select>
-                </div>
-                <div style={{ flex: "0 0 140px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Password (new users)</label>
-                  <input
-                    type="text"
-                    placeholder="Optional"
-                    value={guestPassword}
-                    onChange={(e) => setGuestPassword(e.target.value)}
-                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void addGuest()}
-                  disabled={addingGuest || !guestEmail.trim()}
-                  style={{
-                    padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                    background: C.accent, color: "#111", border: "none", cursor: "pointer",
-                    opacity: addingGuest ? 0.6 : 1,
-                  }}
-                >
-                  {addingGuest ? "Adding..." : "Grant Access"}
-                </button>
-              </div>
-              {guestMsg && (
-                <p style={{ fontSize: 12, color: guestMsg.includes("granted") ? C.accent : C.danger, margin: "-12px 0 16px" }}>{guestMsg}</p>
-              )}
-
-              {/* Guest list */}
-              {guests.length === 0 ? (
-                <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "20px 0" }}>No guest users yet.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {/* Header */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, padding: "0 8px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.dim }}>
-                    <span>Email</span>
-                    <span>Duration</span>
-                    <span>Expires</span>
-                    <span>Status</span>
-                    <span></span>
-                  </div>
-                  {guests.map((g) => (
-                    <div key={g.id} style={{
-                      display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8,
-                      alignItems: "center", padding: "10px 8px", borderRadius: 8,
-                      background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{g.email}</div>
-                        {g.name && <div style={{ fontSize: 11, color: C.dim }}>{g.name}</div>}
+            {/* ══════════ OVERVIEW TAB ══════════ */}
+            {activeTab === "overview" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
+                  {[
+                    { label: "Registered Users", value: stats.userCount, icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
+                    { label: "Active Subscriptions", value: stats.activeSubCount + stats.trialSubCount, icon: "M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" },
+                    { label: "Guest Users", value: stats.guestCount, icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4-4v2M12 7a4 4 0 100-8 4 4 0 000 8z" },
+                    { label: "Total Novels", value: stats.totalNovels, icon: "M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" },
+                    { label: "Total Words", value: formatNumber(stats.totalWords), icon: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" },
+                    { label: "Avg Novels/User", value: stats.avgNovelsPerUser, icon: "M18 20V10M12 20V4M6 20v-6" },
+                  ].map((card) => (
+                    <div key={card.label} style={cardStyle}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 8, background: C.accentDim,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={card.icon}/></svg>
+                        </div>
+                        <span style={{ fontSize: 11, color: C.dim, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{card.label}</span>
                       </div>
-                      <span style={{ fontSize: 12, color: C.dim }}>
-                        {g.duration === "7days" ? "7 Days" : g.duration === "1month" ? "1 Month" : "Forever"}
-                      </span>
-                      <span style={{ fontSize: 12, color: C.dim }}>
-                        {g.expiresAt ? formatDate(g.expiresAt) : "Never"}
-                      </span>
-                      <span style={{
-                        display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-                        background: g.status === "active" ? C.accentDim : C.dangerDim,
-                        color: g.status === "active" ? C.accent : C.danger,
-                      }}>
-                        {g.status === "active" ? "Active" : "Expired"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPendingDeleteId(g.id)}
-                        style={{
-                          padding: "5px 10px", borderRadius: 6, fontSize: 11,
-                          background: C.dangerDim, color: C.danger,
-                          border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer",
-                        }}
-                      >
-                        Revoke
-                      </button>
+                      <div style={{ fontSize: 28, fontWeight: 800 }}>{card.value}</div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
 
-            {/* ══════════ Section 3: Push Alerts ══════════ */}
-            <div style={{ ...cardStyle, marginBottom: 32 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8, background: "rgba(239,68,68,0.12)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-                </div>
-                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alerts</h2>
-              </div>
-              <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
-                Send a notification to all users. Shows for 15 seconds then auto-dismisses. Only the latest active alert is shown.
-              </p>
-
-              {/* Create alert form */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
-                <div style={{ flex: "1 1 260px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Message</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Scheduled maintenance at 2am UTC tonight..."
-                    value={alertMsg}
-                    onChange={(e) => setAlertMsg(e.target.value)}
-                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                    maxLength={500}
-                  />
-                </div>
-                <div style={{ flex: "0 0 200px" }}>
-                  <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Show at (leave blank = now)</label>
-                  <input
-                    type="datetime-local"
-                    value={alertSchedule}
-                    onChange={(e) => setAlertSchedule(e.target.value)}
-                    min={toLocalDatetimeStr(new Date().toISOString())}
-                    style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void sendAlert()}
-                  disabled={alertSending || !alertMsg.trim()}
-                  style={{
-                    padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                    background: alertSchedule ? "#3b82f6" : C.danger,
-                    color: "#fff", border: "none", cursor: "pointer",
-                    opacity: alertSending ? 0.6 : 1,
-                  }}
-                >
-                  {alertSending ? "Sending..." : alertSchedule ? "Schedule Alert" : "Send Now"}
-                </button>
-              </div>
-              {alertStatusMsg && (
-                <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") || alertStatusMsg.includes("scheduled") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>
-              )}
-
-              {/* Alert list split into Live vs Scheduled */}
-              {(() => {
-                const now = new Date();
-                const activeAlerts = alerts.filter((a) => a.active);
-                const liveAlerts = activeAlerts.filter((a) => new Date(a.scheduledFor) <= now);
-                const scheduledAlerts = activeAlerts.filter((a) => new Date(a.scheduledFor) > now);
-                const pastAlerts = alerts.filter((a) => !a.active).slice(0, 5);
-
-                if (activeAlerts.length === 0 && pastAlerts.length === 0) return null;
-
-                return (
-                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
-                    {/* Live alerts */}
-                    {liveAlerts.length > 0 && (
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.danger, animation: "alertPulse 2s ease-in-out infinite" }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.danger }}>
-                            Live Now ({liveAlerts.length})
-                          </span>
-                        </div>
-                        {liveAlerts.map((a) => (
-                          <div key={a.id} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "10px 12px", borderRadius: 8, marginBottom: 6,
-                            background: C.dangerDim, border: `1px solid rgba(239,68,68,0.2)`,
-                          }}>
-                            <div style={{ flex: 1 }}>
-                              <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
-                              <p style={{ fontSize: 10, color: C.dim, margin: "3px 0 0" }}>
-                                Sent {formatDate(a.scheduledFor)} — auto-expires after 15 seconds for each user
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => void dismissAlert(a.id)}
-                              style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.15)", color: C.danger, border: `1px solid rgba(239,68,68,0.25)`, cursor: "pointer", flexShrink: 0 }}
-                            >
-                              Deactivate
-                            </button>
+                {/* Quick status panels */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  {/* Upcoming scheduled content */}
+                  <div style={cardStyle}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Scheduled Content
+                    </h3>
+                    {scheduledPosts.length === 0 && scheduledAlerts.length === 0 ? (
+                      <p style={{ fontSize: 12, color: C.dim }}>No content scheduled.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {scheduledPosts.map((p) => (
+                          <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                            <span style={{ fontWeight: 600 }}>{p.title}</span>
+                            <span style={{ color: "#60a5fa", fontWeight: 600, fontSize: 11 }}>in {timeUntil(p.publishedAt!)}</span>
+                          </div>
+                        ))}
+                        {scheduledAlerts.map((a) => (
+                          <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, opacity: 0.8 }}>{a.message.slice(0, 40)}{a.message.length > 40 ? "..." : ""}</span>
+                            <span style={{ color: C.danger, fontWeight: 600, fontSize: 11 }}>Alert in {timeUntil(a.scheduledFor)}</span>
                           </div>
                         ))}
                       </div>
                     )}
+                  </div>
 
-                    {/* Scheduled alerts */}
+                  {/* Live content */}
+                  <div style={cardStyle}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent }} />
+                      Live Now
+                    </h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.dim }}>Published blog posts</span>
+                        <span style={{ fontWeight: 700 }}>{publishedPosts.length}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.dim }}>Active alerts</span>
+                        <span style={{ fontWeight: 700, color: liveAlerts.length > 0 ? C.danger : C.text }}>{liveAlerts.length}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.dim }}>Draft posts</span>
+                        <span style={{ fontWeight: 700, color: C.warn }}>{draftPosts.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ══════════ GUESTS TAB ══════════ */}
+            {activeTab === "guests" && (
+              <div style={cardStyle}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Guest Access Manager</h2>
+                <p style={{ fontSize: 12, color: C.dim, margin: "0 0 20px" }}>
+                  Grant users free access to the studio without a subscription.
+                </p>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: "1 1 200px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Email</label>
+                    <input type="email" placeholder="user@example.com" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <div style={{ flex: "0 0 140px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Duration</label>
+                    <select value={guestDuration} onChange={(e) => setGuestDuration(e.target.value as "7days" | "1month" | "forever")} style={{ ...inputStyle, width: "100%", boxSizing: "border-box", cursor: "pointer" }}>
+                      <option value="7days">7 Days</option><option value="1month">1 Month</option><option value="forever">Forever</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: "0 0 140px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Password (new users)</label>
+                    <input type="text" placeholder="Optional" value={guestPassword} onChange={(e) => setGuestPassword(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <button type="button" onClick={() => void addGuest()} disabled={addingGuest || !guestEmail.trim()} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8, background: C.accent, color: "#111", border: "none", cursor: "pointer", opacity: addingGuest ? 0.6 : 1 }}>
+                    {addingGuest ? "Adding..." : "Grant Access"}
+                  </button>
+                </div>
+                {guestMsg && <p style={{ fontSize: 12, color: guestMsg.includes("granted") ? C.accent : C.danger, margin: "-12px 0 16px" }}>{guestMsg}</p>}
+
+                {guests.length === 0 ? (
+                  <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "20px 0" }}>No guest users yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, padding: "0 8px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.dim }}>
+                      <span>Email</span><span>Duration</span><span>Expires</span><span>Status</span><span></span>
+                    </div>
+                    {guests.map((g) => (
+                      <div key={g.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{g.email}</div>
+                          {g.name && <div style={{ fontSize: 11, color: C.dim }}>{g.name}</div>}
+                        </div>
+                        <span style={{ fontSize: 12, color: C.dim }}>{g.duration === "7days" ? "7 Days" : g.duration === "1month" ? "1 Month" : "Forever"}</span>
+                        <span style={{ fontSize: 12, color: C.dim }}>{g.expiresAt ? formatDate(g.expiresAt) : "Never"}</span>
+                        <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: g.status === "active" ? C.accentDim : C.dangerDim, color: g.status === "active" ? C.accent : C.danger }}>
+                          {g.status === "active" ? "Active" : "Expired"}
+                        </span>
+                        <button type="button" onClick={() => setPendingDeleteId(g.id)} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>Revoke</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ══════════ ALERTS TAB ══════════ */}
+            {activeTab === "alerts" && (
+              <div style={cardStyle}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(239,68,68,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                  </div>
+                  <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Push Alerts</h2>
+                </div>
+                <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
+                  Send a notification to all users. Shows for 15 seconds then auto-dismisses. Scheduled alerts go live automatically at the set time, even when you&apos;re not logged in.
+                </p>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                  <div style={{ flex: "1 1 260px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Message</label>
+                    <input type="text" placeholder="e.g. Scheduled maintenance at 2am UTC tonight..." value={alertMsg} onChange={(e) => setAlertMsg(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} maxLength={500} />
+                  </div>
+                  <div style={{ flex: "0 0 200px" }}>
+                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Show at (leave blank = now)</label>
+                    <input type="datetime-local" value={alertSchedule} onChange={(e) => setAlertSchedule(e.target.value)} min={toLocalDatetimeStr(new Date().toISOString())} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <button type="button" onClick={() => void sendAlert()} disabled={alertSending || !alertMsg.trim()} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8, background: alertSchedule ? C.blue : C.danger, color: "#fff", border: "none", cursor: "pointer", opacity: alertSending ? 0.6 : 1 }}>
+                    {alertSending ? "Sending..." : alertSchedule ? "Schedule Alert" : "Send Now"}
+                  </button>
+                </div>
+                {alertStatusMsg && <p style={{ fontSize: 12, color: alertStatusMsg.includes("sent") || alertStatusMsg.includes("scheduled") || alertStatusMsg.includes("loaded") ? C.accent : C.danger, margin: "0 0 10px" }}>{alertStatusMsg}</p>}
+
+                {(liveAlerts.length > 0 || scheduledAlerts.length > 0 || pastAlerts.length > 0) && (
+                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+                    {liveAlerts.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.danger, animation: "alertPulse 2s ease-in-out infinite" }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.danger }}>Live Now ({liveAlerts.length})</span>
+                        </div>
+                        {liveAlerts.map((a) => (
+                          <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 8, marginBottom: 6, background: C.dangerDim, border: `1px solid rgba(239,68,68,0.2)` }}>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
+                              <p style={{ fontSize: 10, color: C.dim, margin: "3px 0 0" }}>Sent {formatDateTime(a.scheduledFor)} — auto-expires after 15s per user</p>
+                            </div>
+                            <button type="button" onClick={() => void dismissAlert(a.id)} style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.15)", color: C.danger, border: `1px solid rgba(239,68,68,0.25)`, cursor: "pointer", flexShrink: 0 }}>Deactivate</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {scheduledAlerts.length > 0 && (
                       <div style={{ marginBottom: 16 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#60a5fa" }}>
-                            Scheduled ({scheduledAlerts.length})
-                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#60a5fa" }}>Scheduled ({scheduledAlerts.length})</span>
                         </div>
                         {scheduledAlerts.map((a) => (
-                          <div key={a.id} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "10px 12px", borderRadius: 8, marginBottom: 6,
-                            background: "rgba(59,130,246,0.06)", border: `1px solid rgba(59,130,246,0.15)`,
-                          }}>
+                          <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 8, marginBottom: 6, background: C.blueDim, border: `1px solid rgba(59,130,246,0.15)` }}>
                             <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 13, margin: 0, fontWeight: 600 }}>{a.message}</p>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
@@ -667,367 +726,238 @@ export default function AdminPage() {
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                   in {timeUntil(a.scheduledFor)}
                                 </span>
-                                <span style={{ fontSize: 10, color: C.dim }}>{formatDate(a.scheduledFor)}</span>
+                                <span style={{ fontSize: 10, color: C.dim }}>{formatDateTime(a.scheduledFor)}</span>
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => void dismissAlert(a.id)}
-                              style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }}
-                            >
-                              Cancel
-                            </button>
+                            <button type="button" onClick={() => void dismissAlert(a.id)} style={{ padding: "5px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }}>Cancel</button>
                           </div>
                         ))}
                       </div>
                     )}
-
-                    {/* Past (deactivated) alerts */}
                     {pastAlerts.length > 0 && (
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                           <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.dim, opacity: 0.4 }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.dim }}>
-                            Past ({pastAlerts.length})
-                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.dim }}>Past ({pastAlerts.length})</span>
                         </div>
                         {pastAlerts.map((a) => (
-                          <div key={a.id} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "8px 12px", borderRadius: 8, marginBottom: 4,
-                            background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, opacity: 0.6,
-                          }}>
-                            <div>
+                          <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderRadius: 8, marginBottom: 4, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, opacity: 0.6 }}>
+                            <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 12, margin: 0, fontWeight: 500 }}>{a.message}</p>
-                              <p style={{ fontSize: 10, color: C.dim, margin: "2px 0 0" }}>{formatDate(a.scheduledFor)}</p>
+                              <p style={{ fontSize: 10, color: C.dim, margin: "2px 0 0" }}>{formatDateTime(a.scheduledFor)}</p>
                             </div>
-                            <span style={{ fontSize: 10, color: C.dim, fontWeight: 600 }}>Expired</span>
+                            <button type="button" onClick={() => void resendAlert(a)} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }} title="Load this message into the form">Re-use</button>
                           </div>
                         ))}
                       </div>
                     )}
-
                     <style>{`@keyframes alertPulse { 0%,100% { opacity:1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { opacity:0.6; box-shadow: 0 0 0 4px rgba(239,68,68,0); } }`}</style>
                   </div>
-                );
-              })()}
-            </div>
-
-            {/* ══════════ Section 4: Blog Manager ══════════ */}
-            <div style={{ ...cardStyle, marginBottom: 32 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 8, background: C.accentDim,
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  </div>
-                  <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>News / Blog</h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={startNewPost}
-                  style={{ padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}
-                >
-                  + New Post
-                </button>
-              </div>
-              <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
-                Write blog posts that appear on the /news page of your website.
-              </p>
-
-              {/* ─── Editor ─── */}
-              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                  <div style={{ flex: "1 1 300px" }}>
-                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Title</label>
-                    <input
-                      type="text"
-                      placeholder="Post title"
-                      value={blogTitle}
-                      onChange={(e) => setBlogTitle(e.target.value)}
-                      style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                    />
-                  </div>
-                  <div style={{ flex: "1 1 200px" }}>
-                    <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Excerpt (optional)</label>
-                    <input
-                      type="text"
-                      placeholder="Short summary for the listing"
-                      value={blogExcerpt}
-                      onChange={(e) => setBlogExcerpt(e.target.value)}
-                      style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                    />
-                  </div>
-                </div>
-
-                {/* Cover image */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <button type="button" onClick={() => void handleCoverUpload()} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
-                    {blogCover ? "Change Cover Image" : "Upload Cover Image"}
-                  </button>
-                  {blogCover && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <img src={blogCover} alt="cover" style={{ height: 40, borderRadius: 6, border: `1px solid ${C.border}` }} />
-                      <button type="button" onClick={() => setBlogCover(null)} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, background: "transparent", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Remove</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Rich text toolbar */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: `1px solid ${C.border}` }}>
-                  {[
-                    { label: "B", cmd: "bold", style: { fontWeight: 800 } },
-                    { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
-                    { label: "U", cmd: "underline", style: { textDecoration: "underline" } },
-                    { label: "H1", cmd: "formatBlock", val: "h2", style: { fontWeight: 800, fontSize: 11 } },
-                    { label: "H2", cmd: "formatBlock", val: "h3", style: { fontWeight: 700, fontSize: 11 } },
-                    { label: "• List", cmd: "insertUnorderedList", style: { fontSize: 11 } },
-                    { label: "1. List", cmd: "insertOrderedList", style: { fontSize: 11 } },
-                    { label: "Quote", cmd: "formatBlock", val: "blockquote", style: { fontSize: 11 } },
-                  ].map((btn) => (
-                    <button
-                      key={btn.label}
-                      type="button"
-                      onClick={() => execCmd(btn.cmd, btn.val)}
-                      style={{
-                        padding: "4px 10px", borderRadius: 6, fontSize: 12,
-                        background: "rgba(255,255,255,0.06)", color: C.text,
-                        border: `1px solid ${C.border}`, cursor: "pointer", ...btn.style,
-                      }}
-                    >
-                      {btn.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => void handleImageUpload()}
-                    style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}
-                  >
-                    📷 Image
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = prompt("Enter link URL:");
-                      if (url) execCmd("createLink", url);
-                    }}
-                    style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}
-                  >
-                    🔗 Link
-                  </button>
-                </div>
-
-                {/* Content editable area */}
-                <div
-                  ref={editorRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  style={{
-                    minHeight: 200, maxHeight: 500, overflowY: "auto",
-                    padding: "14px 16px", borderRadius: 10,
-                    border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)",
-                    color: C.text, fontSize: 14, lineHeight: 1.7, outline: "none",
-                  }}
-                />
-
-                {/* Publish mode radios */}
-                <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                  {([
-                    { mode: "draft" as BlogPublishMode, label: "Save as Draft", desc: "Not visible to users" },
-                    { mode: "publish" as BlogPublishMode, label: "Publish Now", desc: "Goes live immediately" },
-                    { mode: "schedule" as BlogPublishMode, label: "Schedule", desc: "Publish at a future date" },
-                  ]).map(({ mode, label, desc }) => (
-                    <label key={mode} style={{
-                      display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600,
-                      padding: "8px 14px", borderRadius: 8, cursor: "pointer",
-                      background: blogPublishMode === mode ? (mode === "publish" ? C.accentDim : mode === "schedule" ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.06)") : "transparent",
-                      border: `1px solid ${blogPublishMode === mode ? (mode === "publish" ? "rgba(163,230,53,0.3)" : mode === "schedule" ? "rgba(59,130,246,0.3)" : C.border) : C.border}`,
-                      color: blogPublishMode === mode ? (mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text) : C.dim,
-                      transition: "all 0.15s",
-                    }}>
-                      <input
-                        type="radio"
-                        name="blogPublishMode"
-                        checked={blogPublishMode === mode}
-                        onChange={() => setBlogPublishMode(mode)}
-                        style={{ accentColor: mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text, margin: 0 }}
-                      />
-                      <span>{label}</span>
-                      <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>{desc}</span>
-                    </label>
-                  ))}
-                </div>
-
-                {/* Schedule datetime picker */}
-                {blogPublishMode === "schedule" && (
-                  <div style={{ marginTop: 10 }}>
-                    <label style={{ display: "block", fontSize: 11, color: "#60a5fa", marginBottom: 4, fontWeight: 600 }}>
-                      Publish date & time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={blogScheduleDate}
-                      onChange={(e) => setBlogScheduleDate(e.target.value)}
-                      min={toLocalDatetimeStr(new Date().toISOString())}
-                      style={{ ...inputStyle, maxWidth: 240, boxSizing: "border-box" }}
-                    />
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
-                  <div style={{ flex: 1 }} />
-                  {blogEditing && (
-                    <button type="button" onClick={startNewPost} style={{ padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>
-                      Cancel Edit
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void saveBlogPost()}
-                    disabled={blogSaving || !blogTitle.trim()}
-                    style={{
-                      padding: "8px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                      background: blogPublishMode === "schedule" ? "#3b82f6" : C.accent,
-                      color: blogPublishMode === "schedule" ? "#fff" : "#111",
-                      border: "none", cursor: "pointer",
-                      opacity: blogSaving ? 0.6 : 1,
-                    }}
-                  >
-                    {blogSaving
-                      ? "Saving..."
-                      : blogPublishMode === "schedule"
-                        ? (blogEditing ? "Update Schedule" : "Schedule Post")
-                        : blogPublishMode === "publish"
-                          ? (blogEditing ? "Update & Publish" : "Publish Post")
-                          : (blogEditing ? "Update Draft" : "Save Draft")}
-                  </button>
-                </div>
-                {blogMsg && (
-                  <p style={{ fontSize: 12, color: blogMsg.includes("!") ? C.accent : C.danger, margin: "8px 0 0" }}>{blogMsg}</p>
                 )}
               </div>
+            )}
 
-              {/* ─── Post list split by status ─── */}
-              {(() => {
-                const now = new Date();
-                const scheduled = blogPosts.filter((p) => p.published && p.publishedAt && new Date(p.publishedAt) > now);
-                const published = blogPosts.filter((p) => p.published && (!p.publishedAt || new Date(p.publishedAt) <= now));
-                const drafts = blogPosts.filter((p) => !p.published);
-
-                const renderPostRow = (post: BlogPost, statusBadge: React.ReactNode) => (
-                  <div key={post.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, marginBottom: 6 }}>
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      {post.coverImage && <img src={post.coverImage} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}`, flexShrink: 0 }} />}
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.title}</p>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                          {statusBadge}
-                          <span style={{ fontSize: 11, color: C.dim }}>{formatDate(post.createdAt)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                      {/* Publish now action for scheduled posts */}
-                      {post.published && post.publishedAt && new Date(post.publishedAt) > now && (
-                        <button type="button" onClick={() => void publishPostNow(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}>
-                          Publish Now
-                        </button>
-                      )}
-                      <button type="button" onClick={() => editPost(post)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
-                        Edit
-                      </button>
-                      <button type="button" onClick={() => setBlogDeleteId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-
-                if (blogPosts.length === 0) {
-                  return <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "16px 0" }}>No posts yet. Write your first one above.</p>;
-                }
-
-                return (
-                  <>
-                    {/* Scheduled */}
-                    {scheduled.length > 0 && (
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#60a5fa" }}>
-                            Scheduled ({scheduled.length})
-                          </span>
-                        </div>
-                        {scheduled.map((post) => renderPostRow(post,
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(59,130,246,0.1)", color: "#60a5fa" }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            in {timeUntil(post.publishedAt!)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Published */}
-                    {published.length > 0 && (
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.accent }}>
-                            Published ({published.length})
-                          </span>
-                        </div>
-                        {published.map((post) => renderPostRow(post,
-                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: C.accentDim, color: C.accent }}>
-                            Live
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Drafts */}
-                    {drafts.length > 0 && (
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.warn, opacity: 0.6 }} />
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.warn }}>
-                            Drafts ({drafts.length})
-                          </span>
-                        </div>
-                        {drafts.map((post) => renderPostRow(post,
-                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(245,158,11,0.1)", color: C.warn }}>
-                            Draft
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-
-            {/* ══════════ Section 5: Reporting ══════════ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              {/* Genre Breakdown */}
+            {/* ══════════ BLOG TAB ══════════ */}
+            {activeTab === "blog" && (
               <div style={cardStyle}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Genre Breakdown</h3>
-                {stats.genreBreakdown.length === 0 ? (
-                  <p style={{ fontSize: 12, color: C.dim }}>No genre data yet.</p>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: C.accentDim, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </div>
+                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>News / Blog</h2>
+                  </div>
+                  <button type="button" onClick={startNewPost} style={{ padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}>
+                    + New Post
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, color: C.dim, margin: "0 0 16px" }}>
+                  Write blog posts for the /news page. Scheduled posts go live automatically at the set time.
+                </p>
+
+                {/* ─── Editor ─── */}
+                <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                    <div style={{ flex: "1 1 300px" }}>
+                      <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Title</label>
+                      <input type="text" placeholder="Post title" value={blogTitle} onChange={(e) => setBlogTitle(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ flex: "1 1 200px" }}>
+                      <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Excerpt (optional)</label>
+                      <input type="text" placeholder="Short summary for the listing" value={blogExcerpt} onChange={(e) => setBlogExcerpt(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                  </div>
+
+                  {/* Slug preview */}
+                  {blogTitle.trim() && (
+                    <div style={{ fontSize: 11, color: C.dim, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 600 }}>URL:</span>
+                      <code style={{ background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: 4, fontSize: 11, color: "#60a5fa" }}>
+                        /news/{slugify(blogTitle.trim())}
+                      </code>
+                    </div>
+                  )}
+
+                  {/* Cover image */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <button type="button" onClick={() => void handleCoverUpload()} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                      {blogCover ? "Change Cover" : "Upload Cover"}
+                    </button>
+                    {blogCover && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <img src={blogCover} alt="cover" style={{ height: 40, borderRadius: 6, border: `1px solid ${C.border}` }} />
+                        <button type="button" onClick={() => setBlogCover(null)} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, background: "transparent", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Remove</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rich text toolbar */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                    {[
+                      { label: "B", cmd: "bold", style: { fontWeight: 800 } },
+                      { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
+                      { label: "U", cmd: "underline", style: { textDecoration: "underline" } },
+                      { label: "H1", cmd: "formatBlock", val: "h2", style: { fontWeight: 800, fontSize: 11 } },
+                      { label: "H2", cmd: "formatBlock", val: "h3", style: { fontWeight: 700, fontSize: 11 } },
+                      { label: "List", cmd: "insertUnorderedList", style: { fontSize: 11 } },
+                      { label: "1. List", cmd: "insertOrderedList", style: { fontSize: 11 } },
+                      { label: "Quote", cmd: "formatBlock", val: "blockquote", style: { fontSize: 11 } },
+                    ].map((btn) => (
+                      <button key={btn.label} type="button" onClick={() => execCmd(btn.cmd, btn.val)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 12, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer", ...btn.style }}>{btn.label}</button>
+                    ))}
+                    <button type="button" onClick={() => void handleImageUpload()} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>Image</button>
+                    <button type="button" onClick={() => { const url = prompt("Enter link URL:"); if (url) execCmd("createLink", url); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>Link</button>
+                  </div>
+
+                  <div ref={editorRef} contentEditable suppressContentEditableWarning style={{ minHeight: 200, maxHeight: 500, overflowY: "auto", padding: "14px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)", color: C.text, fontSize: 14, lineHeight: 1.7, outline: "none" }} />
+
+                  {/* Word count */}
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                    <span style={{ fontSize: 10, color: C.dim }}>{editorWords > 0 ? `${editorWords} word${editorWords !== 1 ? "s" : ""}` : ""}</span>
+                    {blogEditing && <span style={{ fontSize: 10, color: C.dim }}>Editing: {blogEditing.title}</span>}
+                  </div>
+
+                  {/* Publish mode radios */}
+                  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                    {([
+                      { mode: "draft" as BlogPublishMode, label: "Save as Draft", desc: "Not visible" },
+                      { mode: "publish" as BlogPublishMode, label: "Publish Now", desc: "Goes live" },
+                      { mode: "schedule" as BlogPublishMode, label: "Schedule", desc: "Future date" },
+                    ]).map(({ mode, label, desc }) => (
+                      <label key={mode} style={{
+                        display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600,
+                        padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                        background: blogPublishMode === mode ? (mode === "publish" ? C.accentDim : mode === "schedule" ? C.blueDim : "rgba(255,255,255,0.06)") : "transparent",
+                        border: `1px solid ${blogPublishMode === mode ? (mode === "publish" ? "rgba(163,230,53,0.3)" : mode === "schedule" ? "rgba(59,130,246,0.3)" : C.border) : C.border}`,
+                        color: blogPublishMode === mode ? (mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text) : C.dim,
+                        transition: "all 0.15s",
+                      }}>
+                        <input type="radio" name="blogPublishMode" checked={blogPublishMode === mode} onChange={() => setBlogPublishMode(mode)} style={{ accentColor: mode === "publish" ? C.accent : mode === "schedule" ? "#60a5fa" : C.text, margin: 0 }} />
+                        <span>{label}</span>
+                        <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>{desc}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {blogPublishMode === "schedule" && (
+                    <div style={{ marginTop: 10 }}>
+                      <label style={{ display: "block", fontSize: 11, color: "#60a5fa", marginBottom: 4, fontWeight: 600 }}>Publish date & time</label>
+                      <input type="datetime-local" value={blogScheduleDate} onChange={(e) => setBlogScheduleDate(e.target.value)} min={toLocalDatetimeStr(new Date().toISOString())} style={{ ...inputStyle, maxWidth: 240, boxSizing: "border-box" }} />
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+                    <div style={{ flex: 1 }} />
+                    {blogEditing && (
+                      <button type="button" onClick={startNewPost} style={{ padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel Edit</button>
+                    )}
+                    <button type="button" onClick={() => void saveBlogPost()} disabled={blogSaving || !blogTitle.trim()} style={{
+                      padding: "8px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8,
+                      background: blogPublishMode === "schedule" ? C.blue : C.accent,
+                      color: blogPublishMode === "schedule" ? "#fff" : "#111",
+                      border: "none", cursor: "pointer", opacity: blogSaving ? 0.6 : 1,
+                    }}>
+                      {blogSaving ? "Saving..." : blogPublishMode === "schedule" ? (blogEditing ? "Update Schedule" : "Schedule Post") : blogPublishMode === "publish" ? (blogEditing ? "Update & Publish" : "Publish Post") : (blogEditing ? "Update Draft" : "Save Draft")}
+                    </button>
+                  </div>
+                  {blogMsg && <p style={{ fontSize: 12, color: blogMsg.includes("!") ? C.accent : C.danger, margin: "8px 0 0" }}>{blogMsg}</p>}
+                </div>
+
+                {/* ─── Search & filter bar ─── */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    placeholder="Search posts..."
+                    value={blogSearch}
+                    onChange={(e) => setBlogSearch(e.target.value)}
+                    style={{ ...inputStyle, flex: "1 1 200px", boxSizing: "border-box" }}
+                  />
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {(["all", "published", "scheduled", "draft"] as const).map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setBlogFilter(f)}
+                        style={{
+                          padding: "6px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                          background: blogFilter === f ? "rgba(255,255,255,0.1)" : "transparent",
+                          color: blogFilter === f ? C.text : C.dim,
+                          border: `1px solid ${blogFilter === f ? "rgba(255,255,255,0.15)" : C.border}`,
+                          cursor: "pointer", textTransform: "capitalize",
+                        }}
+                      >
+                        {f}{f === "all" ? ` (${blogPosts.length})` : f === "published" ? ` (${publishedPosts.length})` : f === "scheduled" ? ` (${scheduledPosts.length})` : ` (${draftPosts.length})`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ─── Post list ─── */}
+                {filteredPosts.length === 0 ? (
+                  <p style={{ fontSize: 13, color: C.dim, textAlign: "center", padding: "16px 0" }}>
+                    {blogPosts.length === 0 ? "No posts yet. Write your first one above." : "No posts match your filter."}
+                  </p>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {stats.genreBreakdown.map((g) => {
-                      const maxCount = stats.genreBreakdown[0]?.count || 1;
-                      const pct = Math.round((g.count / maxCount) * 100);
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {filteredPosts.map((post) => {
+                      const isScheduled = post.published && post.publishedAt && new Date(post.publishedAt) > now;
+                      const isPublished = post.published && (!post.publishedAt || new Date(post.publishedAt) <= now);
+                      const statusBadge = isScheduled ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: C.blueDim, color: "#60a5fa" }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          in {timeUntil(post.publishedAt!)}
+                        </span>
+                      ) : isPublished ? (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: C.accentDim, color: C.accent }}>Live</span>
+                      ) : (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(245,158,11,0.1)", color: C.warn }}>Draft</span>
+                      );
+
                       return (
-                        <div key={g.genre}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                            <span style={{ fontWeight: 600 }}>{g.genre}</span>
-                            <span style={{ color: C.dim }}>{g.count}</span>
+                        <div key={post.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}` }}>
+                          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+                            {post.coverImage && <img src={post.coverImage} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}`, flexShrink: 0 }} />}
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.title}</p>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                                {statusBadge}
+                                <span style={{ fontSize: 11, color: C.dim }}>{formatDate(post.createdAt)}</span>
+                                {post.excerpt && <span style={{ fontSize: 10, color: C.dim, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{post.excerpt}</span>}
+                              </div>
+                            </div>
                           </div>
-                          <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.04)" }}>
-                            <div style={{ height: "100%", borderRadius: 3, background: C.accent, width: `${pct}%`, transition: "width 0.3s" }} />
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            {isPublished && (
+                              <a href={`/news/${post.slug}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.04)", color: "#60a5fa", border: `1px solid rgba(59,130,246,0.2)`, cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                View
+                              </a>
+                            )}
+                            {isScheduled && (
+                              <button type="button" onClick={() => setPublishConfirmId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.accentDim, color: C.accent, border: `1px solid rgba(163,230,53,0.2)`, cursor: "pointer" }}>Publish Now</button>
+                            )}
+                            <button type="button" onClick={() => editPost(post)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.text, border: `1px solid ${C.border}`, cursor: "pointer" }}>Edit</button>
+                            <button type="button" onClick={() => setBlogDeleteId(post.id)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.dangerDim, color: C.danger, border: `1px solid rgba(239,68,68,0.2)`, cursor: "pointer" }}>Delete</button>
                           </div>
                         </div>
                       );
@@ -1035,143 +965,113 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Platform Overview */}
-              <div style={cardStyle}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Platform Overview</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ color: C.dim }}>Active novels</span>
-                    <span style={{ fontWeight: 700 }}>{stats.activeNovels}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ color: C.dim }}>Archived novels</span>
-                    <span style={{ fontWeight: 700 }}>{stats.archivedNovels}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ color: C.dim }}>Paying subscribers</span>
-                    <span style={{ fontWeight: 700 }}>{stats.activeSubCount}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ color: C.dim }}>On trial</span>
-                    <span style={{ fontWeight: 700 }}>{stats.trialSubCount}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                    <span style={{ color: C.dim }}>Guest users</span>
-                    <span style={{ fontWeight: 700 }}>{stats.guestCount}</span>
-                  </div>
-
-                  {/* Signups timeline */}
-                  {Object.keys(stats.signupsByMonth).length > 0 && (
-                    <>
-                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700 }}>User Signups</span>
-                      </div>
-                      {Object.entries(stats.signupsByMonth).slice(-6).map(([month, count]) => (
-                        <div key={month} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                          <span style={{ color: C.dim }}>{month}</span>
-                          <span style={{ fontWeight: 600 }}>{count}</span>
-                        </div>
-                      ))}
-                    </>
-                  )}
-
-                  {/* Top users by novels */}
-                  {stats.topUsers.length > 0 && (
-                    <>
-                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700 }}>Most Active Writers</span>
-                      </div>
-                      {stats.topUsers.slice(0, 5).map((u) => (
-                        <div key={u.email} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                          <span style={{ color: C.dim }}>{u.email === "admin" ? "You (admin)" : u.email.slice(0, 8) + "..."}</span>
-                          <span style={{ fontWeight: 600 }}>{u.count} novel{u.count !== 1 ? "s" : ""}</span>
-                        </div>
-                      ))}
-                    </>
+            {/* ══════════ REPORTS TAB ══════════ */}
+            {activeTab === "reports" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div style={cardStyle}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Genre Breakdown</h3>
+                  {stats.genreBreakdown.length === 0 ? (
+                    <p style={{ fontSize: 12, color: C.dim }}>No genre data yet.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {stats.genreBreakdown.map((g) => {
+                        const maxCount = stats.genreBreakdown[0]?.count || 1;
+                        const pct = Math.round((g.count / maxCount) * 100);
+                        return (
+                          <div key={g.genre}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                              <span style={{ fontWeight: 600 }}>{g.genre}</span>
+                              <span style={{ color: C.dim }}>{g.count}</span>
+                            </div>
+                            <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.04)" }}>
+                              <div style={{ height: "100%", borderRadius: 3, background: C.accent, width: `${pct}%`, transition: "width 0.3s" }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
+
+                <div style={cardStyle}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Platform Overview</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {[
+                      { label: "Active novels", value: stats.activeNovels },
+                      { label: "Archived novels", value: stats.archivedNovels },
+                      { label: "Paying subscribers", value: stats.activeSubCount },
+                      { label: "On trial", value: stats.trialSubCount },
+                      { label: "Guest users", value: stats.guestCount },
+                    ].map((row) => (
+                      <div key={row.label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.dim }}>{row.label}</span>
+                        <span style={{ fontWeight: 700 }}>{row.value}</span>
+                      </div>
+                    ))}
+
+                    {Object.keys(stats.signupsByMonth).length > 0 && (
+                      <>
+                        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700 }}>User Signups</span>
+                        </div>
+                        {Object.entries(stats.signupsByMonth).slice(-6).map(([month, count]) => (
+                          <div key={month} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                            <span style={{ color: C.dim }}>{month}</span>
+                            <span style={{ fontWeight: 600 }}>{count}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {stats.topUsers.length > 0 && (
+                      <>
+                        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700 }}>Most Active Writers</span>
+                        </div>
+                        {stats.topUsers.slice(0, 5).map((u) => (
+                          <div key={u.email} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                            <span style={{ color: C.dim }}>{u.email === "admin" ? "You (admin)" : u.email.slice(0, 8) + "..."}</span>
+                            <span style={{ fontWeight: 600 }}>{u.count} novel{u.count !== 1 ? "s" : ""}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
 
       {/* ── Revoke confirmation modal ── */}
       {pendingDeleteId && (
-        <div
-          style={{
-            position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-          onClick={() => setPendingDeleteId(null)}
-        >
-          <div
-            style={{
-              background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%",
-              textAlign: "center",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{
-              width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px",
-              background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPendingDeleteId(null)}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Revoke access?</h3>
-            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>
-              This user will lose free studio access immediately. They&apos;ll need a subscription to continue.
-            </p>
+            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>This user will lose free studio access immediately. They&apos;ll need a subscription to continue.</p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button
-                type="button"
-                onClick={() => setPendingDeleteId(null)}
-                style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void removeGuest(pendingDeleteId)}
-                style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}
-              >
-                Revoke
-              </button>
+              <button type="button" onClick={() => setPendingDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={() => void removeGuest(pendingDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Revoke</button>
             </div>
           </div>
         </div>
       )}
+
       {/* ── Blog delete confirmation modal ── */}
       {blogDeleteId && (
-        <div
-          style={{
-            position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-          onClick={() => setBlogDeleteId(null)}
-        >
-          <div
-            style={{
-              background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%",
-              textAlign: "center",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{
-              width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px",
-              background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setBlogDeleteId(null)}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Delete this post?</h3>
-            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>
-              This cannot be undone. The post will be permanently removed.
-            </p>
+            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>This cannot be undone. The post will be permanently removed.</p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button type="button" onClick={() => setBlogDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
               <button type="button" onClick={() => void deleteBlogPost(blogDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Delete</button>
@@ -1179,6 +1079,27 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ── Publish Now confirmation modal ── */}
+      {publishConfirmId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPublishConfirmId(null)}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: C.accentDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Publish now?</h3>
+            <p style={{ fontSize: 13, color: C.dim, margin: "0 0 6px" }}>
+              <strong>{blogPosts.find((p) => p.id === publishConfirmId)?.title}</strong>
+            </p>
+            <p style={{ fontSize: 12, color: C.dim, margin: "0 0 20px" }}>This will skip the scheduled date and make the post live immediately.</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button type="button" onClick={() => setPublishConfirmId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={() => void publishPostNow(publishConfirmId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.accent, color: "#111", border: "none", cursor: "pointer" }}>Publish Now</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <p style={{ fontSize: 10, color: "rgba(255,255,255,0.12)", textAlign: "center", padding: "24px 0 12px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
     </div>
   );
