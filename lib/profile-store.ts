@@ -14,22 +14,30 @@ const STORAGE_KEY_AI_OFF = "pilotwriter.profile.aiOff";
 
 export function getProfileLanguage(): ProfileLanguageCode {
   if (typeof window === "undefined") return "en-US";
-  const saved = window.localStorage.getItem(STORAGE_KEY_LANGUAGE);
-  const valid = PROFILE_LANGUAGE_OPTIONS.some((o) => o.code === saved);
-  return valid ? (saved as ProfileLanguageCode) : "en-US";
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY_LANGUAGE);
+    const valid = PROFILE_LANGUAGE_OPTIONS.some((o) => o.code === saved);
+    return valid ? (saved as ProfileLanguageCode) : "en-US";
+  } catch {
+    return "en-US";
+  }
 }
 
 export function setProfileLanguage(code: ProfileLanguageCode): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY_LANGUAGE, code);
+  try { window.localStorage.setItem(STORAGE_KEY_LANGUAGE, code); } catch { /* ignore */ }
 }
 
 export function getProfileAiOff(): boolean {
   if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(STORAGE_KEY_AI_OFF) === "true";
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_AI_OFF) === "true";
+  } catch {
+    return false;
+  }
 }
 
 export function setProfileAiOff(off: boolean): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY_AI_OFF, off ? "true" : "false");
+  try { window.localStorage.setItem(STORAGE_KEY_AI_OFF, off ? "true" : "false"); } catch { /* ignore */ }
 }

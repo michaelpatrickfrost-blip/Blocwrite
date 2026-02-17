@@ -60,21 +60,25 @@ type SettingsTab = "general" | "ai" | "account";
 
 function getStoredProvider(): AssistantProviderId {
   if (typeof window === "undefined") return "openrouter";
-  const stored = window.localStorage.getItem("pilotwriter.assistant.provider");
-  if (stored && ASSISTANT_PROVIDER_OPTIONS.some((p) => p.id === stored)) {
-    return stored as AssistantProviderId;
-  }
+  try {
+    const stored = window.localStorage.getItem("pilotwriter.assistant.provider");
+    if (stored && ASSISTANT_PROVIDER_OPTIONS.some((p) => p.id === stored)) {
+      return stored as AssistantProviderId;
+    }
+  } catch { /* ignore */ }
   return "openrouter";
 }
 
 function readStoredProviderField(provider: AssistantProviderId, field: "key" | "model" | "baseUrl") {
   if (typeof window === "undefined") return "";
-  const modern = window.localStorage.getItem(`pilotwriter.assistant.${provider}.${field}`) ?? "";
-  if (modern) return modern;
-  if (provider === "openrouter") {
-    if (field === "key") return window.localStorage.getItem("pilotwriter.openrouter.key") ?? "";
-    if (field === "model") return window.localStorage.getItem("pilotwriter.openrouter.model") ?? "";
-  }
+  try {
+    const modern = window.localStorage.getItem(`pilotwriter.assistant.${provider}.${field}`) ?? "";
+    if (modern) return modern;
+    if (provider === "openrouter") {
+      if (field === "key") return window.localStorage.getItem("pilotwriter.openrouter.key") ?? "";
+      if (field === "model") return window.localStorage.getItem("pilotwriter.openrouter.model") ?? "";
+    }
+  } catch { /* ignore */ }
   return "";
 }
 
