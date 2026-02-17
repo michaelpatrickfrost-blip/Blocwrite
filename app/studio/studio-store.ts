@@ -973,8 +973,9 @@ function normalizeNovel(raw: unknown): Novel | null {
   };
 }
 
-/** Reverse migration: if sceneBlocks were split out, merge them back into content as <<<BLOCK>>> format */
-function restoreChapterBlocks(novel: Novel): Novel {
+/** Clean up any <<<BLOCK>>> delimiters that may have leaked into chapter content from a legacy migration.
+ *  The current system stores block data in sceneBlocks and keeps content as plain prose. */
+function cleanLegacyBlockDelimiters(novel: Novel): Novel {
   const BLOCK_DELIM = "<<<BLOCK>>>";
   const PROSE_DELIM = "<<<PROSE>>>";
   const END_BLOCK = "<<<ENDBLOCK>>>";
@@ -982,27 +983,78 @@ function restoreChapterBlocks(novel: Novel): Novel {
 
   let changed = false;
   const chapters = novel.chapters.map((chapter) => {
-    // If content already has block delimiters, leave it alone
-    if (chapter.content.includes(BLOCK_DELIM)) return chapter;
-    // If no sceneBlocks to restore, leave it alone
-    if (!chapter.sceneBlocks || chapter.sceneBlocks.length === 0) return chapter;
+    if (!chapter.content.includes(BLOCK_DELIM)) return chapter;
 
-    // Rebuild the serialized block format from sceneBlocks + content
-    const prose = chapter.content.trim();
-    const blocks = chapter.sceneBlocks.map((sb, i) => {
-      const meta = `${META_DELIM}${sb.wordTarget}|${sb.focus || "default"}|${sb.notes || ""}|\n`;
-      // Put all existing prose in the first block if it exists
-      const blockProse = i === 0 && prose ? prose : "";
-      return `${BLOCK_DELIM}\n${meta}${sb.synopsis}\n${PROSE_DELIM}\n${blockProse}\n${END_BLOCK}`;
-    });
+    // Content has legacy <<<BLOCK>>> format — parse out the prose from each block
+    const blockSegments = chapter.content.split(BLOCK_DELIM).filter(Boolean);
+    const proseChunks: string[] = [];
+    const parsedBlocks: SceneBlock[] = [];
+
+    for (const seg of blockSegments) {
+      let synopsis = "";
+      let wordTarget = 600;
+      let focus = "default";
+      let notes = "";
+      let prose = "";
+
+      const metaMatch = seg.indexOf(META_DELIM);
+      const proseMatch = seg.indexOf(PROSE_DELIM);
+      const endMatch = seg.indexOf(END_BLOCK);
+
+      if (proseMatch !== -1) {
+        const proseStart = proseMatch + PROSE_DELIM.length;
+        const proseEnd = endMatch !== -1 ? endMatch : seg.length;
+        prose = seg.slice(proseStart, proseEnd).trim();
+      }
+
+      if (metaMatch !== -1) {
+        const metaStart = metaMatch + META_DELIM.length;
+        const metaEnd = proseMatch !== -1 ? proseMatch : (endMatch !== -1 ? endMatch : seg.length);
+        const metaBlock = seg.slice(metaStart, metaEnd).trim();
+        const firstNewline = metaBlock.indexOf("\n");
+        if (firstNewline !== -1) {
+          const metaLine = metaBlock.slice(0, firstNewline);
+          synopsis = metaBlock.slice(firstNewline + 1).trim();
+          const metaParts = metaLine.split("|");
+          wordTarget = parseInt(metaParts[0]) || 600;
+          focus = metaParts[1] || "default";
+          notes = metaParts[2] || "";
+        } else {
+          synopsis = metaBlock;
+        }
+      }
+
+      if (prose) proseChunks.push(prose);
+      parsedBlocks.push({ synopsis, wordTarget, focus, notes, prose });
+    }
 
     changed = true;
+
+    // If chapter already has sceneBlocks, keep those — just clean the content
+    if (chapter.sceneBlocks && chapter.sceneBlocks.length > 0) {
+      // Merge prose from the legacy content into existing sceneBlocks if they have empty prose
+      const mergedBlocks = chapter.sceneBlocks.map((sb, i) => {
+        if (sb.prose?.trim()) return sb;
+        if (i < parsedBlocks.length && parsedBlocks[i].prose?.trim()) {
+          return { ...sb, prose: parsedBlocks[i].prose };
+        }
+        return sb;
+      });
+      return {
+        ...chapter,
+        content: proseChunks.join("\n\n"),
+        sceneBlocks: mergedBlocks,
+      };
+    }
+
+    // No sceneBlocks exist — restore them from the parsed blocks
     return {
       ...chapter,
-      content: blocks.join("\n\n"),
-      sceneBlocks: undefined,
+      content: proseChunks.join("\n\n"),
+      sceneBlocks: parsedBlocks,
     };
   });
+
   if (!changed) return novel;
   return { ...novel, chapters };
 }
@@ -1104,8 +1156,8 @@ export function loadNovels(): Novel[] {
   for (const source of sources) {
     const parsed = parsePayload(safeGetItem(source.storage, source.key));
     if (parsed) {
-      // Reverse migration: if any chapters had sceneBlocks split out, merge them back
-      const restored = parsed.map(restoreChapterBlocks).map(enforceNovelIntegrity);
+      // Clean any legacy <<<BLOCK>>> delimiters from chapter content
+      const restored = parsed.map(cleanLegacyBlockDelimiters).map(enforceNovelIntegrity);
 
       // Save restored data
       try {
@@ -1253,7 +1305,7 @@ export async function loadNovelsFromServer(): Promise<Novel[] | null> {
     const novels = raw
       .map((item: unknown) => normalizeNovel(item))
       .filter((item: Novel | null): item is Novel => item !== null)
-      .map(restoreChapterBlocks)
+      .map(cleanLegacyBlockDelimiters)
       .map(enforceNovelIntegrity);
     return novels;
   } catch {
