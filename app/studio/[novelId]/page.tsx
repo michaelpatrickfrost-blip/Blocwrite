@@ -3936,9 +3936,22 @@ function NovelWorkspacePage() {
 
   function acceptRewrite() {
     if (!rewritePreview || !activeChapter) return;
-    const { selStart, selEnd, fullContent, revised } = rewritePreview;
-    const newContent = fullContent.slice(0, selStart) + revised + fullContent.slice(selEnd);
-    updateChapter(activeChapter.id, { content: newContent });
+    const { blockIdx, selStart, selEnd, fullContent, revised } = rewritePreview;
+    const newText = fullContent.slice(0, selStart) + revised + fullContent.slice(selEnd);
+
+    if (blockIdx >= 0) {
+      // Block mode: update only the block's prose, then sync to chapter content
+      const blocks = getSceneBlocks(activeChapter);
+      if (blockIdx < blocks.length) {
+        const next = [...blocks];
+        next[blockIdx] = { ...next[blockIdx], prose: newText };
+        updateSceneBlocks(activeChapter.id, next);
+        syncChapterContentFromBlocks(activeChapter.id, next);
+      }
+    } else {
+      // Plain editor mode: update chapter content directly
+      updateChapter(activeChapter.id, { content: newText });
+    }
     setRewritePreview(null);
     saveNow();
   }
