@@ -6422,12 +6422,13 @@ function NovelWorkspacePage() {
     setArcError(null);
 
     try {
-      // Now make the focused AI call to rewrite chapter synopses for this arc
-      const chapterOutline = plan.chapters.map((ch, i) =>
-        `Chapter ${i + 1} — "${ch.title}":\n${ch.synopsis || "(no synopsis yet)"}`
-      ).join("\n\n");
+      // For large novels, process in batches so the AI doesn't choke
+      const BATCH_SIZE = 12;
+      const allChapters = plan.chapters;
+      const totalChapters = allChapters.length;
+      const finalSynopses: string[] = new Array(totalChapters).fill("");
 
-      const rewritePrompt = [
+      const storyContext = [
         `Novel: "${novel.title}"`,
         `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
         `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 800)}`,
@@ -6435,35 +6436,59 @@ function NovelWorkspacePage() {
         `Chosen arc direction: "${choice.name}"`,
         `Arc description: ${choice.description}`,
         `Arc rationale: ${choice.rationale}`,
-        "",
-        "Current chapter synopses (use these as the foundation — keep the detail and depth):",
-        chapterOutline,
-        "",
-        `Rewrite every chapter synopsis to follow the "${choice.name}" arc direction.`,
-        "IMPORTANT RULES:",
-        "- Each synopsis MUST be detailed — at least 4-6 sentences per chapter.",
-        "- Include specific character actions, emotional beats, key plot developments, and scene-setting.",
-        "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
-        "- Maintain or exceed the level of detail from the originals. Never shorten or summarise — expand and reshape.",
-        "- Make each chapter feel like it belongs to this arc direction with clear cause-and-effect between chapters.",
-        "",
-        `Return JSON: { "synopses": ["chapter 1 synopsis", "chapter 2 synopsis", ...] }`,
-        `Exactly ${plan.chapters.length} entries. Each entry must be a detailed paragraph.`,
       ].join("\n");
 
-      const tokenBudget = Math.max(1500, Math.min(plan.chapters.length * 250, 4000));
-      const result = await requestOpenRouterJson<{ synopses?: string[] }>(
-        rewritePrompt,
-        tokenBudget,
-        { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON." },
-      );
+      const allTitles = allChapters.map((ch, i) => `${i + 1}. ${ch.title}`).join("\n");
 
-      const synopses = Array.isArray(result?.synopses) ? result.synopses : [];
+      for (let batchStart = 0; batchStart < totalChapters; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChapters);
+        const batchChapters = allChapters.slice(batchStart, batchEnd);
+        const batchSize = batchChapters.length;
 
-      // Apply the rewritten synopses (fall back to originals if AI didn't generate enough)
-      const finalSynopses = plan.chapters.map((ch, i) =>
-        (typeof synopses[i] === "string" && synopses[i].trim()) ? synopses[i].trim() : ch.synopsis || ""
-      );
+        const chapterOutline = batchChapters.map((ch, localIdx) => {
+          const globalIdx = batchStart + localIdx;
+          return `Chapter ${globalIdx + 1} — "${ch.title}":\n${ch.synopsis || "(no synopsis yet)"}`;
+        }).join("\n\n");
+
+        const batchPrompt = [
+          storyContext,
+          "",
+          `Full chapter list (${totalChapters} chapters total):\n${allTitles}`,
+          "",
+          `Rewrite synopses for chapters ${batchStart + 1}–${batchEnd} to follow the "${choice.name}" arc.`,
+          "",
+          "Current synopses for this batch:",
+          chapterOutline,
+          "",
+          "RULES:",
+          "- Each synopsis MUST be detailed — at least 4-6 sentences per chapter.",
+          "- Include specific character actions, emotional beats, key plot developments, and scene-setting.",
+          "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
+          "- Maintain or exceed the detail from the originals. Never shorten — expand and reshape.",
+          "- Ensure continuity: each chapter leads naturally into the next.",
+          "",
+          `Return JSON: { "synopses": [${batchSize} entries — one per chapter in this batch] }`,
+          `Exactly ${batchSize} entries. Each must be a detailed paragraph.`,
+        ].join("\n");
+
+        const tokenBudget = Math.max(1500, batchSize * 250);
+        const result = await requestOpenRouterJson<{ synopses?: string[] }>(
+          batchPrompt,
+          tokenBudget,
+          { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.", timeoutMs: Math.max(240000, batchSize * 20000) },
+        );
+
+        const batchSynopses = Array.isArray(result?.synopses) ? result.synopses : [];
+        for (let j = 0; j < batchSize; j++) {
+          const syn = batchSynopses[j];
+          finalSynopses[batchStart + j] = (typeof syn === "string" && syn.trim()) ? syn.trim() : (allChapters[batchStart + j]?.synopsis || "");
+        }
+
+        // Small delay between batches to avoid rate limits
+        if (batchEnd < totalChapters) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
 
       mutateNovel((current) => {
         const curPlan = current.storyBible.bookPlan;
