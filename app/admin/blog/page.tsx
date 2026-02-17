@@ -4,18 +4,18 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
 const C = {
-  bg: "#111114",
-  surface: "#1c1c20",
-  border: "rgba(255,255,255,0.08)",
-  text: "#e4e4e7",
-  dim: "rgba(255,255,255,0.45)",
-  accent: "#a3e635",
-  accentDim: "rgba(163,230,53,0.15)",
-  danger: "#ef4444",
-  dangerDim: "rgba(239,68,68,0.1)",
-  warn: "#f59e0b",
-  blue: "#3b82f6",
-  blueDim: "rgba(59,130,246,0.1)",
+  bg: "#f8f9fb",
+  surface: "#ffffff",
+  border: "rgba(0,0,0,0.08)",
+  text: "#1a1a2e",
+  dim: "rgba(0,0,0,0.45)",
+  accent: "#16a34a",
+  accentDim: "rgba(22,163,74,0.08)",
+  danger: "#dc2626",
+  dangerDim: "rgba(220,38,38,0.06)",
+  warn: "#d97706",
+  blue: "#2563eb",
+  blueDim: "rgba(37,99,235,0.06)",
 };
 
 type BlogPost = {
@@ -294,7 +294,7 @@ export default function AdminBlogPage() {
     fontSize: 13,
     borderRadius: 8,
     border: `1px solid ${C.border}`,
-    background: "rgba(255,255,255,0.04)",
+    background: C.surface,
     color: C.text,
     outline: "none",
   };
@@ -346,7 +346,7 @@ export default function AdminBlogPage() {
     background: active ? C.accentDim : "transparent",
     color: active ? C.accent : C.dim,
     textDecoration: "none",
-    border: active ? `1px solid rgba(163,230,53,0.3)` : `1px solid transparent`,
+    border: active ? `1px solid rgba(22,163,74,0.3)` : `1px solid transparent`,
     transition: "all 0.15s",
   });
 
@@ -366,7 +366,7 @@ export default function AdminBlogPage() {
           justifyContent: "space-between",
           padding: "14px 28px",
           borderBottom: `1px solid ${C.border}`,
-          background: "rgba(20,20,24,0.95)",
+          background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
           position: "sticky",
           top: 0,
@@ -375,7 +375,7 @@ export default function AdminBlogPage() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Link href="/admin" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28 }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28 }} />
           </Link>
           <h1 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>News / Blog</h1>
           <nav style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 16 }}>
@@ -450,7 +450,7 @@ export default function AdminBlogPage() {
                     fontWeight: 700,
                     background: C.accentDim,
                     color: C.accent,
-                    border: `1px solid rgba(163,230,53,0.2)`,
+                    border: `1px solid rgba(22,163,74,0.2)`,
                     cursor: "pointer",
                   }}
                 >
@@ -541,7 +541,7 @@ export default function AdminBlogPage() {
                     <span style={{ fontWeight: 600 }}>URL:</span>
                     <code
                       style={{
-                        background: "rgba(255,255,255,0.04)",
+                        background: "rgba(0,0,0,0.03)",
                         padding: "3px 10px",
                         borderRadius: 4,
                         fontSize: 12,
@@ -569,7 +569,7 @@ export default function AdminBlogPage() {
                       borderRadius: 8,
                       fontSize: 12,
                       fontWeight: 600,
-                      background: "rgba(255,255,255,0.06)",
+                      background: "rgba(0,0,0,0.04)",
                       color: C.text,
                       border: `1px solid ${C.border}`,
                       cursor: "pointer",
@@ -620,7 +620,7 @@ export default function AdminBlogPage() {
                     gap: 4,
                     marginBottom: 10,
                     padding: "8px 10px",
-                    background: "rgba(255,255,255,0.03)",
+                    background: "rgba(0,0,0,0.02)",
                     borderRadius: 8,
                     border: `1px solid ${C.border}`,
                   }}
@@ -662,7 +662,7 @@ export default function AdminBlogPage() {
                         padding: "5px 11px",
                         borderRadius: 6,
                         fontSize: 12,
-                        background: "rgba(255,255,255,0.06)",
+                        background: "rgba(0,0,0,0.04)",
                         color: C.text,
                         border: `1px solid ${C.border}`,
                         cursor: "pointer",
@@ -679,7 +679,7 @@ export default function AdminBlogPage() {
                       padding: "5px 11px",
                       borderRadius: 6,
                       fontSize: 11,
-                      background: "rgba(255,255,255,0.06)",
+                      background: "rgba(0,0,0,0.04)",
                       color: C.text,
                       border: `1px solid ${C.border}`,
                       cursor: "pointer",
@@ -697,7 +697,7 @@ export default function AdminBlogPage() {
                       padding: "5px 11px",
                       borderRadius: 6,
                       fontSize: 11,
-                      background: "rgba(255,255,255,0.06)",
+                      background: "rgba(0,0,0,0.04)",
                       color: C.text,
                       border: `1px solid ${C.border}`,
                       cursor: "pointer",
@@ -719,7 +719,7 @@ export default function AdminBlogPage() {
                     padding: "16px 18px",
                     borderRadius: 10,
                     border: `1px solid ${C.border}`,
-                    background: "rgba(255,255,255,0.02)",
+                    background: C.surface,
                     color: C.text,
                     fontSize: 14,
                     lineHeight: 1.7,
@@ -774,20 +774,20 @@ export default function AdminBlogPage() {
                         padding: "9px 16px",
                         borderRadius: 8,
                         cursor: "pointer",
-                        background:
-                          blogPublishMode === mode
-                            ? mode === "publish"
-                              ? C.accentDim
-                              : mode === "schedule"
-                                ? C.blueDim
-                                : "rgba(255,255,255,0.06)"
-                            : "transparent",
+background:
+                            blogPublishMode === mode
+                              ? mode === "publish"
+                                ? C.accentDim
+                                : mode === "schedule"
+                                  ? C.blueDim
+                                  : "rgba(0,0,0,0.04)"
+                              : "transparent",
                         border: `1px solid ${
                           blogPublishMode === mode
                             ? mode === "publish"
-                              ? "rgba(163,230,53,0.3)"
+                              ? "rgba(22,163,74,0.3)"
                               : mode === "schedule"
-                                ? "rgba(59,130,246,0.3)"
+                                ? "rgba(37,99,235,0.3)"
                                 : C.border
                             : C.border
                         }`,
@@ -872,7 +872,7 @@ export default function AdminBlogPage() {
                         borderRadius: 8,
                         fontSize: 12,
                         fontWeight: 600,
-                        background: "rgba(255,255,255,0.06)",
+                        background: "rgba(0,0,0,0.04)",
                         color: C.dim,
                         border: `1px solid ${C.border}`,
                         cursor: "pointer",
@@ -892,7 +892,7 @@ export default function AdminBlogPage() {
                       borderRadius: 8,
                       background:
                         blogPublishMode === "schedule" ? C.blue : C.accent,
-                      color: blogPublishMode === "schedule" ? "#fff" : "#111",
+                      color: blogPublishMode === "schedule" ? "#fff" : "#fff",
                       border: "none",
                       cursor: "pointer",
                       opacity: blogSaving ? 0.6 : 1,
@@ -971,12 +971,12 @@ export default function AdminBlogPage() {
                           fontWeight: 600,
                           background:
                             blogFilter === f
-                              ? "rgba(255,255,255,0.1)"
+                              ? "rgba(0,0,0,0.06)"
                               : "transparent",
                           color: blogFilter === f ? C.text : C.dim,
                           border: `1px solid ${
                             blogFilter === f
-                              ? "rgba(255,255,255,0.15)"
+                              ? "rgba(0,0,0,0.1)"
                               : C.border
                           }`,
                           cursor: "pointer",
@@ -1070,7 +1070,7 @@ export default function AdminBlogPage() {
                           borderRadius: 6,
                           fontSize: 10,
                           fontWeight: 700,
-                          background: "rgba(245,158,11,0.1)",
+                          background: "rgba(217,119,6,0.1)",
                           color: C.warn,
                         }}
                       >
@@ -1087,7 +1087,7 @@ export default function AdminBlogPage() {
                           justifyContent: "space-between",
                           padding: "12px 14px",
                           borderRadius: 10,
-                          background: "rgba(255,255,255,0.02)",
+                          background: C.surface,
                           border: `1px solid ${C.border}`,
                         }}
                       >
@@ -1179,9 +1179,9 @@ export default function AdminBlogPage() {
                                 borderRadius: 6,
                                 fontSize: 11,
                                 fontWeight: 600,
-                                background: "rgba(255,255,255,0.04)",
+                                background: C.surface,
                                 color: C.blue,
-                                border: `1px solid rgba(59,130,246,0.2)`,
+                                border: `1px solid rgba(37,99,235,0.2)`,
                                 cursor: "pointer",
                                 textDecoration: "none",
                                 display: "inline-flex",
@@ -1216,7 +1216,7 @@ export default function AdminBlogPage() {
                                 fontWeight: 600,
                                 background: C.accentDim,
                                 color: C.accent,
-                                border: `1px solid rgba(163,230,53,0.2)`,
+                                border: `1px solid rgba(22,163,74,0.2)`,
                                 cursor: "pointer",
                               }}
                             >
@@ -1231,7 +1231,7 @@ export default function AdminBlogPage() {
                               borderRadius: 6,
                               fontSize: 11,
                               fontWeight: 600,
-                              background: "rgba(255,255,255,0.06)",
+                              background: "rgba(0,0,0,0.04)",
                               color: C.text,
                               border: `1px solid ${C.border}`,
                               cursor: "pointer",
@@ -1249,7 +1249,7 @@ export default function AdminBlogPage() {
                               fontWeight: 600,
                               background: C.dangerDim,
                               color: C.danger,
-                              border: `1px solid rgba(239,68,68,0.2)`,
+                              border: `1px solid rgba(220,38,38,0.2)`,
                               cursor: "pointer",
                             }}
                           >
@@ -1273,7 +1273,7 @@ export default function AdminBlogPage() {
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "rgba(0,0,0,0.6)",
+            background: "rgba(0,0,0,0.3)",
             backdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
@@ -1290,6 +1290,7 @@ export default function AdminBlogPage() {
               maxWidth: 380,
               width: "90%",
               textAlign: "center",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1334,7 +1335,7 @@ export default function AdminBlogPage() {
                   borderRadius: 8,
                   fontSize: 13,
                   fontWeight: 600,
-                  background: "rgba(255,255,255,0.06)",
+                  background: "rgba(0,0,0,0.04)",
                   color: C.dim,
                   border: `1px solid ${C.border}`,
                   cursor: "pointer",
@@ -1370,7 +1371,7 @@ export default function AdminBlogPage() {
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "rgba(0,0,0,0.6)",
+            background: "rgba(0,0,0,0.3)",
             backdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
@@ -1387,6 +1388,7 @@ export default function AdminBlogPage() {
               maxWidth: 380,
               width: "90%",
               textAlign: "center",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1437,7 +1439,7 @@ export default function AdminBlogPage() {
                   borderRadius: 8,
                   fontSize: 13,
                   fontWeight: 600,
-                  background: "rgba(255,255,255,0.06)",
+                  background: "rgba(0,0,0,0.04)",
                   color: C.dim,
                   border: `1px solid ${C.border}`,
                   cursor: "pointer",
@@ -1454,7 +1456,7 @@ export default function AdminBlogPage() {
                   fontSize: 13,
                   fontWeight: 700,
                   background: C.accent,
-                  color: "#111",
+                  color: "#fff",
                   border: "none",
                   cursor: "pointer",
                 }}

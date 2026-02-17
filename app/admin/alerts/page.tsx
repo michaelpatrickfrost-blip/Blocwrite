@@ -4,18 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 const C = {
-  bg: "#111114",
-  surface: "#1c1c20",
-  border: "rgba(255,255,255,0.08)",
-  text: "#e4e4e7",
-  dim: "rgba(255,255,255,0.45)",
-  accent: "#a3e635",
-  accentDim: "rgba(163,230,53,0.15)",
-  danger: "#ef4444",
-  dangerDim: "rgba(239,68,68,0.1)",
-  warn: "#f59e0b",
-  blue: "#3b82f6",
-  blueDim: "rgba(59,130,246,0.1)",
+  bg: "#f8f9fb",
+  surface: "#ffffff",
+  border: "rgba(0,0,0,0.08)",
+  text: "#1a1a2e",
+  dim: "rgba(0,0,0,0.45)",
+  accent: "#16a34a",
+  accentDim: "rgba(22,163,74,0.08)",
+  danger: "#dc2626",
+  dangerDim: "rgba(220,38,38,0.06)",
+  warn: "#d97706",
+  blue: "#2563eb",
+  blueDim: "rgba(37,99,235,0.06)",
 };
 
 type AdminAlert = {
@@ -57,7 +57,7 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13,
   borderRadius: 8,
   border: `1px solid ${C.border}`,
-  background: "rgba(255,255,255,0.04)",
+  background: C.surface,
   color: C.text,
   outline: "none",
 };
@@ -180,7 +180,7 @@ export default function AdminAlertsPage() {
           justifyContent: "space-between",
           padding: "14px 28px",
           borderBottom: `1px solid ${C.border}`,
-          background: "rgba(20,20,24,0.95)",
+          background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
           position: "sticky",
           top: 0,
@@ -190,7 +190,7 @@ export default function AdminAlertsPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Link href="/admin" style={{ display: "flex", alignItems: "center" }}>
             <img
-              src="/blocwrite-logo-white.png"
+              src="/blocwrite-logo-black.png"
               alt="Blocwrite"
               style={{ height: 28 }}
             />
@@ -208,7 +208,7 @@ export default function AdminAlertsPage() {
                     fontWeight: 700,
                     background: C.accentDim,
                     color: C.accent,
-                    border: `1px solid rgba(163,230,53,0.2)`,
+                    border: `1px solid rgba(22,163,74,0.25)`,
                   }}
                 >
                   {link.label}
@@ -263,7 +263,7 @@ export default function AdminAlertsPage() {
                   width: 32,
                   height: 32,
                   borderRadius: 8,
-                  background: "rgba(239,68,68,0.12)",
+                  background: C.dangerDim,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -554,7 +554,7 @@ export default function AdminAlertsPage() {
                           borderRadius: 8,
                           marginBottom: 8,
                           background: C.blueDim,
-                          border: `1px solid rgba(59,130,246,0.15)`,
+                          border: `1px solid rgba(37,99,235,0.15)`,
                         }}
                       >
                         <div style={{ flex: 1 }}>
@@ -584,7 +584,7 @@ export default function AdminAlertsPage() {
                                 borderRadius: 6,
                                 fontSize: 10,
                                 fontWeight: 700,
-                                background: "rgba(59,130,246,0.15)",
+                                background: "rgba(37,99,235,0.15)",
                                 color: C.blue,
                               }}
                             >
@@ -615,7 +615,7 @@ export default function AdminAlertsPage() {
                             borderRadius: 6,
                             fontSize: 11,
                             fontWeight: 600,
-                            background: "rgba(255,255,255,0.06)",
+                            background: "rgba(0,0,0,0.04)",
                             color: C.dim,
                             border: `1px solid ${C.border}`,
                             cursor: "pointer",
@@ -671,7 +671,7 @@ export default function AdminAlertsPage() {
                           padding: "10px 12px",
                           borderRadius: 8,
                           marginBottom: 6,
-                          background: "rgba(255,255,255,0.02)",
+                          background: C.surface,
                           border: `1px solid ${C.border}`,
                           opacity: 0.65,
                         }}
@@ -704,7 +704,7 @@ export default function AdminAlertsPage() {
                             borderRadius: 6,
                             fontSize: 10,
                             fontWeight: 600,
-                            background: "rgba(255,255,255,0.06)",
+                            background: "rgba(0,0,0,0.04)",
                             color: C.dim,
                             border: `1px solid ${C.border}`,
                             cursor: "pointer",
@@ -743,7 +743,7 @@ export default function AdminAlertsPage() {
       <p
         style={{
           fontSize: 10,
-          color: "rgba(255,255,255,0.12)",
+          color: "rgba(0,0,0,0.2)",
           textAlign: "center",
           padding: "24px 0 12px",
         }}

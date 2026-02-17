@@ -31,16 +31,16 @@ type Stats = {
 type AdminSection = "overview" | "guests" | "reports";
 
 const C = {
-  bg: "#111114",
-  surface: "#1c1c20",
-  border: "rgba(255,255,255,0.08)",
-  text: "#e4e4e7",
-  dim: "rgba(255,255,255,0.45)",
-  accent: "#a3e635",
-  accentDim: "rgba(163,230,53,0.15)",
-  danger: "#ef4444",
-  dangerDim: "rgba(239,68,68,0.1)",
-  warn: "#f59e0b",
+  bg: "#f8f9fb",
+  surface: "#ffffff",
+  border: "rgba(0,0,0,0.08)",
+  text: "#1a1a2e",
+  dim: "rgba(0,0,0,0.45)",
+  accent: "#16a34a",
+  accentDim: "rgba(22,163,74,0.08)",
+  danger: "#dc2626",
+  dangerDim: "rgba(220,38,38,0.06)",
+  warn: "#d97706",
 };
 
 function formatDate(iso: string) {
@@ -127,7 +127,7 @@ export default function AdminPage() {
 
   const inputStyle: React.CSSProperties = {
     padding: "9px 12px", fontSize: 13, borderRadius: 8,
-    border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)",
+    border: `1px solid ${C.border}`, background: C.surface,
     color: C.text, outline: "none",
   };
 
@@ -142,11 +142,11 @@ export default function AdminPage() {
       <header style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "14px 28px", borderBottom: `1px solid ${C.border}`,
-        background: "rgba(20,20,24,0.95)", backdropFilter: "blur(12px)",
+        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 28 }} />
+          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28 }} />
           <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.5 }}>Admin Hub</span>
         </div>
         <nav style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -156,10 +156,10 @@ export default function AdminPage() {
               <Link key={link.href} href={link.href} style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                background: isActive ? C.accentDim : "rgba(255,255,255,0.04)",
+                background: isActive ? C.accentDim : "transparent",
                 color: isActive ? C.accent : C.dim,
                 textDecoration: "none",
-                border: `1px solid ${isActive ? "rgba(163,230,53,0.2)" : C.border}`,
+                border: `1px solid ${isActive ? "rgba(22,163,74,0.25)" : C.border}`,
                 transition: "all 0.15s",
               }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={link.icon}/></svg>
@@ -173,7 +173,7 @@ export default function AdminPage() {
       {/* ── Section tabs ── */}
       <nav style={{
         display: "flex", gap: 2, padding: "0 28px",
-        background: "rgba(20,20,24,0.6)", borderBottom: `1px solid ${C.border}`,
+        background: "rgba(255,255,255,0.6)", borderBottom: `1px solid ${C.border}`,
       }}>
         {SECTION_TABS.map((tab) => {
           const isActive = activeSection === tab.id;
@@ -273,7 +273,7 @@ export default function AdminPage() {
                     <label style={{ display: "block", fontSize: 11, color: C.dim, marginBottom: 4, fontWeight: 600 }}>Password (new users)</label>
                     <input type="text" placeholder="Optional" value={guestPassword} onChange={(e) => setGuestPassword(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
                   </div>
-                  <button type="button" onClick={() => void addGuest()} disabled={addingGuest || !guestEmail.trim()} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8, background: C.accent, color: "#111", border: "none", cursor: "pointer", opacity: addingGuest ? 0.6 : 1 }}>
+                  <button type="button" onClick={() => void addGuest()} disabled={addingGuest || !guestEmail.trim()} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, borderRadius: 8, background: C.accent, color: "#fff", border: "none", cursor: "pointer", opacity: addingGuest ? 0.6 : 1 }}>
                     {addingGuest ? "Adding..." : "Grant Access"}
                   </button>
                 </div>
@@ -287,7 +287,7 @@ export default function AdminPage() {
                       <span>Email</span><span>Duration</span><span>Expires</span><span>Status</span><span></span>
                     </div>
                     {guests.map((g) => (
-                      <div key={g.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}` }}>
+                      <div key={g.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 80px 60px", gap: 8, alignItems: "center", padding: "10px 8px", borderRadius: 8, background: C.surface, border: `1px solid ${C.border}` }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>{g.email}</div>
                           {g.name && <div style={{ fontSize: 11, color: C.dim }}>{g.name}</div>}
@@ -323,7 +323,7 @@ export default function AdminPage() {
                               <span style={{ fontWeight: 600 }}>{g.genre}</span>
                               <span style={{ color: C.dim }}>{g.count}</span>
                             </div>
-                            <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.04)" }}>
+                            <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,0.04)" }}>
                               <div style={{ height: "100%", borderRadius: 3, background: C.accent, width: `${pct}%`, transition: "width 0.3s" }} />
                             </div>
                           </div>
@@ -384,22 +384,22 @@ export default function AdminPage() {
 
       {/* ── Revoke confirmation modal ── */}
       {pendingDeleteId && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPendingDeleteId(null)}>
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPendingDeleteId(null)}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "90%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px", background: C.dangerDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Revoke access?</h3>
             <p style={{ fontSize: 13, color: C.dim, margin: "0 0 20px" }}>This user will lose free studio access immediately. They&apos;ll need a subscription to continue.</p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <button type="button" onClick={() => setPendingDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.06)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={() => setPendingDeleteId(null)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: C.dim, border: `1px solid ${C.border}`, cursor: "pointer" }}>Cancel</button>
               <button type="button" onClick={() => void removeGuest(pendingDeleteId)} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.danger, color: "#fff", border: "none", cursor: "pointer" }}>Revoke</button>
             </div>
           </div>
         </div>
       )}
 
-      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.12)", textAlign: "center", padding: "24px 0 12px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
+      <p style={{ fontSize: 10, color: "rgba(0,0,0,0.2)", textAlign: "center", padding: "24px 0 12px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
     </div>
   );
 }
