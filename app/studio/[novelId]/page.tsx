@@ -6323,58 +6323,29 @@ function NovelWorkspacePage() {
     setArcError(null);
 
     try {
-      const chapterOutline = plan.chapters.map((ch, i) => {
-        const chars = (ch.characterIds ?? [])
-          .map((id) => novel.storyBible.characters.find((c) => c.id === id)?.name)
-          .filter(Boolean);
-        return `Chapter ${i + 1}: "${ch.title}"\nSynopsis: ${ch.synopsis || "(empty)"}\nCharacters: ${chars.length > 0 ? chars.join(", ") : "none listed"}`;
-      }).join("\n\n");
-
-      const protagonist = novel.storyBible.characters.find((c) => c.role === "Protagonist");
-      const protagonistLine = protagonist
-        ? `Protagonist: ${protagonist.name}. ${protagonist.logline || ""} Goals: ${protagonist.goals || "none"}. Fears: ${protagonist.fears || "none"}. Backstory: ${protagonist.backstory || "none"}.`
-        : "No protagonist explicitly tagged — analyse the most prominent character.";
-
-      const numChapters = plan.chapters.length;
-
-      const systemPrompt = [
-        "You are an expert story structure analyst specialising in narrative arc design.",
-        "You evaluate chapter plans and design compelling story arcs using proven structure principles (three-act structure, Save the Cat, Story Circle, Hero's Journey, etc.).",
-        "Be specific. Be creative. Each arc choice must feel genuinely different — not minor variations.",
-        "Respond ONLY with valid JSON. No markdown, no commentary outside the JSON.",
-      ].join("\n");
+      // Keep the prompt SMALL — just ask for 3 short arc suggestions.
+      // Chapter synopses are generated later when the user picks one.
+      const chapterTitles = plan.chapters.map((ch, i) => `${i + 1}. ${ch.title}`).join("\n");
 
       const userPrompt = [
         `Novel: "${novel.title}"`,
-        `Synopsis: ${novel.synopsis || novel.storyBible.summary.synopsisShort || "(none)"}`,
-        `Genre/tone: ${novel.storyBible.summary.genre || "not specified"}`,
-        `Pacing mode: ${plan.pacingMode || "balanced"}`,
-        protagonistLine,
+        `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
+        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 600)}`,
+        `Chapters:\n${chapterTitles}`,
         "",
-        "CURRENT CHAPTER PLAN:",
-        chapterOutline,
+        "Suggest 3 different story arc directions for this novel.",
+        "Each must feel genuinely different — different emotional journeys, different structures.",
+        "Score each for narrative strength. Recommend which is best.",
         "",
-        `Generate exactly 3 distinct arc path options for this ${numChapters}-chapter novel.`,
-        "Each arc must represent a genuinely different narrative direction — different emotional journeys, different structural approaches, different thematic emphases.",
-        "",
-        "For each arc choice provide:",
-        '- "name": A compelling 2-5 word name (e.g. "The Reluctant Hero", "Descent Into Darkness", "Shattered Mirror")',
-        '- "description": 2-3 sentences explaining the emotional and structural direction',
-        '- "score": 1-10 rating for narrative strength (how compelling, structurally sound, and emotionally satisfying this arc would be)',
-        '- "rationale": 1-2 sentences explaining the score — what makes this path strong or where it might struggle',
-        `- "chapterSynopses": An array of exactly ${numChapters} strings — one new synopsis per chapter, rewritten to follow this arc direction. Each synopsis should be 2-4 sentences.`,
-        "",
-        "IMPORTANT: The chapter synopses must keep the same chapter count and roughly the same world/characters, but reshape the narrative arc, pacing, and emotional beats to match the chosen direction.",
-        "Score the choices honestly — the best arc should score highest. At least one choice should score 8+.",
-        "",
-        `Return JSON: { "choices": [{ "name": string, "description": string, "score": number, "rationale": string, "chapterSynopses": string[${numChapters}] }] }`,
-        "choices must have exactly 3 entries. Sort by score descending (best first).",
+        "Return JSON only:",
+        '{ "choices": [{ "name": "2-5 word arc name", "description": "2-3 sentences", "score": 1-10, "rationale": "1-2 sentences why" }] }',
+        "Exactly 3 choices. Best score first.",
       ].join("\n");
 
-      const result = await requestOpenRouterJson(
+      const result = await requestOpenRouterJson<{ choices?: Array<{ name?: string; description?: string; score?: number; rationale?: string }> }>(
         userPrompt,
-        4000,
-        { systemMessage: systemPrompt },
+        600,
+        { systemMessage: "Story arc analyst. Return ONLY valid JSON. No markdown." },
       );
 
       if (!result || typeof result !== "object") {
@@ -6383,6 +6354,7 @@ function NovelWorkspacePage() {
       }
 
       const res = result as Record<string, unknown>;
+      const numChapters = plan.chapters.length;
 
       const rawChoices: ArcChoice[] = Array.isArray(res.choices)
         ? (res.choices as Record<string, unknown>[])
@@ -6393,9 +6365,7 @@ function NovelWorkspacePage() {
               description: String(c.description || "").slice(0, 400),
               score: Math.max(1, Math.min(10, Number(c.score) || 5)),
               rationale: String(c.rationale || "").slice(0, 300),
-              chapterSynopses: Array.isArray(c.chapterSynopses)
-                ? (c.chapterSynopses as string[]).slice(0, numChapters).map((s) => String(s || "").slice(0, 600))
-                : plan.chapters.map((ch) => ch.synopsis || ""),
+              chapterSynopses: plan.chapters.map((ch) => ch.synopsis || ""),
             }))
         : [];
 
@@ -6414,12 +6384,6 @@ function NovelWorkspacePage() {
         });
       }
 
-      for (const choice of rawChoices) {
-        while (choice.chapterSynopses.length < numChapters) {
-          choice.chapterSynopses.push(plan.chapters[choice.chapterSynopses.length]?.synopsis || "");
-        }
-      }
-
       rawChoices.sort((a, b) => b.score - a.score);
 
       const analysis: ArcAnalysis = {
@@ -6434,17 +6398,15 @@ function NovelWorkspacePage() {
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Arc analysis failed.";
-      if (msg.includes("empty response")) {
-        setArcError("Arc Intelligence got an empty response from the model. This can happen when the model is busy — hit the refresh button to try again.");
-      } else {
-        setArcError(msg);
-      }
+      setArcError(msg.includes("empty response")
+        ? "Arc Intelligence got an empty response — try again."
+        : msg);
     } finally {
       setArcBusy(false);
     }
   }
 
-  function applyArcChoice(choiceIndex: number) {
+  async function applyArcChoice(choiceIndex: number) {
     if (!novel) return;
     const plan = novel.storyBible.bookPlan;
     const analysis = plan?.arcAnalysis;
@@ -6457,32 +6419,71 @@ function NovelWorkspacePage() {
 
     const choice = analysis.choices[choiceIndex];
     setArcApplyingChoice(choiceIndex);
+    setArcError(null);
 
-    mutateNovel((current) => {
-      const curPlan = current.storyBible.bookPlan;
-      if (!curPlan) return current;
+    try {
+      // Now make the focused AI call to rewrite chapter synopses for this arc
+      const chapterOutline = plan.chapters.map((ch, i) =>
+        `${i + 1}. "${ch.title}": ${(ch.synopsis || "").slice(0, 200)}`
+      ).join("\n");
 
-      const updatedPlanChapters = curPlan.chapters.map((ch, i) => ({
-        ...ch,
-        synopsis: choice.chapterSynopses[i] || ch.synopsis,
-      }));
+      const rewritePrompt = [
+        `Novel: "${novel.title}"`,
+        `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
+        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 400)}`,
+        "",
+        `Chosen arc direction: "${choice.name}"`,
+        `Arc description: ${choice.description}`,
+        "",
+        "Current chapters:",
+        chapterOutline,
+        "",
+        `Rewrite each chapter synopsis to follow the "${choice.name}" arc direction.`,
+        "Keep the same characters and world. Reshape the narrative arc, pacing, and emotional beats.",
+        "Each synopsis should be 2-3 sentences.",
+        "",
+        `Return JSON: { "synopses": ["chapter 1 synopsis", "chapter 2 synopsis", ...] }`,
+        `Exactly ${plan.chapters.length} entries.`,
+      ].join("\n");
 
-      const updatedChapters = current.chapters.map((ch, i) => ({
-        ...ch,
-        subtitle: choice.chapterSynopses[i] || ch.subtitle,
-        updatedAt: new Date().toISOString(),
-      }));
+      const result = await requestOpenRouterJson<{ synopses?: string[] }>(
+        rewritePrompt,
+        Math.min(plan.chapters.length * 120, 2000),
+        { systemMessage: "Story arc writer. Return ONLY valid JSON with rewritten synopses." },
+      );
 
-      return {
-        ...current,
-        chapters: updatedChapters,
-        storyBible: {
-          ...current.storyBible,
-          bookPlan: {
-            ...curPlan,
-            chapters: updatedPlanChapters,
-            arcAnalysis: {
-              ...analysis,
+      const synopses = Array.isArray(result?.synopses) ? result.synopses : [];
+
+      // Apply the rewritten synopses (fall back to originals if AI didn't generate enough)
+      const finalSynopses = plan.chapters.map((ch, i) =>
+        (typeof synopses[i] === "string" && synopses[i].trim()) ? synopses[i].trim() : ch.synopsis || ""
+      );
+
+      mutateNovel((current) => {
+        const curPlan = current.storyBible.bookPlan;
+        if (!curPlan) return current;
+
+        const updatedPlanChapters = curPlan.chapters.map((ch, i) => ({
+          ...ch,
+          synopsis: finalSynopses[i] || ch.synopsis,
+        }));
+
+        const updatedChapters = current.chapters.map((ch, i) => ({
+          ...ch,
+          subtitle: finalSynopses[i] || ch.subtitle,
+          updatedAt: new Date().toISOString(),
+        }));
+
+        return {
+          ...current,
+          chapters: updatedChapters,
+          storyBible: {
+            ...current.storyBible,
+            bookPlan: {
+              ...curPlan,
+              chapters: updatedPlanChapters,
+              arcAnalysis: {
+                ...analysis,
               selectedChoiceIndex: choiceIndex,
             },
             updatedAt: new Date().toISOString(),
@@ -6491,7 +6492,14 @@ function NovelWorkspacePage() {
       };
     });
 
-    setTimeout(() => setArcApplyingChoice(null), 600);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to apply arc.";
+      setArcError(msg.includes("empty response")
+        ? "Could not rewrite synopses — try again."
+        : msg);
+    } finally {
+      setTimeout(() => setArcApplyingChoice(null), 600);
+    }
   }
 
   async function runRegenPlanChapter(chapterIndex: number) {
