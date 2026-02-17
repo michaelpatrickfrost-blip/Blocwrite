@@ -227,6 +227,42 @@ export function ProfilePopup({
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+      if (assistantProvider === "lmstudio") {
+        // LM Studio runs locally — call it directly from the browser
+        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        try {
+          const res = await fetch(`${lmBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: openRouterModel || "local-model",
+              max_tokens: 2,
+              messages: [{ role: "user", content: "hi" }],
+              stream: false,
+            }),
+            signal: controller.signal,
+          });
+          window.clearTimeout(timeoutId);
+          if (res.ok) {
+            setOpenRouterStatus("ok");
+          } else {
+            setOpenRouterError(`LM Studio returned status ${res.status}. Make sure a model is loaded.`);
+            setOpenRouterStatus("error");
+          }
+        } catch (e) {
+          window.clearTimeout(timeoutId);
+          if (e instanceof DOMException && e.name === "AbortError") {
+            setOpenRouterError("Connection timed out. Make sure LM Studio is running.");
+          } else {
+            setOpenRouterError("Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
+          }
+          setOpenRouterStatus("error");
+        }
+        return;
+      }
+
+      // Standard path: test via server proxy for cloud providers
       const res = await fetch("/api/openrouter/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

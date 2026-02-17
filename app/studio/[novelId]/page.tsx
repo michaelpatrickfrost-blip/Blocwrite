@@ -4593,9 +4593,53 @@ function NovelWorkspacePage() {
       }
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), attemptTimeoutMs);
-      // Link global abort to this attempt's controller
       const onGlobalAbort = () => controller.abort();
       aiAbortRef.current?.signal.addEventListener("abort", onGlobalAbort);
+
+      // LM Studio runs locally — call it directly from the browser instead of the server proxy
+      if (assistantProvider === "lmstudio") {
+        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        const messages: Array<{ role: string; content: string }> = [];
+        if (systemMessage) messages.push({ role: "system", content: systemMessage });
+        messages.push({ role: "user", content: prompt });
+        const lmBody: Record<string, unknown> = {
+          model: openRouterModel || "local-model",
+          max_tokens: maxTokens,
+          messages,
+          stream: false,
+        };
+        if (temperature != null) lmBody.temperature = temperature;
+        if (jsonMode) lmBody.response_format = { type: "json_object" };
+        try {
+          const lmRes = await fetch(`${lmBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(lmBody),
+            signal: controller.signal,
+          });
+          const lmPayload = (await lmRes.json().catch(() => ({}))) as Record<string, unknown>;
+          const choices = lmPayload.choices as Array<{ message?: { content?: string } }> | undefined;
+          const text = choices?.[0]?.message?.content ?? "";
+          if (!lmRes.ok) {
+            const errMsg = typeof lmPayload.error === "string" ? lmPayload.error
+              : lmPayload.error && typeof (lmPayload.error as Record<string, unknown>).message === "string" ? ((lmPayload.error as Record<string, unknown>).message as string)
+              : `LM Studio error ${lmRes.status}`;
+            return { ok: false, status: lmRes.status, text: "", apiError: errMsg };
+          }
+          return { ok: true, status: 200, text: text.trim() };
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            if (aiAbortRef.current?.signal.aborted) return { ok: false, status: 0, text: "", apiError: "cancelled" };
+            return { ok: false, status: 0, text: "", apiError: "timeout" };
+          }
+          return { ok: false, status: 0, text: "", apiError: "Could not reach LM Studio. Make sure it is running on your computer with the server enabled." };
+        } finally {
+          window.clearTimeout(timeoutId);
+          aiAbortRef.current?.signal.removeEventListener("abort", onGlobalAbort);
+        }
+      }
+
+      // Standard path: proxy through server for cloud providers
       let response: Response;
       try {
         response = await fetch("/api/openrouter/complete", {
@@ -4606,7 +4650,6 @@ function NovelWorkspacePage() {
         });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
-          // Distinguish between user-cancel and timeout
           if (aiAbortRef.current?.signal.aborted) {
             return { ok: false, status: 0, text: "", apiError: "cancelled" };
           }

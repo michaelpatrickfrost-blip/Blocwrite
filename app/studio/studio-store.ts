@@ -1304,7 +1304,8 @@ export async function saveSettingsToServer(settings: Record<string, string>): Pr
   }
 }
 
-/** Collect all profile/assistant settings from localStorage into one object. */
+/** Collect all profile/assistant settings from localStorage into one object.
+ *  API keys are NEVER synced to the server — they stay in localStorage only. */
 export function gatherSettings(): Record<string, string> {
   if (typeof window === "undefined") return {};
   try {
@@ -1316,20 +1317,14 @@ export function gatherSettings(): Record<string, string> {
       "pilotwriter.tutorial.complete",
       "bw-theme",
     ];
-    // Also grab per-provider settings
-    const provider = window.localStorage.getItem("pilotwriter.assistant.provider") || "openrouter";
-    for (const field of ["key", "model", "baseUrl"]) {
-      keys.push(`pilotwriter.assistant.${provider}.${field}`);
-    }
-    // Grab other providers too
+    // Sync model and baseUrl per provider (but NOT keys — those stay local)
     for (const p of ["openrouter", "infermatic", "lmstudio", "huggingface"]) {
-      for (const field of ["key", "model", "baseUrl"]) {
-        const k = `pilotwriter.assistant.${p}.${field}`;
-        if (!keys.includes(k)) keys.push(k);
+      for (const field of ["model", "baseUrl"]) {
+        keys.push(`pilotwriter.assistant.${p}.${field}`);
       }
     }
-    // Legacy keys
-    keys.push("pilotwriter.openrouter.key", "pilotwriter.openrouter.model");
+    // Legacy model key only (not the API key)
+    keys.push("pilotwriter.openrouter.model");
 
     const settings: Record<string, string> = {};
     for (const key of keys) {
@@ -1342,12 +1337,16 @@ export function gatherSettings(): Record<string, string> {
   }
 }
 
-/** Apply settings from server into localStorage. */
+/** Apply settings from server into localStorage.
+ *  API keys are NEVER applied from server — they stay local only for security. */
 export function applySettings(settings: Record<string, string>) {
   if (typeof window === "undefined") return;
   try {
     for (const [key, value] of Object.entries(settings)) {
       if (typeof value === "string") {
+        // Skip API key fields — they should never come from the server
+        if (key.endsWith(".key") && key.startsWith("pilotwriter.")) continue;
+        if (key === "pilotwriter.openrouter.key") continue;
         window.localStorage.setItem(key, value);
       }
     }
