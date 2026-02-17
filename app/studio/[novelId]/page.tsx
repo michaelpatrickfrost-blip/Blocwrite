@@ -7076,7 +7076,6 @@ function NovelWorkspacePage() {
             tense: "",
             comps: [],
             bannedWords: [],
-            voiceNotes: "",
             voiceRules: "",
           },
         });
