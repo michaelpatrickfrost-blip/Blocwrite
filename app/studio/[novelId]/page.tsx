@@ -4278,7 +4278,7 @@ function NovelWorkspacePage() {
   ];
 
   const FOCUS_PRESETS: Array<{ id: string; label: string; hint: string }> = [
-    { id: "default", label: "Default", hint: "Canon voice, balanced narration/dialogue/action, matches novel's style" },
+    { id: "default", label: "Default", hint: "Balanced narration, dialogue, and action. Match the novel's established voice and genre conventions. Natural pacing." },
     { id: "dialogue", label: "Dialogue-Heavy", hint: "Higher dialogue ratio, faster exchanges, snappy back-and-forth, reduced exposition" },
     { id: "action", label: "Action & Pace", hint: "Shorter sentences, clear physical movement, high momentum, visceral detail" },
     { id: "introspection", label: "Introspection", hint: "Interior monologue, emotional processing, thematic depth, character reflection" },
@@ -4670,6 +4670,7 @@ function NovelWorkspacePage() {
     const storyPosition = getChapterStoryPosition(targetChapterId);
 
     const precedingProse = blocks.slice(0, blockIndex).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+    const followingProse = blocks.slice(blockIndex + 1).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
     const prevChapterEnding = (() => {
       if (precedingProse) return precedingProse.slice(-500);
       const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
@@ -4697,7 +4698,7 @@ function NovelWorkspacePage() {
       const boltonDirective = activeBolton ? getBoltonDirectiveText(activeBolton) : "";
 
       const focusPreset = FOCUS_PRESETS.find((p) => p.id === block.focus);
-      const focusHint = focusPreset && block.focus !== "default" ? `\nFOCUS MODE: ${focusPreset.hint}` : "";
+      const focusHint = focusPreset ? `\nFOCUS MODE: ${focusPreset.hint}` : "";
 
       const povNote = sv?.pov ? ` You MUST use ${sv.pov} POV.` : "";
       const nfProseCtx = isNF ? (() => {
@@ -4716,22 +4717,35 @@ function NovelWorkspacePage() {
         }
         return parts.join("\n");
       })() : "";
+      const spellingRule = profileLangCode === "en-GB" ? "Use BRITISH English spelling and grammar throughout (e.g. colour, realise, honour, favourite, centre, programme, travelling, defence). NEVER use American spellings."
+        : profileLangCode === "en-AU" ? "Use AUSTRALIAN English spelling and grammar throughout (e.g. colour, realise, honour, centre). NEVER use American spellings."
+        : profileLangCode === "en-CA" ? "Use CANADIAN English spelling and grammar throughout (e.g. colour, favourite, centre, but -ize endings like realize). NEVER use British -ise endings."
+        : "Use AMERICAN English spelling and grammar throughout (e.g. color, realize, honor, favorite, center, program, traveling, defense). NEVER use British spellings.";
+
+      const humanWritingRules = [
+        "WRITE LIKE A HUMAN AUTHOR, NOT AN AI. This is the most important rule.",
+        "NEVER use em dashes (—). Use commas, full stops, or semicolons instead.",
+        "NEVER use these AI clichés: 'a chill ran down', 'little did they know', 'the weight of', 'a sense of', 'couldn't help but', 'a mixture of', 'the silence was deafening', 'time seemed to', 'knot in their stomach', 'pierced the silence'.",
+        "Vary sentence length naturally — mix short punchy sentences with longer flowing ones. Do NOT make every sentence the same length.",
+        "Use concrete sensory details, not abstract emotional labels. Show emotions through action and body language, not by naming them.",
+        "Dialogue should sound like real people talking — contractions, interruptions, half-finished thoughts. Not every line needs a dialogue tag.",
+        spellingRule,
+      ].join("\n");
+
       const systemMsg = isNF ? [
-        `You are a ${isNF && nfData?.subtype === "true-crime" ? "true crime" : isNF && nfData?.subtype === "historical" ? "historical non-fiction" : isNF && nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} writer working in ${profileLangLabel}. Write authentic, compelling prose based on real events.`,
-        "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
+        `You are a professional ${nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} author writing in ${profileLangLabel}.`,
+        "You write like a published human author. Your prose is natural, varied, and compelling.",
         povNote,
-        nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight. Maintain factual accuracy while keeping the reader gripped." :
-        nfData?.subtype === "historical" ? "Write with authority and narrative drive. Ground historical facts in human experience and sensory detail." :
-        nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing. Build from evidence to conclusion." :
-        "This is non-fiction — honour the truth of the events while making the prose compelling and literary.",
-        "Use real people's names and places from the Canon. Write with empathy and insight.",
-        "Return ONLY the prose. No headers, labels, JSON, block markers, word counts.",
+        nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight." :
+        nfData?.subtype === "historical" ? "Write with authority, narrative drive, and period authenticity." :
+        nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing." :
+        "Write with emotional honesty and literary quality.",
+        "Use real names and places from Canon. Return ONLY prose — no headers, labels, JSON, or metadata.",
       ].join(" ") : [
-        `You are a novelist writing in ${profileLangLabel}. Your PRIMARY job: match the author's style, voice, and genre.`,
-        "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
+        `You are a professional novelist writing in ${profileLangLabel}. You write like a published human author — natural, skilled, varied prose.`,
+        "Your PRIMARY job: match the author's established style, voice, and genre conventions from the Style section.",
         povNote,
-        "Use ONLY characters and locations from the Canon. Do NOT invent new ones.",
-        "Return ONLY the prose. No headers, labels, JSON, block markers, word counts. No thinking blocks — only novel text.",
+        "Use ONLY characters and locations from Canon. Return ONLY prose — no headers, labels, JSON, metadata, or thinking.",
       ].join(" ");
 
       const isBestFit = block.wordTarget === 0;
@@ -4745,13 +4759,14 @@ function NovelWorkspacePage() {
       }).join("\n\n");
 
       const prompt = [
-        "STYLE AND TONE — CRITICAL: Match the author's voice, genre, and style. This is your top priority.",
+        "STYLE AND TONE — THIS IS YOUR TOP PRIORITY:",
         styleSection || "Use professional, consistent prose.",
+        humanWritingRules,
         boltonDirective ? `\nBOLT-ON DIRECTIVE: ${boltonDirective}` : "",
         focusHint,
         "",
         isBestFit
-          ? `Write prose for SCENE ${blockIndex + 1} ONLY. Use the length that best serves the scene — let the synopsis complexity and dramatic weight guide you. Aim for a natural, well-paced scene.`
+          ? `Write prose for SCENE ${blockIndex + 1} ONLY. Let the synopsis complexity guide the length. Write a natural, well-paced scene.`
           : `Write prose for SCENE ${blockIndex + 1} ONLY. TARGET: ~${block.wordTarget} words.`,
         "",
         `Chapter: ${activeChapter.title}`,
@@ -4761,21 +4776,22 @@ function NovelWorkspacePage() {
         "ALL SCENE BLOCKS (for context — write ONLY the indicated scene):",
         sceneContext,
         "",
-        prevChapterEnding ? `Text immediately before this scene:\n${prevChapterEnding.slice(-400)}` : "",
-        previousChapterSynopsis && blockIndex === 0 ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
-        nextChapterSynopsis && blockIndex === blocks.length - 1 ? `Next chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
+        prevChapterEnding ? `PROSE BEFORE THIS SCENE (your scene MUST continue seamlessly from this — match the tone, rhythm, and flow):\n"""${prevChapterEnding.slice(-600)}"""` : "",
+        followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
+        previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+        nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
         "",
         nfProseCtx ? `\nMemoir Context:\n${nfProseCtx}` : "",
         "Canon (style, voice, characters, locations):",
         fullContext.slice(0, 3000),
         "",
         "RULES:",
-        `- Write prose for Scene ${blockIndex + 1} ONLY.`,
-        "- Continue naturally from the preceding text.",
-        "- Respect the word target and focus mode.",
-        isNF ? "- This is non-fiction. Write with authenticity — sensory memory, emotional truth, and real events." : "- Maintain character continuity and canon consistency.",
-        "- Write like a professional published author. No AI clichés.",
-        "- Output the scene prose only. No explanation, no thinking — only novel text.",
+        `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
+        "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
+        "- If there is prose after your scene, your ending must flow naturally into it.",
+        isNF ? "- Non-fiction: write with authenticity, sensory memory, and emotional truth." : "- Maintain character and canon consistency throughout.",
+        "- Write like a skilled human author. Varied sentence rhythm. No AI patterns.",
+        "- Output the scene prose ONLY. No commentary, no labels, no metadata.",
       ].filter(Boolean).join("\n");
 
       const maxTokens = Math.min(4000, Math.round((isBestFit ? 1000 : block.wordTarget) * 2.0));
