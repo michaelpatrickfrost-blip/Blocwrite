@@ -3810,8 +3810,16 @@ function NovelWorkspacePage() {
       bestseller: `Rewrite the SELECTED TEXT in a BESTSELLER TONE — punchy, commercial, page-turning prose. Short sentences mixed with longer ones. Active voice. Direct. Restructure for pace and impact. Think Colleen Hoover, Lee Child, or Gillian Flynn. Keep the same events and meaning but the prose MUST read differently.`,
     };
 
+    const svr = novel.storyBible.styleVoice;
+    const rewriteStyleCtx = [
+      svr?.comps?.length ? `Style: ${svr.comps.slice(0, 5).join(", ")}.` : "",
+      svr?.voiceRules ? `Voice rules: ${svr.voiceRules.slice(0, 600)}` : "",
+      svr?.pov ? `POV: ${svr.pov}.` : "",
+      svr?.tense ? `Tense: ${svr.tense}.` : "",
+    ].filter(Boolean).join(" ");
     const systemMsg = [
       `You are a prose rewriting specialist for a ${novelGenre} novel.`,
+      rewriteStyleCtx ? `AUTHOR'S STYLE (follow closely): ${rewriteStyleCtx}` : "",
       `CRITICAL: You MUST produce a genuinely DIFFERENT version of the text. Do NOT return the original text or something nearly identical.`,
       `Change sentence structures, word choices, rhythm, and phrasing. The rewrite should be clearly improved and noticeably different from the original.`,
       `Return ONLY the replacement prose — nothing else. No quotes, no labels, no explanations, no "Here is the rewritten text:".`,
@@ -3819,7 +3827,7 @@ function NovelWorkspacePage() {
       `The replacement must flow naturally with the text before and after it.`,
       `Avoid AI writing patterns: no excessive em dashes, no "a testament to", "the weight of", "couldn't help but". Write like a human author.`,
       `Match the tense, POV, and general voice of the surrounding prose.`,
-    ].join(" ");
+    ].filter(Boolean).join(" ");
 
     const prompt = [
       `TEXT BEFORE (context only — do NOT include in output):`,
@@ -3944,15 +3952,23 @@ function NovelWorkspacePage() {
     const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
     const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
 
+    const sv = novel.storyBible.styleVoice;
+    const styleContext = [
+      sv?.comps?.length ? `Style: ${sv.comps.slice(0, 5).join(", ")}.` : "",
+      sv?.voiceRules ? `Voice rules to follow: ${sv.voiceRules.slice(0, 600)}` : "",
+      sv?.pov ? `POV: ${sv.pov}.` : "",
+      sv?.tense ? `Tense: ${sv.tense}.` : "",
+    ].filter(Boolean).join(" ");
     const systemMsg = [
       `You are a literary rewrite assistant for a ${novelGenre} novel.`,
       `Rewrite the user's prose in a "${mode.label}" style: ${mode.desc}.`,
+      styleContext ? `AUTHOR'S STYLE (follow closely): ${styleContext}` : "",
       `Keep the same plot events, characters, setting, and structure.`,
       `Only change tone, word choice, sentence rhythm, and phrasing.`,
       `Return ONLY the rewritten prose. No headings, labels, or commentary.`,
       `The rewritten text must be roughly the same length as the original.`,
       `NEVER truncate or summarize — rewrite the ENTIRE passage.`,
-    ].join(" ");
+    ].filter(Boolean).join(" ");
 
     setChapterRewriteBusy(true);
     setChapterRewriteMenuOpen(false);
@@ -4607,7 +4623,8 @@ function NovelWorkspacePage() {
         summary.tone?.length ? `Tone: ${summary.tone.slice(0, 10).join(", ")}` : "",
         sv?.pov ? `POV: ${sv.pov}` : "",
         sv?.tense ? `Tense: ${sv.tense}` : "",
-        sv?.voiceRules ? `Style rules: ${(sv.voiceRules ?? "").slice(0, 1200)}` : "",
+        sv?.comps?.length ? `Style: ${sv.comps.slice(0, 5).join(", ")}` : "",
+        sv?.voiceRules ? `Voice & style rules (FOLLOW THESE CLOSELY): ${(sv.voiceRules ?? "").slice(0, 1200)}` : "",
       ].filter(Boolean).join("\n");
 
       const blockBoltonId = block.notes || chapterBoltonId;
@@ -5222,51 +5239,72 @@ function NovelWorkspacePage() {
     }
   }
 
+  function stripAuthorNames(text: string, userInput: string): string {
+    if (!text) return text;
+    const names = userInput.split(/[,&+]/).map(n => n.trim()).filter(Boolean);
+    let cleaned = text;
+    for (const name of names) {
+      const parts = name.split(/\s+/);
+      const escaped = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      cleaned = cleaned.replace(new RegExp(escaped(name), "gi"), "");
+      if (parts.length > 1) {
+        for (const part of parts) {
+          if (part.length > 2) cleaned = cleaned.replace(new RegExp(`\\b${escaped(part)}\\b`, "gi"), "");
+        }
+      }
+    }
+    return cleaned.replace(/\s{2,}/g, " ").replace(/^\s*[,;:.\-–—]+\s*/g, "").trim();
+  }
+
   async function runDescribeWriterStyle() {
     if (!novel || !ensureStoryAiReady()) return;
     if (!styleAuthorDraft.trim()) {
-      setStoryAiError("Enter a writer name first.");
+      setStoryAiError("Describe a writing style first.");
       return;
     }
     setStoryAiBusyAction("style-author");
     setStoryAiError(null);
     try {
       const context = buildStoryBibleContext("characterCompact");
-      const systemMsg = "Writing style analyst. Return only valid JSON. CRITICAL: NEVER mention any author or writer names in voiceRules. Describe the style purely in terms of technique — sentence structure, vocabulary, pacing, dialogue patterns, tone, and rhythm. The output must read as original style guidance, not as a reference to any real person.";
+      const systemMsg = [
+        "Writing style analyst. Return only valid JSON.",
+        "ABSOLUTE RULE: NEVER mention any author, writer, or person names anywhere in your output — not in voiceRules, not in toneTags, not in styleComparables.",
+        "Describe the style purely in terms of technique: sentence structure, vocabulary, pacing, dialogue patterns, tone, rhythm, and prose texture.",
+        "The output must read as original style guidance that could stand alone without referencing any real person.",
+      ].join(" ");
       const prompt = [
-        `Analyze the writing style of: ${styleAuthorDraft.trim()}. Return JSON:`,
-        `{ "voiceRules": "practical style rules (max 800 chars) describing sentence structure, vocabulary, pacing, dialogue patterns, tone, and rhythm. NEVER name any author — describe only the techniques and characteristics.", "toneTags": ["tone1"], "styleComparables": ["similar style descriptor, e.g. visceral suspense, literary minimalism"] }`,
+        `The user describes their desired writing style as: "${styleAuthorDraft.trim()}". Analyze this and return JSON:`,
+        `{ "voiceRules": "practical style rules (max 800 chars) — sentence structure, vocabulary level, pacing, dialogue patterns, tone, rhythm, prose texture. NO author/person names.", "toneTags": ["tone1","tone2"], "styleComparables": ["style descriptor without names, e.g. visceral suspense, literary minimalism, sparse hardboiled noir"] }`,
         `Novel context:\n${context}`,
       ].join("\n\n");
       const data = await requestOpenRouterJson<{
         voiceRules?: string;
         toneTags?: string[];
         styleComparables?: string[];
-      }>(prompt, 350, { systemMessage: systemMsg });
+      }>(prompt, 400, { systemMessage: systemMsg });
 
+      const rawRules = typeof data.voiceRules === "string" ? stripAuthorNames(data.voiceRules.trim(), styleAuthorDraft) : "";
+      const aiComps = parseStringList(data.styleComparables).map(c => stripAuthorNames(c, styleAuthorDraft)).filter(Boolean);
+      const aiTone = parseStringList(data.toneTags).map(t => stripAuthorNames(t, styleAuthorDraft)).filter(Boolean);
       const currentComps = novel.storyBible.styleVoice.comps ?? [];
-      const aiComps = parseStringList(data.styleComparables);
       const mergedComps = Array.from(new Set([...currentComps, ...aiComps]));
 
       updateStoryBible({
         styleVoice: {
           ...novel.storyBible.styleVoice,
-          voiceRules:
-            typeof data.voiceRules === "string" && data.voiceRules.trim()
-              ? data.voiceRules.trim()
-              : novel.storyBible.styleVoice.voiceRules ?? "",
+          voiceRules: rawRules || novel.storyBible.styleVoice.voiceRules || "",
           comps: mergedComps,
         },
         summary: {
           ...novel.storyBible.summary,
-          tone: parseStringList(data.toneTags).length
-            ? Array.from(new Set([...(novel.storyBible.summary.tone ?? []), ...parseStringList(data.toneTags)]))
+          tone: aiTone.length
+            ? Array.from(new Set([...(novel.storyBible.summary.tone ?? []), ...aiTone]))
             : novel.storyBible.summary.tone,
         },
       });
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
-      setStoryAiError(error instanceof Error ? error.message : "Unable to describe writer style.");
+      setStoryAiError(error instanceof Error ? error.message : "Unable to generate style.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -7853,8 +7891,8 @@ function NovelWorkspacePage() {
     const styleRules: string[] = [];
     if (sv.pov) styleRules.push(`POV: ${sv.pov}`);
     if (sv.tense) styleRules.push(`Tense: ${sv.tense}`);
-    if (sv.comps?.length) styleRules.push(`Style comparables: ${sv.comps.slice(0, 3).join(", ")}`);
-    if (sv.voiceRules) styleRules.push(`Voice rules: ${sv.voiceRules.slice(0, 150)}`);
+    if (sv.comps?.length) styleRules.push(`Style: ${sv.comps.slice(0, 5).join(", ")}`);
+    if (sv.voiceRules) styleRules.push(`Voice & style rules (FOLLOW CLOSELY): ${sv.voiceRules.slice(0, 600)}`);
     if (sv.bannedWords?.length) styleRules.push(`Banned words: ${sv.bannedWords.slice(0, 8).join(", ")}`);
     const styleInfo = styleRules.length > 0 ? styleRules.join(". ") + "." : "";
 
@@ -14341,15 +14379,15 @@ function NovelWorkspacePage() {
                         })
                       }
                     />
-                    <label>Author Style</label>
+                    <label>Writing Style</label>
                     <p className="pw-field-help" style={{ marginBottom: 6, marginTop: 0 }}>
-                      Describe your writing style or name an author (e.g. &quot;Stephen King&quot;, &quot;dark literary prose with short punchy sentences&quot;) and AI will generate voice rules.
+                      Describe the writing style you want — AI will generate voice rules, tone, and style guidance from your description.
                     </p>
                     <div className="pw-ai-assist-row">
                       <input
                         className="pw-bible-input pw-ai-assist-select"
                         maxLength={STORY_BIBLE_LIMITS.styleVoice.compItem}
-                        placeholder="e.g. Stephen King, literary thriller, punchy dialogue..."
+                        placeholder="e.g. dark literary prose, punchy dialogue, sparse and gritty..."
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
                         onKeyDown={(event) => {
