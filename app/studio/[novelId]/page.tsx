@@ -37,6 +37,8 @@ import {
   type ThemeEntry,
   type ThemePresence,
   type LoreEntry,
+  type LifeEvent,
+  type NonfictionData,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -979,7 +981,7 @@ function NovelWorkspacePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showStoryBibleModal, setShowStoryBibleModal] = useState(false);
   const [bibleSection, setBibleSection] = useState<
-    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge"
+    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships"
   >(
     "summary",
   );
@@ -1439,6 +1441,8 @@ function NovelWorkspacePage() {
     () => (novel ? novel.chapters.find((chapter) => chapter.id === activeChapterId) ?? null : null),
     [novel, activeChapterId],
   );
+  const isNF = novel?.novelType === "nonfiction";
+  const nfData = novel?.storyBible.nonfiction;
   const storyCharacters = useMemo(() => novel?.storyBible.characters ?? [], [novel]);
   const storyLocations = useMemo(() => novel?.storyBible.locations ?? [], [novel]);
   const storyTimelineEvents = useMemo(() => novel?.storyBible.timeline ?? [], [novel]);
@@ -2419,7 +2423,41 @@ function NovelWorkspacePage() {
         ? `The author is currently working on Chapter ${novel.chapters.findIndex((c) => c.id === activeChapter.id) + 1}: "${activeChapter.title || "Untitled"}".`
         : `The author is on the novel overview.`;
 
-      const systemPrompt = [
+      const nfCoAuthorCtx = isNF ? (() => {
+        const nf = novel.storyBible.nonfiction;
+        const parts: string[] = ["\n=== MEMOIR CONTEXT ==="];
+        if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName} (${nf.subjectRelation || "subject"})`);
+        if (nf?.era) parts.push(`Era: ${nf.era}`);
+        if (nf?.setting) parts.push(`Setting: ${nf.setting}`);
+        if (nf?.centralTheme) parts.push(`Theme: ${nf.centralTheme}`);
+        if (nf?.lifeEvents?.length) {
+          parts.push(`Life Events (${nf.lifeEvents.length}):`);
+          nf.lifeEvents.slice(0, 15).forEach((e, i) => parts.push(`  ${i + 1}. ${e.title}${e.date ? ` (${e.date})` : ""}: ${e.description?.slice(0, 120) || ""}`));
+        }
+        return parts.join("\n");
+      })() : "";
+
+      const systemPrompt = isNF ? [
+        `You are The Co-Author — a warm, insightful writing partner for the memoir/biography "${novel.title}".`,
+        `You have complete knowledge of the subject's life events, people, places, and themes. You help the author shape their true story into compelling narrative prose.`,
+        ``,
+        `=== FULL STORY BIBLE ===`,
+        bibleContext,
+        nfCoAuthorCtx,
+        ``,
+        `=== CHAPTERS ===`,
+        chapterDetails || "(No chapters yet)",
+        ``,
+        `=== CURRENT STATE ===`,
+        activeChapterCtx,
+        ``,
+        `=== BEHAVIOUR ===`,
+        `This is a non-fiction memoir/biography. Help the author tell their true story with authenticity, emotional depth, and literary quality.`,
+        `When suggesting prose, focus on sensory memory, dialogue reconstruction, and emotional truth.`,
+        `Be empathetic and encouraging. Help recover forgotten details by asking thoughtful questions.`,
+        `If asked for creative suggestions, ground them in the real events and people from the memoir context.`,
+        `Don't dump information unprompted — only reference details when relevant to the author's question.`,
+      ].join("\n") : [
         `You are The Co-Author — a sharp, knowledgeable writing partner for the novel "${novel.title}".`,
         `You have complete knowledge of the entire novel: its synopsis, characters, plot, themes, chapters, locations, lore, and everything in the story bible. Use this knowledge when the author asks about any aspect of their story.`,
         ``,
@@ -3949,7 +3987,7 @@ function NovelWorkspacePage() {
     const chapterId = activeChapter.id;
     const blocks = getSceneBlocks(activeChapter);
     const hasBlocks = blocks.length > 0 && blocks.some(b => b.prose?.trim());
-    const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
+    const novelGenre = isNF ? "memoir/biography" : (novel.storyBible.summary.genre?.join(", ") || "fiction");
     const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
 
     const sv = novel.storyBible.styleVoice;
@@ -3960,10 +3998,10 @@ function NovelWorkspacePage() {
       sv?.tense ? `Tense: ${sv.tense}.` : "",
     ].filter(Boolean).join(" ");
     const systemMsg = [
-      `You are a literary rewrite assistant for a ${novelGenre} novel.`,
+      `You are a literary rewrite assistant for a ${novelGenre}${isNF ? " (non-fiction)" : " novel"}.`,
       `Rewrite the user's prose in a "${mode.label}" style: ${mode.desc}.`,
       styleContext ? `AUTHOR'S STYLE (follow closely): ${styleContext}` : "",
-      `Keep the same plot events, characters, setting, and structure.`,
+      isNF ? `Keep all real events, people, and facts accurate. Only change tone, word choice, and phrasing.` : `Keep the same plot events, characters, setting, and structure.`,
       `Only change tone, word choice, sentence rhythm, and phrasing.`,
       `Return ONLY the rewritten prose. No headings, labels, or commentary.`,
       `The rewritten text must be roughly the same length as the original.`,
@@ -4635,7 +4673,30 @@ function NovelWorkspacePage() {
       const focusHint = focusPreset && block.focus !== "default" ? `\nFOCUS MODE: ${focusPreset.hint}` : "";
 
       const povNote = sv?.pov ? ` You MUST use ${sv.pov} POV.` : "";
-      const systemMsg = [
+      const nfProseCtx = isNF ? (() => {
+        const nf = novel.storyBible.nonfiction;
+        const parts: string[] = [];
+        if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName}`);
+        if (nf?.era) parts.push(`Era: ${nf.era}`);
+        if (nf?.centralTheme) parts.push(`Central theme: ${nf.centralTheme}`);
+        const relevantEvents = (nf?.lifeEvents ?? []).filter(e =>
+          block.synopsis?.toLowerCase().includes(e.title.toLowerCase()) ||
+          e.people.some(p => block.synopsis?.toLowerCase().includes(p.toLowerCase()))
+        );
+        if (relevantEvents.length) {
+          parts.push("Relevant life events:");
+          relevantEvents.forEach(e => parts.push(`  - ${e.title}: ${e.description?.slice(0, 200) || ""}`));
+        }
+        return parts.join("\n");
+      })() : "";
+      const systemMsg = isNF ? [
+        `You are a memoir/biography writer working in ${profileLangLabel}. Write authentic, emotionally rich prose based on real life events.`,
+        "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
+        povNote,
+        "This is non-fiction — honour the truth of the events while making the prose compelling and literary.",
+        "Use real people's names and places from the Canon. Write with empathy and insight.",
+        "Return ONLY the prose. No headers, labels, JSON, block markers, word counts.",
+      ].join(" ") : [
         `You are a novelist writing in ${profileLangLabel}. Your PRIMARY job: match the author's style, voice, and genre.`,
         "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
         povNote,
@@ -4674,6 +4735,7 @@ function NovelWorkspacePage() {
         previousChapterSynopsis && blockIndex === 0 ? `Previous chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `Next chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
         "",
+        nfProseCtx ? `\nMemoir Context:\n${nfProseCtx}` : "",
         "Canon (style, voice, characters, locations):",
         fullContext.slice(0, 3000),
         "",
@@ -4681,7 +4743,7 @@ function NovelWorkspacePage() {
         `- Write prose for Scene ${blockIndex + 1} ONLY.`,
         "- Continue naturally from the preceding text.",
         "- Respect the word target and focus mode.",
-        "- Maintain character continuity and canon consistency.",
+        isNF ? "- This is non-fiction. Write with authenticity — sensory memory, emotional truth, and real events." : "- Maintain character continuity and canon consistency.",
         "- Write like a professional published author. No AI clichés.",
         "- Output the scene prose only. No explanation, no thinking — only novel text.",
       ].filter(Boolean).join("\n");
@@ -6249,7 +6311,42 @@ function NovelWorkspacePage() {
       };
       type BatchResult = { chapters?: BatchChapter[] };
 
-      const batchPrompt = [
+      const nfCtx = isNF ? (() => {
+        const nf = novel.storyBible.nonfiction;
+        const parts: string[] = [];
+        if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName} (${nf.subjectRelation || "subject"})`);
+        if (nf?.era) parts.push(`Era: ${nf.era}`);
+        if (nf?.setting) parts.push(`Setting: ${nf.setting}`);
+        if (nf?.centralTheme) parts.push(`Central theme: ${nf.centralTheme}`);
+        if (nf?.lifeEvents?.length) {
+          parts.push("Life Events (source material for chapters):");
+          nf.lifeEvents.forEach((e, i) => {
+            parts.push(`  ${i + 1}. ${e.title}${e.date ? ` (${e.date})` : ""}: ${e.description || ""}${e.emotion ? ` [Emotion: ${e.emotion}]` : ""}${e.impact ? ` [Impact: ${e.impact}]` : ""}`);
+          });
+        }
+        return parts.join("\n");
+      })() : "";
+
+      const batchPrompt = isNF ? [
+        `Create a detailed ${planTarget}-chapter outline for this memoir/biography.`,
+        `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }] }`,
+        "",
+        "RULES:",
+        `- Return EXACTLY ${planTarget} chapters.`,
+        "- This is a NON-FICTION memoir/biography. Base chapters on the real life events provided.",
+        "- Each synopsis must be 5-8 detailed sentences describing what happens in the chapter.",
+        "- Follow a chronological or thematic arc through the life events.",
+        "- Use the actual people and places from the life events.",
+        "- Capture the emotional journey — the timeline should feel like a narrative, not a list.",
+        "- Each chapter should focus on 1-3 related life events and explore them in depth.",
+        "- Include sensory details, dialogue possibilities, and emotional beats.",
+        "- The opening chapter should hook the reader — consider starting with a pivotal moment.",
+        "- The final chapter should provide closure or reflection.",
+        canonNames ? `- Names to use: ${canonNames}` : "",
+        pacingHint,
+        "",
+        `Context:\n${nfCtx}\n\nCanon:\n${context}`,
+      ].filter(Boolean).join("\n") : [
         `Create a detailed ${planTarget}-chapter outline for this novel.`,
         `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }] }`,
         "",
@@ -10634,37 +10731,63 @@ function NovelWorkspacePage() {
                 <div className="pw-overview-card pw-bible-card">
                   <div className="pw-overview-card-head">
                     <div>
-                      <h3>Canon</h3>
-                      <p className="pw-overview-sub">Your story&apos;s source of truth — characters, world, and voice.</p>
+                      <h3>{isNF ? "My Story" : "Canon"}</h3>
+                      <p className="pw-overview-sub">{isNF ? "Your life story source of truth — people, places, and events." : "Your story\u2019s source of truth — characters, world, and voice."}</p>
                     </div>
-                    <button type="button" className="btn btn-primary" data-tutorial="canon" onClick={() => setShowStoryBibleModal(true)}>
-                      Open Canon
+                    <button type="button" className="btn btn-primary" data-tutorial="canon" onClick={() => { if (isNF) setBibleSection("nf-about"); setShowStoryBibleModal(true); }}>
+                      {isNF ? "Open My Story" : "Open Canon"}
                     </button>
                   </div>
                   <div className="pw-bible-summary">
-                    <div>
-                      <div className="pw-bible-summary-number">
-                        {(novel.storyBible.characters?.length || 0) +
-                          (novel.storyBible.charactersList?.length || 0)}
-                      </div>
-                      <p>Characters</p>
-                    </div>
-                    <div>
-                      <div className="pw-bible-summary-number">{novel.storyBible.locations?.length || 0}</div>
-                      <p>Locations</p>
-                    </div>
-                    <div>
-                      <div className="pw-bible-summary-number">{novel.storyBible.lore?.length || 0}</div>
-                      <p>Lore entries</p>
-                    </div>
-                    <div className="pw-bible-summary-wide">
-                      <p className="pw-overview-sub">
-                        {novel.storyBible.summary?.synopsisShort
-                          ? novel.storyBible.summary.synopsisShort.slice(0, 140) +
-                            (novel.storyBible.summary.synopsisShort.length > 140 ? "…" : "")
-                          : "Add a synopsis to start your canon."}
-                      </p>
-                    </div>
+                    {isNF ? (
+                      <>
+                        <div>
+                          <div className="pw-bible-summary-number">{nfData?.lifeEvents?.length || 0}</div>
+                          <p>Life Events</p>
+                        </div>
+                        <div>
+                          <div className="pw-bible-summary-number">{novel.storyBible.characters?.length || 0}</div>
+                          <p>People</p>
+                        </div>
+                        <div>
+                          <div className="pw-bible-summary-number">{novel.storyBible.locations?.length || 0}</div>
+                          <p>Places</p>
+                        </div>
+                        <div className="pw-bible-summary-wide">
+                          <p className="pw-overview-sub">
+                            {nfData?.centralTheme || novel.storyBible.summary?.synopsisShort
+                              ? (nfData?.centralTheme || novel.storyBible.summary.synopsisShort).slice(0, 140)
+                              : "Open My Story to start building your memoir."}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <div className="pw-bible-summary-number">
+                            {(novel.storyBible.characters?.length || 0) +
+                              (novel.storyBible.charactersList?.length || 0)}
+                          </div>
+                          <p>Characters</p>
+                        </div>
+                        <div>
+                          <div className="pw-bible-summary-number">{novel.storyBible.locations?.length || 0}</div>
+                          <p>Locations</p>
+                        </div>
+                        <div>
+                          <div className="pw-bible-summary-number">{novel.storyBible.lore?.length || 0}</div>
+                          <p>Lore entries</p>
+                        </div>
+                        <div className="pw-bible-summary-wide">
+                          <p className="pw-overview-sub">
+                            {novel.storyBible.summary?.synopsisShort
+                              ? novel.storyBible.summary.synopsisShort.slice(0, 140) +
+                                (novel.storyBible.summary.synopsisShort.length > 140 ? "…" : "")
+                              : "Add a synopsis to start your canon."}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -12966,9 +13089,9 @@ function NovelWorkspacePage() {
           <div className="pw-bible-modal" data-tutorial="canon-modal" onClick={(event) => event.stopPropagation()}>
             <div className="pw-bible-modal-head">
               <div>
-                <p className="pw-bible-modal-kicker">Novel Overview</p>
-                <h2>Canon</h2>
-                <p className="pw-bible-modal-sub">Your story&apos;s source of truth — characters, world, and voice.</p>
+                <p className="pw-bible-modal-kicker">{isNF ? "Memoir & Biography" : "Novel Overview"}</p>
+                <h2>{isNF ? "My Story" : "Canon"}</h2>
+                <p className="pw-bible-modal-sub">{isNF ? "Your life story — people, places, events, and voice." : "Your story\u2019s source of truth — characters, world, and voice."}</p>
                 <p className="pw-field-help">Field limits keep autosave and assistant actions stable.</p>
               </div>
               <div className="pw-bible-modal-actions">
@@ -12984,15 +13107,24 @@ function NovelWorkspacePage() {
 
             <div className="pw-bible-modal-body">
               <aside className="pw-bible-nav">
-                {(
-                  [
-                    { id: "styleVoice", label: "Style & Voice" },
-                    { id: "summary", label: "Summary" },
-                    { id: "characters", label: "Characters" },
-                    { id: "locations", label: "Locations" },
-                    { id: "worldbuilding", label: "Worldbuilding" },
-                    { id: "boltons", label: "Bolt-Ons" },
-                  ] as const
+                {(isNF ? [
+                    { id: "nf-about" as const, label: "About" },
+                    { id: "nf-events" as const, label: "Life Events" },
+                    { id: "nf-interview" as const, label: "Life Interview" },
+                    { id: "nf-timeline" as const, label: "Emotional Timeline" },
+                    { id: "nf-relationships" as const, label: "Relationships" },
+                    { id: "characters" as const, label: "People" },
+                    { id: "locations" as const, label: "Places" },
+                    { id: "styleVoice" as const, label: "Style & Voice" },
+                    { id: "summary" as const, label: "Summary" },
+                  ] : [
+                    { id: "styleVoice" as const, label: "Style & Voice" },
+                    { id: "summary" as const, label: "Summary" },
+                    { id: "characters" as const, label: "Characters" },
+                    { id: "locations" as const, label: "Locations" },
+                    { id: "worldbuilding" as const, label: "Worldbuilding" },
+                    { id: "boltons" as const, label: "Bolt-Ons" },
+                  ]
                 ).map((item) => (
                   <button
                     key={item.id}
@@ -14445,6 +14577,670 @@ function NovelWorkspacePage() {
                   </div>
                 )}
 
+                {/* ═══════════════════ NON-FICTION: ABOUT ═══════════════════ */}
+                {bibleSection === "nf-about" && isNF && (
+                  <div className="pw-bible-section">
+                    <h3>About This Story</h3>
+                    <p className="pw-field-help" style={{ marginBottom: 12 }}>Who is this story about? Set the foundation for your memoir or biography.</p>
+
+                    <label>Subject Name</label>
+                    <input className="pw-bible-input" placeholder="e.g. John Smith" maxLength={120}
+                      value={nfData?.subjectName ?? ""}
+                      onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectName: e.target.value } } }))}
+                    />
+
+                    <label style={{ marginTop: 12 }}>Relation to Author</label>
+                    <select className="pw-bible-input" value={nfData?.subjectRelation ?? "myself"}
+                      onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectRelation: e.target.value } } }))}
+                    >
+                      <option value="myself">Myself (Autobiography)</option>
+                      <option value="parent">Parent</option>
+                      <option value="grandparent">Grandparent</option>
+                      <option value="partner">Partner / Spouse</option>
+                      <option value="child">Son / Daughter</option>
+                      <option value="sibling">Sibling</option>
+                      <option value="friend">Friend</option>
+                      <option value="historical">Historical Figure</option>
+                      <option value="other">Other</option>
+                    </select>
+
+                    <label style={{ marginTop: 12 }}>Era / Time Period</label>
+                    <input className="pw-bible-input" placeholder="e.g. 1960s–2020s, Post-war Britain, etc." maxLength={200}
+                      value={nfData?.era ?? ""}
+                      onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, era: e.target.value } } }))}
+                    />
+
+                    <label style={{ marginTop: 12 }}>Setting / Location</label>
+                    <input className="pw-bible-input" placeholder="e.g. Manchester, then London, with time in Australia" maxLength={300}
+                      value={nfData?.setting ?? ""}
+                      onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, setting: e.target.value } } }))}
+                    />
+
+                    <label style={{ marginTop: 12 }}>Central Theme</label>
+                    <textarea className="pw-bible-input" rows={3} maxLength={600}
+                      placeholder="What is the heart of this story? e.g. Overcoming adversity, a love story, finding identity..."
+                      value={nfData?.centralTheme ?? ""}
+                      onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, centralTheme: e.target.value } } }))}
+                    />
+
+                    {!aiOff && nfData?.era && (
+                      <div style={{ marginTop: 16 }}>
+                        <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                          onClick={async () => {
+                            if (!novel || storyAiBusyAction) return;
+                            setStoryAiBusyAction("nf-era-context");
+                            setStoryAiError(null);
+                            try {
+                              const prompt = [
+                                `Generate historical and cultural context for a memoir set in: ${nfData?.era || ""}.`,
+                                nfData?.setting ? `Location: ${nfData.setting}` : "",
+                                "Return JSON: { \"culturalNotes\": \"3-5 sentences about daily life, culture, and social norms of that era\", \"historicalEvents\": \"key events happening in the world during this time\", \"technology\": \"what technology and communication looked like\", \"musicAndMedia\": \"popular culture, music, TV, films of the era\" }",
+                              ].filter(Boolean).join("\n");
+                              const data = await requestOpenRouterJson<{ culturalNotes?: string; historicalEvents?: string; technology?: string; musicAndMedia?: string }>(prompt, 800, { systemMessage: "Era research assistant for memoir writers. Return valid JSON only." });
+                              const lore = [...(novel.storyBible.lore ?? [])];
+                              const entries: Array<{ key: string; val: string | undefined; cat: LoreEntry["category"] }> = [
+                                { key: "Cultural Context", val: data.culturalNotes, cat: "Culture" },
+                                { key: "Historical Events", val: data.historicalEvents, cat: "History" },
+                                { key: "Technology & Daily Life", val: data.technology, cat: "Tech" },
+                                { key: "Music & Popular Culture", val: data.musicAndMedia, cat: "Culture" },
+                              ];
+                              for (const entry of entries) {
+                                if (!entry.val) continue;
+                                if (!lore.some(l => l.title === entry.key)) {
+                                  lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: entry.val });
+                                }
+                              }
+                              mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, lore } }));
+                            } catch (err: unknown) {
+                              if (err instanceof Error && err.name === "AbortError") { /* */ } else {
+                                setStoryAiError(err instanceof Error ? err.message : "Failed to generate era context");
+                              }
+                            } finally { setStoryAiBusyAction(null); }
+                          }}
+                        >
+                          {storyAiBusyAction === "nf-era-context" ? "Researching..." : "AI Era Research"}
+                        </button>
+                        <p className="pw-field-help" style={{ marginTop: 4 }}>Generates historical & cultural context for your era and adds it to your story lore.</p>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Privacy Shield</div>
+                      <p style={{ fontSize: 12, color: "var(--pw-text-muted)", lineHeight: 1.5, margin: 0 }}>
+                        All personal information stays in your local project. Names and details are never sent to AI services — only anonymised context is used for generation. You can change any real name to a pseudonym above and it will be used throughout.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ═══════════════════ NON-FICTION: LIFE EVENTS ═══════════════════ */}
+                {bibleSection === "nf-events" && isNF && (
+                  <div className="pw-bible-section">
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Life Events</h3>
+                        <p className="pw-field-help">Key moments that form the backbone of the story. These become the source material for chapters.</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {!aiOff && (
+                          <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                            onClick={async () => {
+                              if (!novel || storyAiBusyAction) return;
+                              setStoryAiBusyAction("nf-suggest-events");
+                              setStoryAiError(null);
+                              try {
+                                const existing = (nfData?.lifeEvents ?? []).map(e => e.title).join(", ");
+                                const ctx = [
+                                  nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "",
+                                  nfData?.era ? `Era: ${nfData.era}` : "",
+                                  nfData?.setting ? `Setting: ${nfData.setting}` : "",
+                                  nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
+                                  existing ? `Already recorded: ${existing}` : "",
+                                ].filter(Boolean).join("\n");
+                                const prompt = `Based on this memoir/biography context, suggest 5 life events that would make compelling chapters. Return JSON array of objects with fields: title, date (approximate), description (2-3 sentences), emotion (one word), impact (one sentence).\n\nContext:\n${ctx}`;
+                                const result = await requestOpenRouterJson<Array<{ title: string; date?: string; description?: string; emotion?: string; impact?: string }>>(prompt, 1200, { systemMessage: "You are a memoir writing assistant. Return only valid JSON. Suggest meaningful life events based on the context provided. Focus on universal human experiences — milestones, turning points, losses, discoveries." });
+                                if (Array.isArray(result) && result.length > 0) {
+                                  const newEvents: LifeEvent[] = result.map((r, i) => ({
+                                    id: createEntityId("le"),
+                                    title: String(r.title || "Untitled"),
+                                    date: String(r.date || ""),
+                                    description: String(r.description || ""),
+                                    people: [],
+                                    places: [],
+                                    emotion: String(r.emotion || ""),
+                                    impact: String(r.impact || ""),
+                                    sortOrder: (nfData?.lifeEvents?.length ?? 0) + i,
+                                  }));
+                                  mutateNovel((n) => ({
+                                    ...n,
+                                    storyBible: {
+                                      ...n.storyBible,
+                                      nonfiction: { ...n.storyBible.nonfiction!, lifeEvents: [...(n.storyBible.nonfiction?.lifeEvents ?? []), ...newEvents] },
+                                    },
+                                  }));
+                                }
+                              } catch (err: unknown) {
+                                if (err instanceof Error && err.name === "AbortError") { /* cancelled */ } else {
+                                  setStoryAiError(err instanceof Error ? err.message : "Failed to suggest events");
+                                }
+                              } finally {
+                                setStoryAiBusyAction(null);
+                              }
+                            }}
+                          >
+                            {storyAiBusyAction === "nf-suggest-events" ? "Thinking..." : "AI Suggest Events"}
+                          </button>
+                        )}
+                        <button type="button" className="pw-ai-mini-btn" onClick={() => {
+                          const newEvent: LifeEvent = {
+                            id: createEntityId("le"), title: "", date: "", description: "",
+                            people: [], places: [], emotion: "", impact: "",
+                            sortOrder: nfData?.lifeEvents?.length ?? 0,
+                          };
+                          mutateNovel((n) => ({
+                            ...n,
+                            storyBible: {
+                              ...n.storyBible,
+                              nonfiction: { ...n.storyBible.nonfiction!, lifeEvents: [...(n.storyBible.nonfiction?.lifeEvents ?? []), newEvent] },
+                            },
+                          }));
+                        }}>
+                          + Add Event
+                        </button>
+                      </div>
+                    </div>
+
+                    {(nfData?.lifeEvents ?? []).length === 0 && (
+                      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
+                        <p style={{ fontSize: 14, marginBottom: 8 }}>No life events yet</p>
+                        <p style={{ fontSize: 12 }}>Add events manually or let AI suggest some based on your About details.</p>
+                      </div>
+                    )}
+
+                    {(nfData?.lifeEvents ?? []).map((evt, idx) => (
+                      <div key={evt.id} style={{
+                        background: "var(--pw-surface)", borderRadius: 8, padding: 14, marginBottom: 8,
+                        border: "1px solid var(--pw-border-light)",
+                      }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--pw-accent)", minWidth: 20 }}>#{idx + 1}</span>
+                          <input className="pw-bible-input" style={{ flex: 1, fontWeight: 600 }} placeholder="Event title" maxLength={200}
+                            value={evt.title}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              mutateNovel((n) => ({
+                                ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                  lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, title: val } : le),
+                                } },
+                              }));
+                            }}
+                          />
+                          <input className="pw-bible-input" style={{ width: 110 }} placeholder="Date" maxLength={50}
+                            value={evt.date}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              mutateNovel((n) => ({
+                                ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                  lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, date: val } : le),
+                                } },
+                              }));
+                            }}
+                          />
+                          <button type="button" style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+                            title="Delete event"
+                            onClick={() => mutateNovel((n) => ({
+                              ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).filter(le => le.id !== evt.id),
+                              } },
+                            }))}
+                          >×</button>
+                        </div>
+                        <textarea className="pw-bible-input" rows={2} placeholder="What happened? Describe the memory in detail..." maxLength={1200}
+                          value={evt.description}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            mutateNovel((n) => ({
+                              ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, description: val } : le),
+                              } },
+                            }));
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <label style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Emotion</label>
+                            <input className="pw-bible-input" placeholder="e.g. grief, joy, anger" maxLength={60}
+                              value={evt.emotion}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                mutateNovel((n) => ({
+                                  ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                    lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, emotion: val } : le),
+                                  } },
+                                }));
+                              }}
+                            />
+                          </div>
+                          <div style={{ flex: 2, minWidth: 180 }}>
+                            <label style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Impact — how did this change things?</label>
+                            <input className="pw-bible-input" placeholder="e.g. Never trusted anyone again" maxLength={300}
+                              value={evt.impact}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                mutateNovel((n) => ({
+                                  ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                    lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, impact: val } : le),
+                                  } },
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: 140 }}>
+                            <label style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>People involved (comma-separated)</label>
+                            <input className="pw-bible-input" placeholder="e.g. Mum, Uncle Frank" maxLength={300}
+                              value={evt.people.join(", ")}
+                              onChange={(e) => {
+                                const val = e.target.value.split(",").map(s => s.trim()).filter(Boolean);
+                                mutateNovel((n) => ({
+                                  ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                    lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, people: val } : le),
+                                  } },
+                                }));
+                              }}
+                            />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 140 }}>
+                            <label style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Places (comma-separated)</label>
+                            <input className="pw-bible-input" placeholder="e.g. Kitchen, Hospital" maxLength={300}
+                              value={evt.places.join(", ")}
+                              onChange={(e) => {
+                                const val = e.target.value.split(",").map(s => s.trim()).filter(Boolean);
+                                mutateNovel((n) => ({
+                                  ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                    lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, places: val } : le),
+                                  } },
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {!aiOff && evt.description && (
+                          <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                            <button type="button" className="pw-ai-mini-btn" style={{ fontSize: 10 }}
+                              disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (storyAiBusyAction) return;
+                                setStoryAiBusyAction(`nf-dialogue-${evt.id}`);
+                                setStoryAiError(null);
+                                try {
+                                  const prompt = [
+                                    "Based on this real life event, reconstruct plausible dialogue that might have occurred.",
+                                    "Write 3-5 short exchanges of natural dialogue between the people present.",
+                                    "Make it feel authentic to the era and emotional tone. Return ONLY the dialogue, no narration.",
+                                    `\nEvent: ${evt.title}`,
+                                    `Description: ${evt.description}`,
+                                    evt.people.length ? `People present: ${evt.people.join(", ")}` : "",
+                                    evt.emotion ? `Emotional tone: ${evt.emotion}` : "",
+                                  ].filter(Boolean).join("\n");
+                                  const dialogue = await requestOpenRouterText(prompt, 500, 60000, "Memoir dialogue reconstruction specialist. Write authentic, period-appropriate dialogue based on real events.");
+                                  if (dialogue?.trim()) {
+                                    const newDesc = evt.description + "\n\n--- Reconstructed Dialogue ---\n" + dialogue.trim();
+                                    mutateNovel((n) => ({
+                                      ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                        lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, description: newDesc } : le),
+                                      } },
+                                    }));
+                                  }
+                                } catch (err: unknown) {
+                                  if (err instanceof Error && err.name === "AbortError") { /* */ } else {
+                                    setStoryAiError(err instanceof Error ? err.message : "Dialogue reconstruction failed");
+                                  }
+                                } finally { setStoryAiBusyAction(null); }
+                              }}
+                            >
+                              {storyAiBusyAction === `nf-dialogue-${evt.id}` ? "Reconstructing..." : "Reconstruct Dialogue"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
+                  </div>
+                )}
+
+                {/* ═══════════════════ NON-FICTION: LIFE INTERVIEW ═══════════════════ */}
+                {bibleSection === "nf-interview" && isNF && (
+                  <div className="pw-bible-section" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Life Interview</h3>
+                        <p className="pw-field-help">Talk through your memories with AI. It asks questions, you tell stories. When ready, extract everything into your Canon.</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {!aiOff && (nfData?.interviewTranscript?.length ?? 0) > 2 && (
+                          <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                            onClick={async () => {
+                              if (!novel || storyAiBusyAction) return;
+                              setStoryAiBusyAction("nf-extract");
+                              setStoryAiError(null);
+                              try {
+                                const transcript = (nfData?.interviewTranscript ?? []).map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
+                                const prompt = [
+                                  "Extract structured memoir data from this interview transcript. Return JSON with:",
+                                  '{ "lifeEvents": [{ "title": "...", "date": "...", "description": "...", "emotion": "...", "impact": "...", "people": ["..."], "places": ["..."] }],',
+                                  '  "characters": [{ "name": "...", "role": "...", "description": "..." }],',
+                                  '  "locations": [{ "name": "...", "description": "..." }],',
+                                  '  "synopsis": "A 2-3 sentence synopsis of the overall story",',
+                                  '  "themes": ["theme1", "theme2"] }',
+                                  "",
+                                  `Transcript:\n${transcript.slice(0, 8000)}`,
+                                ].join("\n");
+                                const data = await requestOpenRouterJson<{
+                                  lifeEvents?: Array<{ title: string; date?: string; description?: string; emotion?: string; impact?: string; people?: string[]; places?: string[] }>;
+                                  characters?: Array<{ name: string; role?: string; description?: string }>;
+                                  locations?: Array<{ name: string; description?: string }>;
+                                  synopsis?: string;
+                                  themes?: string[];
+                                }>(prompt, 3000, { systemMessage: "You are a memoir data extraction assistant. Extract all named people, places, events, and themes from the transcript. Return valid JSON only." });
+                                mutateNovel((n) => {
+                                  const nf = { ...n.storyBible.nonfiction! };
+                                  if (Array.isArray(data.lifeEvents)) {
+                                    const newEvts: LifeEvent[] = data.lifeEvents.map((e, i) => ({
+                                      id: createEntityId("le"), title: String(e.title || ""), date: String(e.date || ""),
+                                      description: String(e.description || ""), emotion: String(e.emotion || ""),
+                                      impact: String(e.impact || ""), people: Array.isArray(e.people) ? e.people.map(String) : [],
+                                      places: Array.isArray(e.places) ? e.places.map(String) : [],
+                                      sortOrder: (nf.lifeEvents?.length ?? 0) + i,
+                                    }));
+                                    nf.lifeEvents = [...(nf.lifeEvents ?? []), ...newEvts];
+                                  }
+                                  nf.extractedAt = new Date().toISOString();
+                                  const chars = [...(n.storyBible.characters ?? [])];
+                                  if (Array.isArray(data.characters)) {
+                                    for (const c of data.characters) {
+                                      if (!c.name || chars.some(ec => ec.name.toLowerCase() === c.name.toLowerCase())) continue;
+                                      chars.push({
+                                        id: createEntityId("char"), name: c.name, role: "Supporting" as const,
+                                        logline: c.description || "", appearance: "", personality: "",
+                                        goals: "", fears: "", backstory: "",
+                                        relationships: [],
+                                      });
+                                    }
+                                  }
+                                  const locs = [...(n.storyBible.locations ?? [])];
+                                  if (Array.isArray(data.locations)) {
+                                    for (const l of data.locations) {
+                                      if (!l.name || locs.some(el => el.name.toLowerCase() === l.name.toLowerCase())) continue;
+                                      locs.push({ id: createEntityId("loc"), name: l.name, description: l.description || "" });
+                                    }
+                                  }
+                                  const summary = { ...n.storyBible.summary };
+                                  if (data.synopsis) summary.synopsisShort = data.synopsis;
+                                  if (Array.isArray(data.themes)) summary.themes = [...new Set([...(summary.themes ?? []), ...data.themes])];
+                                  return { ...n, storyBible: { ...n.storyBible, nonfiction: nf, characters: chars, locations: locs, summary } };
+                                });
+                                saveNow();
+                              } catch (err: unknown) {
+                                if (err instanceof Error && err.name === "AbortError") { /* cancelled */ } else {
+                                  setStoryAiError(err instanceof Error ? err.message : "Extraction failed");
+                                }
+                              } finally {
+                                setStoryAiBusyAction(null);
+                              }
+                            }}
+                          >
+                            {storyAiBusyAction === "nf-extract" ? "Extracting..." : "Extract to Canon"}
+                          </button>
+                        )}
+                        {(nfData?.interviewTranscript?.length ?? 0) > 0 && (
+                          <button type="button" className="pw-ai-mini-btn" style={{ opacity: 0.6 }}
+                            onClick={() => {
+                              if (!confirm("Clear the entire interview transcript?")) return;
+                              mutateNovel((n) => ({
+                                ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, interviewTranscript: [], interviewPhase: "big-picture" } },
+                              }));
+                            }}
+                          >Clear</button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "8px 0", minHeight: 200, maxHeight: 400 }}>
+                      {(nfData?.interviewTranscript ?? []).length === 0 && (
+                        <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--pw-text-dim)" }}>
+                          <p style={{ fontSize: 14, marginBottom: 8 }}>Ready for your life interview</p>
+                          <p style={{ fontSize: 12 }}>Type a message or click &quot;Start Interview&quot; to let AI guide you through your story.</p>
+                        </div>
+                      )}
+                      {(nfData?.interviewTranscript ?? []).map((msg, i) => (
+                        <div key={i} style={{
+                          padding: "8px 12px", borderRadius: 8, maxWidth: "85%",
+                          alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                          background: msg.role === "user" ? "var(--pw-accent)" : "var(--pw-surface)",
+                          color: msg.role === "user" ? "#000" : "var(--pw-text)",
+                          fontSize: 13, lineHeight: 1.5,
+                          border: msg.role === "ai" ? "1px solid var(--pw-border-light)" : "none",
+                        }}>
+                          {msg.text}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: "1px solid var(--pw-border-light)" }}>
+                      {(nfData?.interviewTranscript ?? []).length === 0 && !aiOff && (
+                        <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                          onClick={async () => {
+                            if (storyAiBusyAction) return;
+                            setStoryAiBusyAction("nf-interview");
+                            try {
+                              const ctx = [
+                                nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "",
+                                nfData?.era ? `Era: ${nfData.era}` : "",
+                                nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
+                              ].filter(Boolean).join(". ");
+                              const prompt = `You are starting a memoir interview${ctx ? ` about: ${ctx}` : ""}. Ask an engaging opening question to get them talking about their life. Be warm, conversational, and curious. Just the question, 2-3 sentences max.`;
+                              const res = await requestOpenRouterText(prompt, 200);
+                              const aiText = typeof res === "string" ? res.trim() : "";
+                              if (aiText) {
+                                mutateNovel((n) => ({
+                                  ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, interviewTranscript: [{ role: "ai" as const, text: aiText }] } },
+                                }));
+                              }
+                            } catch { /* */ } finally { setStoryAiBusyAction(null); }
+                          }}
+                        >
+                          {storyAiBusyAction === "nf-interview" ? "Starting..." : "Start Interview"}
+                        </button>
+                      )}
+                      <input
+                        className="pw-bible-input" style={{ flex: 1 }}
+                        placeholder="Tell your story..."
+                        maxLength={2000}
+                        onKeyDown={async (e) => {
+                          if (e.key !== "Enter" || !e.currentTarget.value.trim() || storyAiBusyAction) return;
+                          const userText = e.currentTarget.value.trim();
+                          e.currentTarget.value = "";
+                          const transcript = [...(nfData?.interviewTranscript ?? []), { role: "user" as const, text: userText }];
+                          mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, interviewTranscript: transcript } } }));
+                          if (aiOff) return;
+                          setStoryAiBusyAction("nf-interview");
+                          try {
+                            const recent = transcript.slice(-10).map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
+                            const ctx = [
+                              nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "",
+                              nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
+                            ].filter(Boolean).join(". ");
+                            const memoryPrompts = [
+                              "What sounds, smells, or textures do you remember from that moment?",
+                              "Who else was there? What were they doing?",
+                              "What were you thinking at the time?",
+                              "How did you feel right before it happened?",
+                              "If you could go back to that moment, what would you notice?",
+                              "What happened right after?",
+                              "Did anyone say something you still remember word for word?",
+                            ];
+                            const randomPrompt = memoryPrompts[Math.floor(Math.random() * memoryPrompts.length)];
+                            const prompt = [
+                              `You're conducting a warm, conversational memoir interview${ctx ? ` (${ctx})` : ""}.`,
+                              "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper into the memory.",
+                              `Optionally weave in a sensory memory prompt like: "${randomPrompt}"`,
+                              "Keep it natural — like a friend who's genuinely curious. 2-4 sentences max.",
+                              `\nRecent conversation:\n${recent}`,
+                            ].join("\n");
+                            const res = await requestOpenRouterText(prompt, 300);
+                            const aiText = typeof res === "string" ? res.trim() : "";
+                            if (aiText) {
+                              mutateNovel((n) => ({
+                                ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                  interviewTranscript: [...(n.storyBible.nonfiction?.interviewTranscript ?? []), { role: "ai" as const, text: aiText }],
+                                } },
+                              }));
+                            }
+                          } catch { /* */ } finally { setStoryAiBusyAction(null); }
+                        }}
+                      />
+                    </div>
+                    {storyAiError && <p className="pw-ora-error pw-bible-ai-error" style={{ marginTop: 8 }}>{storyAiError}</p>}
+                  </div>
+                )}
+
+                {/* ═══════════════════ NON-FICTION: EMOTIONAL TIMELINE ═══════════════════ */}
+                {bibleSection === "nf-timeline" && isNF && (
+                  <div className="pw-bible-section">
+                    <h3>Emotional Timeline</h3>
+                    <p className="pw-field-help" style={{ marginBottom: 16 }}>Visualise the emotional arc of the story. Events are plotted by their emotion to help you see the narrative shape.</p>
+
+                    {(nfData?.lifeEvents ?? []).length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
+                        <p style={{ fontSize: 14 }}>Add Life Events first to see the emotional timeline.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {(() => {
+                          const emotionValues: Record<string, number> = {
+                            joy: 5, love: 5, pride: 4, hope: 4, excitement: 4, gratitude: 4, relief: 3, peace: 3,
+                            surprise: 2, nostalgia: 2, bittersweet: 1, confusion: 0, anxiety: -1, loneliness: -1,
+                            frustration: -2, anger: -2, fear: -3, shame: -3, guilt: -3, sadness: -4, grief: -5, despair: -5,
+                          };
+                          const events = (nfData?.lifeEvents ?? []).filter(e => e.title);
+                          return events.map((evt) => {
+                            const emotionKey = evt.emotion.toLowerCase().trim();
+                            const val = emotionValues[emotionKey] ?? 0;
+                            const pct = ((val + 5) / 10) * 100;
+                            const color = val > 2 ? "#22c55e" : val > 0 ? "#a3e635" : val === 0 ? "#94a3b8" : val > -3 ? "#f59e0b" : "#ef4444";
+                            return (
+                              <div key={evt.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                                <span style={{ fontSize: 11, color: "var(--pw-text-dim)", minWidth: 80, textAlign: "right" }}>{evt.date || "—"}</span>
+                                <div style={{ flex: 1, position: "relative", height: 28, background: "var(--pw-surface)", borderRadius: 4, overflow: "hidden" }}>
+                                  <div style={{
+                                    position: "absolute", left: `${Math.min(pct, 95)}%`, top: 2, bottom: 2,
+                                    width: 8, borderRadius: 4, background: color,
+                                    transform: "translateX(-50%)", transition: "left 0.3s",
+                                  }} />
+                                  <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 600, color: "var(--pw-text)" }}>
+                                    {evt.title.slice(0, 40)}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: 10, color, minWidth: 60, textAlign: "left", fontWeight: 600 }}>{evt.emotion || "neutral"}</span>
+                              </div>
+                            );
+                          });
+                        })()}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--pw-text-dim)", marginTop: 4, padding: "0 88px 0 88px" }}>
+                          <span>Despair</span><span>Neutral</span><span>Joy</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══════════════════ NON-FICTION: RELATIONSHIPS ═══════════════════ */}
+                {bibleSection === "nf-relationships" && isNF && (
+                  <div className="pw-bible-section">
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Relationship Web</h3>
+                        <p className="pw-field-help">Map how the people in this story relate to the subject and each other.</p>
+                      </div>
+                      {!aiOff && storyCharacters.length >= 2 && (
+                        <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                          onClick={async () => {
+                            if (!novel || storyAiBusyAction) return;
+                            setStoryAiBusyAction("nf-relationships");
+                            setStoryAiError(null);
+                            try {
+                              const people = storyCharacters.map(c => `${c.name}: ${c.role || ""}. ${c.logline || ""}`).join("\n");
+                              const evts = (nfData?.lifeEvents ?? []).map(e => `${e.title}: ${e.description?.slice(0, 100) || ""} (People: ${e.people.join(", ")})`).join("\n");
+                              const prompt = [
+                                "Given these people and life events from a memoir, identify key relationships between people.",
+                                "Return JSON array: [{ person1: 'name', person2: 'name', relationship: 'description of bond/conflict/dynamic' }]",
+                                `Max 10 relationships.\n\nPeople:\n${people}\n\nEvents:\n${evts}`,
+                              ].join("\n");
+                              const data = await requestOpenRouterJson<Array<{ person1: string; person2: string; relationship: string }>>(prompt, 1000, {
+                                systemMessage: "Memoir relationship analyst. Return valid JSON only.",
+                              });
+                              if (Array.isArray(data)) {
+                                const chars = [...(novel.storyBible.characters ?? [])];
+                                for (const rel of data) {
+                                  const c1 = chars.find(c => c.name.toLowerCase() === rel.person1?.toLowerCase());
+                                  const c2 = chars.find(c => c.name.toLowerCase() === rel.person2?.toLowerCase());
+                                  if (c1 && c2) {
+                                    if (!c1.relationships) c1.relationships = [];
+                                    if (!c1.relationships.some((r: Relationship) => r.targetCharacterId === c2.id)) {
+                                      c1.relationships.push({ targetCharacterId: c2.id, type: "memoir", description: rel.relationship || "" });
+                                    }
+                                  }
+                                }
+                                mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: chars } }));
+                              }
+                            } catch (err: unknown) {
+                              if (err instanceof Error && err.name === "AbortError") { /* cancelled */ } else {
+                                setStoryAiError(err instanceof Error ? err.message : "Failed to map relationships");
+                              }
+                            } finally { setStoryAiBusyAction(null); }
+                          }}
+                        >
+                          {storyAiBusyAction === "nf-relationships" ? "Mapping..." : "AI Map Relationships"}
+                        </button>
+                      )}
+                    </div>
+
+                    {storyCharacters.length < 2 ? (
+                      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
+                        <p style={{ fontSize: 14, marginBottom: 8 }}>Add at least 2 people to see the relationship web.</p>
+                        <p style={{ fontSize: 12 }}>Use the People tab, Life Events, or extract from Interview.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {storyCharacters.map((char) => {
+                          const rels = (char.relationships ?? []).filter((r: Relationship) => {
+                            return storyCharacters.some(c => c.id === r.targetCharacterId);
+                          });
+                          if (rels.length === 0) return null;
+                          return (
+                            <div key={char.id} style={{ background: "var(--pw-surface)", borderRadius: 8, padding: 12, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{char.name}</div>
+                              {rels.map((rel: Relationship, ri: number) => {
+                                const target = storyCharacters.find(c => c.id === rel.targetCharacterId);
+                                return (
+                                  <div key={ri} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12 }}>
+                                    <span style={{ color: "var(--pw-accent)", fontWeight: 600 }}>{target?.name || "?"}</span>
+                                    <span style={{ color: "var(--pw-text-dim)", fontSize: 11 }}>—</span>
+                                    <span style={{ color: "var(--pw-text-muted)" }}>{rel.description}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
+                  </div>
+                )}
+
               </section>
             </div>
           </div>
@@ -15853,15 +16649,14 @@ function NovelWorkspacePage() {
                     <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>AI writing partner</div>
                   </div>
                 </button>
-                {/* Separator */}
-                {storyCharacters.length > 0 && (
+                {/* Separator + Characters (fiction only) */}
+                {!isNF && storyCharacters.length > 0 && (
                   <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 8px" }} />
                 )}
-                {/* Characters */}
-                {storyCharacters.length > 0 && (
+                {!isNF && storyCharacters.length > 0 && (
                   <div style={{ fontSize: 9, fontWeight: 700, color: "var(--pw-text-dim)", padding: "4px 10px 2px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Characters</div>
                 )}
-                {storyCharacters.map((char) => (
+                {!isNF && storyCharacters.map((char) => (
                   <button key={char.id} type="button"
                     onClick={() => { setCharChatPickerOpen(false); openCharacterChat(char); }}
                     className="pw-chat-fab-picker-item"
@@ -15881,7 +16676,7 @@ function NovelWorkspacePage() {
             type="button"
             className="pw-chat-fab"
             title="Chat"
-            onClick={() => setCharChatPickerOpen(!charChatPickerOpen)}
+            onClick={() => { if (isNF) { openCoAuthorChat(); } else { setCharChatPickerOpen(!charChatPickerOpen); } }}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           </button>

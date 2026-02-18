@@ -248,6 +248,30 @@ export type KnowledgeMap = {
   lastScanAt?: string;
 };
 
+export type LifeEvent = {
+  id: string;
+  title: string;
+  date: string;
+  description: string;
+  people: string[];
+  places: string[];
+  emotion: string;
+  impact: string;
+  sortOrder: number;
+};
+
+export type NonfictionData = {
+  subjectName: string;
+  subjectRelation: string;
+  era: string;
+  setting: string;
+  centralTheme: string;
+  lifeEvents: LifeEvent[];
+  interviewTranscript: Array<{ role: "ai" | "user"; text: string }>;
+  interviewPhase: string;
+  extractedAt: string;
+};
+
 export type StoryBible = {
   summary: SummarySection;
   styleVoice: StyleVoiceSection;
@@ -262,6 +286,7 @@ export type StoryBible = {
   boltons: Bolton[];
   knowledgeMap: KnowledgeMap;
   aiContext: AIContextSettings;
+  nonfiction?: NonfictionData;
   // Legacy simple fields kept for backward compatibility with existing UI while Canon evolves.
   braindump: string;
   genre: string;
@@ -385,6 +410,7 @@ export type Novel = {
   coverImage: string | null;
   chapters: Chapter[];
   storyBible: StoryBible;
+  novelType?: "fiction" | "nonfiction";
   createdAt: string;
   updatedAt: string;
   archived?: boolean;
@@ -958,6 +984,7 @@ function normalizeNovel(raw: unknown): Novel | null {
   }
 
   const authorName = typeof record.authorName === "string" ? record.authorName : "";
+  const novelType = record.novelType === "nonfiction" ? "nonfiction" as const : "fiction" as const;
 
   return {
     id,
@@ -968,6 +995,7 @@ function normalizeNovel(raw: unknown): Novel | null {
     coverImage,
     chapters,
     storyBible,
+    novelType,
     createdAt,
     updatedAt,
   };
@@ -1217,29 +1245,31 @@ export function saveNovels(novels: Novel[]): boolean {
   return wroteAnything;
 }
 
-export function createNovel(title: string, coverImage: string | null = null): Novel {
+export function createNovel(title: string, coverImage: string | null = null, novelType: "fiction" | "nonfiction" = "fiction"): Novel {
   const now = new Date().toISOString();
+  const isNF = novelType === "nonfiction";
   return {
     id: createId(),
-    title: title.trim() || "Untitled Novel",
+    title: title.trim() || (isNF ? "Untitled Book" : "Untitled Novel"),
     authorName: "",
     synopsis: "",
-    goalWords: 50000,
+    goalWords: isNF ? 60000 : 50000,
     coverImage,
     chapters: [],
+    novelType,
     storyBible: {
       summary: {
         premise: "",
         synopsisShort: "",
         themes: [],
-        genre: [],
+        genre: isNF ? ["Memoir"] : [],
         tone: [],
         stakes: "",
       },
       styleVoice: {
-        pov: "",
+        pov: isNF ? "First Person" : "",
         povCharacterId: "",
-        tense: "",
+        tense: isNF ? "Past Tense" : "",
         comps: [],
         bannedWords: [],
         voiceRules: "",
@@ -1265,7 +1295,19 @@ export function createNovel(title: string, coverImage: string | null = null): No
         includeSummaryByDefault: true,
         includeStyleByDefault: true,
       },
-      // legacy fields kept until the new Canon UI fully replaces them
+      ...(isNF ? {
+        nonfiction: {
+          subjectName: "",
+          subjectRelation: "myself",
+          era: "",
+          setting: "",
+          centralTheme: "",
+          lifeEvents: [],
+          interviewTranscript: [],
+          interviewPhase: "big-picture",
+          extractedAt: "",
+        },
+      } : {}),
       braindump: "",
       genre: "",
       style: "",

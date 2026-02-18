@@ -66,6 +66,7 @@ function StudioHomePage() {
   const [novels, setNovels] = useState<Novel[]>([]);
   const [serverLoaded, setServerLoaded] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [createTypeDraft, setCreateTypeDraft] = useState<"fiction" | "nonfiction">("fiction");
   const [createHint, setCreateHint] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -192,11 +193,12 @@ function StudioHomePage() {
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!titleDraft.trim() || atNovelCap) return;
-    const novel = createNovel(titleDraft);
+    const novel = createNovel(titleDraft, null, createTypeDraft);
     const next = [novel, ...novels];
     setNovels(next);
     saveNovels(next);
     setTitleDraft("");
+    setCreateTypeDraft("fiction");
     setHoveredNovelId(novel.id);
     setJustCreatedId(novel.id);
     // Save to server in background so it's ready when they click in
@@ -329,6 +331,25 @@ function StudioHomePage() {
           </div>
 
           <div className="pw-section-title">Create Novel</div>
+          <div style={{ display: "flex", gap: 0, marginBottom: 8, borderRadius: 8, overflow: "hidden", border: "1px solid var(--pw-border)" }}>
+            <button type="button" onClick={() => setCreateTypeDraft("fiction")} style={{
+              flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
+              background: createTypeDraft === "fiction" ? "var(--pw-accent)" : "var(--pw-surface)",
+              color: createTypeDraft === "fiction" ? "#000" : "var(--pw-text-muted)",
+              transition: "all 0.15s",
+            }}>Fiction</button>
+            <button type="button" onClick={() => setCreateTypeDraft("nonfiction")} style={{
+              flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
+              background: createTypeDraft === "nonfiction" ? "var(--pw-accent)" : "var(--pw-surface)",
+              color: createTypeDraft === "nonfiction" ? "#000" : "var(--pw-text-muted)",
+              transition: "all 0.15s",
+            }}>Non-Fiction</button>
+          </div>
+          {createTypeDraft === "nonfiction" && (
+            <p style={{ fontSize: 11, color: "var(--pw-text-muted)", margin: "-4px 0 8px", lineHeight: 1.4 }}>
+              Memoir, biography, or based on true events
+            </p>
+          )}
           <form className="pw-create-form" onSubmit={(e) => {
             e.preventDefault();
             if (!titleDraft.trim()) { setCreateHint("Please enter a title to create your novel."); return; }
@@ -339,7 +360,7 @@ function StudioHomePage() {
               value={titleDraft}
               onChange={(event) => { setTitleDraft(event.target.value); if (event.target.value.trim()) setCreateHint(""); }}
               className="pw-create-input"
-              placeholder="Enter a title for your novel"
+              placeholder={createTypeDraft === "nonfiction" ? "Enter a title for your book" : "Enter a title for your novel"}
               dir="ltr"
               disabled={atNovelCap}
             />
@@ -462,6 +483,9 @@ function StudioHomePage() {
 
                     <div className="pw-novel-card-label">
                       <span className="pw-novel-card-label-text">{novel.title}</span>
+                      {novel.novelType === "nonfiction" && (
+                        <span style={{ display: "inline-block", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "rgba(var(--pw-accent-rgb,163,230,53),0.15)", color: "var(--pw-accent)", marginLeft: 4, verticalAlign: "middle", letterSpacing: "0.03em" }}>NF</span>
+                      )}
                     </div>
 
                     <button
