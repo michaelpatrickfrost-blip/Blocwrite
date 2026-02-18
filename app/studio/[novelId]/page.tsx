@@ -6786,13 +6786,11 @@ function NovelWorkspacePage() {
       setPlanGenerateProgressIdx(null);
       setPlanGenerateTotal(0);
       if (!planGenFailed) {
-        // Give React a tick to settle after mutateNovel, then check for unprofiled characters
+        // Give React a tick to settle after mutateNovel, then offer character profiles
         setTimeout(() => {
           const unprofiled = getUnprofiledCharacterIds();
           if (unprofiled.length > 0) {
             setProfileOfferPopup({ characterIds: unprofiled, source: "Chapter Plan" });
-          } else {
-            setShowArcOfferPopup(true);
           }
         }, 800);
       }
@@ -6915,6 +6913,10 @@ function NovelWorkspacePage() {
 
   async function applyArcChoice(choiceIndex: number) {
     if (!novel) return;
+    if (storyAiBusyAction) {
+      setArcError("Another AI task is running. Wait for it to finish first.");
+      return;
+    }
     const plan = novel.storyBible.bookPlan;
     const analysis = plan?.arcAnalysis;
     if (!plan || !analysis?.choices || !analysis.choices[choiceIndex]) return;
@@ -15795,7 +15797,7 @@ function NovelWorkspacePage() {
           display: "flex", alignItems: "center", justifyContent: "center",
           animation: "pw-fade-in 0.2s ease-out",
         }}
-          onClick={() => { setProfileOfferPopup(null); if (profileOfferPopup.source === "Chapter Plan") setTimeout(() => setShowArcOfferPopup(true), 300); }}
+          onClick={() => setProfileOfferPopup(null)}
         >
           <div
             style={{
@@ -15857,10 +15859,7 @@ function NovelWorkspacePage() {
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <button
                 type="button"
-                onClick={() => {
-                  setProfileOfferPopup(null);
-                  if (profileOfferPopup.source === "Chapter Plan") setTimeout(() => setShowArcOfferPopup(true), 300);
-                }}
+                onClick={() => setProfileOfferPopup(null)}
                 style={{
                   padding: "10px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10,
                   background: "var(--pw-overlay-bg-hover)", color: "var(--pw-text)", border: "1px solid var(--pw-border)",
