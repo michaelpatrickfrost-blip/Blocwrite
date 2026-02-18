@@ -6307,6 +6307,8 @@ function NovelWorkspacePage() {
     setPlanError(null);
     setPlanGenerateProgressIdx(null);
     setPlanGenerateTotal(0);
+    // Clear stale arc analysis so old placeholder synopses don't show
+    updateBookPlan({ arcAnalysis: null });
     let planGenFailed = false;
     let planNewCharIds: string[] = [];
     try {
