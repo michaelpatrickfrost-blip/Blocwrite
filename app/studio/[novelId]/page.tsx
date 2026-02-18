@@ -6397,8 +6397,8 @@ function NovelWorkspacePage() {
         `Canon:\n${context}`,
       ].filter(Boolean).join("\n");
 
-      // Token budget scales with chapter count (more chapters = more tokens needed)
-      const tokenBudget = Math.min(4000, Math.max(1200, planTarget * 180));
+      // Token budget scales with chapter count — each chapter needs ~400 tokens for synopsis + entities
+      const tokenBudget = Math.min(16000, Math.max(3000, planTarget * 500));
 
       let batchChapters: BatchChapter[] = [];
       try {
@@ -6666,23 +6666,47 @@ function NovelWorkspacePage() {
         .filter((c) => !existingCharIdsBefore.has(c.id))
         .map((c) => c.id);
 
-      /* ── Quick repair pass for any chapters that got truncated/empty ── */
-      if (emptyChapterIndices.length > 0 && emptyChapterIndices.length <= 6) {
-        for (const idx of emptyChapterIndices) {
+      /* ── Repair pass for any chapters that got truncated/empty ── */
+      if (emptyChapterIndices.length > 0) {
+        const fullChapterList = allTitles.map((t, i) => `${i + 1}. ${t}`).join("\n");
+        setPlanGenerateProgressIdx(0);
+        setPlanGenerateTotal(emptyChapterIndices.length);
+        for (let ri = 0; ri < emptyChapterIndices.length; ri++) {
+          const idx = emptyChapterIndices[ri];
+          setPlanGenerateProgressIdx(ri);
+          if (aiAbortRef.current?.signal.aborted) break;
           try {
             const prevSyn = idx > 0 ? (batchChapters[idx - 1]?.synopsis || "") : "";
+            const nextSyn = idx < allTitles.length - 1 ? (batchChapters[idx + 1]?.synopsis || "") : "";
             const nextTitle = idx < allTitles.length - 1 ? allTitles[idx + 1] : "";
-            const repairPrompt = [
+            const repairPrompt = isNF ? [
+              `Write a detailed 5-8 sentence synopsis for Chapter ${idx + 1}: "${allTitles[idx]}" of this ${nfSubtypeLabel} book.`,
+              `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
+              `This is an internal writer plan, not reader copy. Be specific about what happens.`,
+              `This is a NON-FICTION ${nfSubtypeLabel} book. Base the chapter on the real events provided.`,
+              canonNames ? `Canon names: ${canonNames}` : "",
+              `Full chapter list:\n${fullChapterList}`,
+              prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
+              nextSyn ? `Next chapter synopsis: ${clampPromptText(nextSyn, 300)}` : nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
+              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 400)}`,
+              nfCtx ? `Non-fiction context:\n${clampPromptText(nfCtx, 600)}` : "",
+              pacingHint,
+            ].filter(Boolean).join("\n") : [
               `Write a detailed 5-8 sentence synopsis for Chapter ${idx + 1}: "${allTitles[idx]}" of this novel.`,
               `Return JSON: { "synopsis": "...", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }`,
               `This is an internal writer plan, not reader copy. Be specific about what happens.`,
+              "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
+              "- Every character MUST have a proper human name (First Last). NEVER use role labels.",
+              "- Name the specific location where the chapter takes place.",
               canonNames ? `Canon names: ${canonNames}` : "",
-              prevSyn ? `Previous chapter: ${clampPromptText(prevSyn, 200)}` : "",
-              nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
-              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 200)}`,
+              `Full chapter list:\n${fullChapterList}`,
+              prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
+              nextSyn ? `Next chapter synopsis: ${clampPromptText(nextSyn, 300)}` : nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
+              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 400)}`,
+              pacingHint,
             ].filter(Boolean).join("\n");
 
-            const raw = await requestOpenRouterText(repairPrompt, 400, 120000, systemMsg, false, 0.3);
+            const raw = await requestOpenRouterText(repairPrompt, 700, 180000, systemMsg, false, 0.3);
             let parsed = parseJsonFromAi<Phase2Result>(raw);
             if (!parsed) {
               const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -6690,8 +6714,23 @@ function NovelWorkspacePage() {
             }
             if (parsed?.synopsis && parsed.synopsis.trim().length > 60) {
               const synopsis = parsed.synopsis.trim();
+              // Store back so subsequent chapters can use this as context
+              if (batchChapters[idx]) batchChapters[idx].synopsis = synopsis;
               const charIds = parseStringList(parsed.characters).map(ensureCharacterId).filter(Boolean);
               const locIds = parseStringList(parsed.locations).map(ensureLocationId).filter(Boolean);
+              const chapterCharacterIds = mergeUniqueIds(
+                charIds,
+                inferEntityIdsFromText(`${allTitles[idx]}\n${synopsis}`, mergedCharacters.map((c) => ({
+                  id: c.id, name: c.name || "",
+                  aliases: (c.otherNames || "").split(/[;,]/).map((a) => a.trim()).filter(Boolean),
+                }))),
+              );
+              const chapterLocationIds = mergeUniqueIds(
+                locIds,
+                inferEntityIdsFromText(`${allTitles[idx]}\n${synopsis}`, mergedLocations.map((l) => ({
+                  id: l.id, name: l.name || "",
+                }))),
+              );
               parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, allTitles[idx], synopsis, idx));
 
               mutateNovel((current) => {
@@ -6702,8 +6741,8 @@ function NovelWorkspacePage() {
                   updatedPlanChapters[idx] = {
                     ...updatedPlanChapters[idx],
                     synopsis,
-                    characterIds: mergeUniqueIds(charIds, updatedPlanChapters[idx].characterIds ?? []),
-                    locationIds: mergeUniqueIds(locIds, updatedPlanChapters[idx].locationIds ?? []),
+                    characterIds: chapterCharacterIds,
+                    locationIds: chapterLocationIds,
                   };
                 }
                 const updatedChapters = [...current.chapters];
@@ -6859,18 +6898,13 @@ function NovelWorkspacePage() {
     const analysis = plan?.arcAnalysis;
     if (!plan || !analysis?.choices || !analysis.choices[choiceIndex]) return;
 
-    if (novelHasProse()) {
-      setArcError("Cannot apply arc changes — one or more chapters already contain prose. Clear your manuscript text first.");
-      return;
-    }
-
     const choice = analysis.choices[choiceIndex];
     setArcApplyingChoice(choiceIndex);
     setArcError(null);
 
     try {
-      // For large novels, process in batches so the AI doesn't choke
-      const BATCH_SIZE = 12;
+      // Smaller batches = more reliable detailed synopses
+      const BATCH_SIZE = 4;
       const allChapters = plan.chapters;
       const totalChapters = allChapters.length;
       const finalSynopses: string[] = new Array(totalChapters).fill("");
@@ -6924,11 +6958,11 @@ function NovelWorkspacePage() {
           `Exactly ${batchSize} synopsis entries. Each must be a detailed paragraph.`,
         ].join("\n");
 
-        const tokenBudget = Math.max(1500, batchSize * 280);
+        const tokenBudget = Math.max(2000, batchSize * 600);
         const result = await requestOpenRouterJson<{ synopses?: string[]; characters?: string[] }>(
           batchPrompt,
           tokenBudget,
-          { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.", timeoutMs: Math.max(240000, batchSize * 20000) },
+          { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.", timeoutMs: Math.max(240000, batchSize * 30000) },
         );
 
         const batchSynopses = Array.isArray(result?.synopses) ? result.synopses : [];
@@ -6981,10 +7015,13 @@ function NovelWorkspacePage() {
         const curPlan = current.storyBible.bookPlan;
         if (!curPlan) return current;
 
-        const updatedPlanChapters = curPlan.chapters.map((ch, i) => ({
-          ...ch,
-          synopsis: finalSynopses[i] || ch.synopsis,
-        }));
+        const mergedCharsForArc = newChars.length > (current.storyBible.characters ?? []).length ? newChars : current.storyBible.characters;
+        const novelWithNewChars = { ...current, storyBible: { ...current.storyBible, characters: mergedCharsForArc } };
+
+        const updatedPlanChapters = curPlan.chapters.map((ch, i) => {
+          const newSynopsis = finalSynopses[i] || ch.synopsis;
+          return inferPlanReferences({ ...ch, synopsis: newSynopsis }, novelWithNewChars);
+        });
 
         const updatedChapters = current.chapters.map((ch, i) => ({
           ...ch,
@@ -6997,7 +7034,7 @@ function NovelWorkspacePage() {
           chapters: updatedChapters,
           storyBible: {
             ...current.storyBible,
-            characters: newChars.length > (current.storyBible.characters ?? []).length ? newChars : current.storyBible.characters,
+            characters: mergedCharsForArc,
             bookPlan: {
               ...curPlan,
               chapters: updatedPlanChapters,
@@ -11385,7 +11422,7 @@ function NovelWorkspacePage() {
                           }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                             <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>
-                              Arc paths can only be applied when chapters have no prose. Clear your manuscript text to enable selection.
+                              Note: Applying an arc will update chapter synopses. Your existing prose won&apos;t be changed but you may want to review chapters afterwards.
                             </span>
                           </div>
                         )}
@@ -11476,14 +11513,14 @@ function NovelWorkspacePage() {
                                     {!isSelected && (
                                       <button
                                         type="button"
-                                        disabled={hasProse || isApplying}
+                                        disabled={isApplying}
                                         onClick={(e) => { e.stopPropagation(); applyArcChoice(ci); }}
                                         style={{
                                           padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                                          background: hasProse ? "var(--pw-overlay-bg)" : isApplying ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
-                                          color: hasProse ? "var(--pw-text-dim)" : isApplying ? "#111" : "var(--pw-accent, #a3e635)",
-                                          border: hasProse ? "1px solid var(--pw-border)" : "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
-                                          cursor: hasProse ? "not-allowed" : "pointer",
+                                          background: isApplying ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                                          color: isApplying ? "#111" : "var(--pw-accent, #a3e635)",
+                                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                                          cursor: "pointer",
                                           transition: "all 0.15s",
                                         }}
                                       >
