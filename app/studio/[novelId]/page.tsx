@@ -6387,16 +6387,18 @@ function NovelWorkspacePage() {
       const getStructuralBeat = (chapterIndex: number, totalChapters: number): string => {
         const pos = (chapterIndex + 1) / totalChapters;
         const chNum = chapterIndex + 1;
-        if (chNum === 1) return "STRUCTURE: OPENING chapter. Hook the reader immediately. Introduce the protagonist and their world. Plant the seed of the central conflict. End with something that compels the reader forward.";
-        if (pos <= 0.15) return "STRUCTURE: Act 1 — Setup. Deepen characters, relationships, and the normal world. Plant seeds of coming conflict. Build reader investment.";
-        if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident. Something disrupts the status quo and thrusts the protagonist into the central conflict. Nothing can go back to normal.";
-        if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. Complications multiply. The protagonist faces new challenges and setbacks. Deepen subplots and raise stakes.";
-        if (pos <= 0.55) return "STRUCTURE: MIDPOINT. A major revelation, reversal, or escalation that changes everything. The protagonist's approach must shift fundamentally.";
-        if (pos <= 0.70) return "STRUCTURE: Act 2B — Escalation. Stakes at their highest. Subplots converge. Pressure mounts relentlessly on the protagonist.";
-        if (pos <= 0.80) return "STRUCTURE: Act 2B — Dark moment. The protagonist's lowest point. Everything seems lost. Maximum tension before the climax.";
-        if (pos <= 0.90) return "STRUCTURE: Act 3 — Climax. The central conflict reaches its peak. The protagonist confronts the main obstacle head-on. Maximum stakes.";
-        if (chNum === totalChapters) return "STRUCTURE: FINAL chapter. Resolve the central conflict decisively. Tie up major threads. Leave the reader satisfied (or purposefully unsettled if genre-appropriate).";
-        return "STRUCTURE: Act 3 — Resolution. Show consequences of the climax. Begin resolving remaining threads.";
+        if (chNum === 1) return "STRUCTURE: OPENING chapter. Hook the reader immediately. Introduce the protagonist in a SPECIFIC moment that defines them. End on a note that makes the reader need chapter 2.";
+        if (chNum === 2) return "STRUCTURE: Chapter 2 must show a DIFFERENT side of the story — new setting, new situation, or a time jump. Introduce a new element (character, threat, relationship, or mystery). DO NOT repeat the same scenario as Chapter 1.";
+        if (chNum === 3) return "STRUCTURE: Chapter 3 deepens the conflict. The protagonist faces a new challenge or complication that raises the stakes beyond what chapters 1-2 established.";
+        if (chNum === 4) return "STRUCTURE: Chapter 4 — the story is now in motion. Something happens that makes turning back impossible. A point of no return.";
+        if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident zone. The status quo shatters. The protagonist is thrust into the central conflict.";
+        if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. New complications, new obstacles, deeper stakes. The protagonist is tested.";
+        if (pos <= 0.55) return "STRUCTURE: MIDPOINT. A major twist, revelation, or reversal changes everything. The protagonist must fundamentally shift their approach.";
+        if (pos <= 0.70) return "STRUCTURE: Act 2B — Escalation. Stakes peak. Subplots converge. Pressure mounts relentlessly.";
+        if (pos <= 0.80) return "STRUCTURE: Act 2B — Dark moment. The protagonist's lowest point. Everything seems lost.";
+        if (pos <= 0.90) return "STRUCTURE: Act 3 — Climax. The central conflict reaches its peak. Maximum stakes, direct confrontation.";
+        if (chNum === totalChapters) return "STRUCTURE: FINAL chapter. Resolve the central conflict decisively. Tie up major threads.";
+        return "STRUCTURE: Act 3 — Resolution. Show consequences of the climax. Resolve remaining threads.";
       };
 
       /* ── Phase 1: Generate chapter TITLES (fast call) ── */
@@ -6446,6 +6448,7 @@ function NovelWorkspacePage() {
       type Phase2Result = {
         synopsis?: string;
         characters?: string[];
+        location?: string;
         locations?: string[];
         events?: string[];
         lore?: string[];
@@ -6611,69 +6614,79 @@ function NovelWorkspacePage() {
         const structuralBeat = getStructuralBeat(index, allTitles.length);
 
         const storySoFar = generatedSynopses.length > 0
-          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 250)}`).join("\n")
+          ? generatedSynopses.map((s, si) => `Chapter ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 400)}`).join("\n\n")
           : "";
+
+        const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
+        const prevFirstSentence = prevSynopsis ? prevSynopsis.split(/\.\s/)[0] : "";
 
         const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
 
+        const antiRepetition = index > 0 ? [
+          "",
+          "*** CRITICAL — ANTI-REPETITION ***",
+          `The PREVIOUS chapter (Ch ${index}) started with: "${clampPromptText(prevFirstSentence, 120)}..."`,
+          "You MUST NOT start this chapter the same way. Use a DIFFERENT character, DIFFERENT location, DIFFERENT action, or DIFFERENT time.",
+          `You MUST NOT reuse the same scenario, setting, or emotional beat as any previous chapter.`,
+          `The story MUST move FORWARD. Something NEW must happen that could NOT have been in any earlier chapter.`,
+          "*** END ANTI-REPETITION ***",
+          "",
+        ].join("\n") : "";
+
         const chapterPrompt = isNF ? [
-          `Write a detailed synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${nfSubtypeLabel} book.`,
-          `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
+          `Write a synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${nfSubtypeLabel} book.`,
+          `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "location": "One Place", "events": ["key moment"] }`,
           "",
-          `This is chapter ${index + 1} of ${allTitles.length}. This is an internal writer's blueprint — be SPECIFIC about what happens, not vague summaries.`,
-          "",
+          storySoFar ? `STORY SO FAR — READ THIS FIRST. This is what has ALREADY happened. Your chapter MUST continue AFTER these events, not repeat them:\n${storySoFar}\n` : "",
+          antiRepetition,
+          `This is chapter ${index + 1} of ${allTitles.length}.`,
           structuralBeat,
           "",
           "RULES:",
-          "- The synopsis MUST be 5-8 detailed sentences describing EXACTLY what happens in this chapter, step by step.",
-          "- Include specific actions, dialogue moments, emotional reactions, and consequences.",
-          "- This chapter MUST be COMPLETELY DIFFERENT from all previous chapters — advance the narrative forward.",
-          `- This is a NON-FICTION ${nfSubtypeLabel} book. Ground everything in real events and people.`,
-          nfSubtype === "true-crime" ? "- Treat this like a true crime narrative: build tension, reveal evidence, follow the investigation." : "",
-          nfSubtype === "biography" ? "- Focus on the defining moments and turning points in the subject's life." : "",
-          nfSubtype === "memoir" ? "- Write with emotional honesty. Show the experience, don't just describe it." : "",
-          "- LOCATION: Exactly ONE location/setting. NEVER list multiple.",
-          "- PEOPLE: Only people who APPEAR AND ACT in this chapter (typically 2-4). NEVER list everyone.",
-          "- Use existing Canon names. NEVER create duplicates for someone who already has a name.",
-          "- FOCUS: ONE coherent event or sequence per chapter. Do NOT cram unrelated events together.",
+          "- Write 5-8 SPECIFIC sentences describing exactly what happens step by step.",
+          "- This chapter MUST cover DIFFERENT events, DIFFERENT emotions, and a DIFFERENT situation than all previous chapters.",
+          `- This is a NON-FICTION ${nfSubtypeLabel} book. Ground everything in real events.`,
+          nfSubtype === "true-crime" ? "- True crime: build tension, reveal evidence, follow the investigation." : "",
+          nfSubtype === "biography" ? "- Biography: focus on defining moments and turning points." : "",
+          nfSubtype === "memoir" ? "- Memoir: emotional honesty. Show the experience, don't just describe it." : "",
+          "- LOCATION: Return exactly ONE location as a string. Not an array. Just one place name.",
+          "- PEOPLE: Only people who APPEAR AND ACT (typically 2-4).",
+          "- Use existing Canon names. NEVER create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
           pacingHint,
           "",
           `Full chapter outline:\n${fullChapterList}`,
-          storySoFar ? `\nSTORY SO FAR (previous chapters — do NOT repeat ANY of this, BUILD on it):\n${storySoFar}` : "",
-          nextTitle ? `\nNext chapter will be: "${nextTitle}" — this chapter must SET UP what comes next.` : "\nThis is the FINAL chapter — resolve the central narrative with closure or reflection.",
+          nextTitle ? `\nNext chapter: "${nextTitle}" — set up what comes next.` : "\nThis is the FINAL chapter.",
           `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
           nfCtx ? `\nNon-fiction context:\n${clampPromptText(nfCtx, 800)}` : "",
-          `\nCanon:\n${clampPromptText(context, 1200)}`,
+          `\nCanon:\n${clampPromptText(context, 1000)}`,
         ].filter(Boolean).join("\n") : [
-          `Write a detailed synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${genreStr} novel.`,
-          `Return JSON: { "synopsis": "...", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }`,
+          `Write a synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${genreStr} novel.`,
+          `Return JSON: { "synopsis": "...", "characters": ["First Last"], "location": "One Place", "events": ["key moment"] }`,
           "",
-          `This is chapter ${index + 1} of ${allTitles.length}. This is the complete internal blueprint for AI prose generation — be SPECIFIC and CONCRETE about every beat.`,
-          "",
+          storySoFar ? `STORY SO FAR — READ THIS FIRST. This is what has ALREADY happened in the novel. Your chapter MUST continue AFTER all of this, not repeat any of it:\n${storySoFar}\n` : "",
+          antiRepetition,
+          `This is chapter ${index + 1} of ${allTitles.length}.`,
           structuralBeat,
           genreGuidance,
           "",
           "RULES:",
-          "- The synopsis MUST be 5-8 detailed sentences describing EXACTLY what happens in this chapter, step by step.",
-          "- Include specific actions, dialogue beats, emotional shifts, revelations, and consequences.",
-          "- This chapter MUST be COMPLETELY DIFFERENT from all previous chapters. Each chapter advances the story — never retread ground.",
-          "- State WHO does WHAT, WHERE, and WHY. No vague language like 'things escalate' or 'tension builds'.",
-          "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist'.",
-          "- LOCATION: Exactly ONE location. NEVER list multiple.",
-          "- CHARACTERS: Only those who APPEAR AND ACT (typically 2-4). NEVER list everyone.",
+          "- Write 5-8 SPECIFIC sentences: WHO does WHAT, WHERE, WHY, and what CHANGES as a result.",
+          "- This chapter MUST be in a DIFFERENT situation than the previous chapter. Different action, different conflict, different emotional state.",
+          "- The plot MUST advance. Something must CHANGE by the end of this chapter that wasn't true at the start.",
+          "- No vague language. No 'tensions rise' or 'things escalate'. State concrete actions and outcomes.",
+          "- Every character needs a proper name (First Last). No role labels.",
+          "- LOCATION: Return exactly ONE location as a string. Not an array. ONE place where the main action happens.",
+          "- CHARACTERS: Only those who appear and act (typically 2-4).",
           "- Use existing Canon names. NEVER create duplicates.",
-          "- FOCUS: ONE focused story beat per chapter. No cramming multiple scenes.",
-          "- End the chapter in a way that creates momentum to the next.",
           canonNames ? `Canon names: ${canonNames}` : "",
           pacingHint,
           authorStyleHint,
           "",
           `Full chapter outline:\n${fullChapterList}`,
-          storySoFar ? `\nSTORY SO FAR (previous chapters — do NOT repeat ANY of this, BUILD on it):\n${storySoFar}` : "",
-          nextTitle ? `\nNext chapter will be: "${nextTitle}" — this chapter must naturally lead into it.` : "\nThis is the FINAL chapter — resolve the central conflict decisively.",
+          nextTitle ? `\nNext chapter: "${nextTitle}" — this chapter must lead into it.` : "\nThis is the FINAL chapter — resolve the central conflict.",
           `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
-          `\nCanon:\n${clampPromptText(context, 1200)}`,
+          `\nCanon:\n${clampPromptText(context, 1000)}`,
         ].filter(Boolean).join("\n");
 
         let synopsis = "";
@@ -6682,7 +6695,7 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const raw = await requestOpenRouterText(chapterPrompt, 800, 180000, systemMsg, false, 0.35);
+          const raw = await requestOpenRouterText(chapterPrompt, 800, 180000, systemMsg, false, 0.5);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -6699,12 +6712,15 @@ function NovelWorkspacePage() {
                 aliases: (c.otherNames || "").split(/[;,]/).map((a) => a.trim()).filter(Boolean),
               }))),
             );
+            // Enforce single location: prefer "location" string, fall back to first of "locations" array
+            const singleLocName = typeof parsed.location === "string" ? parsed.location.trim() : "";
+            const locNames = singleLocName ? [singleLocName] : parseStringList(parsed.locations).slice(0, 1);
             chapterLocationIds = mergeUniqueIds(
-              parseStringList(parsed.locations).map(ensureLocationId).filter(Boolean),
+              locNames.map(ensureLocationId).filter(Boolean),
               inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
                 id: l.id, name: l.name || "",
               }))),
-            );
+            ).slice(0, 1);
             chapterLoreIds = mergeUniqueIds(
               parseStringList(parsed.events).map(resolveLoreId).filter(Boolean),
               inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
