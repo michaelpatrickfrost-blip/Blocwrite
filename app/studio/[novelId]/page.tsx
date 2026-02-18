@@ -4019,26 +4019,81 @@ function NovelWorkspacePage() {
 
   async function runChapterRewrite(modeId: string) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
-    const content = activeChapter.content ?? "";
-    const prose = extractProseFromContent(content);
-    if (!prose.trim() || prose.trim().length < 20) return;
+    const chapterId = activeChapter.id;
+    const blocks = getSceneBlocks(activeChapter);
+    const hasBlocks = blocks.length > 0 && blocks.some(b => b.prose?.trim());
+    const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
+    const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
+
+    const systemMsg = [
+      `You are a literary rewrite assistant for a ${novelGenre} novel.`,
+      `Rewrite the user's prose in a "${mode.label}" style: ${mode.desc}.`,
+      `Keep the same plot events, characters, setting, and structure.`,
+      `Only change tone, word choice, sentence rhythm, and phrasing.`,
+      `Return ONLY the rewritten prose. No headings, labels, or commentary.`,
+      `The rewritten text must be roughly the same length as the original.`,
+      `NEVER truncate or summarize — rewrite the ENTIRE passage.`,
+    ].join(" ");
 
     setChapterRewriteBusy(true);
     setChapterRewriteMenuOpen(false);
-    const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
-    const novelGenre = novel.storyBible.summary.genre?.join(", ") || "fiction";
-
-    const systemMsg = `You are a literary rewrite assistant. The user wants their chapter rewritten in a "${mode.label}" style: ${mode.desc}. Genre: ${novelGenre}. Keep the same plot events, characters, and structure. Only change tone, word choice, and sentence rhythm. Return ONLY the rewritten prose, nothing else.`;
-    const userMsg = `Rewrite this chapter prose to be "${mode.label}" (${mode.desc}):\n\n${prose.slice(0, 6000)}`;
+    freshAiAbort();
 
     try {
-      const result = await requestOpenRouterText(userMsg, Math.max(2000, Math.round(countWords(prose) * 1.5)), 180000, systemMsg);
-      if (result && result.trim()) {
-        updateChapter(activeChapter.id, { content: result.trim() }, true);
+      if (hasBlocks) {
+        // Rewrite each block individually so nothing gets lost
+        pushUndoSnapshot(chapterId, activeChapter.content, activeChapter.sceneBlocks, true);
+        const updatedBlocks = [...blocks];
+        for (let i = 0; i < blocks.length; i++) {
+          if (aiAbortRef.current?.signal.aborted) break;
+          const blockProse = blocks[i].prose?.trim();
+          if (!blockProse || blockProse.length < 20) continue;
+          const wordCount = countWords(blockProse);
+          const maxTokens = Math.max(1500, Math.round(wordCount * 2));
+          const userMsg = `Rewrite this scene to be "${mode.label}" (${mode.desc}):\n\n${blockProse}`;
+          const result = await requestOpenRouterText(userMsg, maxTokens, 180000, systemMsg);
+          if (result && result.trim() && result.trim().length > blockProse.length * 0.4) {
+            updatedBlocks[i] = { ...updatedBlocks[i], prose: result.trim() };
+          }
+        }
+        updateSceneBlocks(chapterId, updatedBlocks);
+        syncChapterContentFromBlocks(chapterId, updatedBlocks);
+      } else {
+        // Plain editor: rewrite in chunks to handle long chapters
+        const content = activeChapter.content ?? "";
+        const prose = extractProseFromContent(content).trim();
+        if (!prose || prose.length < 20) { setChapterRewriteBusy(false); return; }
+
+        const paragraphs = prose.split(/\n\n+/).filter(Boolean);
+        const CHUNK_SIZE = 8;
+        const rewrittenParts: string[] = [];
+
+        for (let i = 0; i < paragraphs.length; i += CHUNK_SIZE) {
+          if (aiAbortRef.current?.signal.aborted) break;
+          const chunk = paragraphs.slice(i, i + CHUNK_SIZE).join("\n\n");
+          const wordCount = countWords(chunk);
+          const maxTokens = Math.max(1500, Math.round(wordCount * 2));
+          const userMsg = `Rewrite this passage to be "${mode.label}" (${mode.desc}):\n\n${chunk}`;
+          const result = await requestOpenRouterText(userMsg, maxTokens, 180000, systemMsg);
+          if (result && result.trim() && result.trim().length > chunk.length * 0.3) {
+            rewrittenParts.push(result.trim());
+          } else {
+            rewrittenParts.push(chunk);
+          }
+        }
+
+        const finalText = rewrittenParts.join("\n\n");
+        if (finalText.trim()) {
+          updateChapter(chapterId, { content: finalText.trim() }, true);
+        }
       }
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      if (isCancelledError(err)) { setChapterRewriteBusy(false); return; }
+      console.error("Chapter rewrite failed:", err);
+    } finally {
       setChapterRewriteBusy(false);
     }
+    saveNow();
   }
 
   function evaluateProseResult(
@@ -10144,21 +10199,21 @@ function NovelWorkspacePage() {
                         <button type="button"
                           data-pw-rewrite-trigger
                           disabled={chapterRewriteBusy}
-                          onClick={() => setChapterRewriteMenuOpen(!chapterRewriteMenuOpen)}
+                          onClick={() => { if (!chapterRewriteBusy) setChapterRewriteMenuOpen(!chapterRewriteMenuOpen); }}
                           style={{
                             display: "flex", alignItems: "center", gap: 4,
-                            padding: "4px 8px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                            background: chapterRewriteBusy ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)" : "var(--pw-overlay-bg)",
+                            padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                            background: chapterRewriteBusy ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" : "var(--pw-overlay-bg)",
                             border: "1px solid var(--pw-border)", cursor: chapterRewriteBusy ? "default" : "pointer",
                             color: chapterRewriteBusy ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim)",
                             transition: "all 0.12s",
                           }}
-                          title="Rewrite entire chapter in a different tone"
+                          title="Rewrite entire chapter tone"
                         >
                           {chapterRewriteBusy ? (
                             <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
                           ) : (
-                            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Rewrite</>
+                            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Tone</>
                           )}
                         </button>
                         {chapterRewriteMenuOpen && (
@@ -10171,28 +10226,37 @@ function NovelWorkspacePage() {
                             }} style={{
                               position: "fixed", zIndex: 9999,
                               background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
-                              borderRadius: 10, padding: 4, minWidth: 180,
+                              borderRadius: 10, padding: "8px 6px", minWidth: 220,
                               boxShadow: "var(--pw-shadow-elevated)",
                             }}>
+                              <div style={{ padding: "2px 10px 8px", fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                                Rewrite Chapter Tone
+                              </div>
                               {REWRITE_MODES.map((mode) => (
                                 <button key={mode.id} type="button"
-                                  onClick={() => void runChapterRewrite(mode.id)}
+                                  onClick={() => {
+                                    if (!confirm(`Rewrite this chapter as "${mode.label}"?\n\n${mode.desc}\n\nYou can undo this afterwards.`)) return;
+                                    void runChapterRewrite(mode.id);
+                                  }}
                                   style={{
-                                    display: "flex", alignItems: "center", gap: 8, width: "100%",
-                                    padding: "7px 10px", background: "none", border: "none", borderRadius: 7,
+                                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                                    padding: "8px 10px", background: "none", border: "none", borderRadius: 7,
                                     cursor: "pointer", color: "var(--pw-text-dim)", fontSize: 12, fontWeight: 600,
                                     textAlign: "left", transition: "all 0.1s",
                                   }}
                                   onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)"; e.currentTarget.style.color = "var(--pw-accent)"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
                                 >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
                                   <div>
                                     <div style={{ fontSize: 12, fontWeight: 600 }}>{mode.label}</div>
-                                    <div style={{ fontSize: 10, opacity: 0.5, fontWeight: 400 }}>{mode.desc}</div>
+                                    <div style={{ fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{mode.desc}</div>
                                   </div>
                                 </button>
                               ))}
+                              <div style={{ padding: "6px 10px 2px", fontSize: 10, color: "var(--pw-text-dim)", opacity: 0.35, borderTop: "1px solid var(--pw-border)", marginTop: 4 }}>
+                                Rewrites all prose — undoable
+                              </div>
                             </div>
                           </>
                         )}
