@@ -1056,12 +1056,40 @@ function NovelWorkspacePage() {
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length === 0) return;
-      setReaderVoices(voices);
-      // Pick the best default voice — prefer natural/premium English voices
-      const preferred = voices.find((v) =>
-        v.lang.startsWith("en") && (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("premium") || v.name.toLowerCase().includes("samantha"))
-      ) ?? voices.find((v) => v.lang.startsWith("en") && v.default) ?? voices.find((v) => v.lang.startsWith("en")) ?? voices[0];
-      if (preferred && !readerVoice) setReaderVoice(preferred.name);
+      // Only keep English voices, then rank by quality
+      const english = voices.filter((v) => v.lang.startsWith("en"));
+      if (english.length === 0) { setReaderVoices(voices); return; }
+
+      const qualityScore = (v: SpeechSynthesisVoice): number => {
+        const n = v.name.toLowerCase();
+        // Premium/Enhanced macOS voices and Google/Microsoft neural voices rank highest
+        if (n.includes("premium")) return 100;
+        if (n.includes("enhanced")) return 90;
+        if (n.includes("natural")) return 85;
+        // Known high-quality macOS voices
+        if (/\b(zoe|evan|samantha|allison|ava|tom|karen)\b/.test(n)) return 75;
+        // Google neural voices in Chrome
+        if (n.includes("google") && /\b(uk|us|australia)\b/i.test(n)) return 70;
+        // Microsoft neural voices in Edge
+        if (n.includes("microsoft") && (n.includes("natural") || n.includes("neural"))) return 80;
+        if (n.includes("microsoft")) return 60;
+        if (n.includes("google")) return 55;
+        // macOS named voices (Daniel, Fiona, etc.)
+        if (/\b(daniel|fiona|moira|rishi|tessa|veena|oliver|martha|aaron)\b/.test(n)) return 50;
+        // Compact/low-quality voices rank lowest
+        if (n.includes("compact")) return 5;
+        return 30;
+      };
+
+      const ranked = [...english].sort((a, b) => qualityScore(b) - qualityScore(a));
+      // Keep only voices scoring above compact quality, limit to best 12
+      const good = ranked.filter((v) => qualityScore(v) >= 20).slice(0, 12);
+      setReaderVoices(good.length > 0 ? good : ranked.slice(0, 8));
+
+      if (!readerVoice) {
+        const best = good[0] ?? ranked[0];
+        if (best) setReaderVoice(best.name);
+      }
     };
     loadVoices();
     window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
@@ -15897,7 +15925,7 @@ function NovelWorkspacePage() {
                 ))}
               </div>
             </div>
-            {readerVoices.filter((v) => v.lang.startsWith("en")).length > 1 && (
+            {readerVoices.length > 1 && (
               <div className="pw-reader-settings-row">
                 <label>Voice</label>
                 <select
@@ -15908,9 +15936,17 @@ function NovelWorkspacePage() {
                     if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
                   }}
                 >
-                  {readerVoices.filter((v) => v.lang.startsWith("en")).map((v) => (
-                    <option key={v.name} value={v.name}>{v.name.replace(/\(.*?\)/, "").trim()}</option>
-                  ))}
+                  {readerVoices.map((v) => {
+                    const n = v.name.toLowerCase();
+                    const isPremium = n.includes("premium") || n.includes("enhanced") || n.includes("natural");
+                    const accent = v.lang === "en-GB" ? "UK" : v.lang === "en-AU" ? "AU" : v.lang === "en-US" ? "US" : v.lang.replace("en-", "").toUpperCase();
+                    const cleanName = v.name.replace(/\(.*?\)/g, "").replace(/Microsoft\s*/i, "").replace(/Google\s*/i, "").trim();
+                    return (
+                      <option key={v.name} value={v.name}>
+                        {cleanName} ({accent}){isPremium ? " ★" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
