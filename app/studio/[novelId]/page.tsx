@@ -1050,6 +1050,8 @@ function NovelWorkspacePage() {
   const [readerVoices, setReaderVoices] = useState<SpeechSynthesisVoice[]>([]);
   const readerUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [readerShowControls, setReaderShowControls] = useState(false);
+  const readerVoiceRef = useRef<string>("");
+  const readerSpeedRef = useRef<number>(1.0);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
@@ -1088,7 +1090,7 @@ function NovelWorkspacePage() {
 
       if (!readerVoice) {
         const best = good[0] ?? ranked[0];
-        if (best) setReaderVoice(best.name);
+        if (best) { setReaderVoice(best.name); readerVoiceRef.current = best.name; }
       }
     };
     loadVoices();
@@ -1102,9 +1104,9 @@ function NovelWorkspacePage() {
     const prose = extractProseFromContent(activeChapter.content).trim();
     if (!prose) return;
     const utterance = new SpeechSynthesisUtterance(prose);
-    const voice = readerVoices.find((v) => v.name === readerVoice);
+    const voice = readerVoices.find((v) => v.name === readerVoiceRef.current);
     if (voice) utterance.voice = voice;
-    utterance.rate = readerSpeed;
+    utterance.rate = readerSpeedRef.current;
     utterance.pitch = 1.0;
     utterance.onend = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
     utterance.onerror = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
@@ -15919,7 +15921,8 @@ function NovelWorkspacePage() {
                     className={`pw-reader-speed-btn${readerSpeed === s ? " active" : ""}`}
                     onClick={() => {
                       setReaderSpeed(s);
-                      if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
+                      readerSpeedRef.current = s;
+                      if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 50); }
                     }}
                   >{s}x</button>
                 ))}
@@ -15933,7 +15936,8 @@ function NovelWorkspacePage() {
                   value={readerVoice}
                   onChange={(e) => {
                     setReaderVoice(e.target.value);
-                    if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
+                    readerVoiceRef.current = e.target.value;
+                    if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 50); }
                   }}
                 >
                   {readerVoices.map((v) => {
