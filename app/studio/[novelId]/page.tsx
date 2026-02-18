@@ -731,6 +731,15 @@ const ROLE_ALIAS_TOKENS = [
   "mysterious man", "mysterious woman", "mysterious figure", "dark figure",
   "old man", "old woman", "young man", "young woman", "child",
   "unknown man", "unknown woman", "unnamed", "main character",
+  "father", "mother", "brother", "sister", "son", "daughter",
+  "husband", "wife", "uncle", "aunt", "cousin", "nephew", "niece",
+  "grandfather", "grandmother", "grandpa", "grandma", "grandson", "granddaughter",
+  "the father", "the mother", "the brother", "the sister",
+  "the husband", "the wife", "the son", "the daughter",
+  "dad", "mom", "mum", "papa", "mama",
+  "neighbor", "neighbour", "friend", "best friend", "roommate",
+  "teacher", "doctor", "nurse", "priest", "lawyer", "judge",
+  "bartender", "shopkeeper", "innkeeper", "landlord",
 ] as const;
 
 function isRoleLikeCharacterLabel(value: string) {
@@ -6363,10 +6372,10 @@ function NovelWorkspacePage() {
         nfSubtype === "investigative" ? "- Structure the narrative to build toward revelation: what was hidden, how it was uncovered, and the consequences." : "",
         nfSubtype === "biography" ? "- Follow the subject's life arc, focusing on the defining moments and turning points." : "",
         nfSubtype === "memoir" ? "- Follow a chronological or thematic arc through the life events." : "",
-        "- Each chapter takes place in ONE primary location or setting. Do NOT jump between multiple locations in a single chapter.",
-        "- Only list people who are ESSENTIAL to that chapter. Do NOT include every person in every chapter — most chapters should feature 2-4 key people.",
-        "- Introduce new people naturally as the narrative requires.",
-        "- Each chapter should tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events into one chapter.",
+        "- LOCATION RULE: Each chapter MUST take place in exactly ONE location or setting. List only ONE location. NEVER list 2+ locations in a single chapter.",
+        "- PEOPLE RULE: Only list people who APPEAR AND ACT in this chapter. Most chapters need 2-4 people. NEVER list all people in every chapter.",
+        "- Use existing Canon names. Do NOT create duplicate entries for someone who already has a name (e.g. do not create 'The Father' if the father already has a name).",
+        "- FOCUS RULE: Each chapter tells ONE focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events into one chapter.",
         "- Use the actual people and places from the events.",
         "- Capture the emotional journey — the timeline should feel like a narrative, not a list.",
         "- Each chapter should focus on 1-2 related events and explore them in depth.",
@@ -6387,10 +6396,10 @@ function NovelWorkspacePage() {
         "- Synopses are internal drafting notes for AI, NOT reader-facing blurbs.",
         "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
         "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Detective', 'The Killer', 'Mysterious Stranger', etc. Even if the story hasn't revealed someone's identity yet, give them a real name — the story can reveal it later but the AI needs a proper name to track them.",
-        "- Each chapter takes place in ONE primary location. Do NOT jump between multiple locations in a single chapter.",
-        "- Only list characters who are ESSENTIAL to that chapter's action. Do NOT dump every character into every chapter — most chapters should have 2-4 characters.",
-        "- Introduce new characters naturally as the story demands. Not every character appears in chapter 1.",
-        "- Each chapter should tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes into one chapter.",
+        "- LOCATION RULE: Each chapter MUST take place in exactly ONE location. List only ONE location per chapter. NEVER list 2+ locations — if a character travels, the chapter is set where the main action happens.",
+        "- CHARACTER RULE: Only list characters who APPEAR AND ACT in this chapter. Most chapters need 2-4 characters. NEVER list all characters in every chapter. Characters should be introduced gradually across chapters.",
+        "- Use existing Canon character names. Do NOT create duplicate characters with different names for someone who already exists (e.g. do not create 'The Father' if the father already has a name in Canon).",
+        "- FOCUS RULE: Each chapter tells ONE focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes into one chapter.",
         "- Include 1-2 key events per chapter that drive the plot forward.",
         "- Maintain strict cause-and-effect between chapters.",
         "- Use Canon character and location names EXACTLY as given.",
@@ -6483,9 +6492,20 @@ function NovelWorkspacePage() {
         if (!key) return "";
         const direct = characterByName.get(key);
         if (direct) return direct.id;
-        const first = key.split(/\s+/)[0];
+        const words = key.split(/\s+/);
+        const first = words[0];
+        const last = words.length > 1 ? words[words.length - 1] : "";
+        // Match by first name if unique
         const firstMatches = mergedCharacters.filter((c) => normalizeLookup(c.name || "").split(/\s+/)[0] === first);
         if (firstMatches.length === 1) return firstMatches[0].id;
+        // Match by last name — "John Thompson" should find existing "Mary Thompson"
+        if (last) {
+          const lastMatches = mergedCharacters.filter((c) => {
+            const parts = normalizeLookup(c.name || "").split(/\s+/);
+            return parts.length > 1 && parts[parts.length - 1] === last;
+          });
+          if (lastMatches.length === 1) return lastMatches[0].id;
+        }
         return "";
       };
       const ensureCharacterId = (rawName: string) => {
@@ -6690,9 +6710,10 @@ function NovelWorkspacePage() {
               `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
               `This is an internal writer plan, not reader copy. Be specific about what happens.`,
               `This is a NON-FICTION ${nfSubtypeLabel} book. Base the chapter on the real events provided.`,
-              "- This chapter takes place in ONE primary location or setting. Do NOT jump between locations.",
-              "- Only include people who are ESSENTIAL to this chapter (typically 2-4). Do NOT list every person from the story.",
-              "- Tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events together.",
+              "- LOCATION: This chapter takes place in exactly ONE location or setting. List only ONE location. NEVER list multiple locations.",
+              "- PEOPLE: Only include people who APPEAR AND ACT in this chapter (typically 2-4). NEVER list everyone from the story.",
+              "- Use existing Canon names. Do NOT create duplicates for someone who already has a name.",
+              "- FOCUS: Tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events together.",
               canonNames ? `Canon names: ${canonNames}` : "",
               `Full chapter list:\n${fullChapterList}`,
               prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
@@ -6706,10 +6727,10 @@ function NovelWorkspacePage() {
               `This is an internal writer plan, not reader copy. Be specific about what happens.`,
               "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
               "- Every character MUST have a proper human name (First Last). NEVER use role labels.",
-              "- This chapter takes place in ONE primary location. Do NOT jump between locations.",
-              "- Only include characters who are ESSENTIAL to this chapter (typically 2-4). Do NOT list every character from the story.",
-              "- Introduce new characters naturally if the story demands them.",
-              "- Tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes together.",
+              "- LOCATION: This chapter takes place in exactly ONE location. List only ONE location. NEVER list multiple locations.",
+              "- CHARACTERS: Only include characters who APPEAR AND ACT in this chapter (typically 2-4). NEVER list every character from the story.",
+              "- Use existing Canon character names. Do NOT create duplicates for someone who already exists under a different name.",
+              "- FOCUS: Tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes together.",
               canonNames ? `Canon names: ${canonNames}` : "",
               `Full chapter list:\n${fullChapterList}`,
               prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
