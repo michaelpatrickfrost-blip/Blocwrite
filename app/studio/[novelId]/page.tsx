@@ -1263,8 +1263,12 @@ function NovelWorkspacePage() {
       if (done > 0) await new Promise((r) => setTimeout(r, 3000));
       if (cancelled) return;
 
-      // Call the EXACT same function the button calls — with FRESH closures
-      await runCharacterAiForSelected(charId, "profile");
+      try {
+        await runCharacterAiForSelected(charId, "profile");
+      } catch (err) {
+        if (isCancelledError(err)) { setBatchProfileQueue([]); return; }
+        console.error("Batch profile failed for", charId, err);
+      }
 
       if (cancelled) return;
 
@@ -2020,7 +2024,7 @@ function NovelWorkspacePage() {
         return;
       }
       if (charChatOpen) {
-        setCharChatOpen(false);
+        cancelAiWork(); setCharChatOpen(false);
         return;
       }
       if (showStoryBibleModal) {
@@ -2445,8 +2449,10 @@ function NovelWorkspacePage() {
       } else {
         setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
-    } catch {
-      setCharChatMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
+    } catch (err) {
+      if (!isCancelledError(err)) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
+      }
     } finally {
       setCharChatLoading(false);
     }
@@ -2548,8 +2554,10 @@ function NovelWorkspacePage() {
       } else {
         setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
-    } catch {
-      setCharChatMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
+    } catch (err) {
+      if (!isCancelledError(err)) {
+        setCharChatMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
+      }
     } finally {
       setCharChatLoading(false);
     }
@@ -3817,10 +3825,22 @@ function NovelWorkspacePage() {
       if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
       if (cleaned.startsWith("'") && cleaned.endsWith("'")) cleaned = cleaned.slice(1, -1);
 
-      // Replace the selected text in the chapter body
-      const newContent = fullProse.slice(0, selStart) + cleaned + fullProse.slice(selEnd);
-      updateChapter(activeChapter.id, { content: newContent }, true);
+      // Replace the selected text
+      const newText = fullProse.slice(0, selStart) + cleaned + fullProse.slice(selEnd);
+      if (blockIdx >= 0) {
+        pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
+        const blocks = getSceneBlocks(activeChapter);
+        if (blockIdx < blocks.length) {
+          const next = [...blocks];
+          next[blockIdx] = { ...next[blockIdx], prose: newText };
+          updateSceneBlocks(activeChapter.id, next);
+          syncChapterContentFromBlocks(activeChapter.id, next);
+        }
+      } else {
+        updateChapter(activeChapter.id, { content: newText }, true);
+      }
     } catch (err) {
+      if (isCancelledError(err)) { setProseCtxBusy(false); return; }
       console.error("Prose context action failed:", err);
     } finally {
       setProseCtxBusy(false);
@@ -3968,7 +3988,7 @@ function NovelWorkspacePage() {
       });
       setRewriteSelection(null);
     } catch (err) {
-      console.error("Smart rewrite failed:", err);
+      if (!isCancelledError(err)) console.error("Smart rewrite failed:", err);
     } finally {
       setRewriteBusy(false);
       setRewriteMode(null);
@@ -4244,6 +4264,9 @@ function NovelWorkspacePage() {
     setStoryAiBusyAction(null);
     setEditorLoadingPhase(null);
     setFeedbackReviewApplying(false);
+    setFbPreviewGenerating(false);
+    setCharChatLoading(false);
+    setChapterRewriteBusy(false);
     setNccBusy(false);
     setEditorApplying(false);
     setEditorApplyProgress("");
@@ -7065,6 +7088,7 @@ function NovelWorkspacePage() {
         };
       });
     } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setPlanError(error instanceof Error ? error.message : "Failed to regenerate chapter.");
     } finally {
       setStoryAiBusyAction(null);
@@ -8230,6 +8254,7 @@ function NovelWorkspacePage() {
         });
       }
     } catch (err) {
+      if (isCancelledError(err)) { setEditorLoadingPhase(null); return; }
       setEditorResult(null);
       setEditorError(err instanceof Error ? err.message : "The Editor failed. Try again.");
     } finally {
@@ -8322,6 +8347,7 @@ function NovelWorkspacePage() {
           : "No paragraphs needed changes for these issues.",
       });
     } catch (err) {
+      if (isCancelledError(err)) { setEditorLoadingPhase(null); return; }
       setEditorResult(null);
       setEditorError(err instanceof Error ? err.message : "Failed to fix issues. Try again.");
     } finally {
@@ -12450,8 +12476,8 @@ function NovelWorkspacePage() {
                             } else {
                               alert("AI could not regenerate. Try again.");
                             }
-                          } catch {
-                            alert("Failed to regenerate. Check your AI connection.");
+                          } catch (err) {
+                            if (!isCancelledError(err)) alert("Failed to regenerate. Check your AI connection.");
                           } finally {
                             setFbPreviewGenerating(false);
                           }
@@ -12569,6 +12595,22 @@ function NovelWorkspacePage() {
                             }
                           } finally {
                             setFeedbackReviewApplying(false);
+                            // Sync sceneBlocks from new content so block mode stays in sync
+                            if (novel) {
+                              const updatedCh = novel.chapters.find(c => c.id === matchChapter.id);
+                              if (updatedCh && updatedCh.sceneBlocks && updatedCh.sceneBlocks.length > 0) {
+                                const paras = updatedCh.content.split(/\n\n+/).filter(Boolean);
+                                let pi = 0;
+                                const syncedBlocks = updatedCh.sceneBlocks.map(b => {
+                                  if (!b.prose?.trim()) return b;
+                                  const bpc = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
+                                  const np = paras.slice(pi, pi + bpc).join("\n\n");
+                                  pi += bpc;
+                                  return { ...b, prose: np || b.prose };
+                                });
+                                updateSceneBlocks(matchChapter.id, syncedBlocks);
+                              }
+                            }
                           }
                           // Clear preview and move to next
                           setFbPreviewOriginal(null);
@@ -12635,9 +12677,11 @@ function NovelWorkspacePage() {
                               setFbPreviewOriginal(null);
                               alert("AI could not generate a revision. Try again.");
                             }
-                          } catch {
-                            setFbPreviewOriginal(null);
-                            alert("Failed to generate. Check your AI connection.");
+                          } catch (err) {
+                            if (!isCancelledError(err)) {
+                              setFbPreviewOriginal(null);
+                              alert("Failed to generate. Check your AI connection.");
+                            }
                           } finally {
                             setFbPreviewGenerating(false);
                           }
@@ -12744,7 +12788,24 @@ function NovelWorkspacePage() {
               onFixIssues={runEditorFixIssues}
               onApply={(revisedText) => {
                 if (!activeChapter) return;
-                updateChapter(activeChapter.id, { content: revisedText }, true);
+                const blocks = getSceneBlocks(activeChapter);
+                if (blocks.length > 0 && blocks.some(b => b.prose?.trim())) {
+                  // Distribute revised paragraphs back into blocks
+                  pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
+                  const revisedParas = revisedText.split(/\n\n+/).filter(Boolean);
+                  let paraIdx = 0;
+                  const updatedBlocks = blocks.map(b => {
+                    if (!b.prose?.trim()) return b;
+                    const blockParaCount = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
+                    const newProse = revisedParas.slice(paraIdx, paraIdx + blockParaCount).join("\n\n");
+                    paraIdx += blockParaCount;
+                    return { ...b, prose: newProse || b.prose };
+                  });
+                  updateSceneBlocks(activeChapter.id, updatedBlocks);
+                  syncChapterContentFromBlocks(activeChapter.id, updatedBlocks);
+                } else {
+                  updateChapter(activeChapter.id, { content: revisedText }, true);
+                }
                 setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
               }}
               chapterProse={chProse}
@@ -14992,7 +15053,7 @@ function NovelWorkspacePage() {
       )}
 
       {showPlanGenerateModal && (
-        <div className="pw-modal-overlay" onClick={() => setShowPlanGenerateModal(false)}>
+        <div className="pw-modal-overlay" onClick={() => { cancelAiWork(); setShowPlanGenerateModal(false); saveNow(); }}>
           <div className="pw-modal pw-plan-generate-modal" onClick={(event) => event.stopPropagation()}>
             <div style={{ textAlign: "center", marginBottom: "4px" }}>
               <div style={{ fontSize: "28px", marginBottom: "6px" }}>✦</div>
@@ -15069,7 +15130,7 @@ function NovelWorkspacePage() {
                 type="button"
                 className="btn pw-cancel-btn"
                 style={{ flex: 1 }}
-                onClick={() => setShowPlanGenerateModal(false)}
+                onClick={() => { cancelAiWork(); setShowPlanGenerateModal(false); saveNow(); }}
               >
                 Cancel
               </button>
