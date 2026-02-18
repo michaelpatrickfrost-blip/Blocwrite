@@ -6329,19 +6329,13 @@ function NovelWorkspacePage() {
       const canonNames = [...existingCharNames, ...existingLocNames].join(", ");
 
       /* ══════════════════════════════════════════════════════════════
-       * SINGLE BATCH CALL — generate titles + full details at once.
-       * This replaces the old N+1 sequential calls (1 for titles, then
-       * 1 per chapter) with ONE call. Massively faster.
+       * TWO-PHASE SEQUENTIAL PLAN GENERATION
+       * Phase 1: Generate chapter titles (fast call — establishes arc)
+       * Phase 2: Generate each chapter synopsis one-at-a-time with
+       *          full context of ALL previous chapters for consistency.
+       *          This produces a genuine novel blueprint, not repeated
+       *          summaries.
        * ══════════════════════════════════════════════════════════════ */
-
-      type BatchChapter = {
-        title?: string;
-        synopsis?: string;
-        characters?: string[];
-        locations?: string[];
-        events?: string[];
-      };
-      type BatchResult = { chapters?: BatchChapter[] };
 
       const nfSubtype = nfData?.subtype ?? "memoir";
       const nfSubtypeLabel = nfSubtype === "true-crime" ? "true crime" : nfSubtype === "investigative" ? "investigative non-fiction" : nfSubtype;
@@ -6361,98 +6355,92 @@ function NovelWorkspacePage() {
         return parts.join("\n");
       })() : "";
 
-      const batchPrompt = isNF ? [
-        `Create a detailed ${planTarget}-chapter outline for this ${nfSubtypeLabel} book.`,
-        `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }] }`,
-        "",
-        "RULES:",
-        `- Return EXACTLY ${planTarget} chapters.`,
-        `- This is a NON-FICTION ${nfSubtypeLabel} book. Base chapters on the real events provided.`,
-        "- Each synopsis must be 5-8 detailed sentences describing what happens in the chapter.",
-        nfSubtype === "true-crime" ? "- Structure like a true crime narrative: the crime, the investigation, the key players, the pursuit, the resolution/aftermath." : "",
-        nfSubtype === "historical" ? "- Structure chronologically through the historical events, weaving in the human stories behind the facts." : "",
-        nfSubtype === "investigative" ? "- Structure the narrative to build toward revelation: what was hidden, how it was uncovered, and the consequences." : "",
-        nfSubtype === "biography" ? "- Follow the subject's life arc, focusing on the defining moments and turning points." : "",
-        nfSubtype === "memoir" ? "- Follow a chronological or thematic arc through the life events." : "",
-        "- LOCATION RULE: Each chapter MUST take place in exactly ONE location or setting. List only ONE location. NEVER list 2+ locations in a single chapter.",
-        "- PEOPLE RULE: Only list people who APPEAR AND ACT in this chapter. Most chapters need 2-4 people. NEVER list all people in every chapter.",
-        "- Use existing Canon names. Do NOT create duplicate entries for someone who already has a name (e.g. do not create 'The Father' if the father already has a name).",
-        "- FOCUS RULE: Each chapter tells ONE focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events into one chapter.",
-        "- Use the actual people and places from the events.",
-        "- Capture the emotional journey — the timeline should feel like a narrative, not a list.",
-        "- Each chapter should focus on 1-2 related events and explore them in depth.",
-        "- Include sensory details, dialogue possibilities, and emotional beats.",
-        "- The opening chapter should hook the reader — consider starting with a pivotal moment.",
-        "- The final chapter should provide closure or reflection.",
-        canonNames ? `- Names to use: ${canonNames}` : "",
+      const genres = novel.storyBible.summary.genre ?? [];
+      const genreLower = genres.map((g: string) => g.toLowerCase());
+      const genreStr = genres.join(", ") || "general fiction";
+      const planStyleVoice = novel.storyBible.styleVoice;
+      const authorStyleHint = planStyleVoice?.voiceRules ? `Writing style: ${clampPromptText(planStyleVoice.voiceRules, 150)}` : "";
+
+      const getGenreGuidance = (): string => {
+        const parts: string[] = [];
+        if (genreLower.some((g: string) => g.includes("thriller") || g.includes("suspense")))
+          parts.push("GENRE NOTE: Thriller/Suspense — End chapters with tension or cliffhangers. Layer mysteries and misdirection.");
+        if (genreLower.some((g: string) => g.includes("romance")))
+          parts.push("GENRE NOTE: Romance — Build the relationship gradually. Create meaningful obstacles between the leads.");
+        if (genreLower.some((g: string) => g.includes("mystery") || g.includes("crime") || g.includes("detective")))
+          parts.push("GENRE NOTE: Mystery/Crime — Plant clues and red herrings. Each chapter reveals something new while deepening the mystery.");
+        if (genreLower.some((g: string) => g.includes("fantasy")))
+          parts.push("GENRE NOTE: Fantasy — Weave worldbuilding naturally into action. Magic should feel grounded in rules.");
+        if (genreLower.some((g: string) => g.includes("horror")))
+          parts.push("GENRE NOTE: Horror — Build dread through atmosphere. Each chapter escalates the sense of danger.");
+        if (genreLower.some((g: string) => g.includes("sci-fi") || g.includes("science fiction")))
+          parts.push("GENRE NOTE: Sci-Fi — Ground speculative elements in internal logic.");
+        if (genreLower.some((g: string) => g.includes("literary")))
+          parts.push("GENRE NOTE: Literary Fiction — Focus on character interiority and thematic depth.");
+        if (genreLower.some((g: string) => g.includes("historical")))
+          parts.push("GENRE NOTE: Historical — Ground chapters in period-authentic detail.");
+        if (genreLower.some((g: string) => g.includes("young adult") || g.includes("ya")))
+          parts.push("GENRE NOTE: YA — Voice should feel authentic to the protagonist's age.");
+        return parts.join("\n");
+      };
+
+      const getStructuralBeat = (chapterIndex: number, totalChapters: number): string => {
+        const pos = (chapterIndex + 1) / totalChapters;
+        const chNum = chapterIndex + 1;
+        if (chNum === 1) return "STRUCTURE: OPENING chapter. Hook the reader immediately. Introduce the protagonist and their world. Plant the seed of the central conflict. End with something that compels the reader forward.";
+        if (pos <= 0.15) return "STRUCTURE: Act 1 — Setup. Deepen characters, relationships, and the normal world. Plant seeds of coming conflict. Build reader investment.";
+        if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident. Something disrupts the status quo and thrusts the protagonist into the central conflict. Nothing can go back to normal.";
+        if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. Complications multiply. The protagonist faces new challenges and setbacks. Deepen subplots and raise stakes.";
+        if (pos <= 0.55) return "STRUCTURE: MIDPOINT. A major revelation, reversal, or escalation that changes everything. The protagonist's approach must shift fundamentally.";
+        if (pos <= 0.70) return "STRUCTURE: Act 2B — Escalation. Stakes at their highest. Subplots converge. Pressure mounts relentlessly on the protagonist.";
+        if (pos <= 0.80) return "STRUCTURE: Act 2B — Dark moment. The protagonist's lowest point. Everything seems lost. Maximum tension before the climax.";
+        if (pos <= 0.90) return "STRUCTURE: Act 3 — Climax. The central conflict reaches its peak. The protagonist confronts the main obstacle head-on. Maximum stakes.";
+        if (chNum === totalChapters) return "STRUCTURE: FINAL chapter. Resolve the central conflict decisively. Tie up major threads. Leave the reader satisfied (or purposefully unsettled if genre-appropriate).";
+        return "STRUCTURE: Act 3 — Resolution. Show consequences of the climax. Begin resolving remaining threads.";
+      };
+
+      /* ── Phase 1: Generate chapter TITLES (fast call) ── */
+      const titlePrompt = isNF ? [
+        `Create exactly ${planTarget} chapter titles for this ${nfSubtypeLabel} book.`,
+        `Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
+        `Exactly ${planTarget} unique, evocative titles that map out the entire narrative arc from beginning to end.`,
+        nfSubtype === "true-crime" ? "Structure: the crime, the investigation, the pursuit, the resolution." : "",
+        nfSubtype === "biography" ? "Structure: follow the subject's life arc through defining moments." : "",
+        nfSubtype === "memoir" ? "Structure: follow a chronological or thematic arc through life events." : "",
+        nfSubtype === "historical" ? "Structure: chronologically through key events with human stories." : "",
+        nfSubtype === "investigative" ? "Structure: build toward revelation — hidden, uncovered, consequences." : "",
         pacingHint,
-        "",
-        `Context:\n${nfCtx}\n\nCanon:\n${context}`,
+        nfCtx ? `Context:\n${nfCtx}` : "",
+        `\nCanon:\n${context}`,
       ].filter(Boolean).join("\n") : [
-        `Create a detailed ${planTarget}-chapter outline for this novel.`,
-        `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }] }`,
-        "",
-        "RULES:",
-        `- Return EXACTLY ${planTarget} chapters.`,
-        "- Each synopsis must be 5-8 detailed sentences describing WHAT HAPPENS in order.",
-        "- Synopses are internal drafting notes for AI, NOT reader-facing blurbs.",
-        "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
-        "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Detective', 'The Killer', 'Mysterious Stranger', etc. Even if the story hasn't revealed someone's identity yet, give them a real name — the story can reveal it later but the AI needs a proper name to track them.",
-        "- LOCATION RULE: Each chapter MUST take place in exactly ONE location. List only ONE location per chapter. NEVER list 2+ locations — if a character travels, the chapter is set where the main action happens.",
-        "- CHARACTER RULE: Only list characters who APPEAR AND ACT in this chapter. Most chapters need 2-4 characters. NEVER list all characters in every chapter. Characters should be introduced gradually across chapters.",
-        "- Use existing Canon character names. Do NOT create duplicate characters with different names for someone who already exists (e.g. do not create 'The Father' if the father already has a name in Canon).",
-        "- FOCUS RULE: Each chapter tells ONE focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes into one chapter.",
-        "- Include 1-2 key events per chapter that drive the plot forward.",
-        "- Maintain strict cause-and-effect between chapters.",
-        "- Use Canon character and location names EXACTLY as given.",
-        canonNames ? `- Canon names to use: ${canonNames}` : "",
+        `Create exactly ${planTarget} chapter titles for this ${genreStr} novel.`,
+        `Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
+        `Exactly ${planTarget} unique titles that map out the ENTIRE story arc from opening hook to resolution.`,
+        `A reader should sense the emotional journey of the novel just from reading the title sequence.`,
+        `Genre: ${genreStr}`,
         pacingHint,
-        "- Early chapters must build naturally, not rush to payoffs.",
-        "- The final chapter must resolve the central conflict.",
-        "- Do NOT use vague language. Be specific about what happens.",
-        "",
-        `Canon:\n${context}`,
+        authorStyleHint,
+        `\nCanon:\n${context}`,
       ].filter(Boolean).join("\n");
 
-      // Token budget scales with chapter count — each chapter needs ~400 tokens for synopsis + entities
-      const tokenBudget = Math.min(16000, Math.max(3000, planTarget * 500));
-
-      let batchChapters: BatchChapter[] = [];
+      let allTitles: string[] = [];
       try {
-        const raw = await requestOpenRouterText(batchPrompt, tokenBudget, 300000, systemMsg, false, 0.3);
-        let parsed = parseJsonFromAi<BatchResult | BatchChapter[]>(raw);
+        const raw = await requestOpenRouterText(titlePrompt, Math.min(2000, planTarget * 60), 120000, systemMsg, false, 0.4);
+        let parsed = parseJsonFromAi<{ titles?: string[] } | string[]>(raw);
         if (!parsed) {
           const repaired = attemptCloseTruncatedJson(raw.trim());
-          if (repaired) try { parsed = JSON.parse(repaired) as BatchResult | BatchChapter[]; } catch { /* ignore */ }
+          if (repaired) try { parsed = JSON.parse(repaired) as { titles?: string[] }; } catch { /* ignore */ }
         }
         if (Array.isArray(parsed)) {
-          batchChapters = parsed;
+          allTitles = parsed.map((t: unknown, i: number) => (typeof t === "string" ? t.trim() : "") || `Chapter ${i + 1}`);
         } else if (parsed && typeof parsed === "object") {
-          // Accept { chapters: [...] } or any key that holds an array
           const obj = parsed as Record<string, unknown>;
-          if (Array.isArray(obj.chapters)) {
-            batchChapters = obj.chapters as BatchChapter[];
-          } else {
-            for (const key of Object.keys(obj)) {
-              if (Array.isArray(obj[key])) { batchChapters = obj[key] as BatchChapter[]; break; }
-            }
-          }
+          const arr = Array.isArray(obj.titles) ? obj.titles : (Object.values(obj).find((v) => Array.isArray(v)) as string[] | undefined);
+          if (arr) allTitles = arr.map((t: unknown, i: number) => (typeof t === "string" ? t.trim() : "") || `Chapter ${i + 1}`);
         }
-      } catch { /* will fall back */ }
-
-      // Validate and clean up batch results
-      batchChapters = batchChapters
-        .filter((ch) => ch && typeof ch === "object")
-        .slice(0, planTarget);
-
-      // If batch returned too few chapters, pad with defaults
-      while (batchChapters.length < planTarget) {
-        batchChapters.push({ title: `Chapter ${batchChapters.length + 1}`, synopsis: "", characters: [], locations: [], events: [] });
-      }
-
-      const allTitles = batchChapters.map((ch, i) =>
-        (typeof ch.title === "string" ? ch.title.trim() : "") || `Chapter ${i + 1}`,
-      );
+      } catch { /* fall through to defaults */ }
+      while (allTitles.length < planTarget) allTitles.push(`Chapter ${allTitles.length + 1}`);
+      allTitles = allTitles.slice(0, planTarget);
 
       /* ── Show skeleton plan immediately so user sees titles ── */
       type Phase2Result = {
@@ -6606,47 +6594,130 @@ function NovelWorkspacePage() {
         return key ? (loreByTitle.get(key)?.id ?? "") : "";
       };
 
-      // ── Process each batch chapter and resolve entity IDs ──
-      // Stagger visual updates so user sees chapters fill in one-by-one
-      const STAGGER_MS = 350; // delay between each chapter appearing
-      const emptyChapterIndices: number[] = [];
-      for (let index = 0; index < allTitles.length; index++) {
-        setPlanGenerateProgressIdx(index);
-        const batchCh = batchChapters[index];
-        const synopsis = (typeof batchCh?.synopsis === "string" ? batchCh.synopsis.trim() : "");
+      /* ── Phase 2: Generate each chapter synopsis SEQUENTIALLY ──
+       * Each chapter gets the full context of ALL previously generated
+       * chapters so the story builds naturally with proper pacing,
+       * cause-and-effect, and genre-aware structure.
+       */
+      const generatedSynopses: string[] = [];
+      const fullChapterList = allTitles.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n");
+      const genreGuidance = getGenreGuidance();
 
-        // Track chapters with empty/too-short synopses for a quick repair pass
-        if (!synopsis || synopsis.length < 80) {
-          emptyChapterIndices.push(index);
-        }
+      for (let index = 0; index < allTitles.length; index++) {
+        if (aiAbortRef.current?.signal.aborted) break;
+        setPlanGenerateProgressIdx(index);
 
         const chapterTitle = allTitles[index];
-        const rawCharacterNames = parseStringList(batchCh?.characters);
-        const resolvedCharacterIds = rawCharacterNames.map(ensureCharacterId).filter(Boolean);
+        const structuralBeat = getStructuralBeat(index, allTitles.length);
 
-        const chapterCharacterIds = mergeUniqueIds(
-          resolvedCharacterIds,
-          inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedCharacters.map((c) => ({
-            id: c.id,
-            name: c.name || "",
-            aliases: (c.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
-          }))),
-        );
-        const chapterLocationIds = mergeUniqueIds(
-          parseStringList(batchCh?.locations).map(ensureLocationId).filter(Boolean),
-          inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
-            id: l.id, name: l.name || "",
-          }))),
-        );
-        const chapterLoreIds = mergeUniqueIds(
-          parseStringList(batchCh?.events).map(resolveLoreId).filter(Boolean),
-          inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
-            id: e.id, name: e.title || "",
-          }))),
-        );
-        parseStringList(batchCh?.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
+        const storySoFar = generatedSynopses.length > 0
+          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 250)}`).join("\n")
+          : "";
 
-        // Live UI update
+        const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
+
+        const chapterPrompt = isNF ? [
+          `Write a detailed synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${nfSubtypeLabel} book.`,
+          `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
+          "",
+          `This is chapter ${index + 1} of ${allTitles.length}. This is an internal writer's blueprint — be SPECIFIC about what happens, not vague summaries.`,
+          "",
+          structuralBeat,
+          "",
+          "RULES:",
+          "- The synopsis MUST be 5-8 detailed sentences describing EXACTLY what happens in this chapter, step by step.",
+          "- Include specific actions, dialogue moments, emotional reactions, and consequences.",
+          "- This chapter MUST be COMPLETELY DIFFERENT from all previous chapters — advance the narrative forward.",
+          `- This is a NON-FICTION ${nfSubtypeLabel} book. Ground everything in real events and people.`,
+          nfSubtype === "true-crime" ? "- Treat this like a true crime narrative: build tension, reveal evidence, follow the investigation." : "",
+          nfSubtype === "biography" ? "- Focus on the defining moments and turning points in the subject's life." : "",
+          nfSubtype === "memoir" ? "- Write with emotional honesty. Show the experience, don't just describe it." : "",
+          "- LOCATION: Exactly ONE location/setting. NEVER list multiple.",
+          "- PEOPLE: Only people who APPEAR AND ACT in this chapter (typically 2-4). NEVER list everyone.",
+          "- Use existing Canon names. NEVER create duplicates for someone who already has a name.",
+          "- FOCUS: ONE coherent event or sequence per chapter. Do NOT cram unrelated events together.",
+          canonNames ? `Canon names: ${canonNames}` : "",
+          pacingHint,
+          "",
+          `Full chapter outline:\n${fullChapterList}`,
+          storySoFar ? `\nSTORY SO FAR (previous chapters — do NOT repeat ANY of this, BUILD on it):\n${storySoFar}` : "",
+          nextTitle ? `\nNext chapter will be: "${nextTitle}" — this chapter must SET UP what comes next.` : "\nThis is the FINAL chapter — resolve the central narrative with closure or reflection.",
+          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
+          nfCtx ? `\nNon-fiction context:\n${clampPromptText(nfCtx, 800)}` : "",
+          `\nCanon:\n${clampPromptText(context, 1200)}`,
+        ].filter(Boolean).join("\n") : [
+          `Write a detailed synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${genreStr} novel.`,
+          `Return JSON: { "synopsis": "...", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }`,
+          "",
+          `This is chapter ${index + 1} of ${allTitles.length}. This is the complete internal blueprint for AI prose generation — be SPECIFIC and CONCRETE about every beat.`,
+          "",
+          structuralBeat,
+          genreGuidance,
+          "",
+          "RULES:",
+          "- The synopsis MUST be 5-8 detailed sentences describing EXACTLY what happens in this chapter, step by step.",
+          "- Include specific actions, dialogue beats, emotional shifts, revelations, and consequences.",
+          "- This chapter MUST be COMPLETELY DIFFERENT from all previous chapters. Each chapter advances the story — never retread ground.",
+          "- State WHO does WHAT, WHERE, and WHY. No vague language like 'things escalate' or 'tension builds'.",
+          "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist'.",
+          "- LOCATION: Exactly ONE location. NEVER list multiple.",
+          "- CHARACTERS: Only those who APPEAR AND ACT (typically 2-4). NEVER list everyone.",
+          "- Use existing Canon names. NEVER create duplicates.",
+          "- FOCUS: ONE focused story beat per chapter. No cramming multiple scenes.",
+          "- End the chapter in a way that creates momentum to the next.",
+          canonNames ? `Canon names: ${canonNames}` : "",
+          pacingHint,
+          authorStyleHint,
+          "",
+          `Full chapter outline:\n${fullChapterList}`,
+          storySoFar ? `\nSTORY SO FAR (previous chapters — do NOT repeat ANY of this, BUILD on it):\n${storySoFar}` : "",
+          nextTitle ? `\nNext chapter will be: "${nextTitle}" — this chapter must naturally lead into it.` : "\nThis is the FINAL chapter — resolve the central conflict decisively.",
+          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
+          `\nCanon:\n${clampPromptText(context, 1200)}`,
+        ].filter(Boolean).join("\n");
+
+        let synopsis = "";
+        let chapterCharacterIds: string[] = [];
+        let chapterLocationIds: string[] = [];
+        let chapterLoreIds: string[] = [];
+
+        try {
+          const raw = await requestOpenRouterText(chapterPrompt, 800, 180000, systemMsg, false, 0.35);
+          let parsed = parseJsonFromAi<Phase2Result>(raw);
+          if (!parsed) {
+            const repaired = attemptCloseTruncatedJson(raw.trim());
+            if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* skip */ }
+          }
+          if (parsed?.synopsis && parsed.synopsis.trim().length > 40) {
+            synopsis = parsed.synopsis.trim();
+            const rawCharacterNames = parseStringList(parsed.characters);
+            const resolvedCharacterIds = rawCharacterNames.map(ensureCharacterId).filter(Boolean);
+            chapterCharacterIds = mergeUniqueIds(
+              resolvedCharacterIds,
+              inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedCharacters.map((c) => ({
+                id: c.id, name: c.name || "",
+                aliases: (c.otherNames || "").split(/[;,]/).map((a) => a.trim()).filter(Boolean),
+              }))),
+            );
+            chapterLocationIds = mergeUniqueIds(
+              parseStringList(parsed.locations).map(ensureLocationId).filter(Boolean),
+              inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
+                id: l.id, name: l.name || "",
+              }))),
+            );
+            chapterLoreIds = mergeUniqueIds(
+              parseStringList(parsed.events).map(resolveLoreId).filter(Boolean),
+              inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
+                id: e.id, name: e.title || "",
+              }))),
+            );
+            parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
+          }
+        } catch { /* AI call failed — will show placeholder */ }
+
+        if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
+        generatedSynopses.push(synopsis);
+
         mutateNovel((current) => {
           const plan = current.storyBible.bookPlan;
           if (!plan) return current;
@@ -6654,7 +6725,7 @@ function NovelWorkspacePage() {
           if (updatedPlanChapters[index]) {
             updatedPlanChapters[index] = {
               ...updatedPlanChapters[index],
-              synopsis: synopsis || `Outline for ${chapterTitle}.`,
+              synopsis,
               characterIds: chapterCharacterIds,
               locationIds: chapterLocationIds,
               loreIds: chapterLoreIds,
@@ -6664,7 +6735,7 @@ function NovelWorkspacePage() {
           if (updatedChapters[index]) {
             updatedChapters[index] = {
               ...updatedChapters[index],
-              subtitle: synopsis || `Outline for ${chapterTitle}.`,
+              subtitle: synopsis,
               updatedAt: new Date().toISOString(),
             };
           }
@@ -6681,125 +6752,12 @@ function NovelWorkspacePage() {
             },
           };
         }, { skipSync: index < allTitles.length - 1 });
-
-        // Stagger so user sees each chapter fill in
-        if (index < allTitles.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, STAGGER_MS));
-        }
       }
       setPlanGenerateProgressIdx(null);
 
-      // Track new characters added during plan generation
       planNewCharIds = mergedCharacters
         .filter((c) => !existingCharIdsBefore.has(c.id))
         .map((c) => c.id);
-
-      /* ── Repair pass for any chapters that got truncated/empty ── */
-      if (emptyChapterIndices.length > 0) {
-        const fullChapterList = allTitles.map((t, i) => `${i + 1}. ${t}`).join("\n");
-        setPlanGenerateProgressIdx(0);
-        setPlanGenerateTotal(emptyChapterIndices.length);
-        for (let ri = 0; ri < emptyChapterIndices.length; ri++) {
-          const idx = emptyChapterIndices[ri];
-          setPlanGenerateProgressIdx(ri);
-          if (aiAbortRef.current?.signal.aborted) break;
-          try {
-            const prevSyn = idx > 0 ? (batchChapters[idx - 1]?.synopsis || "") : "";
-            const nextSyn = idx < allTitles.length - 1 ? (batchChapters[idx + 1]?.synopsis || "") : "";
-            const nextTitle = idx < allTitles.length - 1 ? allTitles[idx + 1] : "";
-            const repairPrompt = isNF ? [
-              `Write a detailed 5-8 sentence synopsis for Chapter ${idx + 1}: "${allTitles[idx]}" of this ${nfSubtypeLabel} book.`,
-              `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
-              `This is an internal writer plan, not reader copy. Be specific about what happens.`,
-              `This is a NON-FICTION ${nfSubtypeLabel} book. Base the chapter on the real events provided.`,
-              "- LOCATION: This chapter takes place in exactly ONE location or setting. List only ONE location. NEVER list multiple locations.",
-              "- PEOPLE: Only include people who APPEAR AND ACT in this chapter (typically 2-4). NEVER list everyone from the story.",
-              "- Use existing Canon names. Do NOT create duplicates for someone who already has a name.",
-              "- FOCUS: Tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events together.",
-              canonNames ? `Canon names: ${canonNames}` : "",
-              `Full chapter list:\n${fullChapterList}`,
-              prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
-              nextSyn ? `Next chapter synopsis: ${clampPromptText(nextSyn, 300)}` : nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
-              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 400)}`,
-              nfCtx ? `Non-fiction context:\n${clampPromptText(nfCtx, 600)}` : "",
-              pacingHint,
-            ].filter(Boolean).join("\n") : [
-              `Write a detailed 5-8 sentence synopsis for Chapter ${idx + 1}: "${allTitles[idx]}" of this novel.`,
-              `Return JSON: { "synopsis": "...", "characters": ["First Last"], "locations": ["Place"], "events": ["key moment"] }`,
-              `This is an internal writer plan, not reader copy. Be specific about what happens.`,
-              "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
-              "- Every character MUST have a proper human name (First Last). NEVER use role labels.",
-              "- LOCATION: This chapter takes place in exactly ONE location. List only ONE location. NEVER list multiple locations.",
-              "- CHARACTERS: Only include characters who APPEAR AND ACT in this chapter (typically 2-4). NEVER list every character from the story.",
-              "- Use existing Canon character names. Do NOT create duplicates for someone who already exists under a different name.",
-              "- FOCUS: Tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes together.",
-              canonNames ? `Canon names: ${canonNames}` : "",
-              `Full chapter list:\n${fullChapterList}`,
-              prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
-              nextSyn ? `Next chapter synopsis: ${clampPromptText(nextSyn, 300)}` : nextTitle ? `Next chapter: ${nextTitle}` : "This is the final chapter.",
-              `Story: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 400)}`,
-              pacingHint,
-            ].filter(Boolean).join("\n");
-
-            const raw = await requestOpenRouterText(repairPrompt, 700, 180000, systemMsg, false, 0.3);
-            let parsed = parseJsonFromAi<Phase2Result>(raw);
-            if (!parsed) {
-              const repaired = attemptCloseTruncatedJson(raw.trim());
-              if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* skip */ }
-            }
-            if (parsed?.synopsis && parsed.synopsis.trim().length > 60) {
-              const synopsis = parsed.synopsis.trim();
-              // Store back so subsequent chapters can use this as context
-              if (batchChapters[idx]) batchChapters[idx].synopsis = synopsis;
-              const charIds = parseStringList(parsed.characters).map(ensureCharacterId).filter(Boolean);
-              const locIds = parseStringList(parsed.locations).map(ensureLocationId).filter(Boolean);
-              const chapterCharacterIds = mergeUniqueIds(
-                charIds,
-                inferEntityIdsFromText(`${allTitles[idx]}\n${synopsis}`, mergedCharacters.map((c) => ({
-                  id: c.id, name: c.name || "",
-                  aliases: (c.otherNames || "").split(/[;,]/).map((a) => a.trim()).filter(Boolean),
-                }))),
-              );
-              const chapterLocationIds = mergeUniqueIds(
-                locIds,
-                inferEntityIdsFromText(`${allTitles[idx]}\n${synopsis}`, mergedLocations.map((l) => ({
-                  id: l.id, name: l.name || "",
-                }))),
-              );
-              parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, allTitles[idx], synopsis, idx));
-
-              mutateNovel((current) => {
-                const plan = current.storyBible.bookPlan;
-                if (!plan) return current;
-                const updatedPlanChapters = [...plan.chapters];
-                if (updatedPlanChapters[idx]) {
-                  updatedPlanChapters[idx] = {
-                    ...updatedPlanChapters[idx],
-                    synopsis,
-                    characterIds: chapterCharacterIds,
-                    locationIds: chapterLocationIds,
-                  };
-                }
-                const updatedChapters = [...current.chapters];
-                if (updatedChapters[idx]) {
-                  updatedChapters[idx] = { ...updatedChapters[idx], subtitle: synopsis, updatedAt: new Date().toISOString() };
-                }
-                return {
-                  ...current,
-                  chapters: updatedChapters,
-                  storyBible: {
-                    ...current.storyBible,
-                    characters: [...mergedCharacters],
-                    locations: [...mergedLocations],
-                    timeline: [...mergedEvents],
-                    bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
-                  },
-                };
-              });
-            }
-          } catch { /* skip repair for this chapter */ }
-        }
-      }
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); setPlanGenerateProgressIdx(null); return; }
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
