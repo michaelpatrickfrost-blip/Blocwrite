@@ -268,7 +268,7 @@ a { color: inherit; text-decoration: none; }
 
 .pw-window {
   width: 100%;
-  max-width: 1520px;
+  max-width: 100%;
   height: calc(100vh - 48px);
   background: var(--pw-surface);
   border-radius: var(--pw-radius-2xl);
@@ -1057,6 +1057,8 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   gap: 6px;
   margin-top: 12px;
+  width: 100%;
+  max-width: none;
 }
 
 .pw-block-options-label {
@@ -1110,6 +1112,11 @@ a { color: inherit; text-decoration: none; }
 .pw-block-wrap {
   display: flex;
   flex-direction: column;
+  width: 100%;
+}
+.pw-block-prose-seamless {
+  max-width: none !important;
+  min-height: auto !important;
 }
 .pw-block-card {
   padding: 0;
@@ -4447,7 +4454,7 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 
 /* 1600px+ : expand the window to use more horizontal space */
 @media (min-width: 1600px) {
-  .pw-window { max-width: 1720px; }
+  .pw-window { max-width: 100%; }
   .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 280px 1fr; }
   .pw-editor-area { padding: var(--pw-space-6) var(--pw-space-8) var(--pw-space-8); }
   .pw-overview { padding: 36px 48px 48px; }
@@ -4455,12 +4462,11 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
   .pw-dashboard-grid { gap: var(--pw-space-6); }
 }
 
-/* 1920px+ (Full HD): even wider, editor prose gets a comfortable max-width */
+/* 1920px+ (Full HD) */
 @media (min-width: 1920px) {
-  .pw-window { max-width: 1920px; }
+  .pw-window { max-width: 100%; }
   .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 300px 1fr; }
   .pw-editor-area { padding: var(--pw-space-8) var(--pw-space-8) var(--pw-space-10); }
-  .pw-editor-input { max-width: 900px; }
   .pw-overview { padding: 40px 56px 56px; }
   .pw-overview-hero { gap: 36px; }
   .pw-overview-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
@@ -4471,13 +4477,12 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 @media (min-width: 2560px) {
   .pw-wallpaper { padding: var(--pw-space-8); }
   .pw-window {
-    max-width: 2400px;
+    max-width: 100%;
     height: calc(100vh - 64px);
     border-radius: 28px;
   }
   .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 320px 1fr; }
   .pw-editor-area { padding: 40px 56px 56px; }
-  .pw-editor-input { max-width: 960px; }
   .pw-overview { padding: 48px 64px 64px; }
   .pw-overview-hero { grid-template-columns: 220px minmax(0, 1fr); gap: 40px; }
   .pw-overview-title { font-size: 34px; }
@@ -4491,13 +4496,13 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 @media (min-width: 3440px) {
   .pw-wallpaper { padding: var(--pw-space-10); }
   .pw-window {
-    max-width: 3000px;
+    max-width: 100%;
     height: calc(100vh - 80px);
     border-radius: 32px;
   }
   .pw-window:not(.pw-sidebar-collapsed) { grid-template-columns: 340px 1fr; }
   .pw-editor-area { padding: 48px 72px 72px; }
-  .pw-editor-input { max-width: 1020px; font-size: 17px; }
+  .pw-editor-input { font-size: 17px; }
   .pw-overview { padding: 56px 80px 80px; }
   .pw-overview-hero { grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
   .pw-overview-title { font-size: 38px; }
@@ -4508,9 +4513,6 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 }
 
 /* ── Editor prose readability ── */
-@media (min-width: 1920px) {
-  .pw-block-prose { max-width: 900px; }
-}
 
 /* ═══════════════════════════════════════
    Responsive — Small screens

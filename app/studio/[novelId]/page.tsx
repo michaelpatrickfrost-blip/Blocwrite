@@ -7219,7 +7219,7 @@ function NovelWorkspacePage() {
         const batch = chapters.slice(batchStart, batchStart + 3);
         const chapterContent = batch.map((ch) => {
           const chapterNum = novel.chapters.findIndex((c) => c.id === ch.id) + 1;
-          const prose = extractProseFromContent(ch.content ?? "").slice(0, 2000);
+          const prose = extractProseFromContent(ch.content ?? "").slice(0, 6000);
           return `--- Chapter ${chapterNum}: "${ch.title || `Chapter ${chapterNum}`}" ---\n${prose}`;
         }).join("\n\n");
 
@@ -7239,11 +7239,11 @@ function NovelWorkspacePage() {
           `Characters:\n${charSummaries || "None defined"}`,
           `\nManuscript:\n${chapterContent}`,
           `\nReturn JSON: { "edits": [ { "chapter": <chapter number>, "reason": "<brief reason — 1 sentence, e.g. 'This tells instead of shows'>, "original": "<exact quote from text>", "revised": "<your improved version>" } ] }`,
-          `Find 4-10 edits per chapter. Be specific. The original MUST be an exact quote. The revised version should be noticeably better — don't just move words around.`,
+          `Find 6-15 edits per chapter. Be specific. The original MUST be an exact quote. The revised version should be noticeably better — don't just move words around.`,
         ].join("\n");
 
         try {
-          const result = await requestOpenRouterJson(userPrompt, 4000, { systemMessage: systemPrompt });
+          const result = await requestOpenRouterJson(userPrompt, 6000, { systemMessage: systemPrompt });
           const res = result as Record<string, unknown> | null;
           if (res && Array.isArray(res.edits)) {
             for (const edit of (res.edits as Record<string, unknown>[]).slice(0, 30)) {
@@ -10445,7 +10445,7 @@ function NovelWorkspacePage() {
                               </div>
                             </div>
                             {/* ── Seamless prose area (styled like main editor) ── */}
-                            {!aiOff && block.synopsis?.trim() && !block.prose?.trim() && (
+                            {block.synopsis?.trim() && !block.prose?.trim() && (
                               <button
                                 type="button"
                                 disabled={isBlockBusy || !!storyAiBusyAction}
@@ -12668,25 +12668,44 @@ function NovelWorkspacePage() {
               onFixIssues={runEditorFixIssues}
               onApply={(revisedText) => {
                 if (!activeChapter) return;
+                pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
                 const blocks = getSceneBlocks(activeChapter);
                 if (blocks.length > 0 && blocks.some(b => b.prose?.trim())) {
-                  // Distribute revised paragraphs back into blocks
-                  pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
                   const revisedParas = revisedText.split(/\n\n+/).filter(Boolean);
                   let paraIdx = 0;
                   const updatedBlocks = blocks.map(b => {
                     if (!b.prose?.trim()) return b;
                     const blockParaCount = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
-                    const newProse = revisedParas.slice(paraIdx, paraIdx + blockParaCount).join("\n\n");
+                    const slice = revisedParas.slice(paraIdx, paraIdx + blockParaCount);
                     paraIdx += blockParaCount;
-                    return { ...b, prose: newProse || b.prose };
+                    return { ...b, prose: slice.length > 0 ? slice.join("\n\n") : b.prose };
                   });
-                  updateSceneBlocks(activeChapter.id, updatedBlocks);
-                  syncChapterContentFromBlocks(activeChapter.id, updatedBlocks);
+                  if (paraIdx < revisedParas.length && updatedBlocks.length > 0) {
+                    const last = updatedBlocks.length - 1;
+                    const remainder = revisedParas.slice(paraIdx).join("\n\n");
+                    updatedBlocks[last] = { ...updatedBlocks[last], prose: (updatedBlocks[last].prose || "") + "\n\n" + remainder };
+                  }
+                  const combinedContent = updatedBlocks.map(b => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+                  mutateNovel((current) => ({
+                    ...current,
+                    chapters: current.chapters.map(ch =>
+                      ch.id === activeChapter.id
+                        ? { ...ch, content: combinedContent, sceneBlocks: updatedBlocks, updatedAt: new Date().toISOString() }
+                        : ch
+                    ),
+                  }));
                 } else {
-                  updateChapter(activeChapter.id, { content: revisedText }, true);
+                  mutateNovel((current) => ({
+                    ...current,
+                    chapters: current.chapters.map(ch =>
+                      ch.id === activeChapter.id
+                        ? { ...ch, content: revisedText, updatedAt: new Date().toISOString() }
+                        : ch
+                    ),
+                  }));
                 }
                 setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
+                saveNow();
               }}
               chapterProse={chProse}
               storyBible={novel.storyBible}
@@ -14322,8 +14341,6 @@ function NovelWorkspacePage() {
                         })
                       }
                     />
-                    {!aiOff && (
-                    <>
                     <label>What&apos;s your style?</label>
                     <div className="pw-ai-assist-row">
                       <input
@@ -14333,6 +14350,7 @@ function NovelWorkspacePage() {
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
                       />
+                      {!aiOff && (
                       <button
                         type="button"
                         className="pw-ai-mini-btn"
@@ -14341,9 +14359,8 @@ function NovelWorkspacePage() {
                       >
                         {storyAiBusyAction === "style-author" ? "Analyzing..." : "Analyze Style"}
                       </button>
+                      )}
                     </div>
-                    </>
-                    )}
                     <label>Voice rules</label>
                     <textarea
                       className="pw-bible-input"
@@ -15771,9 +15788,7 @@ function NovelWorkspacePage() {
       )}
 
       {/* ── Floating Chat FAB (bottom-left) ── */}
-      {(tutorialActive || (!aiOff && !charChatOpen
-        && !storyAiBusyAction && !rewriteBusy && !nccBusy && !editorApplying && !proseCtxBusy && !themeScanBusy
-        && !showStoryBibleModal && !showPlanModal && !showExportModal && !showShareModal && !showEditorModal)) && (
+      {!charChatOpen && (
         <div className="pw-chat-fab-wrap" data-tutorial="chat">
           {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
