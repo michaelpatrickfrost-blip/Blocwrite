@@ -260,7 +260,10 @@ export type LifeEvent = {
   sortOrder: number;
 };
 
+export type NonfictionSubtype = "memoir" | "biography" | "true-crime" | "historical" | "investigative";
+
 export type NonfictionData = {
+  subtype: NonfictionSubtype;
   subjectName: string;
   subjectRelation: string;
   era: string;
@@ -1297,6 +1300,7 @@ export function createNovel(title: string, coverImage: string | null = null, nov
       },
       ...(isNF ? {
         nonfiction: {
+          subtype: "memoir",
           subjectName: "",
           subjectRelation: "myself",
           era: "",

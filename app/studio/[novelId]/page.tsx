@@ -39,6 +39,7 @@ import {
   type LoreEntry,
   type LifeEvent,
   type NonfictionData,
+  type NonfictionSubtype,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -138,6 +139,16 @@ const CHARACTER_ROLE_OPTIONS = [
   "Custom",
 ] as const;
 type CharacterRole = (typeof CHARACTER_ROLE_OPTIONS)[number];
+
+const NF_ROLE_LABELS: Record<CharacterRole, string> = {
+  Protagonist: "Subject / Central Figure",
+  Antagonist: "Antagonist / Perpetrator",
+  Supporting: "Key Person",
+  Minor: "Minor Person",
+  "Love Interest": "Partner / Spouse",
+  Type: "Witness / Source",
+  Custom: "Other",
+};
 const POV_OPTIONS = [
   { value: "first", label: "First person (I)" },
   { value: "first-multiple", label: "First person, multiple narrators" },
@@ -2438,8 +2449,8 @@ function NovelWorkspacePage() {
       })() : "";
 
       const systemPrompt = isNF ? [
-        `You are The Co-Author — a warm, insightful writing partner for the memoir/biography "${novel.title}".`,
-        `You have complete knowledge of the subject's life events, people, places, and themes. You help the author shape their true story into compelling narrative prose.`,
+        `You are The Co-Author — a sharp, knowledgeable writing partner for the ${nfData?.subtype === "true-crime" ? "true crime book" : nfData?.subtype === "historical" ? "historical non-fiction book" : nfData?.subtype === "investigative" ? "investigative book" : nfData?.subtype === "biography" ? "biography" : "memoir"} "${novel.title}".`,
+        `You have complete knowledge of the events, people, places, and themes. You help the author shape their true story into compelling narrative.`,
         ``,
         `=== FULL STORY BIBLE ===`,
         bibleContext,
@@ -2452,10 +2463,17 @@ function NovelWorkspacePage() {
         activeChapterCtx,
         ``,
         `=== BEHAVIOUR ===`,
-        `This is a non-fiction memoir/biography. Help the author tell their true story with authenticity, emotional depth, and literary quality.`,
-        `When suggesting prose, focus on sensory memory, dialogue reconstruction, and emotional truth.`,
-        `Be empathetic and encouraging. Help recover forgotten details by asking thoughtful questions.`,
-        `If asked for creative suggestions, ground them in the real events and people from the memoir context.`,
+        nfData?.subtype === "true-crime"
+          ? `This is true crime non-fiction. Help the author build tension, maintain factual accuracy, and structure the investigation narrative. Suggest ways to handle sensitive material with respect for victims.`
+          : nfData?.subtype === "historical"
+          ? `This is historical non-fiction. Help the author ground facts in vivid narrative, weave in human stories, and maintain historical accuracy. Suggest research angles and ways to bring the past to life.`
+          : nfData?.subtype === "investigative"
+          ? `This is investigative non-fiction. Help structure revelations, build from evidence, and maintain journalistic rigour while keeping the narrative gripping.`
+          : nfData?.subtype === "biography"
+          ? `This is a biography. Help the author capture the subject's life with depth, balance, and narrative drive. Suggest ways to handle the subject fairly.`
+          : `This is a memoir. Help the author tell their true story with authenticity, emotional depth, and literary quality. Focus on sensory memory and emotional truth.`,
+        `When suggesting prose, ground it in the real events and people from the context.`,
+        `Be concise, specific, and useful — like a real co-author in a writing room.`,
         `Don't dump information unprompted — only reference details when relevant to the author's question.`,
       ].join("\n") : [
         `You are The Co-Author — a sharp, knowledgeable writing partner for the novel "${novel.title}".`,
@@ -3987,7 +4005,7 @@ function NovelWorkspacePage() {
     const chapterId = activeChapter.id;
     const blocks = getSceneBlocks(activeChapter);
     const hasBlocks = blocks.length > 0 && blocks.some(b => b.prose?.trim());
-    const novelGenre = isNF ? "memoir/biography" : (novel.storyBible.summary.genre?.join(", ") || "fiction");
+    const novelGenre = isNF ? (nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative non-fiction" : nfData?.subtype === "biography" ? "biography" : "memoir") : (novel.storyBible.summary.genre?.join(", ") || "fiction");
     const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
 
     const sv = novel.storyBible.styleVoice;
@@ -4690,9 +4708,12 @@ function NovelWorkspacePage() {
         return parts.join("\n");
       })() : "";
       const systemMsg = isNF ? [
-        `You are a memoir/biography writer working in ${profileLangLabel}. Write authentic, emotionally rich prose based on real life events.`,
+        `You are a ${isNF && nfData?.subtype === "true-crime" ? "true crime" : isNF && nfData?.subtype === "historical" ? "historical non-fiction" : isNF && nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} writer working in ${profileLangLabel}. Write authentic, compelling prose based on real events.`,
         "Style section below is MANDATORY. Genre, tone, POV, tense, voice rules.",
         povNote,
+        nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight. Maintain factual accuracy while keeping the reader gripped." :
+        nfData?.subtype === "historical" ? "Write with authority and narrative drive. Ground historical facts in human experience and sensory detail." :
+        nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing. Build from evidence to conclusion." :
         "This is non-fiction — honour the truth of the events while making the prose compelling and literary.",
         "Use real people's names and places from the Canon. Write with empathy and insight.",
         "Return ONLY the prose. No headers, labels, JSON, block markers, word counts.",
@@ -6311,9 +6332,11 @@ function NovelWorkspacePage() {
       };
       type BatchResult = { chapters?: BatchChapter[] };
 
+      const nfSubtype = nfData?.subtype ?? "memoir";
+      const nfSubtypeLabel = nfSubtype === "true-crime" ? "true crime" : nfSubtype === "investigative" ? "investigative non-fiction" : nfSubtype;
       const nfCtx = isNF ? (() => {
         const nf = novel.storyBible.nonfiction;
-        const parts: string[] = [];
+        const parts: string[] = [`Type: ${nfSubtypeLabel}`];
         if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName} (${nf.subjectRelation || "subject"})`);
         if (nf?.era) parts.push(`Era: ${nf.era}`);
         if (nf?.setting) parts.push(`Setting: ${nf.setting}`);
@@ -6328,17 +6351,21 @@ function NovelWorkspacePage() {
       })() : "";
 
       const batchPrompt = isNF ? [
-        `Create a detailed ${planTarget}-chapter outline for this memoir/biography.`,
+        `Create a detailed ${planTarget}-chapter outline for this ${nfSubtypeLabel} book.`,
         `Return JSON: { "chapters": [{ "title": "string", "synopsis": "string", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }] }`,
         "",
         "RULES:",
         `- Return EXACTLY ${planTarget} chapters.`,
-        "- This is a NON-FICTION memoir/biography. Base chapters on the real life events provided.",
+        `- This is a NON-FICTION ${nfSubtypeLabel} book. Base chapters on the real events provided.`,
         "- Each synopsis must be 5-8 detailed sentences describing what happens in the chapter.",
-        "- Follow a chronological or thematic arc through the life events.",
-        "- Use the actual people and places from the life events.",
+        nfSubtype === "true-crime" ? "- Structure like a true crime narrative: the crime, the investigation, the key players, the pursuit, the resolution/aftermath." : "",
+        nfSubtype === "historical" ? "- Structure chronologically through the historical events, weaving in the human stories behind the facts." : "",
+        nfSubtype === "investigative" ? "- Structure the narrative to build toward revelation: what was hidden, how it was uncovered, and the consequences." : "",
+        nfSubtype === "biography" ? "- Follow the subject's life arc, focusing on the defining moments and turning points." : "",
+        nfSubtype === "memoir" ? "- Follow a chronological or thematic arc through the life events." : "",
+        "- Use the actual people and places from the events.",
         "- Capture the emotional journey — the timeline should feel like a narrative, not a list.",
-        "- Each chapter should focus on 1-3 related life events and explore them in depth.",
+        "- Each chapter should focus on 1-3 related events and explore them in depth.",
         "- Include sensory details, dialogue possibilities, and emotional beats.",
         "- The opening chapter should hook the reader — consider starting with a pivotal moment.",
         "- The final chapter should provide closure or reflection.",
@@ -13109,8 +13136,8 @@ function NovelWorkspacePage() {
               <aside className="pw-bible-nav">
                 {(isNF ? [
                     { id: "nf-about" as const, label: "About" },
-                    { id: "nf-events" as const, label: "Life Events" },
-                    { id: "nf-interview" as const, label: "Life Interview" },
+                    { id: "nf-events" as const, label: (nfData?.subtype === "true-crime") ? "Key Events" : (nfData?.subtype === "historical" || nfData?.subtype === "investigative") ? "Key Events" : "Life Events" },
+                    { id: "nf-interview" as const, label: (nfData?.subtype === "true-crime" || nfData?.subtype === "investigative") ? "Research Interview" : nfData?.subtype === "historical" ? "Event Interview" : "Life Interview" },
                     { id: "nf-timeline" as const, label: "Emotional Timeline" },
                     { id: "nf-relationships" as const, label: "Relationships" },
                     { id: "characters" as const, label: "People" },
@@ -13298,11 +13325,13 @@ function NovelWorkspacePage() {
                   <div className="pw-bible-section">
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Characters</h3>
+                        <h3>{isNF ? "People" : "Characters"}</h3>
                         <p className="pw-bible-section-note">
-                          Auto generate from Summary or build each character manually from scratch.
+                          {isNF
+                            ? "Real people in this story. Add them manually, extract from your interview, or let AI find them."
+                            : "Auto generate from Summary or build each character manually from scratch."}
                         </p>
-                        {!hasSummaryForCharacterAi && (
+                        {!isNF && !hasSummaryForCharacterAi && (
                           <p className="pw-bible-warning-note">
                             Summary is empty. Assistant-generated characters may drift from your story. Add synopsis or core conflict
                             first for stronger canon-safe results.
@@ -13315,9 +13344,9 @@ function NovelWorkspacePage() {
                           type="button"
                           className="pw-bible-clear-btn"
                           onClick={() => clearBibleSection("characters")}
-                          title="Remove all characters"
+                          title={isNF ? "Remove all people" : "Remove all characters"}
                         >
-                          Clear All Characters
+                          {isNF ? "Clear All People" : "Clear All Characters"}
                         </button>
                         )}
                         {!aiOff && (
@@ -13328,12 +13357,12 @@ function NovelWorkspacePage() {
                           disabled={storyAiBusyAction !== null}
                         >
                           {storyAiBusyAction === "characters-generate"
-                            ? "Finding characters..."
-                            : "Generate characters from summary"}
+                            ? isNF ? "Finding people..." : "Finding characters..."
+                            : isNF ? "Generate people from summary" : "Generate characters from summary"}
                         </button>
                         )}
                         <button type="button" className="btn btn-primary" onClick={addV2Character}>
-                          + Add Character
+                          {isNF ? "+ Add Person" : "+ Add Character"}
                         </button>
                       </div>
                     </div>
@@ -13343,7 +13372,7 @@ function NovelWorkspacePage() {
                       <div className="pw-bible-characters-list">
                         {storyCharacters.length === 0 ? (
                           <p className="pw-overview-empty">
-                            No characters yet. Use Generate from Summary or add one manually.
+                            {isNF ? "No people yet. Add them manually or extract from your interview." : "No characters yet. Use Generate from Summary or add one manually."}
                           </p>
                         ) : (
                           storyCharacters.map((c) => (
@@ -13355,7 +13384,7 @@ function NovelWorkspacePage() {
                             >
                               <span className="pw-char-name">{c.name || "Untitled"}</span>
                               <span className="pw-char-role">
-                                {c.role}
+                                {isNF ? NF_ROLE_LABELS[c.role] || c.role : c.role}
                                 {c.accent ? ` • ${c.accent}` : ""}
                               </span>
                             </button>
@@ -13364,7 +13393,7 @@ function NovelWorkspacePage() {
                       </div>
 
                       <div className="pw-bible-char-detail">
-                        {!selectedV2CharacterId && <p>Select a character to edit details.</p>}
+                        {!selectedV2CharacterId && <p>{isNF ? "Select a person to edit details." : "Select a character to edit details."}</p>}
                         {selectedV2CharacterId && (
                           (() => {
                             const character = storyCharacters.find((c) => c.id === selectedV2CharacterId);
@@ -13474,7 +13503,7 @@ function NovelWorkspacePage() {
                                     />
                                   </div>
                                   <div className="pw-char-col">
-                                    <label>Role</label>
+                                    <label>{isNF ? "Role in Story" : "Role"}</label>
                                     <select
                                       className="pw-bible-input"
                                       value={character.role}
@@ -13486,7 +13515,7 @@ function NovelWorkspacePage() {
                                     >
                                       {CHARACTER_ROLE_OPTIONS.map((role) => (
                                         <option key={role} value={role}>
-                                          {role}
+                                          {isNF ? NF_ROLE_LABELS[role] : role}
                                         </option>
                                       ))}
                                     </select>
@@ -13503,10 +13532,10 @@ function NovelWorkspacePage() {
                                 </div>
 
                                 <div className="pw-character-section-card">
-                                  <h4>Core Identity</h4>
-                                  <label>Logline</label>
+                                  <h4>{isNF ? "Who They Are" : "Core Identity"}</h4>
+                                  <label>{isNF ? "Summary" : "Logline"}</label>
                                   <p className="pw-field-help">
-                                    One-sentence character hook: who they are, what they want, and what blocks them.
+                                    {isNF ? "One-sentence summary of who this person is and their role in the story." : "One-sentence character hook: who they are, what they want, and what blocks them."}
                                   </p>
                                   <textarea
                                     className="pw-bible-input"
@@ -13517,19 +13546,20 @@ function NovelWorkspacePage() {
                                   />
                                   <div className="pw-bible-grid-2">
                                     <div>
-                                      <label>Personality</label>
+                                      <label>{isNF ? "Personality / Character" : "Personality"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.personality}
                                         value={character.personality ?? ""}
+                                        placeholder={isNF ? "What kind of person are they? Temperament, habits, values." : ""}
                                         onChange={(event) =>
                                           updateV2Character(character.id, { personality: event.target.value })
                                         }
                                       />
                                     </div>
                                     <div>
-                                      <label>Backstory</label>
+                                      <label>{isNF ? "Background / History" : "Backstory"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
@@ -13592,10 +13622,10 @@ function NovelWorkspacePage() {
                                 </div>
 
                                 <div className="pw-character-section-card">
-                                  <h4>Behavior Engine</h4>
+                                  <h4>{isNF ? "Character & Motivations" : "Behavior Engine"}</h4>
                                   <div className="pw-bible-grid-2">
                                     <div>
-                                      <label>Goals</label>
+                                      <label>{isNF ? "Motivations / Drives" : "Goals"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
@@ -13605,17 +13635,18 @@ function NovelWorkspacePage() {
                                       />
                                     </div>
                                     <div>
-                                      <label>Fears</label>
+                                      <label>{isNF ? "Vulnerabilities / Flaws" : "Fears"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.fears}
                                         value={character.fears ?? ""}
+                                        placeholder={isNF ? "Weaknesses, blind spots, struggles." : ""}
                                         onChange={(event) => updateV2Character(character.id, { fears: event.target.value })}
                                       />
                                     </div>
                                   </div>
-                                  <label>Reaction pattern</label>
+                                  <label>{isNF ? "Behaviour under pressure" : "Reaction pattern"}</label>
                                   <textarea
                                     className="pw-bible-input"
                                     rows={2}
@@ -13629,13 +13660,13 @@ function NovelWorkspacePage() {
                                 </div>
 
                                 <div className="pw-character-section-card">
-                                  <h4>Secrets and Reveal Control</h4>
+                                  <h4>{isNF ? "What's Not Public" : "Secrets and Reveal Control"}</h4>
                                   <p className="pw-character-secret-note">
-                                    Author-only secrets stay private. Use reader hint only for subtle foreshadowing.
+                                    {isNF ? "Information the author knows but may not reveal immediately in the narrative." : "Author-only secrets stay private. Use reader hint only for subtle foreshadowing."}
                                   </p>
                                   <div className="pw-bible-grid-2">
                                     <div>
-                                      <label>Author-only secret</label>
+                                      <label>{isNF ? "Private information" : "Author-only secret"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
@@ -13645,7 +13676,7 @@ function NovelWorkspacePage() {
                                       />
                                     </div>
                                     <div>
-                                      <label>Reader-visible hint (safe)</label>
+                                      <label>{isNF ? "What readers will learn" : "Reader-visible hint (safe)"}</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
@@ -14581,44 +14612,108 @@ function NovelWorkspacePage() {
                 {bibleSection === "nf-about" && isNF && (
                   <div className="pw-bible-section">
                     <h3>About This Story</h3>
-                    <p className="pw-field-help" style={{ marginBottom: 12 }}>Who is this story about? Set the foundation for your memoir or biography.</p>
+                    <p className="pw-field-help" style={{ marginBottom: 12 }}>What kind of non-fiction are you writing? This shapes how AI helps you.</p>
 
-                    <label>Subject Name</label>
-                    <input className="pw-bible-input" placeholder="e.g. John Smith" maxLength={120}
+                    <label>Type of Non-Fiction</label>
+                    <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid var(--pw-border)", marginBottom: 12 }}>
+                      {([
+                        { id: "memoir" as NonfictionSubtype, label: "Memoir", hint: "Your own life story" },
+                        { id: "biography" as NonfictionSubtype, label: "Biography", hint: "Someone else's story" },
+                        { id: "true-crime" as NonfictionSubtype, label: "True Crime", hint: "Criminal cases & investigations" },
+                        { id: "historical" as NonfictionSubtype, label: "Historical", hint: "Events & eras" },
+                        { id: "investigative" as NonfictionSubtype, label: "Investigative", hint: "Deep-dive reporting" },
+                      ]).map((st) => (
+                        <button key={st.id} type="button" title={st.hint}
+                          onClick={() => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subtype: st.id } } }))}
+                          style={{
+                            flex: 1, padding: "8px 2px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
+                            background: (nfData?.subtype ?? "memoir") === st.id ? "var(--pw-accent)" : "var(--pw-surface)",
+                            color: (nfData?.subtype ?? "memoir") === st.id ? "#000" : "var(--pw-text-muted)",
+                            transition: "all 0.15s",
+                          }}
+                        >{st.label}</button>
+                      ))}
+                    </div>
+
+                    <label>{(nfData?.subtype === "true-crime") ? "Case / Subject Name" : (nfData?.subtype === "historical") ? "Event / Subject Name" : "Subject Name"}</label>
+                    <input className="pw-bible-input" maxLength={120}
+                      placeholder={
+                        nfData?.subtype === "true-crime" ? "e.g. The Yorkshire Ripper Case" :
+                        nfData?.subtype === "historical" ? "e.g. The Battle of the Somme" :
+                        nfData?.subtype === "biography" ? "e.g. Marie Curie" :
+                        nfData?.subtype === "investigative" ? "e.g. The Theranos Scandal" :
+                        "e.g. John Smith"
+                      }
                       value={nfData?.subjectName ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectName: e.target.value } } }))}
                     />
 
-                    <label style={{ marginTop: 12 }}>Relation to Author</label>
+                    <label style={{ marginTop: 12 }}>
+                      {nfData?.subtype === "true-crime" ? "Author's Connection" :
+                       nfData?.subtype === "historical" ? "Author's Perspective" :
+                       "Relation to Subject"}
+                    </label>
                     <select className="pw-bible-input" value={nfData?.subjectRelation ?? "myself"}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectRelation: e.target.value } } }))}
                     >
-                      <option value="myself">Myself (Autobiography)</option>
-                      <option value="parent">Parent</option>
-                      <option value="grandparent">Grandparent</option>
-                      <option value="partner">Partner / Spouse</option>
-                      <option value="child">Son / Daughter</option>
-                      <option value="sibling">Sibling</option>
-                      <option value="friend">Friend</option>
-                      <option value="historical">Historical Figure</option>
-                      <option value="other">Other</option>
+                      <optgroup label="Personal">
+                        <option value="myself">Myself (Autobiography)</option>
+                        <option value="parent">Parent</option>
+                        <option value="grandparent">Grandparent</option>
+                        <option value="partner">Partner / Spouse</option>
+                        <option value="child">Son / Daughter</option>
+                        <option value="sibling">Sibling</option>
+                        <option value="friend">Friend</option>
+                        <option value="family-other">Other Family Member</option>
+                      </optgroup>
+                      <optgroup label="Professional / Research">
+                        <option value="journalist">Journalist / Reporter</option>
+                        <option value="researcher">Researcher / Historian</option>
+                        <option value="witness">Witness / Observer</option>
+                        <option value="investigator">Investigator</option>
+                        <option value="survivor">Survivor</option>
+                        <option value="victim-family">Victim's Family</option>
+                      </optgroup>
+                      <optgroup label="Subject Type">
+                        <option value="public-figure">Public Figure</option>
+                        <option value="historical-figure">Historical Figure</option>
+                        <option value="criminal">Criminal / Perpetrator</option>
+                        <option value="event">Historical Event</option>
+                        <option value="institution">Institution / Organisation</option>
+                        <option value="other">Other</option>
+                      </optgroup>
                     </select>
 
                     <label style={{ marginTop: 12 }}>Era / Time Period</label>
-                    <input className="pw-bible-input" placeholder="e.g. 1960s–2020s, Post-war Britain, etc." maxLength={200}
+                    <input className="pw-bible-input" maxLength={200}
+                      placeholder={
+                        nfData?.subtype === "true-crime" ? "e.g. 1975–1981, with trial in 1982" :
+                        nfData?.subtype === "historical" ? "e.g. July–November 1916" :
+                        "e.g. 1960s–2020s, Post-war Britain"
+                      }
                       value={nfData?.era ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, era: e.target.value } } }))}
                     />
 
                     <label style={{ marginTop: 12 }}>Setting / Location</label>
-                    <input className="pw-bible-input" placeholder="e.g. Manchester, then London, with time in Australia" maxLength={300}
+                    <input className="pw-bible-input" maxLength={300}
+                      placeholder={
+                        nfData?.subtype === "true-crime" ? "e.g. Leeds, Bradford, and the West Yorkshire area" :
+                        nfData?.subtype === "historical" ? "e.g. The Western Front, northern France" :
+                        "e.g. Manchester, then London, with time in Australia"
+                      }
                       value={nfData?.setting ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, setting: e.target.value } } }))}
                     />
 
                     <label style={{ marginTop: 12 }}>Central Theme</label>
                     <textarea className="pw-bible-input" rows={3} maxLength={600}
-                      placeholder="What is the heart of this story? e.g. Overcoming adversity, a love story, finding identity..."
+                      placeholder={
+                        nfData?.subtype === "true-crime" ? "e.g. How fear gripped a community, the investigation failures, the pursuit of justice..." :
+                        nfData?.subtype === "historical" ? "e.g. The futility of war, sacrifice, the human cost of political decisions..." :
+                        nfData?.subtype === "investigative" ? "e.g. How corporate greed endangered lives, the cover-up unravelled..." :
+                        "What is the heart of this story? e.g. Overcoming adversity, a love story, finding identity..."
+                      }
                       value={nfData?.centralTheme ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, centralTheme: e.target.value } } }))}
                     />
@@ -14678,8 +14773,13 @@ function NovelWorkspacePage() {
                   <div className="pw-bible-section">
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Life Events</h3>
-                        <p className="pw-field-help">Key moments that form the backbone of the story. These become the source material for chapters.</p>
+                        <h3>{(nfData?.subtype === "true-crime" || nfData?.subtype === "historical" || nfData?.subtype === "investigative") ? "Key Events" : "Life Events"}</h3>
+                        <p className="pw-field-help">{
+                          nfData?.subtype === "true-crime" ? "The key events in the case — the crime, investigation milestones, arrests, trial, verdict. These become your chapters." :
+                          nfData?.subtype === "historical" ? "The key historical events that form the backbone of your narrative. These become your chapters." :
+                          nfData?.subtype === "investigative" ? "The key moments of discovery and revelation. These become your chapters." :
+                          "Key moments that form the backbone of the story. These become the source material for chapters."
+                        }</p>
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         {!aiOff && (
@@ -14915,8 +15015,13 @@ function NovelWorkspacePage() {
                   <div className="pw-bible-section" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Life Interview</h3>
-                        <p className="pw-field-help">Talk through your memories with AI. It asks questions, you tell stories. When ready, extract everything into your Canon.</p>
+                        <h3>{(nfData?.subtype === "true-crime" || nfData?.subtype === "investigative") ? "Research Interview" : nfData?.subtype === "historical" ? "Event Interview" : "Life Interview"}</h3>
+                        <p className="pw-field-help">{
+                          nfData?.subtype === "true-crime" ? "Walk through the case with AI. Describe the events, the investigation, the people. When ready, extract everything into your story." :
+                          nfData?.subtype === "investigative" ? "Walk through your investigation with AI. Lay out the evidence, the sources, the timeline. When ready, extract everything." :
+                          nfData?.subtype === "historical" ? "Walk through the historical events with AI. Describe what happened, who was involved, and the consequences." :
+                          "Talk through your memories with AI. It asks questions, you tell stories. When ready, extract everything into your Canon."
+                        }</p>
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         {!aiOff && (nfData?.interviewTranscript?.length ?? 0) > 2 && (
@@ -15040,7 +15145,8 @@ function NovelWorkspacePage() {
                                 nfData?.era ? `Era: ${nfData.era}` : "",
                                 nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
                               ].filter(Boolean).join(". ");
-                              const prompt = `You are starting a memoir interview${ctx ? ` about: ${ctx}` : ""}. Ask an engaging opening question to get them talking about their life. Be warm, conversational, and curious. Just the question, 2-3 sentences max.`;
+                              const subtypeHint = nfData?.subtype === "true-crime" ? "a true crime case" : nfData?.subtype === "historical" ? "a historical event" : nfData?.subtype === "investigative" ? "an investigation" : nfData?.subtype === "biography" ? "someone's life story" : "their life";
+                              const prompt = `You are starting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` about: ${ctx}` : ""}. Ask an engaging opening question to get the author talking about ${subtypeHint}. Be warm, conversational, and curious. Just the question, 2-3 sentences max.`;
                               const res = await requestOpenRouterText(prompt, 200);
                               const aiText = typeof res === "string" ? res.trim() : "";
                               if (aiText) {
@@ -15083,10 +15189,13 @@ function NovelWorkspacePage() {
                             ];
                             const randomPrompt = memoryPrompts[Math.floor(Math.random() * memoryPrompts.length)];
                             const prompt = [
-                              `You're conducting a warm, conversational memoir interview${ctx ? ` (${ctx})` : ""}.`,
-                              "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper into the memory.",
-                              `Optionally weave in a sensory memory prompt like: "${randomPrompt}"`,
-                              "Keep it natural — like a friend who's genuinely curious. 2-4 sentences max.",
+                              `You're conducting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` (${ctx})` : ""}.`,
+                              nfData?.subtype === "true-crime" ? "Based on what the author just said, acknowledge the detail, then ask a follow-up about the investigation, the people involved, or the sequence of events. Push for specifics — timeline, evidence, motives."
+                                : nfData?.subtype === "historical" ? "Based on what the author said, ask a follow-up about the historical context, the human stories within, or the consequences of the events."
+                                : nfData?.subtype === "investigative" ? "Based on what the author said, dig deeper into the evidence, the sources, and the revelations. Ask what they discovered next."
+                                : "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper into the memory.",
+                              nfData?.subtype !== "true-crime" && nfData?.subtype !== "investigative" ? `Optionally weave in a sensory memory prompt like: "${randomPrompt}"` : "",
+                              "Keep it natural — like a knowledgeable colleague who's genuinely curious. 2-4 sentences max.",
                               `\nRecent conversation:\n${recent}`,
                             ].join("\n");
                             const res = await requestOpenRouterText(prompt, 300);
