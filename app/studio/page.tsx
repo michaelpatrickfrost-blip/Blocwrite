@@ -335,13 +335,13 @@ function StudioHomePage() {
             <button type="button" onClick={() => setCreateTypeDraft("fiction")} style={{
               flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
               background: createTypeDraft === "fiction" ? "var(--pw-accent)" : "var(--pw-surface)",
-              color: createTypeDraft === "fiction" ? "#000" : "var(--pw-text-muted)",
+              color: createTypeDraft === "fiction" ? "var(--pw-btn-primary-text)" : "var(--pw-text-muted)",
               transition: "all 0.15s",
             }}>Fiction</button>
             <button type="button" onClick={() => setCreateTypeDraft("nonfiction")} style={{
               flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
               background: createTypeDraft === "nonfiction" ? "var(--pw-accent)" : "var(--pw-surface)",
-              color: createTypeDraft === "nonfiction" ? "#000" : "var(--pw-text-muted)",
+              color: createTypeDraft === "nonfiction" ? "var(--pw-btn-primary-text)" : "var(--pw-text-muted)",
               transition: "all 0.15s",
             }}>Non-Fiction</button>
           </div>

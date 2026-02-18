@@ -14630,7 +14630,7 @@ function NovelWorkspacePage() {
                           style={{
                             flex: 1, padding: "8px 2px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
                             background: (nfData?.subtype ?? "memoir") === st.id ? "var(--pw-accent)" : "var(--pw-surface)",
-                            color: (nfData?.subtype ?? "memoir") === st.id ? "#000" : "var(--pw-text-muted)",
+                            color: (nfData?.subtype ?? "memoir") === st.id ? "var(--pw-btn-primary-text)" : "var(--pw-text-muted)",
                             transition: "all 0.15s",
                           }}
                         >{st.label}</button>
@@ -15126,7 +15126,7 @@ function NovelWorkspacePage() {
                           padding: "8px 12px", borderRadius: 8, maxWidth: "85%",
                           alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
                           background: msg.role === "user" ? "var(--pw-accent)" : "var(--pw-surface)",
-                          color: msg.role === "user" ? "#000" : "var(--pw-text)",
+                          color: msg.role === "user" ? "var(--pw-btn-primary-text)" : "var(--pw-text)",
                           fontSize: 13, lineHeight: 1.5,
                           border: msg.role === "ai" ? "1px solid var(--pw-border-light)" : "none",
                         }}>
