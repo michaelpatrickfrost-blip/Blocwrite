@@ -1042,107 +1042,107 @@ function NovelWorkspacePage() {
   const [editorFontSize, setEditorFontSize] = useState<number>(17.5);
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
-  // ── Prose reader (TTS) ──
+  // ── Prose reader (Edge TTS — server-side neural voices) ──
+  const READER_VOICES: Array<{ id: string; name: string; accent: string; gender: "female" | "male" }> = [
+    { id: "en-US-AriaNeural", name: "Aria", accent: "US", gender: "female" },
+    { id: "en-US-JennyNeural", name: "Jenny", accent: "US", gender: "female" },
+    { id: "en-US-MichelleNeural", name: "Michelle", accent: "US", gender: "female" },
+    { id: "en-GB-SoniaNeural", name: "Sonia", accent: "UK", gender: "female" },
+    { id: "en-GB-LibbyNeural", name: "Libby", accent: "UK", gender: "female" },
+    { id: "en-AU-NatashaNeural", name: "Natasha", accent: "AU", gender: "female" },
+    { id: "en-US-AndrewNeural", name: "Andrew", accent: "US", gender: "male" },
+    { id: "en-US-BrianNeural", name: "Brian", accent: "US", gender: "male" },
+    { id: "en-US-GuyNeural", name: "Guy", accent: "US", gender: "male" },
+    { id: "en-US-ChristopherNeural", name: "Christopher", accent: "US", gender: "male" },
+    { id: "en-GB-RyanNeural", name: "Ryan", accent: "UK", gender: "male" },
+    { id: "en-AU-WilliamNeural", name: "William", accent: "AU", gender: "male" },
+  ];
   const [readerActive, setReaderActive] = useState(false);
   const [readerPaused, setReaderPaused] = useState(false);
   const [readerSpeed, setReaderSpeed] = useState(1.0);
-  const [readerVoice, setReaderVoice] = useState<string>("");
-  const [readerVoices, setReaderVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const readerUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [readerVoice, setReaderVoice] = useState<string>("en-US-AriaNeural");
   const [readerShowControls, setReaderShowControls] = useState(false);
-  const readerVoiceRef = useRef<string>("");
+  const [readerLoading, setReaderLoading] = useState(false);
+  const [readerError, setReaderError] = useState<string | null>(null);
+  const readerVoiceRef = useRef<string>("en-US-AriaNeural");
   const readerSpeedRef = useRef<number>(1.0);
+  const readerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const readerBlobUrlRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      if (voices.length === 0) return;
-      // Only keep English voices, then rank by quality
-      const english = voices.filter((v) => v.lang.startsWith("en"));
-      if (english.length === 0) { setReaderVoices(voices); return; }
-
-      const qualityScore = (v: SpeechSynthesisVoice): number => {
-        const n = v.name.toLowerCase();
-        // Premium/Enhanced macOS voices and Google/Microsoft neural voices rank highest
-        if (n.includes("premium")) return 100;
-        if (n.includes("enhanced")) return 90;
-        if (n.includes("natural")) return 85;
-        // Known high-quality macOS voices
-        if (/\b(zoe|evan|samantha|allison|ava|tom|karen)\b/.test(n)) return 75;
-        // Google neural voices in Chrome
-        if (n.includes("google") && /\b(uk|us|australia)\b/i.test(n)) return 70;
-        // Microsoft neural voices in Edge
-        if (n.includes("microsoft") && (n.includes("natural") || n.includes("neural"))) return 80;
-        if (n.includes("microsoft")) return 60;
-        if (n.includes("google")) return 55;
-        // macOS named voices (Daniel, Fiona, etc.)
-        if (/\b(daniel|fiona|moira|rishi|tessa|veena|oliver|martha|aaron)\b/.test(n)) return 50;
-        // Compact/low-quality voices rank lowest
-        if (n.includes("compact")) return 5;
-        return 30;
-      };
-
-      const ranked = [...english].sort((a, b) => qualityScore(b) - qualityScore(a));
-      // Keep only voices scoring above compact quality, limit to best 12
-      const good = ranked.filter((v) => qualityScore(v) >= 20).slice(0, 12);
-      setReaderVoices(good.length > 0 ? good : ranked.slice(0, 8));
-
-      if (!readerVoice) {
-        const best = good[0] ?? ranked[0];
-        if (best) { setReaderVoice(best.name); readerVoiceRef.current = best.name; }
-      }
-    };
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function startReader() {
-    if (!activeChapter || typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+  async function startReader() {
+    if (!activeChapter) return;
+    stopReader();
     const prose = extractProseFromContent(activeChapter.content).trim();
     if (!prose) return;
-    const utterance = new SpeechSynthesisUtterance(prose);
-    const voice = readerVoices.find((v) => v.name === readerVoiceRef.current);
-    if (voice) utterance.voice = voice;
-    utterance.rate = readerSpeedRef.current;
-    utterance.pitch = 1.0;
-    utterance.onend = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
-    utterance.onerror = () => { setReaderActive(false); setReaderPaused(false); setReaderShowControls(false); };
-    readerUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-    setReaderActive(true);
-    setReaderPaused(false);
+    setReaderLoading(true);
+    setReaderError(null);
+    setReaderShowControls(true);
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: prose,
+          voice: readerVoiceRef.current,
+          speed: readerSpeedRef.current,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || `TTS failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      readerBlobUrlRef.current = url;
+      const audio = new Audio(url);
+      audio.playbackRate = readerSpeedRef.current;
+      audio.onended = () => { setReaderActive(false); setReaderPaused(false); };
+      audio.onerror = () => { setReaderActive(false); setReaderPaused(false); setReaderError("Playback error"); };
+      readerAudioRef.current = audio;
+      await audio.play();
+      setReaderActive(true);
+      setReaderPaused(false);
+    } catch (err) {
+      setReaderError(err instanceof Error ? err.message : "TTS generation failed");
+      setReaderActive(false);
+    } finally {
+      setReaderLoading(false);
+    }
   }
 
   function pauseReader() {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.pause();
+    if (readerAudioRef.current) {
+      readerAudioRef.current.pause();
       setReaderPaused(true);
     }
   }
 
   function resumeReader() {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.resume();
+    if (readerAudioRef.current) {
+      readerAudioRef.current.play();
       setReaderPaused(false);
     }
   }
 
   function stopReader() {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+    if (readerAudioRef.current) {
+      readerAudioRef.current.pause();
+      readerAudioRef.current.onended = null;
+      readerAudioRef.current.onerror = null;
+      readerAudioRef.current = null;
+    }
+    if (readerBlobUrlRef.current) {
+      URL.revokeObjectURL(readerBlobUrlRef.current);
+      readerBlobUrlRef.current = null;
     }
     setReaderActive(false);
     setReaderPaused(false);
-    setReaderShowControls(false);
   }
 
   // Clean up TTS on chapter change or unmount
   useEffect(() => {
-    return () => { if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel(); };
-  }, [activeChapterId]);
+    return () => { stopReader(); };
+  }, [activeChapterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Right-click prose context menu ──
   const [proseCtx, setProseCtx] = useState<{
@@ -10409,20 +10409,23 @@ function NovelWorkspacePage() {
                         {/* Reader button */}
                         <button
                           type="button"
-                          className={`pw-toolbar-btn pw-reader-btn${readerActive ? " pw-reader-active" : ""}`}
-                          title={readerActive ? "Reading aloud..." : "Read chapter aloud"}
-                          disabled={!activeChapter?.content?.trim()}
+                          className={`pw-toolbar-btn pw-reader-btn${readerActive || readerLoading ? " pw-reader-active" : ""}`}
+                          title={readerLoading ? "Generating audio..." : readerActive ? "Reading aloud..." : "Read chapter aloud"}
+                          disabled={!activeChapter?.content?.trim() || readerLoading}
                           onClick={() => {
-                            if (readerActive) {
+                            if (readerActive || readerLoading) {
                               setReaderShowControls((v) => !v);
                             } else {
-                              startReader();
-                              setReaderShowControls(true);
+                              void startReader();
                             }
                           }}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
-                          <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>{readerActive ? (readerPaused ? "Paused" : "Reading...") : "Read"}</span>
+                          {readerLoading ? (
+                            <div style={{ width: 14, height: 14, border: "1.5px solid rgba(163,230,53,0.3)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
+                          )}
+                          <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>{readerLoading ? "Loading..." : readerActive ? (readerPaused ? "Paused" : "Reading...") : "Read"}</span>
                         </button>
                       </div>
                       {/* ── Blocks with interleaved prose ── */}
@@ -16034,24 +16037,30 @@ function NovelWorkspacePage() {
         <div className="pw-reader-player">
           <div className="pw-reader-player-main">
             <div className="pw-reader-player-btns">
-              {readerActive && !readerPaused ? (
+              {readerLoading ? (
+                <div style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 18, height: 18, border: "2px solid rgba(163,230,53,0.2)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                </div>
+              ) : readerActive && !readerPaused ? (
                 <button type="button" className="pw-reader-player-btn" title="Pause" onClick={pauseReader}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                 </button>
               ) : (
-                <button type="button" className="pw-reader-player-btn pw-reader-player-play" title={readerPaused ? "Resume" : "Play"} onClick={() => readerPaused ? resumeReader() : startReader()}>
+                <button type="button" className="pw-reader-player-btn pw-reader-player-play" title={readerPaused ? "Resume" : "Play"} disabled={readerLoading} onClick={() => readerPaused ? resumeReader() : startReader()}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 </button>
               )}
-              <button type="button" className="pw-reader-player-btn pw-reader-player-stop" title="Stop" onClick={stopReader}>
+              <button type="button" className="pw-reader-player-btn pw-reader-player-stop" title="Stop" disabled={readerLoading} onClick={() => { stopReader(); setReaderShowControls(false); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
               </button>
             </div>
             <div className="pw-reader-player-info">
-              <span className="pw-reader-player-status">{readerActive ? (readerPaused ? "Paused" : "Reading aloud") : "Ready"}</span>
+              <span className="pw-reader-player-status">
+                {readerLoading ? "Generating audio..." : readerActive ? (readerPaused ? "Paused" : "Reading aloud") : readerError ? readerError : "Ready"}
+              </span>
               <span className="pw-reader-player-chapter">{activeChapter?.title || "Chapter"}</span>
             </div>
-            <button type="button" className="pw-reader-player-close" title="Close" onClick={stopReader}>
+            <button type="button" className="pw-reader-player-close" title="Close" onClick={() => { stopReader(); setReaderShowControls(false); }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -16067,38 +16076,36 @@ function NovelWorkspacePage() {
                     onClick={() => {
                       setReaderSpeed(s);
                       readerSpeedRef.current = s;
-                      if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 50); }
+                      if (readerAudioRef.current) { readerAudioRef.current.playbackRate = s; }
                     }}
                   >{s}x</button>
                 ))}
               </div>
             </div>
-            {readerVoices.length > 1 && (
-              <div className="pw-reader-settings-row">
-                <label>Voice</label>
-                <select
-                  className="pw-reader-voice-select"
-                  value={readerVoice}
-                  onChange={(e) => {
-                    setReaderVoice(e.target.value);
-                    readerVoiceRef.current = e.target.value;
-                    if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 50); }
-                  }}
-                >
-                  {readerVoices.map((v) => {
-                    const n = v.name.toLowerCase();
-                    const isPremium = n.includes("premium") || n.includes("enhanced") || n.includes("natural");
-                    const accent = v.lang === "en-GB" ? "UK" : v.lang === "en-AU" ? "AU" : v.lang === "en-US" ? "US" : v.lang.replace("en-", "").toUpperCase();
-                    const cleanName = v.name.replace(/\(.*?\)/g, "").replace(/Microsoft\s*/i, "").replace(/Google\s*/i, "").trim();
-                    return (
-                      <option key={v.name} value={v.name}>
-                        {cleanName} ({accent}){isPremium ? " ★" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            )}
+            <div className="pw-reader-settings-row">
+              <label>Voice</label>
+              <select
+                className="pw-reader-voice-select"
+                value={readerVoice}
+                disabled={readerLoading}
+                onChange={(e) => {
+                  setReaderVoice(e.target.value);
+                  readerVoiceRef.current = e.target.value;
+                  if (readerActive) { stopReader(); setTimeout(() => { setReaderShowControls(true); startReader(); }, 100); }
+                }}
+              >
+                <optgroup label="Female">
+                  {READER_VOICES.filter((v) => v.gender === "female").map((v) => (
+                    <option key={v.id} value={v.id}>{v.name} ({v.accent})</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Male">
+                  {READER_VOICES.filter((v) => v.gender === "male").map((v) => (
+                    <option key={v.id} value={v.id}>{v.name} ({v.accent})</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
           </div>
         </div>
       )}
