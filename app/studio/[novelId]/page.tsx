@@ -10346,9 +10346,29 @@ function NovelWorkspacePage() {
                             <div className="pw-block-card">
                               <div className="pw-block-header">
                                 <span className="pw-block-title">SCENE {idx + 1}</span>
-                                <button type="button" className="pw-block-header-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)} aria-label="Delete bloc">
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                                </button>
+                                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                  {!!block.prose?.trim() && (
+                                    <button
+                                      type="button"
+                                      className="pw-block-header-btn"
+                                      title="Clear prose"
+                                      onClick={() => {
+                                        if (!confirm("Clear all prose for this scene?")) return;
+                                        pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
+                                        const next = [...blocks];
+                                        next[idx] = { ...block, prose: "" };
+                                        updateSceneBlocks(activeChapter.id, next);
+                                        syncChapterContentFromBlocks(activeChapter.id, next);
+                                      }}
+                                      aria-label="Clear prose"
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+                                    </button>
+                                  )}
+                                  <button type="button" className="pw-block-header-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)} aria-label="Delete bloc">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                                  </button>
+                                </div>
                               </div>
                               <textarea className="pw-block-synopsis" placeholder="Scene synopsis..." value={block.synopsis} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, synopsis: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} rows={2} />
                               <div className="pw-block-toolbar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
