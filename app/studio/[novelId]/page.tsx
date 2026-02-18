@@ -14341,25 +14341,32 @@ function NovelWorkspacePage() {
                         })
                       }
                     />
-                    <label>What&apos;s your style?</label>
+                    <label>Author Style</label>
+                    <p className="pw-field-help" style={{ marginBottom: 6, marginTop: 0 }}>
+                      Describe your writing style or name an author (e.g. &quot;Stephen King&quot;, &quot;dark literary prose with short punchy sentences&quot;) and AI will generate voice rules.
+                    </p>
                     <div className="pw-ai-assist-row">
                       <input
                         className="pw-bible-input pw-ai-assist-select"
                         maxLength={STORY_BIBLE_LIMITS.styleVoice.compItem}
-                        placeholder="Describe or enter a style..."
+                        placeholder="e.g. Stephen King, literary thriller, punchy dialogue..."
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void runDescribeWriterStyle();
+                          }
+                        }}
                       />
-                      {!aiOff && (
                       <button
                         type="button"
                         className="pw-ai-mini-btn"
                         onClick={() => void runDescribeWriterStyle()}
                         disabled={storyAiBusyAction !== null}
                       >
-                        {storyAiBusyAction === "style-author" ? "Analyzing..." : "Analyze Style"}
+                        {storyAiBusyAction === "style-author" ? "Analyzing..." : "Generate Style"}
                       </button>
-                      )}
                     </div>
                     <label>Voice rules</label>
                     <textarea
