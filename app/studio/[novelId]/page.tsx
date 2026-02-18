@@ -2337,7 +2337,7 @@ function NovelWorkspacePage() {
   }
 
   async function sendCharacterChat() {
-    if (!charChatTarget || !charChatInput.trim() || charChatLoading) return;
+    if (!charChatTarget || !charChatInput.trim() || charChatLoading || storyAiBusyAction || arcBusy) return;
     const userMsg = charChatInput.trim();
     setCharChatInput("");
     setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
@@ -2408,7 +2408,7 @@ function NovelWorkspacePage() {
   }
 
   async function sendCoAuthorChat() {
-    if (!novel || !charChatInput.trim() || charChatLoading) return;
+    if (!novel || !charChatInput.trim() || charChatLoading || storyAiBusyAction || arcBusy) return;
     const userMsg = charChatInput.trim();
     setCharChatInput("");
     setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
@@ -6363,9 +6363,13 @@ function NovelWorkspacePage() {
         nfSubtype === "investigative" ? "- Structure the narrative to build toward revelation: what was hidden, how it was uncovered, and the consequences." : "",
         nfSubtype === "biography" ? "- Follow the subject's life arc, focusing on the defining moments and turning points." : "",
         nfSubtype === "memoir" ? "- Follow a chronological or thematic arc through the life events." : "",
+        "- Each chapter takes place in ONE primary location or setting. Do NOT jump between multiple locations in a single chapter.",
+        "- Only list people who are ESSENTIAL to that chapter. Do NOT include every person in every chapter — most chapters should feature 2-4 key people.",
+        "- Introduce new people naturally as the narrative requires.",
+        "- Each chapter should tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events into one chapter.",
         "- Use the actual people and places from the events.",
         "- Capture the emotional journey — the timeline should feel like a narrative, not a list.",
-        "- Each chapter should focus on 1-3 related events and explore them in depth.",
+        "- Each chapter should focus on 1-2 related events and explore them in depth.",
         "- Include sensory details, dialogue possibilities, and emotional beats.",
         "- The opening chapter should hook the reader — consider starting with a pivotal moment.",
         "- The final chapter should provide closure or reflection.",
@@ -6383,9 +6387,11 @@ function NovelWorkspacePage() {
         "- Synopses are internal drafting notes for AI, NOT reader-facing blurbs.",
         "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
         "- Every character MUST have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Detective', 'The Killer', 'Mysterious Stranger', etc. Even if the story hasn't revealed someone's identity yet, give them a real name — the story can reveal it later but the AI needs a proper name to track them.",
-        "- Name the specific location where each chapter takes place.",
-        "- Each chapter should primarily use ONE location.",
-        "- Include at least 1-2 key events per chapter.",
+        "- Each chapter takes place in ONE primary location. Do NOT jump between multiple locations in a single chapter.",
+        "- Only list characters who are ESSENTIAL to that chapter's action. Do NOT dump every character into every chapter — most chapters should have 2-4 characters.",
+        "- Introduce new characters naturally as the story demands. Not every character appears in chapter 1.",
+        "- Each chapter should tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes into one chapter.",
+        "- Include 1-2 key events per chapter that drive the plot forward.",
         "- Maintain strict cause-and-effect between chapters.",
         "- Use Canon character and location names EXACTLY as given.",
         canonNames ? `- Canon names to use: ${canonNames}` : "",
@@ -6684,6 +6690,9 @@ function NovelWorkspacePage() {
               `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "locations": ["Place"], "events": ["key moment"] }`,
               `This is an internal writer plan, not reader copy. Be specific about what happens.`,
               `This is a NON-FICTION ${nfSubtypeLabel} book. Base the chapter on the real events provided.`,
+              "- This chapter takes place in ONE primary location or setting. Do NOT jump between locations.",
+              "- Only include people who are ESSENTIAL to this chapter (typically 2-4). Do NOT list every person from the story.",
+              "- Tell one focused story — a single coherent event or sequence. Do NOT cram multiple unrelated events together.",
               canonNames ? `Canon names: ${canonNames}` : "",
               `Full chapter list:\n${fullChapterList}`,
               prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
@@ -6697,7 +6706,10 @@ function NovelWorkspacePage() {
               `This is an internal writer plan, not reader copy. Be specific about what happens.`,
               "- State concrete actions, dialogue beats, emotional shifts, and consequences.",
               "- Every character MUST have a proper human name (First Last). NEVER use role labels.",
-              "- Name the specific location where the chapter takes place.",
+              "- This chapter takes place in ONE primary location. Do NOT jump between locations.",
+              "- Only include characters who are ESSENTIAL to this chapter (typically 2-4). Do NOT list every character from the story.",
+              "- Introduce new characters naturally if the story demands them.",
+              "- Tell one focused story beat — a single coherent scene or sequence. Do NOT cram multiple unrelated scenes together.",
               canonNames ? `Canon names: ${canonNames}` : "",
               `Full chapter list:\n${fullChapterList}`,
               prevSyn ? `Previous chapter synopsis: ${clampPromptText(prevSyn, 300)}` : "",
@@ -6799,9 +6811,18 @@ function NovelWorkspacePage() {
 
   async function runArcAnalysis() {
     if (!novel || aiOff) return;
+    if (storyAiBusyAction) {
+      setArcError("Another AI task is running. Wait for it to finish first.");
+      return;
+    }
     const plan = novel.storyBible.bookPlan;
     if (!plan || plan.chapters.length < 3) {
       setArcError("Need at least 3 plan chapters to analyse arcs.");
+      return;
+    }
+    const incompleteCount = plan.chapters.filter((ch) => !ch.synopsis || ch.synopsis.trim().length < 60).length;
+    if (incompleteCount > 0) {
+      setArcError(`${incompleteCount} chapter${incompleteCount > 1 ? "s" : ""} still missing a synopsis. Generate your full plan first.`);
       return;
     }
 
@@ -11362,7 +11383,7 @@ function NovelWorkspacePage() {
                     </div>
                     <button
                       type="button"
-                      disabled={arcBusy || aiOff}
+                      disabled={arcBusy || aiOff || !!storyAiBusyAction}
                       onClick={() => {
                         if (novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null) {
                           setArcRegenWarning(true);
@@ -16465,7 +16486,7 @@ function NovelWorkspacePage() {
                   placeholder={charChatReviewDone ? "Chat ended — review recommendations" : coAuthorMode ? "Ask your co-author anything…" : `Say something to ${charChatTarget!.name}...`}
                   value={charChatInput}
                   onChange={(e) => setCharChatInput(e.target.value)}
-                  disabled={charChatLoading || charChatReviewDone}
+                  disabled={charChatLoading || charChatReviewDone || !!storyAiBusyAction || arcBusy}
                   autoFocus
                   style={{
                     flex: 1, padding: "10px 14px", borderRadius: 10,
@@ -16473,7 +16494,10 @@ function NovelWorkspacePage() {
                     color: "inherit", fontSize: 13, outline: "none",
                   }}
                 />
-                <button type="submit" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone}
+                {(!!storyAiBusyAction || arcBusy) && (
+                  <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 600, whiteSpace: "nowrap", alignSelf: "center" }}>AI busy…</span>
+                )}
+                <button type="submit" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone || !!storyAiBusyAction || arcBusy}
                   style={{
                     width: 38, height: 38, borderRadius: 10, border: "none", flexShrink: 0,
                     background: charChatInput.trim() ? "var(--pw-accent)" : "var(--pw-overlay-bg-hover)",
