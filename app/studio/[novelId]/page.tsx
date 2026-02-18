@@ -7498,6 +7498,7 @@ function NovelWorkspacePage() {
               const orig = String(edit.original || "").trim();
               const rev = String(edit.revised || "").trim();
               if (!orig || !rev || orig === rev) continue;
+              if (isPlaceholderJunk(rev, orig)) continue;
               // Verify the original text actually exists in the chapter
               const chContent = chapter.content ?? "";
               if (!chContent.includes(orig)) continue;
@@ -7551,6 +7552,7 @@ function NovelWorkspacePage() {
       byChapter.get(edit.chapter)!.push(edit);
     }
 
+    let skipped = 0;
     for (const [chapterNum, edits] of byChapter.entries()) {
       const chapter = novel.chapters[chapterNum - 1];
       if (!chapter) continue;
@@ -7559,6 +7561,8 @@ function NovelWorkspacePage() {
         if (content.includes(edit.original)) {
           content = content.replace(edit.original, edit.revised);
           applied++;
+        } else {
+          skipped++;
         }
       }
       updateChapter(chapter.id, { content });
@@ -7567,6 +7571,9 @@ function NovelWorkspacePage() {
     setEditorApplyCount(applied);
     setEditorApplying(false);
     setEditorApplyDone(true);
+    if (skipped > 0) {
+      setEditorApplyProgress(`${applied} applied, ${skipped} skipped (text changed since scan)`);
+    }
     saveNow();
   }
 
@@ -8201,6 +8208,10 @@ function NovelWorkspacePage() {
       if (text === paragraphs[localIdx].trim()) continue;
       // Skip placeholder junk — AI echoed our example instead of writing actual text
       if (isPlaceholderJunk(text, paragraphs[localIdx])) continue;
+      // Skip edits that changed too much — more than 20% word count difference means the AI rewrote instead of fixing
+      const origWords = paragraphs[localIdx].split(/\s+/).filter(Boolean).length;
+      const revWords = text.split(/\s+/).filter(Boolean).length;
+      if (origWords > 5 && Math.abs(revWords - origWords) / origWords > 0.2) continue;
       changes.push({
         paragraphIndex: idx,
         original: paragraphs[localIdx],
@@ -8293,28 +8304,29 @@ function NovelWorkspacePage() {
       } else if (tab === "grammar") {
         /* ═══ GRAMMAR & STYLE — fix real errors, no creative changes ═══ */
         const sysMsg = [
-          `You are a professional copy editor for a ${ctx.genreStr} novel.`,
+          `You are a grammar-only proofreader for a ${ctx.genreStr} novel.`,
+          "You are NOT a style editor. You do NOT improve prose quality, flow, or readability. You ONLY fix errors.",
           ctx.brief,
           "",
-          "Fix ONLY genuine grammar, spelling, and punctuation errors. Make MINIMAL changes — fix the error and leave everything else exactly as-is.",
+          "ABSOLUTE RULES — NEVER BREAK THESE:",
+          "- You may ONLY change 1-3 words per paragraph to fix a genuine error",
+          "- The corrected paragraph MUST be 95%+ identical to the original",
+          "- If your revised text is more than 10% longer or shorter than the original, you changed TOO MUCH — revert and make a smaller fix",
+          "- NEVER rewrite sentences for style, flow, clarity, or preference",
+          "- NEVER restructure, combine, or split sentences",
+          "- NEVER change the author's voice, word choices, or creative decisions",
+          "- NEVER change dialogue speech patterns, dialect, or slang",
+          "- NEVER add new words, phrases, or descriptions that weren't there",
+          "- If a paragraph has no genuine grammar errors, DO NOT include it — skip it entirely",
           "",
-          "What to fix:",
+          "What counts as an error (fix ONLY these):",
           "1. SPELLING — Actual misspellings only (not intentional dialect/accent)",
           "2. PUNCTUATION — Missing or wrong punctuation, dialogue tag errors",
           "3. TENSE AGREEMENT — Unintentional tense shifts only",
           "4. WORD USAGE — Wrong word, homophones (their/there/they're)",
           "5. SUBJECT-VERB AGREEMENT — 'he were' → 'he was' etc",
           "",
-          "ABSOLUTE RULES — NEVER BREAK THESE:",
-          "- Make the SMALLEST possible change to fix the error — change a word or two, not the whole paragraph",
-          "- NEVER rewrite sentences for style, flow, or preference",
-          "- NEVER restructure paragraphs or combine/split sentences",
-          "- NEVER change the author's voice, word choices, or creative decisions",
-          "- NEVER change dialogue speech patterns, dialect, or slang",
-          "- The corrected paragraph must be 95%+ identical to the original — only the error is different",
-          "- If a paragraph has no actual grammar errors, DO NOT include it",
-          "",
-          "OUTPUT: Return JSON with edits. Each edit must contain the COMPLETE paragraph with ONLY the grammar fix applied. The rest of the paragraph must be WORD-FOR-WORD identical to the original. Never use placeholder words like 'revised'.",
+          "OUTPUT: Return JSON with edits. Each edit must contain the COMPLETE paragraph with ONLY the error fix applied. Every other word must be WORD-FOR-WORD identical to the original. Never use placeholder words like 'revised'.",
         ].join("\n");
 
         const taskLine = "Fix ONLY grammar, spelling, and punctuation errors. Make the SMALLEST possible change — fix the error word(s) and leave EVERYTHING else word-for-word identical. NEVER rewrite or restructure. Return the FULL paragraph text with ONLY the fix applied.";
@@ -12945,28 +12957,41 @@ function NovelWorkspacePage() {
                 const blocks = getSceneBlocks(activeChapter);
                 if (blocks.length > 0 && blocks.some(b => b.prose?.trim())) {
                   const revisedParas = revisedText.split(/\n\n+/).filter(Boolean);
-                  let paraIdx = 0;
-                  const updatedBlocks = blocks.map(b => {
-                    if (!b.prose?.trim()) return b;
-                    const blockParaCount = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
-                    const slice = revisedParas.slice(paraIdx, paraIdx + blockParaCount);
-                    paraIdx += blockParaCount;
-                    return { ...b, prose: slice.length > 0 ? slice.join("\n\n") : b.prose };
-                  });
-                  if (paraIdx < revisedParas.length && updatedBlocks.length > 0) {
-                    const last = updatedBlocks.length - 1;
-                    const remainder = revisedParas.slice(paraIdx).join("\n\n");
-                    updatedBlocks[last] = { ...updatedBlocks[last], prose: (updatedBlocks[last].prose || "") + "\n\n" + remainder };
+                  const origParaCount = blocks.reduce((n, b) => n + (b.prose?.trim() ? (b.prose.split(/\n\n+/).filter(Boolean).length || 1) : 0), 0);
+                  // If paragraph count shifted, fall back to content-only update to avoid block misalignment
+                  if (Math.abs(revisedParas.length - origParaCount) > 2) {
+                    mutateNovel((current) => ({
+                      ...current,
+                      chapters: current.chapters.map(ch =>
+                        ch.id === activeChapter.id
+                          ? { ...ch, content: revisedText, updatedAt: new Date().toISOString() }
+                          : ch
+                      ),
+                    }));
+                  } else {
+                    let paraIdx = 0;
+                    const updatedBlocks = blocks.map(b => {
+                      if (!b.prose?.trim()) return b;
+                      const blockParaCount = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
+                      const slice = revisedParas.slice(paraIdx, paraIdx + blockParaCount);
+                      paraIdx += blockParaCount;
+                      return { ...b, prose: slice.length > 0 ? slice.join("\n\n") : b.prose };
+                    });
+                    if (paraIdx < revisedParas.length && updatedBlocks.length > 0) {
+                      const last = updatedBlocks.length - 1;
+                      const remainder = revisedParas.slice(paraIdx).join("\n\n");
+                      updatedBlocks[last] = { ...updatedBlocks[last], prose: (updatedBlocks[last].prose || "") + "\n\n" + remainder };
+                    }
+                    const combinedContent = updatedBlocks.map(b => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+                    mutateNovel((current) => ({
+                      ...current,
+                      chapters: current.chapters.map(ch =>
+                        ch.id === activeChapter.id
+                          ? { ...ch, content: combinedContent, sceneBlocks: updatedBlocks, updatedAt: new Date().toISOString() }
+                          : ch
+                      ),
+                    }));
                   }
-                  const combinedContent = updatedBlocks.map(b => b.prose?.trim() || "").filter(Boolean).join("\n\n");
-                  mutateNovel((current) => ({
-                    ...current,
-                    chapters: current.chapters.map(ch =>
-                      ch.id === activeChapter.id
-                        ? { ...ch, content: combinedContent, sceneBlocks: updatedBlocks, updatedAt: new Date().toISOString() }
-                        : ch
-                    ),
-                  }));
                 } else {
                   mutateNovel((current) => ({
                     ...current,
