@@ -842,6 +842,9 @@ function normalizeStoryBible(raw: unknown): StoryBible {
       record.bookPlan && typeof record.bookPlan === "object" && typeof (record.bookPlan as Record<string, unknown>).updatedAt === "string"
         ? ((record.bookPlan as Record<string, unknown>).updatedAt as string)
         : now,
+    ...(record.bookPlan && typeof record.bookPlan === "object" && (record.bookPlan as Record<string, unknown>).arcAnalysis
+      ? { arcAnalysis: (record.bookPlan as Record<string, unknown>).arcAnalysis as ArcAnalysis }
+      : {}),
   };
 
   // Backfill: if no v2 characters but legacy list exists, adapt it.
@@ -912,6 +915,36 @@ function normalizeStoryBible(raw: unknown): StoryBible {
       return { entries, scanIssues, lastScanAt: typeof raw?.lastScanAt === "string" ? (raw!.lastScanAt as string) : undefined };
     })(),
     aiContext,
+    ...(record.nonfiction && typeof record.nonfiction === "object" ? {
+      nonfiction: (() => {
+        const nf = record.nonfiction as Record<string, unknown>;
+        const validSubtypes = ["memoir", "biography", "true-crime", "historical", "investigative"];
+        return {
+          subtype: (typeof nf.subtype === "string" && validSubtypes.includes(nf.subtype) ? nf.subtype : "memoir") as NonfictionSubtype,
+          subjectName: typeof nf.subjectName === "string" ? nf.subjectName : "",
+          subjectRelation: typeof nf.subjectRelation === "string" ? nf.subjectRelation : "myself",
+          era: typeof nf.era === "string" ? nf.era : "",
+          setting: typeof nf.setting === "string" ? nf.setting : "",
+          centralTheme: typeof nf.centralTheme === "string" ? nf.centralTheme : "",
+          lifeEvents: Array.isArray(nf.lifeEvents) ? (nf.lifeEvents as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `le-${i}`,
+            title: typeof e.title === "string" ? e.title : "",
+            date: typeof e.date === "string" ? e.date : "",
+            description: typeof e.description === "string" ? e.description : "",
+            people: Array.isArray(e.people) ? e.people.filter((p): p is string => typeof p === "string") : [],
+            places: Array.isArray(e.places) ? e.places.filter((p): p is string => typeof p === "string") : [],
+            emotion: typeof e.emotion === "string" ? e.emotion : "",
+            impact: typeof e.impact === "string" ? e.impact : "",
+            sortOrder: typeof e.sortOrder === "number" ? e.sortOrder : i,
+          })) : [],
+          interviewTranscript: Array.isArray(nf.interviewTranscript) ? (nf.interviewTranscript as Array<Record<string, unknown>>).filter(
+            (m) => typeof m.role === "string" && typeof m.text === "string"
+          ).map((m) => ({ role: m.role as "ai" | "user", text: m.text as string })) : [],
+          interviewPhase: typeof nf.interviewPhase === "string" ? nf.interviewPhase : "big-picture",
+          extractedAt: typeof nf.extractedAt === "string" ? nf.extractedAt : "",
+        };
+      })(),
+    } : {}),
     braindump: coerce("braindump", record),
     genre: coerce("genre", record),
     style: coerce("style", record),
@@ -988,6 +1021,10 @@ function normalizeNovel(raw: unknown): Novel | null {
 
   const authorName = typeof record.authorName === "string" ? record.authorName : "";
   const novelType = record.novelType === "nonfiction" ? "nonfiction" as const : "fiction" as const;
+  const archived = record.archived === true;
+  const healthScore = record.healthScore && typeof record.healthScore === "object" ? record.healthScore as Novel["healthScore"] : undefined;
+  const thematicAnalysis = record.thematicAnalysis && typeof record.thematicAnalysis === "object" ? record.thematicAnalysis as Novel["thematicAnalysis"] : undefined;
+  const narrativeControl = record.narrativeControl && typeof record.narrativeControl === "object" ? record.narrativeControl as Novel["narrativeControl"] : undefined;
 
   return {
     id,
@@ -1001,6 +1038,10 @@ function normalizeNovel(raw: unknown): Novel | null {
     novelType,
     createdAt,
     updatedAt,
+    ...(archived ? { archived } : {}),
+    ...(healthScore ? { healthScore } : {}),
+    ...(thematicAnalysis ? { thematicAnalysis } : {}),
+    ...(narrativeControl ? { narrativeControl } : {}),
   };
 }
 

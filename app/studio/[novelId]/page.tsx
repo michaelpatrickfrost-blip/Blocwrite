@@ -7429,7 +7429,9 @@ function NovelWorkspacePage() {
               });
             }
           }
-        } catch { /* skip this batch */ }
+        } catch (err) {
+          if (err instanceof Error && (err.message === "__CANCELLED__" || err.name === "AbortError")) throw err;
+        }
       }
 
       // Build a summary
@@ -10607,7 +10609,7 @@ function NovelWorkspacePage() {
                               </div>
                             </div>
                             {/* ── Seamless prose area (styled like main editor) ── */}
-                            {block.synopsis?.trim() && !block.prose?.trim() && (
+                            {block.synopsis?.trim() && (
                               <button
                                 type="button"
                                 disabled={isBlockBusy || !!storyAiBusyAction}
@@ -10626,8 +10628,8 @@ function NovelWorkspacePage() {
                                 onMouseLeave={(e) => { e.currentTarget.style.opacity = isBlockBusy || storyAiBusyAction ? "0.5" : "0.8"; }}
                               >
                                 {isBlockBusy ? (
-                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Generating...</>
-                                ) : "✦ Generate prose for this scene"}
+                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> {block.prose?.trim() ? "Regenerating..." : "Generating..."}</>
+                                ) : block.prose?.trim() ? "✦ Regenerate prose" : "✦ Generate prose for this scene"}
                               </button>
                             )}
                             {isBlockBusy && block.prose?.trim() && (
@@ -15281,7 +15283,7 @@ function NovelWorkspacePage() {
                             setStoryAiError(null);
                             try {
                               const people = storyCharacters.map(c => `${c.name}: ${c.role || ""}. ${c.logline || ""}`).join("\n");
-                              const evts = (nfData?.lifeEvents ?? []).map(e => `${e.title}: ${e.description?.slice(0, 100) || ""} (People: ${e.people.join(", ")})`).join("\n");
+                              const evts = (nfData?.lifeEvents ?? []).map(e => `${e.title}: ${e.description?.slice(0, 100) || ""} (People: ${(e.people ?? []).join(", ")})`).join("\n");
                               const prompt = [
                                 "Given these people and life events from a memoir, identify key relationships between people.",
                                 "Return JSON array: [{ person1: 'name', person2: 'name', relationship: 'description of bond/conflict/dynamic' }]",
