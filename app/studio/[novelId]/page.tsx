@@ -6313,7 +6313,7 @@ function NovelWorkspacePage() {
     let planNewCharIds: string[] = [];
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
-      const systemMsg = "Novel outliner. Respect all Canon. Return only valid JSON.";
+      const systemMsg = "You are a PLOT outliner, not a prose writer. Write chapter plot summaries describing what HAPPENS — actions, consequences, changes. Never write prose scenes or dialogue. Think like a screenwriter's beat sheet. Respect all Canon. Return only valid JSON.";
       const context = buildPhase1OutlineContext();
       const pacingMode = novel.storyBible.bookPlan?.pacingMode ?? "balanced";
       const pacingHint =
@@ -6603,8 +6603,16 @@ function NovelWorkspacePage() {
        * cause-and-effect, and genre-aware structure.
        */
       const generatedSynopses: string[] = [];
+      const usedLocations: string[] = [];
       const fullChapterList = allTitles.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n");
       const genreGuidance = getGenreGuidance();
+
+      const synopsisFormatGuide = [
+        "FORMAT: Write a PLOT SUMMARY, not prose. Describe what happens like a book outline.",
+        "BAD example: 'John sits at his desk, staring out the window. Rain streaks down the glass as he picks up his pen.'",
+        "GOOD example: 'John discovers his wife has been hiding letters from his estranged brother. He confronts her, and she reveals the brother is dying. John decides to visit despite years of silence, but his wife refuses to go with him, deepening the rift in their marriage.'",
+        "Write like the GOOD example — plot events, decisions, consequences, and what CHANGES. Never narrate moment-by-moment scenes.",
+      ].join("\n");
 
       for (let index = 0; index < allTitles.length; index++) {
         if (aiAbortRef.current?.signal.aborted) break;
@@ -6614,79 +6622,73 @@ function NovelWorkspacePage() {
         const structuralBeat = getStructuralBeat(index, allTitles.length);
 
         const storySoFar = generatedSynopses.length > 0
-          ? generatedSynopses.map((s, si) => `Chapter ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 400)}`).join("\n\n")
+          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 400)}`).join("\n\n")
           : "";
 
         const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
-        const prevFirstSentence = prevSynopsis ? prevSynopsis.split(/\.\s/)[0] : "";
-
         const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
 
-        const antiRepetition = index > 0 ? [
-          "",
-          "*** CRITICAL — ANTI-REPETITION ***",
-          `The PREVIOUS chapter (Ch ${index}) started with: "${clampPromptText(prevFirstSentence, 120)}..."`,
-          "You MUST NOT start this chapter the same way. Use a DIFFERENT character, DIFFERENT location, DIFFERENT action, or DIFFERENT time.",
-          `You MUST NOT reuse the same scenario, setting, or emotional beat as any previous chapter.`,
-          `The story MUST move FORWARD. Something NEW must happen that could NOT have been in any earlier chapter.`,
-          "*** END ANTI-REPETITION ***",
-          "",
-        ].join("\n") : "";
+        const blockedLocations = usedLocations.length > 0
+          ? `LOCATIONS ALREADY USED (pick a DIFFERENT one): ${usedLocations.join(", ")}`
+          : "";
+
+        const whatChangedLast = prevSynopsis
+          ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-2).join(". "), 200)}`
+          : "";
 
         const chapterPrompt = isNF ? [
-          `Write a synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${nfSubtypeLabel} book.`,
-          `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "location": "One Place", "events": ["key moment"] }`,
+          `Chapter ${index + 1} of ${allTitles.length}: "${chapterTitle}" — ${nfSubtypeLabel} book.`,
+          `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "location": "One Place Name", "events": ["key moment"] }`,
           "",
-          storySoFar ? `STORY SO FAR — READ THIS FIRST. This is what has ALREADY happened. Your chapter MUST continue AFTER these events, not repeat them:\n${storySoFar}\n` : "",
-          antiRepetition,
-          `This is chapter ${index + 1} of ${allTitles.length}.`,
+          synopsisFormatGuide,
+          "",
+          storySoFar ? `ALREADY HAPPENED (do not repeat — continue AFTER this):\n${storySoFar}\n` : "",
+          whatChangedLast ? `PICK UP FROM: ${whatChangedLast}\n` : "",
+          blockedLocations,
           structuralBeat,
           "",
-          "RULES:",
-          "- Write 5-8 SPECIFIC sentences describing exactly what happens step by step.",
-          "- This chapter MUST cover DIFFERENT events, DIFFERENT emotions, and a DIFFERENT situation than all previous chapters.",
-          `- This is a NON-FICTION ${nfSubtypeLabel} book. Ground everything in real events.`,
-          nfSubtype === "true-crime" ? "- True crime: build tension, reveal evidence, follow the investigation." : "",
-          nfSubtype === "biography" ? "- Biography: focus on defining moments and turning points." : "",
-          nfSubtype === "memoir" ? "- Memoir: emotional honesty. Show the experience, don't just describe it." : "",
-          "- LOCATION: Return exactly ONE location as a string. Not an array. Just one place name.",
-          "- PEOPLE: Only people who APPEAR AND ACT (typically 2-4).",
-          "- Use existing Canon names. NEVER create duplicates.",
+          `- This is a NON-FICTION ${nfSubtypeLabel} book based on real events.`,
+          nfSubtype === "true-crime" ? "- True crime narrative: evidence, investigation, pursuit." : "",
+          nfSubtype === "biography" ? "- Biography: defining moments and turning points." : "",
+          nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
+          "- Write 4-6 sentences of PLOT: what happens, what decisions are made, what changes.",
+          "- ONE location only. Return a single place name string.",
+          "- Only people who appear and act (2-4 typically).",
+          "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
           pacingHint,
           "",
-          `Full chapter outline:\n${fullChapterList}`,
-          nextTitle ? `\nNext chapter: "${nextTitle}" — set up what comes next.` : "\nThis is the FINAL chapter.",
+          `Chapter outline:\n${fullChapterList}`,
+          nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter.",
           `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
           nfCtx ? `\nNon-fiction context:\n${clampPromptText(nfCtx, 800)}` : "",
-          `\nCanon:\n${clampPromptText(context, 1000)}`,
+          `\nCanon:\n${clampPromptText(context, 800)}`,
         ].filter(Boolean).join("\n") : [
-          `Write a synopsis for Chapter ${index + 1}: "${chapterTitle}" of this ${genreStr} novel.`,
-          `Return JSON: { "synopsis": "...", "characters": ["First Last"], "location": "One Place", "events": ["key moment"] }`,
+          `Chapter ${index + 1} of ${allTitles.length}: "${chapterTitle}" — ${genreStr} novel.`,
+          `Return JSON: { "synopsis": "...", "characters": ["First Last"], "location": "One Place Name", "events": ["key moment"] }`,
           "",
-          storySoFar ? `STORY SO FAR — READ THIS FIRST. This is what has ALREADY happened in the novel. Your chapter MUST continue AFTER all of this, not repeat any of it:\n${storySoFar}\n` : "",
-          antiRepetition,
-          `This is chapter ${index + 1} of ${allTitles.length}.`,
+          synopsisFormatGuide,
+          "",
+          storySoFar ? `ALREADY HAPPENED (do not repeat — continue AFTER this):\n${storySoFar}\n` : "",
+          whatChangedLast ? `PICK UP FROM: ${whatChangedLast}\n` : "",
+          blockedLocations,
           structuralBeat,
           genreGuidance,
           "",
-          "RULES:",
-          "- Write 5-8 SPECIFIC sentences: WHO does WHAT, WHERE, WHY, and what CHANGES as a result.",
-          "- This chapter MUST be in a DIFFERENT situation than the previous chapter. Different action, different conflict, different emotional state.",
-          "- The plot MUST advance. Something must CHANGE by the end of this chapter that wasn't true at the start.",
-          "- No vague language. No 'tensions rise' or 'things escalate'. State concrete actions and outcomes.",
-          "- Every character needs a proper name (First Last). No role labels.",
-          "- LOCATION: Return exactly ONE location as a string. Not an array. ONE place where the main action happens.",
-          "- CHARACTERS: Only those who appear and act (typically 2-4).",
-          "- Use existing Canon names. NEVER create duplicates.",
+          "- Write 4-6 sentences of PLOT: what happens, what decisions are made, what changes, what consequences follow.",
+          "- Every sentence should advance the story. No scene-setting, no describing postures or weather.",
+          "- State WHO does WHAT and what CHANGES as a result.",
+          "- ONE location only. Return a single place name string.",
+          "- Only characters who appear and act (2-4 typically). Proper names only.",
+          "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
           pacingHint,
           authorStyleHint,
           "",
-          `Full chapter outline:\n${fullChapterList}`,
-          nextTitle ? `\nNext chapter: "${nextTitle}" — this chapter must lead into it.` : "\nThis is the FINAL chapter — resolve the central conflict.",
+          `Chapter outline:\n${fullChapterList}`,
+          nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter — resolve the central conflict.",
           `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
-          `\nCanon:\n${clampPromptText(context, 1000)}`,
+          `\nCanon:\n${clampPromptText(context, 800)}`,
         ].filter(Boolean).join("\n");
 
         let synopsis = "";
@@ -6695,7 +6697,7 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const raw = await requestOpenRouterText(chapterPrompt, 800, 180000, systemMsg, false, 0.5);
+          const raw = await requestOpenRouterText(chapterPrompt, 600, 180000, systemMsg, false, 0.6);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -6733,6 +6735,12 @@ function NovelWorkspacePage() {
 
         if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
         generatedSynopses.push(synopsis);
+
+        // Track used location so next chapter picks a different one
+        if (chapterLocationIds.length > 0) {
+          const locEntity = mergedLocations.find((l) => l.id === chapterLocationIds[0]);
+          if (locEntity?.name) usedLocations.push(locEntity.name);
+        }
 
         mutateNovel((current) => {
           const plan = current.storyBible.bookPlan;
