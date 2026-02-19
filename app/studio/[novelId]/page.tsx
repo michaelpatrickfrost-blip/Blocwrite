@@ -4891,7 +4891,7 @@ function NovelWorkspacePage() {
         "",
         isBestFit
           ? `Write prose for SCENE ${blockIndex + 1} ONLY. Let the synopsis complexity guide the length. Write a natural, well-paced scene.`
-          : `Write prose for SCENE ${blockIndex + 1} ONLY. TARGET: ~${block.wordTarget} words.`,
+          : `Write prose for SCENE ${blockIndex + 1} ONLY. STRICT WORD COUNT TARGET: ${block.wordTarget} words (tolerance: ±110 words, so between ${block.wordTarget - 110} and ${block.wordTarget + 110} words). COUNT YOUR WORDS. This is a hard requirement, not a suggestion.`,
         "",
         `Chapter: ${activeChapter.title}`,
         storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
@@ -4925,14 +4925,48 @@ function NovelWorkspacePage() {
         isNF ? "- Non-fiction: write with authenticity, sensory memory, and emotional truth." : "- Maintain character and canon consistency throughout.",
         "- Write like a skilled human author. Varied sentence rhythm. No AI patterns.",
         "- Output the scene prose ONLY. No commentary, no labels, no metadata.",
+        !isBestFit ? `- WORD COUNT IS MANDATORY: You MUST write between ${block.wordTarget - 110} and ${block.wordTarget + 110} words. Not fewer, not more. Plan your scene structure before writing to hit this target.` : "",
       ].filter(Boolean).join("\n");
 
-      const maxTokens = Math.min(4000, Math.round((isBestFit ? 1000 : block.wordTarget) * 2.0));
+      const maxTokens = Math.min(6000, Math.round((isBestFit ? 1000 : block.wordTarget) * 2.2));
       let prose = await requestOpenRouterText(prompt, maxTokens, 180000, systemMsg, false);
       prose = cleanProseOutput(prose);
 
       if (!prose) {
         throw new Error("No prose returned. Try again or switch to a different model.");
+      }
+
+      if (!isBestFit && block.wordTarget > 0) {
+        const wc = countWords(prose);
+        const lo = block.wordTarget - 110;
+        const hi = block.wordTarget + 110;
+        if (wc < lo || wc > hi) {
+          const direction = wc < lo ? "too short" : "too long";
+          const fixPrompt = [
+            `The prose below is ${direction} (${wc} words). The REQUIRED target is ${block.wordTarget} words (±110, so ${lo}–${hi}).`,
+            "",
+            "CRITICAL RULES FOR THE REVISION:",
+            `- You MUST keep this scene about: ${block.synopsis}`,
+            "- Do NOT invent new plot points, new characters, or scenes that aren't in the synopsis.",
+            "- Do NOT drift from the story. Every sentence must serve THIS scene.",
+            "- Maintain the exact same POV, tense, tone, and voice as the original.",
+            immediatePrevProse ? `- This scene follows directly from: "${immediatePrevProse.slice(-300)}"` : "",
+            "",
+            direction === "too short"
+              ? "TO EXPAND: deepen what's ALREADY there — add sensory detail to existing moments, expand character reactions, add natural dialogue beats, slow down key emotional beats. Do NOT add new events or subplots."
+              : "TO TRIM: tighten sentences, cut redundant descriptions, merge similar paragraphs, remove padding words. Keep every story beat intact.",
+            "",
+            styleSection ? `STYLE RULES (maintain these):\n${styleSection}` : "",
+            "Return ONLY the revised prose. No commentary, no word count annotations, no metadata.",
+            `\nProse to revise:\n${prose}`,
+          ].filter(Boolean).join("\n");
+          const fixTokens = Math.min(6000, Math.round(block.wordTarget * 2.2));
+          let fixed = await requestOpenRouterText(fixPrompt, fixTokens, 180000, systemMsg, false);
+          fixed = cleanProseOutput(fixed);
+          if (fixed && Math.abs(countWords(fixed) - block.wordTarget) < Math.abs(wc - block.wordTarget)) {
+            prose = fixed;
+          }
+        }
       }
 
       const updatedBlocks = [...blocks];
