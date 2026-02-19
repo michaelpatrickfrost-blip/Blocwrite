@@ -7297,7 +7297,7 @@ function NovelWorkspacePage() {
 
   useEffect(() => {
     autoSizeEditorInput(editorInputRef.current);
-  }, [activeChapter?.id, activeChapter?.content]);
+  }, [activeChapter?.id, activeChapter?.content, hideBlocks]);
 
   useEffect(() => {
     if (!activeChapter) return;
@@ -10843,6 +10843,10 @@ function NovelWorkspacePage() {
                             "Georgia, serif",
                           textAlign: editorTextAlign,
                           fontSize: editorFontSize,
+                          minHeight: "70vh",
+                          width: "100%",
+                          resize: "none",
+                          overflow: "hidden",
                         }}
                         dir="ltr"
                         spellCheck
