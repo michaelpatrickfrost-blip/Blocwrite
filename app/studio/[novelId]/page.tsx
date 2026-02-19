@@ -4727,16 +4727,17 @@ function NovelWorkspacePage() {
     const prevBlocSummary = precedingBlocs.length > 0
       ? precedingBlocs.map((b, i) => {
           const synopsis = b.synopsis?.trim() || "(no synopsis)";
-          const lastLines = b.prose?.trim().slice(-300) || "";
-          return `Scene ${i + 1} synopsis: ${synopsis}\n  Ends with: "${lastLines}"`;
-        }).join("\n")
+          const prose = b.prose?.trim() || "";
+          const lastLines = prose.slice(-600);
+          return `Scene ${i + 1} synopsis: ${synopsis}${lastLines ? `\n  Scene ${i + 1} ending prose: "${lastLines}"` : ""}`;
+        }).join("\n\n")
       : "";
 
     const prevChapterEnding = (() => {
-      if (precedingProse) return precedingProse.slice(-800);
+      if (precedingProse) return precedingProse.slice(-1500);
       const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
       const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
-      return prev?.content?.trim().slice(-600) || "";
+      return prev?.content?.trim().slice(-800) || "";
     })();
 
     setStoryAiBusyAction(`block-prose-${blockIndex}`);
@@ -4839,7 +4840,7 @@ function NovelWorkspacePage() {
         "",
         prevBlocSummary ? `WHAT HAPPENED IN PREVIOUS SCENES (read carefully — you MUST continue from where these left off):\n${prevBlocSummary}` : "",
         "",
-        prevChapterEnding ? `PROSE IMMEDIATELY BEFORE YOUR SCENE (continue seamlessly from here — match tone, rhythm, flow, and CHARACTER POSITIONS):\n"""${prevChapterEnding.slice(-800)}"""` : "",
+        prevChapterEnding ? `PROSE IMMEDIATELY BEFORE YOUR SCENE (continue seamlessly from here — match tone, rhythm, flow, and CHARACTER POSITIONS):\n"""${prevChapterEnding.slice(-1500)}"""` : "",
         followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
         previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
