@@ -14944,16 +14944,28 @@ function NovelWorkspacePage() {
                                 nfData?.subtype ? `Type: ${nfData.subtype}` : "",
                               ].filter(Boolean).join(". ");
                               const prompt = [
-                                "Analyse these writing samples from an author's life interview. These are their natural, unedited words.",
-                                "Extract their authentic writing voice and style patterns. Return JSON:",
-                                '{ "voiceRules": "practical style rules capturing their natural voice (max 800 chars) — sentence length preferences, vocabulary level, emotional tone, storytelling patterns, use of detail, dialogue style, rhythm. Describe HOW they write, not WHAT they write about.",',
+                                "Analyse these writing samples from an author's life interview. These are casual chat messages — their raw, unfiltered way of communicating.",
+                                "",
+                                "CRITICAL: IGNORE all spelling errors, typos, grammar mistakes, and chat shorthand. These are artefacts of typing quickly in a chat box, NOT the author's writing style.",
+                                "Instead, look DEEPER at how they naturally communicate:",
+                                "- How do they tell stories? Do they build up slowly or jump straight in?",
+                                "- Are they blunt and direct, or do they circle around things?",
+                                "- Do they use humour, sarcasm, understatement?",
+                                "- Are they emotionally raw and open, or restrained and matter-of-fact?",
+                                "- Do they focus on feelings, actions, dialogue, or sensory details?",
+                                "- What's their natural rhythm — short punchy bursts or longer flowing thoughts?",
+                                "- Do they use colloquial language, slang, regional expressions?",
+                                "- How do they describe people — through appearance, behaviour, or what they said?",
+                                "",
+                                "Return JSON:",
+                                '{ "voiceRules": "practical style rules capturing their AUTHENTIC VOICE as a polished version of how they naturally speak and tell stories (max 800 chars). This should read like guidance for a ghostwriter who needs to sound like this person but with professional-quality prose.",',
                                 '  "toneTags": ["tone1","tone2","tone3"],',
                                 '  "styleComparables": ["style descriptor 1", "style descriptor 2"] }',
                                 "",
-                                "Focus on: Do they use short punchy sentences or long flowing ones? Are they blunt or poetic? Do they use humour? Are they detail-oriented or big-picture? Formal or colloquial? Emotionally restrained or raw?",
+                                "The voiceRules should translate their raw conversational voice into polished prose directives. If they're blunt, the rule is 'direct prose, no flowery language'. If they jump between topics, the rule is 'associative storytelling with sharp transitions'. Capture the PERSON behind the typos.",
                                 "NEVER mention any author/person names in output.",
                                 ctx ? `\nBook context: ${ctx}` : "",
-                                `\nAuthor writing samples:\n${sample}`,
+                                `\nAuthor interview messages:\n${sample}`,
                               ].join("\n");
                               const data = await requestOpenRouterJson<{
                                 voiceRules?: string;
