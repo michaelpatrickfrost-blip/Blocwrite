@@ -938,10 +938,10 @@ function NovelWorkspacePage() {
   // Chat review system
   type ChatRecommendation = {
     id: string;
-    type: "chapter_synopsis" | "character_profile";
+    type: "chapter_synopsis" | "character_profile" | "prose_edit";
     label: string;
     detail: string;
-    targetId: string; // plan chapter id or character id
+    targetId: string; // plan chapter id, character id, or manuscript chapter id
     field?: string;   // character field to update
     currentValue?: string;
     newValue: string;
@@ -2293,12 +2293,21 @@ function NovelWorkspacePage() {
     const chapterSummary = novel.chapters.map((ch, i) => {
       const planEntry = planChapters.find((pc) => pc.manuscriptChapterId === ch.id);
       const prose = extractProseFromContent(ch.content ?? "");
-      const excerpt = prose.length > 300 ? prose.slice(0, 300) + "..." : prose;
-      const parts = [`Ch${i + 1}: "${ch.title || "Untitled"}"`];
+      const isActive = activeChapter?.id === ch.id;
+      const excerpt = isActive ? "" : (prose.length > 300 ? prose.slice(0, 300) + "..." : prose);
+      const parts = [`Ch${i + 1}: "${ch.title || "Untitled"}"${isActive ? " [CURRENT CHAPTER]" : ""}`];
       if (planEntry?.synopsis) parts.push(`Synopsis: ${planEntry.synopsis}`);
       if (excerpt.trim()) parts.push(`Content: ${excerpt}`);
       return parts.join(" | ");
     }).join("\n");
+
+    const activeChapterProse = activeChapter ? extractProseFromContent(activeChapter.content ?? "") : "";
+    const activeChapterSection = activeChapterProse.trim()
+      ? [
+          `=== CURRENT CHAPTER PROSE (you are being asked about THIS chapter — you know every detail of what happens here) ===`,
+          activeChapterProse.slice(0, 6000),
+        ].join("\n")
+      : "";
 
     const charParts: string[] = [];
     charParts.push(`You ARE ${char.name}. You are being interviewed by the author of the story you exist in.`);
@@ -2330,6 +2339,9 @@ function NovelWorkspacePage() {
       charParts.push(`This character's profile is mostly blank — the author is discovering who you are through conversation. Be creative. Invent details about yourself that feel authentic for the story. Let your personality emerge naturally.`);
     }
     charParts.push(`Keep responses concise and natural — like real dialogue, not essays. Show personality through word choice, rhythm, and attitude.`);
+    if (activeChapterProse.trim()) {
+      charParts.push(`The author is talking to you about the current chapter. You know exactly what happens in it — you were there. If the author asks about details, react as someone who lived through those events. If you have thoughts about what's missing or wrong, share them naturally in character.`);
+    }
 
     return [
       `=== YOUR CHARACTER ===`,
@@ -2340,9 +2352,10 @@ function NovelWorkspacePage() {
       ``,
       `=== CHAPTERS ===`,
       chapterSummary || "(No chapters yet)",
+      activeChapterSection ? `\n${activeChapterSection}` : "",
       ``,
       `You know this story from the inside — you live in it. Use this knowledge naturally when it's relevant to the conversation, but don't info-dump. React to story events as someone who experienced them.`,
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   }
 
   async function sendCharacterChat() {
@@ -2553,6 +2566,9 @@ function NovelWorkspacePage() {
 
     const charProfile = charChatTarget;
 
+    const activeChapterProse = activeChapter ? extractProseFromContent(activeChapter.content ?? "").trim() : "";
+    const hasActiveChapterProse = activeChapter && activeChapterProse.length > 50;
+
     const systemPrompt = [
       "You are a sharp story continuity analyst. An author just had an in-character conversation with one of their characters.",
       "Your job: scan the conversation for anything that GENUINELY changes what we know about this character or the story direction.",
@@ -2567,8 +2583,11 @@ function NovelWorkspacePage() {
       "- For chapter synopses: only suggest changes if the conversation revealed a concrete plot shift, new motivation, or relationship change that directly affects that chapter's direction.",
       "- For profile fields: only suggest changes if the character said or implied something that genuinely updates, deepens, or corrects their current profile entry.",
       "- New values should INCORPORATE existing content where relevant, not replace it entirely.",
+      hasActiveChapterProse
+        ? "- For prose edits: if the character revealed a specific detail, reaction, sensory memory, or emotional nuance that would ENRICH an existing sentence or passage in the current chapter, suggest a targeted prose edit. The original must be a VERBATIM quote. The revised version should weave in the new detail naturally — not rewrite the whole paragraph. Only suggest prose edits for details the character specifically mentioned that are MISSING from the current text."
+        : "",
       "- Return ONLY valid JSON. No explanation outside the JSON.",
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const userPrompt = [
       `=== CHARACTER PROFILE ===`,
@@ -2588,12 +2607,20 @@ function NovelWorkspacePage() {
       `=== CONVERSATION TRANSCRIPT ===`,
       chatTranscript,
       "",
+      hasActiveChapterProse ? [
+        `=== CURRENT CHAPTER PROSE (Chapter: "${activeChapter!.title || "Untitled"}") ===`,
+        activeChapterProse.slice(0, 6000),
+      ].join("\n") : "",
+      "",
       planChapters.length > 0 ? `=== FUTURE CHAPTERS (no prose written yet — these CAN be modified) ===\n${planChapters.map((pc) => `Ch${pc.idx + 1} (id: "${pc.id}", title: "${pc.title || "Untitled"}"): ${pc.synopsis}`).join("\n")}` : "No future chapters without prose — skip chapter recommendations.",
       "",
       `Return JSON:`,
       `{"chapterChanges": [{"chapterId": "string", "chapterTitle": "string", "currentSynopsis": "string", "newSynopsis": "string", "reason": "Quote or reference the specific conversation moment"}],`,
-      ` "profileChanges": [{"field": "goals"|"fears"|"backstory"|"secrets"|"personality"|"logline", "currentValue": "string", "newValue": "string", "reason": "Quote or reference the specific conversation moment"}]}`,
-      `If nothing meaningful was revealed, return {"chapterChanges": [], "profileChanges": []}.`,
+      ` "profileChanges": [{"field": "goals"|"fears"|"backstory"|"secrets"|"personality"|"logline", "currentValue": "string", "newValue": "string", "reason": "Quote or reference the specific conversation moment"}]`,
+      hasActiveChapterProse
+        ? `, "proseEdits": [{"original": "exact verbatim quote from the chapter prose", "revised": "the same passage with the new detail woven in naturally", "reason": "what the character revealed that enriches this passage"}]}`
+        : `}`,
+      `If nothing meaningful was revealed, return {"chapterChanges": [], "profileChanges": []${hasActiveChapterProse ? ', "proseEdits": []' : ""}}.`,
     ].filter(Boolean).join("\n");
 
     try {
@@ -2639,6 +2666,28 @@ function NovelWorkspacePage() {
         }
       }
 
+      // Process prose edits — only if there's an active chapter with prose
+      if (Array.isArray(result.proseEdits) && activeChapter) {
+        const chContent = activeChapter.content ?? "";
+        for (const pe of result.proseEdits as Record<string, unknown>[]) {
+          if (!pe.original || !pe.revised) continue;
+          const original = String(pe.original).trim();
+          const revised = String(pe.revised).trim();
+          if (!original || !revised || original === revised) continue;
+          if (!chContent.includes(original)) continue;
+          recs.push({
+            id: `prose-${recs.length}`,
+            type: "prose_edit",
+            label: `Enrich prose in "${activeChapter.title || "Untitled"}"`,
+            detail: String(pe.reason || "Detail from conversation"),
+            targetId: activeChapter.id,
+            currentValue: original.slice(0, 500),
+            newValue: revised.slice(0, 500),
+            accepted: null,
+          });
+        }
+      }
+
       setCharChatRecommendations(recs);
     } catch { /* ignore */ } finally {
       setCharChatReviewing(false);
@@ -2652,7 +2701,6 @@ function NovelWorkspacePage() {
     if (!rec) return;
 
     if (rec.type === "chapter_synopsis") {
-      // Update plan chapter synopsis
       const updatedPlan = {
         ...novel.storyBible.bookPlan,
         chapters: novel.storyBible.bookPlan.chapters.map((pc) =>
@@ -2661,11 +2709,20 @@ function NovelWorkspacePage() {
       };
       updateStoryBible({ bookPlan: updatedPlan });
     } else if (rec.type === "character_profile" && rec.field) {
-      // Update character profile field
       const updatedCharacters = novel.storyBible.characters.map((c) =>
         c.id === rec.targetId ? { ...c, [rec.field!]: rec.newValue } : c
       );
       updateStoryBible({ characters: updatedCharacters });
+    } else if (rec.type === "prose_edit" && rec.currentValue) {
+      const chapter = novel.chapters.find((c) => c.id === rec.targetId);
+      if (chapter) {
+        const content = chapter.content ?? "";
+        if (content.includes(rec.currentValue)) {
+          pushUndoSnapshot(chapter.id, content, chapter.sceneBlocks, true);
+          const updated = content.replace(rec.currentValue, rec.newValue);
+          updateChapter(chapter.id, { content: updated });
+        }
+      }
     }
 
     setCharChatRecommendations((prev) =>
@@ -16712,7 +16769,7 @@ function NovelWorkspacePage() {
                           background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
                           color: "var(--pw-text-muted)",
                           letterSpacing: "0.04em",
-                        }}>{rec.type === "chapter_synopsis" ? "Chapter" : "Profile"}</span>
+                        }}>{rec.type === "chapter_synopsis" ? "Chapter" : rec.type === "prose_edit" ? "Prose" : "Profile"}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.label}</span>
                         {rec.accepted === true && <span style={{ fontSize: 9, color: "var(--pw-accent)", fontWeight: 700 }}>Applied</span>}
                         {rec.accepted === false && <span style={{ fontSize: 9, color: "var(--pw-text-dim)", fontWeight: 600 }}>Dismissed</span>}
@@ -16720,14 +16777,27 @@ function NovelWorkspacePage() {
                       {/* Reason */}
                       <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 6px", lineHeight: 1.4, fontStyle: "italic" }}>{rec.detail}</p>
                       {/* Current vs new */}
-                      {rec.currentValue && (
-                        <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginBottom: 4, opacity: 0.6 }}>
-                          <strong>Current:</strong> {rec.currentValue.slice(0, 80)}{rec.currentValue.length > 80 ? "…" : ""}
+                      {rec.type === "prose_edit" && rec.currentValue ? (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 10, color: "#ef4444", marginBottom: 3, padding: "4px 8px", borderRadius: 6, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.1)", lineHeight: 1.4, textDecoration: "line-through" }}>
+                            {rec.currentValue.slice(0, 200)}{rec.currentValue.length > 200 ? "…" : ""}
+                          </div>
+                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(163,230,53,0.04)", border: "1px solid rgba(163,230,53,0.15)", lineHeight: 1.4, color: "var(--pw-text)" }}>
+                            {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          {rec.currentValue && (
+                            <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginBottom: 4, opacity: 0.6 }}>
+                              <strong>Current:</strong> {rec.currentValue.slice(0, 80)}{rec.currentValue.length > 80 ? "…" : ""}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", lineHeight: 1.4, marginBottom: 6 }}>
+                            {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
+                          </div>
+                        </>
                       )}
-                      <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border-light)", lineHeight: 1.4, marginBottom: 6 }}>
-                        {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
-                      </div>
                       {/* Actions */}
                       {rec.accepted === null && (
                         <div style={{ display: "flex", gap: 6 }}>
