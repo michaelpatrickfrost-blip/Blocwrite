@@ -4720,13 +4720,23 @@ function NovelWorkspacePage() {
     const { previousChapterSynopsis, nextChapterSynopsis } = getAdjacentChapterSynopses(targetChapterId);
     const storyPosition = getChapterStoryPosition(targetChapterId);
 
-    const precedingProse = blocks.slice(0, blockIndex).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+    const precedingBlocs = blocks.slice(0, blockIndex);
+    const precedingProse = precedingBlocs.map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
     const followingProse = blocks.slice(blockIndex + 1).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+
+    const prevBlocSummary = precedingBlocs.length > 0
+      ? precedingBlocs.map((b, i) => {
+          const synopsis = b.synopsis?.trim() || "(no synopsis)";
+          const lastLines = b.prose?.trim().slice(-300) || "";
+          return `Scene ${i + 1} synopsis: ${synopsis}\n  Ends with: "${lastLines}"`;
+        }).join("\n")
+      : "";
+
     const prevChapterEnding = (() => {
-      if (precedingProse) return precedingProse.slice(-500);
+      if (precedingProse) return precedingProse.slice(-800);
       const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
       const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
-      return prev?.content?.trim().slice(-500) || "";
+      return prev?.content?.trim().slice(-600) || "";
     })();
 
     setStoryAiBusyAction(`block-prose-${blockIndex}`);
@@ -4827,7 +4837,9 @@ function NovelWorkspacePage() {
         "ALL SCENE BLOCKS (for context — write ONLY the indicated scene):",
         sceneContext,
         "",
-        prevChapterEnding ? `PROSE BEFORE THIS SCENE (your scene MUST continue seamlessly from this — match the tone, rhythm, and flow):\n"""${prevChapterEnding.slice(-600)}"""` : "",
+        prevBlocSummary ? `WHAT HAPPENED IN PREVIOUS SCENES (read carefully — you MUST continue from where these left off):\n${prevBlocSummary}` : "",
+        "",
+        prevChapterEnding ? `PROSE IMMEDIATELY BEFORE YOUR SCENE (continue seamlessly from here — match tone, rhythm, flow, and CHARACTER POSITIONS):\n"""${prevChapterEnding.slice(-800)}"""` : "",
         followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
         previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
@@ -4838,6 +4850,8 @@ function NovelWorkspacePage() {
         "",
         "RULES:",
         `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
+        "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. If a character is at school, they cannot also be at home. Track where every character IS at the end of the previous scene and continue from THAT state.",
+        "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
         "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
         "- If there is prose after your scene, your ending must flow naturally into it.",
         isNF ? "- Non-fiction: write with authenticity, sensory memory, and emotional truth." : "- Maintain character and canon consistency throughout.",
