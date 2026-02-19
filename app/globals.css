@@ -419,6 +419,10 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .pw-list > button,
@@ -516,11 +520,12 @@ a { color: inherit; text-decoration: none; }
 .pw-workspace-main {
   grid-column: 2 / 3;
   position: relative;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--pw-surface);
   animation: pw-content-in 0.15s ease-out both;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Pills ── */
@@ -544,12 +549,14 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Editor area ── */
 .pw-editor-area {
-  padding: var(--pw-space-6) var(--pw-space-6) var(--pw-space-8);
+  padding: var(--pw-space-6) var(--pw-space-6) 120px;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
   min-height: 0;
+  flex: 1;
   background: var(--pw-surface);
+  scrollbar-width: thin;
 }
 
 .pw-editor-card {
@@ -2869,7 +2876,7 @@ a { color: inherit; text-decoration: none; }
    ═══════════════════════════════════════ */
 
 .pw-overview {
-  padding: 32px 40px 80px;
+  padding: 32px 40px 120px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -2877,6 +2884,7 @@ a { color: inherit; text-decoration: none; }
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  flex: 1;
   scrollbar-width: thin;
 }
 
