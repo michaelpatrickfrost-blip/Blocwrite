@@ -4652,6 +4652,57 @@ function NovelWorkspacePage() {
     updateChapter(chapterId, { content: combined });
   }
 
+  function syncBlocksFromChapterContent(chapterId: string, blocks: SceneBlock[]) {
+    const ch = novel?.chapters.find((c) => c.id === chapterId);
+    if (!ch) return;
+    const content = (ch.content ?? "").trim();
+    if (!content) return;
+
+    const blocksWithProse = blocks.filter((b) => (b.prose?.trim() || "").length > 0);
+    if (blocksWithProse.length === 0) {
+      const updated = [...blocks];
+      if (updated.length > 0) {
+        updated[0] = { ...updated[0], prose: content };
+        updateSceneBlocks(chapterId, updated);
+      }
+      return;
+    }
+
+    // Try to match each block's original prose in the edited content
+    const updated = [...blocks];
+    let remaining = content;
+    for (let i = 0; i < updated.length; i++) {
+      const origProse = updated[i].prose?.trim() || "";
+      if (!origProse) continue;
+
+      const idx = remaining.indexOf(origProse);
+      if (idx !== -1) {
+        // Content before this block's prose belongs to the previous block that had prose
+        updated[i] = { ...updated[i], prose: origProse };
+        remaining = remaining.slice(idx + origProse.length).replace(/^\n+/, "");
+      } else {
+        // Original prose was edited — split remaining content proportionally
+        const remainingBlocks = updated.slice(i).filter((b) => (b.prose?.trim() || "").length > 0).length;
+        if (remainingBlocks <= 1) {
+          updated[i] = { ...updated[i], prose: remaining.trim() };
+          remaining = "";
+        } else {
+          const paragraphs = remaining.split(/\n\n+/);
+          const perBlock = Math.max(1, Math.ceil(paragraphs.length / remainingBlocks));
+          updated[i] = { ...updated[i], prose: paragraphs.slice(0, perBlock).join("\n\n").trim() };
+          remaining = paragraphs.slice(perBlock).join("\n\n").trim();
+        }
+      }
+    }
+    // Any leftover content goes to the last block
+    if (remaining.trim()) {
+      const lastIdx = updated.length - 1;
+      const existing = updated[lastIdx].prose?.trim() || "";
+      updated[lastIdx] = { ...updated[lastIdx], prose: existing ? `${existing}\n\n${remaining.trim()}` : remaining.trim() };
+    }
+    updateSceneBlocks(chapterId, updated);
+  }
+
   async function runGenerateBlockProse(blockIndex: number) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
@@ -10513,7 +10564,22 @@ function NovelWorkspacePage() {
                           <input
                             type="checkbox"
                             checked={!hideBlocks}
-                            onChange={() => setHideBlocks((v) => !v)}
+                            onChange={() => {
+                              if (!activeChapter) return;
+                              const willHide = !hideBlocks;
+                              if (willHide) {
+                                const blks = getSceneBlocks(activeChapter);
+                                if (blks.length > 0) {
+                                  syncChapterContentFromBlocks(activeChapter.id, blks);
+                                }
+                              } else {
+                                const blks = getSceneBlocks(activeChapter);
+                                if (blks.length > 0) {
+                                  syncBlocksFromChapterContent(activeChapter.id, blks);
+                                }
+                              }
+                              setHideBlocks(willHide);
+                            }}
                           />
                           <span className="pw-settings-toggle-track" />
                         </label>
