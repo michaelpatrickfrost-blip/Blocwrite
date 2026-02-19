@@ -4721,23 +4721,28 @@ function NovelWorkspacePage() {
     const storyPosition = getChapterStoryPosition(targetChapterId);
 
     const precedingBlocs = blocks.slice(0, blockIndex);
-    const precedingProse = precedingBlocs.map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
     const followingProse = blocks.slice(blockIndex + 1).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
 
-    const prevBlocSummary = precedingBlocs.length > 0
-      ? precedingBlocs.map((b, i) => {
+    const immediatePrevBloc = blockIndex > 0 ? blocks[blockIndex - 1] : null;
+    const immediatePrevProse = immediatePrevBloc?.prose?.trim() || "";
+    const earlierBlocs = blockIndex > 1 ? blocks.slice(0, blockIndex - 1) : [];
+
+    const earlierBlocContext = earlierBlocs.length > 0
+      ? earlierBlocs.map((b, i) => {
           const synopsis = b.synopsis?.trim() || "(no synopsis)";
           const prose = b.prose?.trim() || "";
-          const lastLines = prose.slice(-600);
-          return `Scene ${i + 1} synopsis: ${synopsis}${lastLines ? `\n  Scene ${i + 1} ending prose: "${lastLines}"` : ""}`;
+          const ending = prose.slice(-400);
+          return `Scene ${i + 1}: ${synopsis}${ending ? `\n  Ending: "${ending}"` : ""}`;
         }).join("\n\n")
       : "";
 
     const prevChapterEnding = (() => {
-      if (precedingProse) return precedingProse.slice(-1500);
-      const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
-      const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
-      return prev?.content?.trim().slice(-800) || "";
+      if (blockIndex === 0) {
+        const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
+        const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
+        return prev?.content?.trim().slice(-800) || "";
+      }
+      return "";
     })();
 
     setStoryAiBusyAction(`block-prose-${blockIndex}`);
@@ -4838,9 +4843,14 @@ function NovelWorkspacePage() {
         "ALL SCENE BLOCKS (for context — write ONLY the indicated scene):",
         sceneContext,
         "",
-        prevBlocSummary ? `WHAT HAPPENED IN PREVIOUS SCENES (read carefully — you MUST continue from where these left off):\n${prevBlocSummary}` : "",
+        earlierBlocContext ? `EARLIER SCENES IN THIS CHAPTER (for narrative awareness):\n${earlierBlocContext}` : "",
         "",
-        prevChapterEnding ? `PROSE IMMEDIATELY BEFORE YOUR SCENE (continue seamlessly from here — match tone, rhythm, flow, and CHARACTER POSITIONS):\n"""${prevChapterEnding.slice(-1500)}"""` : "",
+        immediatePrevProse
+          ? `THE SCENE IMMEDIATELY BEFORE YOURS — FULL PROSE (this is what the reader just read — your scene MUST continue seamlessly from the END of this text. Track where characters ARE and what just happened):\n"""\n${immediatePrevProse.slice(0, 5000)}\n"""`
+          : prevChapterEnding
+            ? `PROSE FROM END OF PREVIOUS CHAPTER (your scene continues from here):\n"""${prevChapterEnding}"""`
+            : "",
+        immediatePrevBloc?.synopsis ? `\nPrevious scene synopsis: ${immediatePrevBloc.synopsis}` : "",
         followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
         previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
