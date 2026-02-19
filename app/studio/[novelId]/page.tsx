@@ -8113,25 +8113,32 @@ function NovelWorkspacePage() {
     const synopsis = planCh?.synopsis?.trim() || activeChapter.subtitle?.trim() || "";
     const lower = baseContent.toLowerCase();
 
-    // Characters appearing in this chapter
-    const charsInChapter = (novel.storyBible.characters ?? [])
-      .filter((c) => c.name && lower.includes(c.name.toLowerCase()));
+    // Characters: combine plan-tagged + text-mentioned (no false positives for tagged chars)
+    const planCharIds = new Set(planCh?.characterIds ?? []);
+    const allChars = novel.storyBible.characters ?? [];
+    const charsInChapter = allChars.filter((c) =>
+      (c.name && lower.includes(c.name.toLowerCase())) || planCharIds.has(c.id)
+    );
     const charNames = charsInChapter.map((c) => c.name);
     const charDetails = charsInChapter
       .map((c) => {
         const parts = [`${c.name} (${c.role || ""})`];
+        if (planCharIds.has(c.id)) parts.push("[tagged to this chapter]");
         if (c.logline) parts.push(c.logline.slice(0, 80));
         if (c.speakingStyle) parts.push(`Speech: ${c.speakingStyle.slice(0, 60)}`);
         if (c.accent) parts.push(`Accent: ${c.accent.slice(0, 40)}`);
         return parts.join(" — ");
       }).join("\n  ");
 
-    // Locations appearing in this chapter
-    const locsInChapter = (novel.storyBible.locations ?? [])
-      .filter((l) => l.name && lower.includes(l.name.toLowerCase()));
+    // Locations: combine plan-tagged + text-mentioned
+    const planLocIds = new Set(planCh?.locationIds ?? []);
+    const allLocs = novel.storyBible.locations ?? [];
+    const locsInChapter = allLocs.filter((l) =>
+      (l.name && lower.includes(l.name.toLowerCase())) || planLocIds.has(l.id)
+    );
     const locNames = locsInChapter.map((l) => l.name);
     const locDetails = locsInChapter
-      .map((l) => `${l.name}: ${(l.description || "").slice(0, 80)}`)
+      .map((l) => `${l.name}${planLocIds.has(l.id) ? " [tagged to this chapter]" : ""}: ${(l.description || "").slice(0, 80)}`)
       .join("\n  ");
 
     // Adjacent chapter context — crucial for continuity checks
@@ -8302,16 +8309,23 @@ function NovelWorkspacePage() {
           ctx.brief,
           "",
           "Your job is to catch REAL continuity and consistency errors — things a reader would notice.",
-          "Focus on:",
-          "1. CHARACTER PLACEMENT — Is a character in two places at once? Does someone appear who shouldn't be there? Does someone vanish mid-scene?",
-          "2. LOCATION TRANSITIONS — Does the setting change without a transition? Are characters suddenly somewhere new?",
-          "3. CHARACTER BEHAVIOUR — Does anyone act wildly out of character based on their personality/role?",
-          "4. TIMELINE — Do events happen in the wrong order? Time jumps without explanation?",
-          "5. NAMES & REFERENCES — Wrong names, pronoun confusion, characters referred to differently without reason?",
-          "6. CONTINUITY WITH ADJACENT CHAPTERS — Does this chapter's opening match how the previous chapter ended? Any contradictions?",
-          "7. POV BREAKS — Does the narration slip out of the established POV?",
           "",
-          "CRITICAL: Only flag genuine issues. Do NOT flag stylistic choices. Be specific — quote the exact problematic text.",
+          "IMPORTANT — DO NOT flag these as issues:",
+          "- Characters marked [tagged to this chapter] BELONG here. Do NOT question their presence.",
+          "- A character appearing in prose who is tagged to this chapter is CORRECT, even if they aren't in the synopsis text.",
+          "- Stylistic choices, prose quality, or writing preferences are NOT continuity issues.",
+          "- Minor details that don't affect the reader's understanding.",
+          "",
+          "ONLY flag these genuine problems:",
+          "1. CONTRADICTIONS — A character does something impossible given what happened earlier (e.g. uses a broken hand, is in two places at once).",
+          "2. TIMELINE ERRORS — Events happen in the wrong order, impossible time gaps, day becomes night without transition.",
+          "3. DISAPPEARING/APPEARING — A character vanishes mid-scene without leaving, or appears without arriving.",
+          "4. NAME CONFUSION — Wrong name used for a character, pronoun referring to the wrong person.",
+          "5. LOCATION BREAKS — Setting changes without any transition or movement.",
+          "6. POV SLIPS — Narration breaks out of the established POV to reveal another character's inner thoughts.",
+          "7. ADJACENT CHAPTER CLASHES — Does this chapter's opening contradict how the previous chapter ended?",
+          "",
+          "Be VERY selective. Only flag issues a careful reader would genuinely notice. Quality over quantity.",
         ].join("\n");
 
         const allIssues: EditorialIssue[] = [];
@@ -8626,6 +8640,9 @@ function NovelWorkspacePage() {
     const sysMsg = [
       config.system,
       "",
+      "IMPORTANT: Characters and locations listed as 'tagged to this chapter' or 'expected to appear' BELONG in this chapter. Do NOT flag their presence as an issue.",
+      "Only flag GENUINE contradictions, impossibilities, or breaks that a reader would notice.",
+      "",
       "CANON CONTEXT:",
       context.canonSummary,
       "",
@@ -8641,6 +8658,7 @@ function NovelWorkspacePage() {
       `{"issues":[{"severity":"high|medium|low","quote":"exact quote from text","issue":"clear description","suggestion":"specific actionable fix"}]}`,
       "Max 5 issues. Evidence-based only — quote the problematic text. If none: {\"issues\":[]}",
       "high = reader will definitely notice. medium = attentive reader catches. low = minor but worth noting.",
+      "Do NOT flag characters who are tagged to this chapter. Do NOT flag stylistic choices or prose quality.",
       "",
       "CURRENT CHAPTER PROSE:",
       context.chapterProse.slice(0, 6000),
@@ -13001,6 +13019,9 @@ function NovelWorkspacePage() {
           const bpMatch = bpChapters.find((pc) => pc.manuscriptChapterId === activeChapter.id);
           const tkCharIds = bpMatch?.characterIds ?? [];
           const tkLocIds = bpMatch?.locationIds ?? [];
+          const tkSynopsis = bpMatch?.synopsis ?? "";
+          const tkBlocSynopses = (activeChapter.sceneBlocks ?? [])
+            .map((b) => b.synopsis?.trim()).filter((s): s is string => !!s);
           const chProse = extractProseFromContent(activeChapter.content);
           return (
             <TheEditor
@@ -13079,6 +13100,8 @@ function NovelWorkspacePage() {
               currentChapterIndex={chIdx >= 0 ? chIdx : 0}
               planCharacterIds={tkCharIds}
               planLocationIds={tkLocIds}
+              chapterSynopsis={tkSynopsis}
+              blocSynopses={tkBlocSynopses}
               onThreadKeeperAiCheck={runThreadKeeperAiCheck}
             />
           );

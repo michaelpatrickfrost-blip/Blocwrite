@@ -226,32 +226,58 @@ export function runObjectPropChecks(items: Item[], chapterProse: string, allChap
   return issues;
 }
 
-export function runCharacterPresenceChecks(characters: Character[], chapterProse: string, planCharacterIds: string[]): ThreadKeeperIssue[] {
+export function runCharacterPresenceChecks(
+  characters: Character[],
+  chapterProse: string,
+  planCharacterIds: string[],
+  chapterSynopsis?: string,
+  blocSynopses?: string[],
+): ThreadKeeperIssue[] {
   const issues: ThreadKeeperIssue[] = [];
   const lower = chapterProse.toLowerCase();
+
+  const allSynopsisText = [
+    chapterSynopsis ?? "",
+    ...(blocSynopses ?? []),
+  ].join(" ").toLowerCase();
+
+  const nameInText = (name: string, text: string): boolean => {
+    const lo = name.toLowerCase();
+    if (text.includes(lo)) return true;
+    const parts = lo.split(/\s+/);
+    if (parts.length > 1 && (text.includes(parts[0]) || text.includes(parts[parts.length - 1]))) return true;
+    return false;
+  };
+
   for (const char of characters) {
     if (!char.name) continue;
-    const inProse = lower.includes(char.name.toLowerCase());
+    const inProse = nameInText(char.name, lower);
     const inPlan = planCharacterIds.includes(char.id);
-    if (inProse && !inPlan && planCharacterIds.length > 0) {
+    const inSynopsis = nameInText(char.name, allSynopsisText);
+
+    if (inProse && !inPlan && !inSynopsis && planCharacterIds.length > 0) {
       issues.push({
         severity: "low", category: "character-presence", categoryLabel: "Character Presence",
-        issue: `${char.name} is mentioned in the prose but is not listed in the chapter plan.`,
-        suggestion: `Either add ${char.name} to the chapter plan, or verify they should appear here.`,
+        issue: `${char.name} appears in the prose but isn't tagged to this chapter or mentioned in synopses.`,
+        suggestion: `If ${char.name} belongs here, tag them to the chapter. Otherwise check if they should appear.`,
         characterName: char.name, accepted: null,
       });
     }
   }
+
   for (const charId of planCharacterIds) {
     const char = characters.find((c) => c.id === charId);
     if (!char || !char.name) continue;
-    if (!lower.includes(char.name.toLowerCase())) {
-      issues.push({
-        severity: "low", category: "character-presence", categoryLabel: "Character Presence",
-        issue: `${char.name} is listed in the chapter plan but never mentioned in the prose.`,
-        suggestion: `Include ${char.name} in the scene, or remove them from the plan.`,
-        characterName: char.name, accepted: null,
-      });
+    if (!nameInText(char.name, lower)) {
+      const inSynopsis = nameInText(char.name, allSynopsisText);
+      if (inSynopsis) {
+        issues.push({
+          severity: "low", category: "character-presence", categoryLabel: "Character Presence",
+          issue: `${char.name} is tagged to this chapter and in the synopsis but hasn't appeared in the prose yet.`,
+          suggestion: `This character may appear later as you write, or you can remove them from the plan if their role changed.`,
+          characterName: char.name, accepted: null,
+        });
+      }
     }
   }
   return issues;
@@ -269,6 +295,8 @@ type ThreadKeeperProps = {
   currentChapterIndex: number;
   planCharacterIds: string[];
   planLocationIds: string[];
+  chapterSynopsis?: string;
+  blocSynopses?: string[];
   onRunAiCheck: (
     categoryId: ThreadKeeperCategoryId,
     context: { chapterProse: string; prevChapterProse: string; nextChapterProse: string; canonSummary: string },
@@ -281,6 +309,7 @@ type ThreadKeeperProps = {
 export function ThreadKeeper({
   chapterProse, chapterTitle, chapterNumber, totalChapters,
   storyBible, allChapters, currentChapterIndex, planCharacterIds,
+  chapterSynopsis, blocSynopses,
   onRunAiCheck, wordCount,
 }: ThreadKeeperProps) {
   const [issues, setIssues] = useState<ThreadKeeperIssue[]>([]);
@@ -322,22 +351,45 @@ export function ThreadKeeper({
     const summary = storyBible.summary;
     if (summary.premise) parts.push(`Premise: ${summary.premise.slice(0, 200)}`);
     if (summary.genre?.length) parts.push(`Genre: ${summary.genre.join(", ")}`);
-    for (const char of characters.slice(0, 8)) {
-      const d: string[] = [`${char.name} (${char.role})`];
-      if (char.appearance) d.push(`Appearance: ${char.appearance.slice(0, 100)}`);
-      if (char.personality) d.push(`Personality: ${char.personality.slice(0, 80)}`);
-      if (char.speakingStyle) d.push(`Speech: ${char.speakingStyle.slice(0, 60)}`);
-      if (char.secrets) d.push(`Secret: ${char.secrets.slice(0, 80)}`);
-      if (char.goals) d.push(`Goals: ${char.goals.slice(0, 60)}`);
-      if (char.relationships?.length) {
-        const rels = char.relationships.slice(0, 3).map((r) => {
-          const target = characters.find((c) => c.id === r.targetCharacterId);
-          return target ? `${target.name}: ${r.type || r.description || "linked"}` : null;
-        }).filter(Boolean);
-        if (rels.length) d.push(`Relationships: ${rels.join("; ")}`);
-      }
-      parts.push(d.join(" | "));
+
+    if (chapterSynopsis) parts.push(`\nCHAPTER ${chapterNumber} SYNOPSIS: ${chapterSynopsis.slice(0, 300)}`);
+    if (blocSynopses?.length) {
+      parts.push(`SCENE BLOCS IN THIS CHAPTER:\n${blocSynopses.map((s, i) => `  Bloc ${i + 1}: ${s.slice(0, 150)}`).join("\n")}`);
     }
+
+    const taggedCharSet = new Set(planCharacterIds);
+    const taggedChars = characters.filter((c) => taggedCharSet.has(c.id));
+    const otherChars = characters.filter((c) => !taggedCharSet.has(c.id)).slice(0, 4);
+
+    if (taggedChars.length > 0) {
+      parts.push(`\nCHARACTERS TAGGED TO THIS CHAPTER (expected to appear):`);
+      for (const char of taggedChars) {
+        const d: string[] = [`  ${char.name} (${char.role})`];
+        if (char.appearance) d.push(`Appearance: ${char.appearance.slice(0, 80)}`);
+        if (char.personality) d.push(`Personality: ${char.personality.slice(0, 60)}`);
+        if (char.speakingStyle) d.push(`Speech: ${char.speakingStyle.slice(0, 50)}`);
+        if (char.secrets) d.push(`Secret: ${char.secrets.slice(0, 60)}`);
+        if (char.goals) d.push(`Goals: ${char.goals.slice(0, 50)}`);
+        if (char.relationships?.length) {
+          const rels = char.relationships.slice(0, 3).map((r) => {
+            const target = characters.find((c) => c.id === r.targetCharacterId);
+            return target ? `${target.name}: ${r.type || r.description || "linked"}` : null;
+          }).filter(Boolean);
+          if (rels.length) d.push(`Relationships: ${rels.join("; ")}`);
+        }
+        parts.push(d.join(" | "));
+      }
+    }
+    if (otherChars.length > 0) {
+      parts.push(`\nOTHER CANON CHARACTERS (for reference):`);
+      for (const char of otherChars) {
+        const d: string[] = [`  ${char.name} (${char.role})`];
+        if (char.personality) d.push(`Personality: ${char.personality.slice(0, 60)}`);
+        if (char.secrets) d.push(`Secret: ${char.secrets.slice(0, 60)}`);
+        parts.push(d.join(" | "));
+      }
+    }
+
     for (const loc of (storyBible.locations ?? []).slice(0, 4)) {
       parts.push(`Location "${loc.name}": ${(loc.description || "").slice(0, 80)}`);
     }
@@ -361,7 +413,7 @@ export function ThreadKeeper({
     if (cat.layer === 1) {
       if (catId === "canon-traits") newIssues = runCanonTraitChecks(characters, chapterProse);
       else if (catId === "object-props") newIssues = runObjectPropChecks(items, chapterProse, allChapters, currentChapterIndex);
-      else if (catId === "character-presence") newIssues = runCharacterPresenceChecks(characters, chapterProse, planCharacterIds);
+      else if (catId === "character-presence") newIssues = runCharacterPresenceChecks(characters, chapterProse, planCharacterIds, chapterSynopsis, blocSynopses);
     } else {
       try {
         newIssues = await onRunAiCheck(catId, { chapterProse, prevChapterProse: prevProse, nextChapterProse: nextProse, canonSummary: buildCanonSummary() });

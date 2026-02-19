@@ -187,6 +187,8 @@ type TheEditorProps = {
   currentChapterIndex: number;
   planCharacterIds: string[];
   planLocationIds: string[];
+  chapterSynopsis?: string;
+  blocSynopses?: string[];
   onThreadKeeperAiCheck: (
     categoryId: ThreadKeeperCategoryId,
     context: {
@@ -223,6 +225,8 @@ export function TheEditor({
   currentChapterIndex,
   planCharacterIds,
   planLocationIds,
+  chapterSynopsis,
+  blocSynopses,
   onThreadKeeperAiCheck,
 }: TheEditorProps) {
   const loading = !!loadingPhase;
@@ -403,6 +407,8 @@ export function TheEditor({
               currentChapterIndex={currentChapterIndex}
               planCharacterIds={planCharacterIds}
               planLocationIds={planLocationIds}
+              chapterSynopsis={chapterSynopsis}
+              blocSynopses={blocSynopses}
               onRunAiCheck={onThreadKeeperAiCheck}
               wordCount={wordCount}
             />
