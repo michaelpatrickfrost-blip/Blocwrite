@@ -15487,6 +15487,91 @@ function NovelWorkspacePage() {
                       ))}
                     </div>
 
+                    {/* Checkpoint banner */}
+                    {(() => {
+                      const ckIdx = nfData?.interviewCheckpointIdx ?? 0;
+                      const transcriptNow = nfData?.interviewTranscript ?? [];
+                      const userMsgsSinceCheckpoint = transcriptNow.slice(ckIdx).filter(m => m.role === "user").length;
+                      if (userMsgsSinceCheckpoint < 8) return null;
+                      return (
+                        <div style={{
+                          padding: "10px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 10,
+                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                        }}>
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 550, color: "var(--pw-text)" }}>
+                            You&apos;ve shared a lot — save to Canon so nothing gets lost?
+                          </span>
+                          <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                            onClick={async () => {
+                              if (!novel || storyAiBusyAction) return;
+                              setStoryAiBusyAction("nf-extract");
+                              setStoryAiError(null);
+                              try {
+                                const ck = nfData?.interviewCheckpointIdx ?? 0;
+                                const newMsgs = (nfData?.interviewTranscript ?? []).slice(ck);
+                                const transcript = newMsgs.map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
+                                const prompt = [
+                                  "Extract structured memoir data from this interview transcript. Return JSON with:",
+                                  '{ "lifeEvents": [{ "title": "...", "date": "...", "description": "...", "emotion": "...", "impact": "...", "people": ["..."], "places": ["..."] }],',
+                                  '  "characters": [{ "name": "...", "role": "...", "description": "..." }],',
+                                  '  "locations": [{ "name": "...", "description": "..." }],',
+                                  '  "themes": ["theme1", "theme2"] }',
+                                  "",
+                                  `Transcript:\n${transcript.slice(0, 8000)}`,
+                                ].join("\n");
+                                const data = await requestOpenRouterJson<{
+                                  lifeEvents?: Array<{ title: string; date?: string; description?: string; emotion?: string; impact?: string; people?: string[]; places?: string[] }>;
+                                  characters?: Array<{ name: string; role?: string; description?: string }>;
+                                  locations?: Array<{ name: string; description?: string }>;
+                                  themes?: string[];
+                                }>(prompt, 3000, { systemMessage: "You are a memoir data extraction assistant. Extract all named people, places, events, and themes from the transcript. Return valid JSON only." });
+                                mutateNovel((n) => {
+                                  const nf = { ...n.storyBible.nonfiction! };
+                                  if (Array.isArray(data.lifeEvents)) {
+                                    const newEvts: LifeEvent[] = data.lifeEvents.map((e, i) => ({
+                                      id: createEntityId("le"), title: String(e.title || ""), date: String(e.date || ""),
+                                      description: String(e.description || ""), emotion: String(e.emotion || ""),
+                                      impact: String(e.impact || ""), people: Array.isArray(e.people) ? e.people.map(String) : [],
+                                      places: Array.isArray(e.places) ? e.places.map(String) : [],
+                                      sortOrder: (nf.lifeEvents?.length ?? 0) + i,
+                                    }));
+                                    nf.lifeEvents = [...(nf.lifeEvents ?? []), ...newEvts];
+                                  }
+                                  nf.interviewCheckpointIdx = (nf.interviewTranscript ?? []).length;
+                                  nf.extractedAt = new Date().toISOString();
+                                  const chars = [...(n.storyBible.characters ?? [])];
+                                  if (Array.isArray(data.characters)) {
+                                    for (const c of data.characters) {
+                                      if (!c.name || chars.some(ec => ec.name.toLowerCase() === c.name.toLowerCase())) continue;
+                                      chars.push({ id: createEntityId("char"), name: c.name, role: "Supporting" as const, logline: c.description || "", appearance: "", personality: "", goals: "", fears: "", backstory: "", relationships: [] });
+                                    }
+                                  }
+                                  const locs = [...(n.storyBible.locations ?? [])];
+                                  if (Array.isArray(data.locations)) {
+                                    for (const l of data.locations) {
+                                      if (!l.name || locs.some(el => el.name.toLowerCase() === l.name.toLowerCase())) continue;
+                                      locs.push({ id: createEntityId("loc"), name: l.name, description: l.description || "" });
+                                    }
+                                  }
+                                  const summary = { ...n.storyBible.summary };
+                                  if (Array.isArray(data.themes)) summary.themes = [...new Set([...(summary.themes ?? []), ...data.themes])];
+                                  return { ...n, storyBible: { ...n.storyBible, nonfiction: nf, characters: chars, locations: locs, summary } };
+                                });
+                                saveNow();
+                              } catch (err: unknown) {
+                                if (err instanceof Error && err.name === "AbortError") { /* cancelled */ } else {
+                                  setStoryAiError(err instanceof Error ? err.message : "Extraction failed");
+                                }
+                              } finally { setStoryAiBusyAction(null); }
+                            }}
+                          >
+                            {storyAiBusyAction === "nf-extract" ? "Saving..." : "Save & Continue"}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
                     <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: "1px solid var(--pw-border-light)" }}>
                       {(nfData?.interviewTranscript ?? []).length === 0 && !aiOff && (
                         <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
@@ -15527,7 +15612,8 @@ function NovelWorkspacePage() {
                           if (aiOff) return;
                           setStoryAiBusyAction("nf-interview");
                           try {
-                            const recent = transcript.slice(-10).map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
+                            const ckIdx = nfData?.interviewCheckpointIdx ?? 0;
+                            const recent = transcript.slice(ckIdx).slice(-14).map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
                             const ctx = [
                               nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "",
                               nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",

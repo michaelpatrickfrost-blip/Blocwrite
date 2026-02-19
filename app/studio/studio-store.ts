@@ -272,6 +272,7 @@ export type NonfictionData = {
   lifeEvents: LifeEvent[];
   interviewTranscript: Array<{ role: "ai" | "user"; text: string }>;
   interviewPhase: string;
+  interviewCheckpointIdx: number;
   extractedAt: string;
 };
 
@@ -941,6 +942,7 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             (m) => typeof m.role === "string" && typeof m.text === "string"
           ).map((m) => ({ role: m.role as "ai" | "user", text: m.text as string })) : [],
           interviewPhase: typeof nf.interviewPhase === "string" ? nf.interviewPhase : "big-picture",
+          interviewCheckpointIdx: typeof nf.interviewCheckpointIdx === "number" ? nf.interviewCheckpointIdx : 0,
           extractedAt: typeof nf.extractedAt === "string" ? nf.extractedAt : "",
         };
       })(),
@@ -1350,6 +1352,7 @@ export function createNovel(title: string, coverImage: string | null = null, nov
           lifeEvents: [],
           interviewTranscript: [],
           interviewPhase: "big-picture",
+          interviewCheckpointIdx: 0,
           extractedAt: "",
         },
       } : {}),
