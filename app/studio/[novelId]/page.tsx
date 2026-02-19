@@ -7584,39 +7584,93 @@ function NovelWorkspacePage() {
     setEditorApplyCount(0);
 
     try {
-      const charSummaries = novel.storyBible.characters.slice(0, 8).map((c) =>
-        `${c.name} (${c.role}): ${c.logline || "No description"}`
-      ).join("\n");
+      const charSummaries = novel.storyBible.characters.slice(0, 8).map((c) => {
+        const parts = [`${c.name} (${c.role})`];
+        if (c.speakingStyle) parts.push(`Voice: ${c.speakingStyle.slice(0, 60)}`);
+        if (c.personality) parts.push(`Personality: ${c.personality.slice(0, 60)}`);
+        return parts.join(" — ");
+      }).join("\n");
 
-      // Process chapters in batches of 3 to get detailed edits
+      const sv = novel.storyBible.styleVoice;
+      const styleContext = [
+        sv?.pov ? `POV: ${sv.pov}` : "",
+        sv?.tense ? `Tense: ${sv.tense}` : "",
+        sv?.comps?.length ? `Comparable authors/style: ${sv.comps.slice(0, 5).join(", ")}` : "",
+        sv?.voiceRules ? `Voice rules: ${sv.voiceRules.slice(0, 400)}` : "",
+        sv?.bannedWords?.length ? `Banned words/phrases: ${sv.bannedWords.slice(0, 10).join(", ")}` : "",
+      ].filter(Boolean).join("\n");
+
+      const hs = novel.healthScore;
+      const bpChapters = novel.storyBible.bookPlan?.chapters ?? [];
+      const genreStr = novel.storyBible.summary?.genre?.join(", ") || "general fiction";
+
       const allEdits: OverviewEdit[] = [];
 
-      for (let batchStart = 0; batchStart < chapters.length; batchStart += 3) {
-        const batch = chapters.slice(batchStart, batchStart + 3);
+      for (let batchStart = 0; batchStart < chapters.length; batchStart += 2) {
+        const batch = chapters.slice(batchStart, batchStart + 2);
         const chapterContent = batch.map((ch) => {
           const chapterNum = novel.chapters.findIndex((c) => c.id === ch.id) + 1;
           const prose = extractProseFromContent(ch.content ?? "").slice(0, 6000);
-          return `--- Chapter ${chapterNum}: "${ch.title || `Chapter ${chapterNum}`}" ---\n${prose}`;
+          const planCh = bpChapters.find((pc) => pc.manuscriptChapterId === ch.id);
+          const synopsis = planCh?.synopsis ? `Synopsis: ${planCh.synopsis.slice(0, 200)}` : "";
+
+          const healthBd = hs?.chapterBreakdowns?.[chapterNum - 1];
+          let healthHint = "";
+          if (healthBd) {
+            const weak: string[] = [];
+            if (healthBd.pacing <= 5) weak.push(`pacing (${healthBd.pacing}/10)`);
+            if (healthBd.dialogue <= 5) weak.push(`dialogue (${healthBd.dialogue}/10)`);
+            if (healthBd.clarity <= 5) weak.push(`clarity (${healthBd.clarity}/10)`);
+            if (healthBd.engagement <= 5) weak.push(`engagement (${healthBd.engagement}/10)`);
+            if (weak.length) healthHint = `WEAK AREAS: ${weak.join(", ")}`;
+            if (healthBd.tips?.length) healthHint += `\nHealth tips: ${healthBd.tips.join("; ")}`;
+          }
+
+          return [
+            `--- Chapter ${chapterNum}: "${ch.title || `Chapter ${chapterNum}`}" ---`,
+            synopsis,
+            healthHint,
+            prose,
+          ].filter(Boolean).join("\n");
         }).join("\n\n");
 
-        setEditorApplyProgress(`Reading chapters ${batchStart + 1}–${Math.min(batchStart + 3, chapters.length)}...`);
+        setEditorApplyProgress(`Editing chapters ${batchStart + 1}–${Math.min(batchStart + 2, chapters.length)} of ${chapters.length}...`);
+
+        const overallHealthHint = hs ? [
+          `\nMANUSCRIPT HEALTH SCORES: Pacing ${hs.pacing}/10, Dialogue ${hs.dialogue}/10, Clarity ${hs.clarity}/10, Engagement ${hs.engagement}/10 (Overall ${hs.overall}/10).`,
+          hs.tips?.length ? `Key issues: ${hs.tips.join("; ")}` : "",
+          "PRIORITISE edits that address the lowest-scoring areas. A chapter scoring 4/10 on dialogue needs more attention than one scoring 8/10.",
+        ].filter(Boolean).join("\n") : "";
 
         const systemPrompt = [
-          "You are a sharp, experienced book editor. Your job is to find specific sentences or passages that could be improved and show exactly how you'd rewrite them.",
-          "For each edit you suggest, provide the EXACT original text from the manuscript and your improved version.",
-          "Focus on: unclear sentences, weak prose, clichés, telling-not-showing, awkward phrasing, redundancy, flat dialogue, and inconsistencies.",
-          "Do NOT suggest structural changes. Focus on line-level prose improvements.",
-          "Each original must be a VERBATIM quote from the text (enough words to uniquely identify it — usually a full sentence or clause).",
+          `You are a world-class developmental and line editor working on a ${genreStr} novel.`,
+          "You combine the eye of a publishing house editor with deep genre expertise.",
+          "Your edits must make each passage NOTICEABLY better — not just shuffle words.",
+          "",
+          "EDIT PRIORITIES (in order):",
+          "1. TELLING vs SHOWING — Replace emotional labels with action, body language, sensory detail",
+          "2. WEAK DIALOGUE — Flat, expository, or unnatural speech. Make it sound like real people",
+          "3. CLICHÉS & AI PATTERNS — Em dashes, 'a sense of', 'couldn't help but', 'the weight of'",
+          "4. PACING — Overly long descriptions that slow momentum, or rushed scenes that need breathing room",
+          "5. REDUNDANCY — Saying the same thing twice, stating what's already implied",
+          "6. VAGUE PROSE — Abstract descriptions that could be concrete and specific",
+          "7. VOICE DRIFT — Passages that break from the established style/tone",
+          "",
+          "Each original must be a VERBATIM quote from the text (a full sentence or clause).",
+          "The revised version must be the same length or shorter. Never pad.",
+          "Do NOT suggest structural changes, scene reordering, or plot changes.",
           "Return ONLY valid JSON.",
-        ].join(" ");
+        ].join("\n");
 
         const userPrompt = [
-          `Novel: "${novel.title}". Genre: ${novel.storyBible.genre || "general fiction"}.`,
-          `Characters:\n${charSummaries || "None defined"}`,
+          `Novel: "${novel.title}". Genre: ${genreStr}.`,
+          styleContext ? `\nSTYLE RULES (follow these closely):\n${styleContext}` : "",
+          `\nCharacters:\n${charSummaries || "None defined"}`,
+          overallHealthHint,
           `\nManuscript:\n${chapterContent}`,
-          `\nReturn JSON: { "edits": [ { "chapter": <chapter number>, "reason": "<brief reason — 1 sentence, e.g. 'This tells instead of shows'>, "original": "<exact quote from text>", "revised": "<your improved version>" } ] }`,
-          `Find 6-15 edits per chapter. Be specific. The original MUST be an exact quote. The revised version should be noticeably better — don't just move words around.`,
-        ].join("\n");
+          `\nReturn JSON: { "edits": [ { "chapter": <chapter number>, "category": "<one of: show-dont-tell|dialogue|cliché|pacing|redundancy|vague|voice-drift|clarity>", "reason": "<brief reason — 1 sentence>", "original": "<exact verbatim quote>", "revised": "<your improved version>" } ] }`,
+          `Find 8-15 edits per chapter. Focus heavily on the WEAK AREAS listed for each chapter. The original MUST be an exact quote that exists in the text.`,
+        ].filter(Boolean).join("\n");
 
         try {
           const result = await requestOpenRouterJson(userPrompt, 6000, { systemMessage: systemPrompt });
@@ -7633,11 +7687,17 @@ function NovelWorkspacePage() {
               // Verify the original text actually exists in the chapter
               const chContent = chapter.content ?? "";
               if (!chContent.includes(orig)) continue;
+              const cat = String(edit.category || "").trim();
+              const catLabel = cat === "show-dont-tell" ? "Show don't tell"
+                : cat === "dialogue" ? "Dialogue" : cat === "cliché" ? "Cliché"
+                : cat === "pacing" ? "Pacing" : cat === "redundancy" ? "Redundancy"
+                : cat === "vague" ? "Vague prose" : cat === "voice-drift" ? "Voice drift"
+                : cat === "clarity" ? "Clarity" : "";
               allEdits.push({
                 id: `edit-${Date.now()}-${allEdits.length}`,
                 chapter: chNum,
                 chapterTitle: chapter.title || `Chapter ${chNum}`,
-                reason: String(edit.reason || "Improves prose").slice(0, 200),
+                reason: (catLabel ? `[${catLabel}] ` : "") + String(edit.reason || "Improves prose").slice(0, 200),
                 original: orig.slice(0, 500),
                 revised: rev.slice(0, 500),
                 status: "pending",
@@ -7649,12 +7709,12 @@ function NovelWorkspacePage() {
         }
       }
 
-      // Build a summary
       const summaryParts: string[] = [];
       if (allEdits.length > 0) {
         const chaptersCovered = new Set(allEdits.map((e) => e.chapter)).size;
-        summaryParts.push(`Found ${allEdits.length} suggested edit${allEdits.length !== 1 ? "s" : ""} across ${chaptersCovered} chapter${chaptersCovered !== 1 ? "s" : ""}.`);
-        summaryParts.push(`Review each change below — accept the ones that improve your writing, dismiss the rest.`);
+        summaryParts.push(`Found ${allEdits.length} edit${allEdits.length !== 1 ? "s" : ""} across ${chaptersCovered} chapter${chaptersCovered !== 1 ? "s" : ""}.`);
+        if (hs) summaryParts.push(`Targeted your weakest areas (health score: ${hs.overall}/10).`);
+        summaryParts.push(`Review each change — accept the ones that improve your writing.`);
       } else {
         summaryParts.push("No specific edits suggested. Your prose is in good shape.");
       }
@@ -13261,14 +13321,25 @@ function NovelWorkspacePage() {
               <div style={{ flex: 1, overflow: "auto", padding: "16px 24px 24px" }}>
                 {/* Empty state */}
                 {editorFindings.length === 0 && !nccBusy && !editorApplyDone && (
-                  <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                  <div style={{ textAlign: "center", padding: "40px 20px" }}>
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.25 }}>
                       <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                     <p style={{ fontWeight: 700, fontSize: 14, margin: "0 0 4px" }}>Ready to edit your manuscript</p>
-                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, maxWidth: 340, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-                      Scans every chapter and suggests specific rewrites — showing you exactly what to change and why.
+                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, maxWidth: 380, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
+                      Scans every chapter for weak prose, clichés, pacing issues, flat dialogue, and inconsistencies — then suggests specific rewrites with before and after.
                     </p>
+                    {novel.healthScore ? (
+                      <div style={{ marginTop: 16, padding: "10px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>Health data found — edits will target your weakest areas</span>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 16, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600 }}>Run Manuscript Health first for smarter, targeted edits</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
