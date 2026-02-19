@@ -14923,6 +14923,72 @@ function NovelWorkspacePage() {
                         {storyAiBusyAction === "style-author" ? "Analyzing..." : "Generate Style"}
                       </button>
                     </div>
+                    {isNF && (nfData?.interviewTranscript ?? []).filter(m => m.role === "user").length >= 3 && (
+                      <div style={{ marginTop: 8, marginBottom: 4 }}>
+                        <button
+                          type="button"
+                          className="pw-ai-mini-btn"
+                          disabled={storyAiBusyAction !== null}
+                          onClick={async () => {
+                            if (storyAiBusyAction || !novel) return;
+                            setStoryAiBusyAction("style-interview");
+                            setStoryAiError(null);
+                            try {
+                              const userMsgs = (nfData?.interviewTranscript ?? [])
+                                .filter(m => m.role === "user")
+                                .map(m => m.text);
+                              const sample = userMsgs.slice(0, 20).join("\n\n---\n\n").slice(0, 6000);
+                              const ctx = [
+                                novel.storyBible.summary.genre?.length ? `Genre: ${novel.storyBible.summary.genre.join(", ")}` : "",
+                                novel.storyBible.summary.tone?.length ? `Tone: ${novel.storyBible.summary.tone.join(", ")}` : "",
+                                nfData?.subtype ? `Type: ${nfData.subtype}` : "",
+                              ].filter(Boolean).join(". ");
+                              const prompt = [
+                                "Analyse these writing samples from an author's life interview. These are their natural, unedited words.",
+                                "Extract their authentic writing voice and style patterns. Return JSON:",
+                                '{ "voiceRules": "practical style rules capturing their natural voice (max 800 chars) — sentence length preferences, vocabulary level, emotional tone, storytelling patterns, use of detail, dialogue style, rhythm. Describe HOW they write, not WHAT they write about.",',
+                                '  "toneTags": ["tone1","tone2","tone3"],',
+                                '  "styleComparables": ["style descriptor 1", "style descriptor 2"] }',
+                                "",
+                                "Focus on: Do they use short punchy sentences or long flowing ones? Are they blunt or poetic? Do they use humour? Are they detail-oriented or big-picture? Formal or colloquial? Emotionally restrained or raw?",
+                                "NEVER mention any author/person names in output.",
+                                ctx ? `\nBook context: ${ctx}` : "",
+                                `\nAuthor writing samples:\n${sample}`,
+                              ].join("\n");
+                              const data = await requestOpenRouterJson<{
+                                voiceRules?: string;
+                                toneTags?: string[];
+                                styleComparables?: string[];
+                              }>(prompt, 500, { systemMessage: "You are a literary voice analyst. Study the writing samples and extract the author's natural voice patterns. Return valid JSON only. Never reference real author names." });
+                              const rawRules = typeof data.voiceRules === "string" ? data.voiceRules.trim() : "";
+                              const aiComps = Array.isArray(data.styleComparables) ? data.styleComparables.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+                              const aiTone = Array.isArray(data.toneTags) ? data.toneTags.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+                              const existingComps = novel.storyBible.styleVoice.comps ?? [];
+                              const mergedComps = [...new Set([...existingComps, ...aiComps])].slice(0, STORY_BIBLE_LIMITS.styleVoice.compCount);
+                              const existingTone = novel.storyBible.summary.tone ?? [];
+                              const mergedTone = [...new Set([...existingTone, ...aiTone])];
+                              updateStoryBible({
+                                styleVoice: {
+                                  ...novel.storyBible.styleVoice,
+                                  voiceRules: rawRules || novel.storyBible.styleVoice.voiceRules || "",
+                                  comps: mergedComps,
+                                },
+                                summary: { ...novel.storyBible.summary, tone: mergedTone },
+                              });
+                            } catch (err: unknown) {
+                              if (err instanceof Error && err.name === "AbortError") { /* */ } else {
+                                setStoryAiError(err instanceof Error ? err.message : "Voice analysis failed");
+                              }
+                            } finally { setStoryAiBusyAction(null); }
+                          }}
+                        >
+                          {storyAiBusyAction === "style-interview" ? "Analysing your voice..." : "Create from Life Interview"}
+                        </button>
+                        <p className="pw-field-help" style={{ marginTop: 4 }}>
+                          Analyses how you write in the Life Interview to capture your authentic voice and style.
+                        </p>
+                      </div>
+                    )}
                     <label>Voice rules</label>
                     <textarea
                       className="pw-bible-input"
