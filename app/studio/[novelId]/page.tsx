@@ -1835,7 +1835,7 @@ function NovelWorkspacePage() {
   }, [profileOpen]);
 
   // Load novels from server on mount — server is the single source of truth.
-  // No cross-user merge: we scope localStorage per user and always trust the server.
+  // Falls back to localStorage so recently created novels aren't missed.
   useEffect(() => {
     void (async () => {
       // Get user email to scope localStorage before loading anything
@@ -1848,11 +1848,26 @@ function NovelWorkspacePage() {
         }
       } catch { /* ignore */ }
 
-      // Server is the single source of truth
+      // Load from localStorage first so the novel is available immediately
+      // (prevents blank page when navigating to a just-created novel)
+      const localNovels = loadNovels();
+      if (localNovels.length > 0) {
+        setNovels(localNovels);
+      }
+
+      // Server is the single source of truth — merge in server data
       const serverNovels = await loadNovelsFromServer();
       if (serverNovels !== null && serverNovels.length > 0) {
-        setNovels(serverNovels);
-        saveNovels(serverNovels); // cache locally (user-scoped)
+        // Merge: prefer server data, but keep any local-only novels (just created)
+        const serverIds = new Set(serverNovels.map((n) => n.id));
+        const localOnly = localNovels.filter((n) => !serverIds.has(n.id));
+        const merged = [...localOnly, ...serverNovels];
+        setNovels(merged);
+        saveNovels(merged);
+        // If we found local-only novels, push them to server too
+        if (localOnly.length > 0) {
+          void saveNovelsToServer(merged);
+        }
       }
       // Also sync settings — restore AI config from server so it survives logout/login
       const serverSettings = await loadSettingsFromServer();
@@ -16829,6 +16844,8 @@ function NovelWorkspacePage() {
           setOpenRouterKey(settings.key);
           setOpenRouterModel(settings.model);
           setAssistantBaseUrl(settings.baseUrl);
+          // Sync to server so settings persist across sessions/devices
+          void saveSettingsToServer(gatherSettings());
         }}
         onAiToggle={(off) => setAiOff(off)}
         onLogout={async () => {

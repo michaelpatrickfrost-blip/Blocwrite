@@ -180,17 +180,18 @@ function StudioHomePage() {
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
   /** Navigate to a novel with a smooth exit transition + save */
-  const navigateToNovel = useCallback((novelId: string) => {
+  const navigateToNovel = useCallback(async (novelId: string) => {
     saveNovels(novels);
-    void saveNovelsToServer(novels);
     setNavigatingAway(true);
+    // Await server save so the novel is available when the target page loads
+    await saveNovelsToServer(novels);
     // Wait for exit animation (0.22s) to complete before navigating
     setTimeout(() => router.push(`/studio/${novelId}`), 240);
   }, [novels, router]);
 
   const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
 
-  function handleCreate(event: FormEvent<HTMLFormElement>) {
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!titleDraft.trim() || atNovelCap) return;
     const novel = createNovel(titleDraft, null, createTypeDraft);
@@ -201,8 +202,8 @@ function StudioHomePage() {
     setCreateTypeDraft("fiction");
     setHoveredNovelId(novel.id);
     setJustCreatedId(novel.id);
-    // Save to server in background so it's ready when they click in
-    void saveNovelsToServer(next);
+    // Save to server immediately so it's available when they click in
+    await saveNovelsToServer(next);
     // Clear the highlight after a moment
     setTimeout(() => setJustCreatedId(null), 2000);
   }
