@@ -3346,18 +3346,22 @@ function NovelWorkspacePage() {
           ? "- Pacing: fast. Start with a strong hook and keep momentum high while preserving clarity."
           : "- Pacing: balanced. Begin with grounded setup and tension-building before larger turns.";
     return [
-      "Using the Canon below, create a chapter-by-chapter INTERNAL drafting outline for this novel.",
-      "This outline is used by AI to generate blocs/prose, so be explicit about what happens in each chapter.",
+      "Using the Canon below, create a chapter-by-chapter INTERNAL drafting blueprint for this novel.",
+      "This blueprint is used by AI to generate scene blocks and prose, so be HIGHLY DETAILED about what happens in each chapter.",
       "Return JSON only in this exact shape:",
-      `{ "chapters": [{ "title": "string", "summary": "3-5 sentence concrete chapter plan" }] }`,
+      `{ "chapters": [{ "title": "string", "summary": "8-12 sentence detailed chapter blueprint" }] }`,
       "",
       "Rules:",
       `- Return exactly ${planTarget} chapters.`,
       "- Each chapter must advance the plot. No filler.",
       "- Titles must be unique.",
+      "- Summaries must be 8-12 sentences of DETAILED plot blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.",
+      "- Include: opening beat, middle development (transitional moments, emotional dynamics, character interactions), and closing beat for each chapter.",
+      "- Go beyond the synopsis — add the connective tissue between major plot points. Think of what a novelist needs to write the actual scenes.",
       "- Summaries must mention character names, locations, and key events by name so they can be cross-referenced.",
-      "- Do NOT write teaser blurbs. State concrete story actions and outcomes clearly.",
-      "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot. Keeping chapters grounded in a single place prevents the story feeling scattered.",
+      "- Do NOT write teaser blurbs. State concrete story actions, character reactions, and outcomes clearly.",
+      "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot.",
+      "- ANTI-REPETITION: Each chapter must cover DIFFERENT ground. No two chapters should feature the same type of scene (argument, chase, discovery) unless dramatically escalated.",
       pacingRule,
       "- Early chapters must not rush to major payoffs. Build progression naturally like a published novel.",
       "- Weave in worldbuilding/lore naturally — if the Canon has magic systems, cultures, technology, etc., integrate them into the chapter flow.",
@@ -3441,7 +3445,7 @@ function NovelWorkspacePage() {
       `Outline: ${outlineSlice}`,
       `Chapter ${chapterIndex + 1}: ${chapterTitle}`,
       chapterSummary ? `Brief: ${chapterSummary}` : "",
-      prevSummary ? `Previous chapter: ${clampPromptText(prevSummary, 150)}` : "",
+      prevSummary ? `Previous chapter: ${clampPromptText(prevSummary, 400)}` : "",
       nextTitle ? `Next: ${nextTitle}` : "This is the final chapter.",
       charLines ? `Characters:\n${charLines}` : "",
       locLines ? `Locations: ${locLines}` : "",
@@ -3702,13 +3706,16 @@ function NovelWorkspacePage() {
           : "- Pace this chapter with balanced progression: setup, development, and movement.";
     const arcGuidance = buildChapterArcGuidance(chapterIndex, totalChapters);
     return [
-      "Expand this chapter into an INTERNAL WRITER PLAN used to generate scene blocs and prose. Use Canon names exactly.",
+      "Expand this chapter into a DETAILED INTERNAL WRITER BLUEPRINT used to generate scene blocs and prose. Use Canon names exactly.",
       "This is NOT reader-facing copy. Do not write teaser blurbs or marketing language.",
-      `Return JSON: { "synopsis": "5-9 sentences with concrete events", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
-      "Synopsis must clearly state what happens, in order, so another AI can split it into blocs.",
-      "Include concrete beats: setup, goal, conflict/escalation, turning point, and chapter outcome.",
+      `Return JSON: { "synopsis": "8-12 sentences with concrete events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      "Synopsis must be a DETAILED blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.",
+      "Include: opening beat, middle development (transitional moments, character reactions, emotional shifts), and closing beat.",
+      "Go beyond the outline — add the connective tissue between major plot points that a prose writer needs.",
+      "Include concrete beats: setup, goal, conflict/escalation, turning point, character dynamics, and chapter outcome.",
       "The synopsis is an internal production note for AI, not reader copy.",
       "Use explicit nouns and actions, not vague language.",
+      "NEVER repeat scenes or emotional beats from adjacent chapters. Each chapter must cover genuinely NEW ground.",
       "Use one primary location for this chapter unless transition is absolutely story-critical.",
       "- Maintain continuity with previous and next chapters.",
       pacingRule,
@@ -3731,10 +3738,10 @@ function NovelWorkspacePage() {
     const locations = parseStringList(result?.locations);
     const events = parseStringList(result?.events);
     const sentenceCount = synopsis ? synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
-    const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up)\b/i.test(synopsis);
+    const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up|reveals|discovers|realizes|decides|confronts|shifts|changes|escalates)\b/i.test(synopsis);
     const ok =
-      synopsis.length >= 150 &&
-      sentenceCount >= 4 &&
+      synopsis.length >= 350 &&
+      sentenceCount >= 6 &&
       events.length >= 1 &&
       (characters.length >= 1 || locations.length >= 1) &&
       hasOutcomeCue;
@@ -4211,13 +4218,17 @@ function NovelWorkspacePage() {
   ) {
     const repairPrompt = [
       "Your previous chapter plan was too vague or incomplete for scene-block generation.",
-      "Rewrite it as a concrete INTERNAL drafting plan.",
-      `Return JSON: { "synopsis": "5-9 sentences with explicit events", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      "Rewrite it as a DETAILED INTERNAL drafting blueprint.",
+      `Return JSON: { "synopsis": "8-12 sentences with explicit events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
       "Requirements:",
-      "- clear sequence of what happens",
+      "- clear sequence of what happens from chapter opening to chapter close",
+      "- include middle beats: transitional moments, character reactions, emotional shifts",
       "- explicit conflict/escalation and chapter outcome",
+      "- name specific actions, dialogue topics, discoveries, and decisions",
+      "- go beyond the outline — add the connective tissue between major plot points",
       "- arrays must match synopsis mentions",
       "- one primary location unless absolutely necessary",
+      "- NEVER repeat scenes or beats from adjacent chapters",
       "",
       `Current draft JSON:\n${JSON.stringify(prior)}`,
       "",
@@ -4231,7 +4242,7 @@ function NovelWorkspacePage() {
       locations?: string[];
       events?: string[];
       lore?: string[];
-    }>(repairPrompt, 700, { timeoutMs: 240000, systemMessage: systemMsg });
+    }>(repairPrompt, 1500, { timeoutMs: 240000, systemMessage: systemMsg });
   }
 
   async function runConcurrent<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
@@ -6496,7 +6507,7 @@ function NovelWorkspacePage() {
     let planNewCharIds: string[] = [];
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
-      const systemMsg = "You are a PLOT outliner, not a prose writer. Write chapter plot summaries describing what HAPPENS — actions, consequences, changes. Never write prose scenes or dialogue. Think like a screenwriter's beat sheet. Respect all Canon. Return only valid JSON.";
+      const systemMsg = "You are a PLOT outliner and story architect, not a prose writer. Write DETAILED chapter blueprints describing what HAPPENS — actions, character reactions, emotional dynamics, consequences, and changes. Each chapter blueprint should read like a screenwriter's expanded beat sheet: opening beat, middle development, and closing beat. Include motivations, interpersonal dynamics, and cause-and-effect chains. Never write prose scenes or dialogue. Every chapter must cover NEW ground — never repeat the same scene type or emotional beat from a previous chapter. Respect all Canon. Return only valid JSON.";
       const context = buildPhase1OutlineContext();
       const pacingMode = novel.storyBible.bookPlan?.pacingMode ?? "balanced";
       const pacingHint =
@@ -6791,10 +6802,15 @@ function NovelWorkspacePage() {
       const genreGuidance = getGenreGuidance();
 
       const synopsisFormatGuide = [
-        "FORMAT: Write a PLOT SUMMARY, not prose. Describe what happens like a book outline.",
+        "FORMAT: Write a DETAILED CHAPTER BLUEPRINT, not prose. This is your working plan — the more detail, the better the prose generation will be.",
         "BAD example: 'John sits at his desk, staring out the window. Rain streaks down the glass as he picks up his pen.'",
-        "GOOD example: 'John discovers his wife has been hiding letters from his estranged brother. He confronts her, and she reveals the brother is dying. John decides to visit despite years of silence, but his wife refuses to go with him, deepening the rift in their marriage.'",
-        "Write like the GOOD example — plot events, decisions, consequences, and what CHANGES. Never narrate moment-by-moment scenes.",
+        "BAD example: 'John has a conversation with his wife about their problems. Things get tense. He decides to leave.'",
+        "GOOD example: 'John discovers his wife has been hiding letters from his estranged brother for over six months. He confronts her in the kitchen after finding one tucked inside a cookbook. She initially denies it, then breaks down and reveals the brother is dying of cancer and has been asking to reconcile. John is torn between years of resentment over the family business fallout and the urgency of his brother's condition. He decides to drive upstate to visit despite their history, but his wife refuses to accompany him, citing her own unresolved anger at how the brother treated their daughter. Their argument escalates into a deeper confrontation about loyalty and forgiveness, ending with John packing a bag in silence while his wife watches from the doorway. The chapter closes with John finding a photo of the two brothers as children tucked into the last letter, which shakes his resolve to stay angry.'",
+        "",
+        "Write like the GOOD example — layer in motivations, emotional dynamics, specific details, and cause-and-effect chains.",
+        "Include: WHO does WHAT, WHY they do it, HOW others react, and what CHANGES as a result.",
+        "Go beyond the synopsis outline — add middle beats, transitional moments, emotional turning points, and character dynamics that enrich the chapter.",
+        "Think of the synopsis as the skeleton. You are adding muscle and connective tissue. The prose writer needs enough detail to write compelling scenes without inventing plot.",
       ].join("\n");
 
       for (let index = 0; index < allTitles.length; index++) {
@@ -6805,7 +6821,7 @@ function NovelWorkspacePage() {
         const structuralBeat = getStructuralBeat(index, allTitles.length);
 
         const storySoFar = generatedSynopses.length > 0
-          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 400)}`).join("\n\n")
+          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 700)}`).join("\n\n")
           : "";
 
         const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
@@ -6816,7 +6832,7 @@ function NovelWorkspacePage() {
           : "";
 
         const whatChangedLast = prevSynopsis
-          ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-2).join(". "), 200)}`
+          ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-3).join(". "), 350)}`
           : "";
 
         const chapterPrompt = isNF ? [
@@ -6834,7 +6850,16 @@ function NovelWorkspacePage() {
           nfSubtype === "true-crime" ? "- True crime narrative: evidence, investigation, pursuit." : "",
           nfSubtype === "biography" ? "- Biography: defining moments and turning points." : "",
           nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
-          "- Write 4-6 sentences of PLOT: what happens, what decisions are made, what changes.",
+          "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, what decisions are made, what changes, what consequences follow.",
+          "- Go BEYOND the outline. Add middle beats — transitional moments, emotional dynamics, internal reflections, and interpersonal exchanges that make this chapter feel like a real chapter in a published book.",
+          "- Include: the opening moment, how the narrative develops through the middle, and the closing beat or transition.",
+          "- Be specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
+          "",
+          "ANTI-REPETITION RULES:",
+          "- NEVER repeat narrative beats from previous chapters. Each chapter must cover NEW ground.",
+          "- If a confrontation or revelation already happened, show the AFTERMATH or a NEW development.",
+          "- Each chapter MUST introduce at least one new element: new information, new complication, shifted perspective, or changed dynamic.",
+          "",
           "- ONE location only. Return a single place name string.",
           "- Only people who appear and act (2-4 typically).",
           "- Use existing Canon names. Never create duplicates.",
@@ -6858,11 +6883,21 @@ function NovelWorkspacePage() {
           structuralBeat,
           genreGuidance,
           "",
-          "- Write 4-6 sentences of PLOT: what happens, what decisions are made, what changes, what consequences follow.",
+          "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, who does what, what decisions are made, how characters react, what changes, and what consequences follow.",
+          "- Go BEYOND the outline. The synopsis is the skeleton — you must add the middle beats, transitional moments, emotional dynamics, and character interactions that make this chapter feel like a real chapter in a published novel.",
+          "- Include: opening beat (how the chapter starts), rising tension or development in the middle, and a clear chapter-ending beat.",
+          "- Name specific actions, dialogue topics, emotional shifts, and discoveries. Be concrete — 'Elena confronts Marcus about the forged documents and he deflects by revealing her father's involvement' NOT 'they argue about the past'.",
           "- Every sentence should advance the story. No scene-setting, no describing postures or weather.",
           "- State WHO does WHAT and what CHANGES as a result.",
           "- ONE location only. Return a single place name string.",
           "- Only characters who appear and act (2-4 typically). Proper names only.",
+          "",
+          "ANTI-REPETITION RULES (CRITICAL):",
+          "- NEVER repeat scenes, confrontations, or emotional beats from previous chapters. If a confrontation already happened, this chapter must show the AFTERMATH or a NEW conflict.",
+          "- Each chapter MUST introduce at least one NEW element: a new piece of information, a new complication, a shifted alliance, a revealed secret, or a changed dynamic.",
+          "- If the previous chapter ended with a revelation, this chapter must show characters ACTING on that revelation — not re-processing it.",
+          "- Check the ALREADY HAPPENED section carefully. If a scene type (argument, chase, meeting, discovery) appeared before, this chapter must use a DIFFERENT type or dramatically escalate the stakes.",
+          "",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
           pacingHint,
@@ -6871,7 +6906,7 @@ function NovelWorkspacePage() {
           `Chapter outline:\n${fullChapterList}`,
           nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter — resolve the central conflict.",
           `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
-          `\nCanon:\n${clampPromptText(context, 800)}`,
+          `\nCanon:\n${clampPromptText(context, 1200)}`,
         ].filter(Boolean).join("\n");
 
         let synopsis = "";
@@ -6880,7 +6915,7 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const raw = await requestOpenRouterText(chapterPrompt, 600, 180000, systemMsg, false, 0.6);
+          const raw = await requestOpenRouterText(chapterPrompt, 1500, 180000, systemMsg, false, 0.6);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -7157,19 +7192,21 @@ function NovelWorkspacePage() {
           chapterOutline,
           "",
           "RULES:",
-          "- Each synopsis MUST be detailed — at least 4-6 sentences per chapter.",
-          "- Include specific character actions, emotional beats, key plot developments, and scene-setting.",
+          "- Each synopsis MUST be a detailed blueprint — at least 8-12 sentences per chapter.",
+          "- Include specific character actions, emotional beats, key plot developments, character dynamics, and transitional moments.",
+          "- Go beyond the outline: add middle beats, character reactions, emotional shifts, and cause-and-effect chains.",
           "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
           "- Maintain or exceed the detail from the originals. Never shorten — expand and reshape.",
           "- Ensure continuity: each chapter leads naturally into the next.",
+          "- Each chapter must cover DIFFERENT ground — no two chapters should repeat the same scene type or emotional beat.",
           "- Every character must have a proper human name (First Last). NEVER use role labels like 'The Antagonist', 'The Bad Guy', 'The Killer'. Give every character a real name.",
           "- Also return the full list of character names mentioned across all synopses in this batch.",
           "",
           `Return JSON: { "synopses": [${batchSize} entries], "characters": ["First Last", ...] }`,
-          `Exactly ${batchSize} synopsis entries. Each must be a detailed paragraph.`,
+          `Exactly ${batchSize} synopsis entries. Each must be a rich, detailed blueprint paragraph.`,
         ].join("\n");
 
-        const tokenBudget = Math.max(2000, batchSize * 600);
+        const tokenBudget = Math.max(3000, batchSize * 1200);
         const result = await requestOpenRouterJson<{ synopses?: string[]; characters?: string[] }>(
           batchPrompt,
           tokenBudget,
@@ -7300,7 +7337,7 @@ function NovelWorkspacePage() {
       let result: Phase2Result | null = null;
         for (let attempt = 0; attempt < 4 && !result; attempt++) {
         try {
-          const raw = await requestOpenRouterText(prompt, 500, 240000, systemMsg, false, 0.25);
+          const raw = await requestOpenRouterText(prompt, 1500, 240000, systemMsg, false, 0.25);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
