@@ -916,6 +916,9 @@ function NovelWorkspacePage() {
   const [fbPreviewOriginal, setFbPreviewOriginal] = useState<string | null>(null);
   const [fbPreviewRevised, setFbPreviewRevised] = useState<string | null>(null);
   const [fbPreviewGenerating, setFbPreviewGenerating] = useState(false);
+  const [fbAiRecommendation, setFbAiRecommendation] = useState<string | null>(null);
+  const [fbAiRecommendationLoading, setFbAiRecommendationLoading] = useState(false);
+  const fbAiRecommendationGenRef = useRef<string | null>(null);
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
   const [editorLoadingPhase, setEditorLoadingPhase] = useState<string | null>(null);
@@ -1542,20 +1545,90 @@ function NovelWorkspacePage() {
     setPlanGeneratePacingMode("balanced");
   }, [novelId]);
 
-  // Fetch pending feedback count on mount / novelId change
+  // Fetch pending feedback count on mount / novelId change + poll every 60s
   useEffect(() => {
-    fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((data) => {
-      if (Array.isArray(data)) {
-        let count = 0;
-        for (const fb of data) {
-          for (const ch of fb.chapters ?? []) {
-            count += (ch.annotations ?? []).length;
+    const checkFeedback = () => {
+      fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((data) => {
+        if (Array.isArray(data)) {
+          let count = 0;
+          for (const fb of data) {
+            for (const ch of fb.chapters ?? []) {
+              count += (ch.annotations ?? []).length;
+            }
           }
+          setPendingFeedbackCount(count);
         }
-        setPendingFeedbackCount(count);
-      }
-    }).catch(() => {});
+      }).catch(() => {});
+    };
+    checkFeedback();
+    const interval = setInterval(checkFeedback, 60000);
+    return () => clearInterval(interval);
   }, [novelId]);
+
+  // Auto-generate AI recommendation when feedback review index changes
+  useEffect(() => {
+    if (!feedbackReviewMode || feedbackReviewDone) return;
+    const item = feedbackReviewQueue[feedbackReviewIdx];
+    if (!item) return;
+    const annKey = `${item.ann.id ?? ""}-${feedbackReviewIdx}`;
+    if (fbAiRecommendationGenRef.current === annKey) return;
+    fbAiRecommendationGenRef.current = annKey;
+    setFbAiRecommendation(null);
+    setFbAiRecommendationLoading(true);
+    setFbPreviewOriginal(null);
+    setFbPreviewRevised(null);
+    const recSysMsg = [
+      "You are a skilled prose editor reviewing beta reader feedback on a novel manuscript.",
+      "A reader highlighted a passage and left a comment. Your job:",
+      "1. Analyze the reader's feedback and explain in 1-2 sentences what the core issue is.",
+      "2. Provide a specific, actionable recommendation for how to improve the passage (2-3 sentences).",
+      "3. Then provide a revised version of the highlighted passage that addresses the feedback.",
+      "4. PRESERVE the author's voice, style, tone, and narrative perspective.",
+      "5. Keep the same tense, POV, and overall length.",
+      "Return your response in EXACTLY this format:",
+      "ISSUE: [1-2 sentence analysis of the problem]",
+      "RECOMMENDATION: [2-3 sentence specific advice]",
+      "REVISED TEXT: [the revised passage]",
+    ].join("\n");
+    const recUserPrompt = [
+      "HIGHLIGHTED PASSAGE:",
+      '"""',
+      item.ann.selectedText,
+      '"""',
+      "",
+      `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+      "",
+      "SURROUNDING CONTEXT (for tone/flow reference — do NOT modify):",
+      '"""',
+      item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+      "[HIGHLIGHTED PASSAGE]",
+      item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+      '"""',
+      "",
+      "Analyze the feedback, recommend a fix, and provide a revised version:",
+    ].join("\n");
+    requestOpenRouterText(recUserPrompt, 1500, 120000, recSysMsg, false).then((aiText) => {
+      if (fbAiRecommendationGenRef.current !== annKey) return;
+      const text = aiText.trim();
+      if (!text) { setFbAiRecommendationLoading(false); return; }
+      setFbAiRecommendation(text);
+      // Extract the revised text portion and auto-populate the preview
+      const revisedMatch = text.match(/REVISED\s*TEXT:\s*([\s\S]*?)$/i);
+      if (revisedMatch) {
+        let revised = revisedMatch[1].trim();
+        if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
+          revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
+        }
+        if (revised) {
+          setFbPreviewOriginal(item.ann.selectedText);
+          setFbPreviewRevised(revised);
+        }
+      }
+      setFbAiRecommendationLoading(false);
+    }).catch(() => {
+      if (fbAiRecommendationGenRef.current === annKey) setFbAiRecommendationLoading(false);
+    });
+  }, [feedbackReviewMode, feedbackReviewIdx, feedbackReviewDone, feedbackReviewQueue]);
 
   useEffect(() => {
     if (!activeChapterId || !novel) return;
@@ -10569,6 +10642,70 @@ function NovelWorkspacePage() {
                 {storyAiError}
               </div>
             )}
+            {pendingFeedbackCount > 0 && !showFeedbackPanel && (
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 16px", borderRadius: 10, cursor: "pointer",
+                  background: "linear-gradient(135deg, rgba(163,230,53,0.08) 0%, rgba(163,230,53,0.03) 100%)",
+                  border: "1px solid rgba(163,230,53,0.18)",
+                  animation: "pulse 3s infinite",
+                  transition: "all 0.2s ease",
+                }}
+                onClick={() => {
+                  if (!novel) return;
+                  setFeedbackLoading(true);
+                  setShowFeedbackPanel(true);
+                  setFeedbackReviewMode(false);
+                  setFeedbackReviewDone(false);
+                  setFeedbackReviewIdx(0);
+                  setFeedbackReviewAccepted(0);
+                  setFeedbackReviewRejected(0);
+                  setDismissedAnnotations(new Set());
+                  fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
+                    if (Array.isArray(d)) {
+                      setFeedbackData(d);
+                      const queue: typeof feedbackReviewQueue = [];
+                      for (const fb of d) {
+                        for (const ch of fb.chapters ?? []) {
+                          for (const ann of ch.annotations ?? []) {
+                            queue.push({
+                              fbId: fb.id, token: fb.token, readerName: fb.readerName,
+                              chapterId: ch.id, chapterTitle: ch.title, chapterContent: ch.content,
+                              ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
+                            });
+                          }
+                        }
+                      }
+                      setFeedbackReviewQueue(queue);
+                    }
+                  }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                }}
+                onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(163,230,53,0.35)"; }}
+                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(163,230,53,0.18)"; }}
+              >
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                  background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                  </svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", lineHeight: 1.3 }}>
+                    Reader Feedback Ready
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
+                    {pendingFeedbackCount} note{pendingFeedbackCount !== 1 ? "s" : ""} waiting for your review — click to start
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </div>
+            )}
           </div>
           {activeChapter ? (
             <div className="pw-editor-area">
@@ -12695,6 +12832,9 @@ function NovelWorkspacePage() {
                       setFbPreviewOriginal(null);
                       setFbPreviewRevised(null);
                       setFbPreviewGenerating(false);
+                      setFbAiRecommendation(null);
+                      setFbAiRecommendationLoading(false);
+                      fbAiRecommendationGenRef.current = null;
                       // Jump to the first feedback's chapter
                       const first = feedbackReviewQueue[0];
                       if (first && novel) {
@@ -12704,6 +12844,11 @@ function NovelWorkspacePage() {
                     }}>
                       Start Review ({feedbackReviewQueue.length} note{feedbackReviewQueue.length !== 1 ? "s" : ""})
                     </button>
+                    {aiOff && (
+                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", textAlign: "center", marginTop: 8 }}>
+                        AI is disabled — recommendations will not be generated. Enable AI in Settings to get fix suggestions.
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -12776,6 +12921,57 @@ function NovelWorkspacePage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* ─── AI Recommendation ─── */}
+                  {(fbAiRecommendationLoading || fbAiRecommendation) && (
+                    <div style={{ padding: "0 20px 6px" }}>
+                      <div style={{
+                        borderRadius: 12, padding: "14px 16px",
+                        border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #a3e635)", letterSpacing: "0.02em" }}>
+                            AI Recommendation
+                          </span>
+                          {fbAiRecommendationLoading && (
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          )}
+                        </div>
+                        {fbAiRecommendationLoading && !fbAiRecommendation && (
+                          <p style={{ fontSize: 13, color: "var(--pw-text-dim)", fontStyle: "italic", margin: 0 }}>Analyzing feedback and generating recommendation...</p>
+                        )}
+                        {fbAiRecommendation && (() => {
+                          const issueMatch = fbAiRecommendation.match(/ISSUE:\s*([\s\S]*?)(?=RECOMMENDATION:|REVISED\s*TEXT:|$)/i);
+                          const recMatch = fbAiRecommendation.match(/RECOMMENDATION:\s*([\s\S]*?)(?=REVISED\s*TEXT:|$)/i);
+                          const issue = issueMatch?.[1]?.trim();
+                          const rec = recMatch?.[1]?.trim();
+                          if (!issue && !rec) {
+                            return <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{fbAiRecommendation}</p>;
+                          }
+                          return (
+                            <div style={{ display: "grid", gap: 10 }}>
+                              {issue && (
+                                <div>
+                                  <p style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Issue</p>
+                                  <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{issue}</p>
+                                </div>
+                              )}
+                              {rec && (
+                                <div>
+                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-accent, #a3e635)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Suggestion</p>
+                                  <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{rec}</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
 
                   {/* ─── AI Preview Diff ─── */}
                   {fbPreviewOriginal !== null && fbPreviewRevised !== null && (
@@ -12859,6 +13055,9 @@ function NovelWorkspacePage() {
                         setFeedbackReviewRejected((c) => c + 1);
                         setFbPreviewOriginal(null);
                         setFbPreviewRevised(null);
+                        setFbAiRecommendation(null);
+                        setFbAiRecommendationLoading(false);
+                        fbAiRecommendationGenRef.current = null;
                         const nextIdx = feedbackReviewIdx + 1;
                         if (nextIdx >= feedbackReviewQueue.length) {
                           const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
@@ -13079,6 +13278,9 @@ function NovelWorkspacePage() {
                           // Clear preview and move to next
                           setFbPreviewOriginal(null);
                           setFbPreviewRevised(null);
+                          setFbAiRecommendation(null);
+                          setFbAiRecommendationLoading(false);
+                          fbAiRecommendationGenRef.current = null;
                           const nextIdx = feedbackReviewIdx + 1;
                           if (nextIdx >= feedbackReviewQueue.length) {
                             const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
@@ -13166,6 +13368,11 @@ function NovelWorkspacePage() {
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                           Accept Change
+                        </span>
+                      ) : fbAiRecommendationLoading ? (
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          AI Analyzing...
                         </span>
                       ) : "Generate AI Fix"}
                     </button>
