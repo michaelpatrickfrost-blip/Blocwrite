@@ -794,7 +794,7 @@ const PROOFREAD_CATEGORIES: ProofreadCategory[] = [
 const STORY_BIBLE_LIMITS = {
   summary: {
     premise: 1200,
-    synopsisShort: 3000,
+    synopsisShort: 8000,
     stakes: 1200,
     listItem: 48,
     listCount: 16,
@@ -3375,7 +3375,7 @@ function NovelWorkspacePage() {
       .join("; ");
     const contextParts = [
       `Title: ${novel.title || "Untitled"}`,
-      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, 500)}` : "",
+      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, 1500)}` : "",
       summary.genre.length ? `Genre: ${summary.genre.join(", ")}` : "",
       summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 150)}` : "",
       styleVoice.pov ? `POV: ${styleVoice.pov}${povName ? ` (${povName})` : ""}` : "",
@@ -3385,9 +3385,9 @@ function NovelWorkspacePage() {
       eventList ? `Events: ${eventList}` : "",
     ].filter(Boolean).join("\n");
 
-    // Cap at 5000 chars — titles don't need huge context
-    if (contextParts.length > 5000) {
-      return `${contextParts.slice(0, 4900).trimEnd()}\n[condensed]`;
+    // Cap at 7000 chars to allow richer synopsis detail
+    if (contextParts.length > 7000) {
+      return `${contextParts.slice(0, 6900).trimEnd()}\n[condensed]`;
     }
     return contextParts;
   }
@@ -3463,7 +3463,7 @@ function NovelWorkspacePage() {
 
     // Compact story header — genre/tone/stakes on one line each
     const storyLines = [
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 250)}` : "",
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 600)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
       summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 120)}` : "",
     ].filter(Boolean).join("\n");
@@ -3588,7 +3588,7 @@ function NovelWorkspacePage() {
 
     const parts = [
       `Novel: ${novel.title || "Untitled"}`,
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 200)}` : "",
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 500)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 5).join(", ")}` : "",
       summary.tone?.length ? `Tone: ${summary.tone.slice(0, 5).join(", ")}` : "",
       charList ? `Characters:\n  ${charList}` : "",
@@ -3680,7 +3680,7 @@ function NovelWorkspacePage() {
 
     const parts = [
       `Language: ${profileLangLabel} (spelling, grammar, punctuation)`,
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 150)}` : "",
+      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 400)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
       povLine,
       styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
@@ -6941,7 +6941,7 @@ function NovelWorkspacePage() {
           "",
           `Chapter outline:\n${fullChapterList}`,
           nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter.",
-          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
+          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 1500)}`,
           nfCtx ? `\nNon-fiction context:\n${clampPromptText(nfCtx, 800)}` : "",
           `\nCanon:\n${clampPromptText(context, 800)}`,
         ].filter(Boolean).join("\n") : [
@@ -6978,7 +6978,7 @@ function NovelWorkspacePage() {
           "",
           `Chapter outline:\n${fullChapterList}`,
           nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter — resolve the central conflict.",
-          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 500)}`,
+          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 1500)}`,
           `\nCanon:\n${clampPromptText(context, 1200)}`,
         ].filter(Boolean).join("\n");
 
@@ -11752,9 +11752,9 @@ function NovelWorkspacePage() {
                 <label className="pw-plan-modal-label">Master Synopsis</label>
                 <textarea
                   className="pw-bible-input"
-                  rows={3}
+                  rows={6}
                   value={novel.storyBible.summary.synopsisShort}
-                  placeholder="Write or paste your story synopsis here. This drives the AI plan generation."
+                  placeholder="Write or paste your full story synopsis here. The more detail you include — plot points, character arcs, conflicts, turning points — the better the AI plan generation will be."
                   onChange={(event) =>
                     updateStoryBible({
                       summary: { ...novel.storyBible.summary, synopsisShort: event.target.value },
@@ -13819,7 +13819,7 @@ function NovelWorkspacePage() {
                       </button>
                     </div>
                     <p className="pw-bible-section-note">
-                      Shape your book direction here: synopsis, themes, and core conflict.
+                      Shape your book direction here. The more you write in your synopsis, the better the AI generates — include plot points, character dynamics, key events, turning points, and resolution.
                     </p>
                     {!aiOff && (
                     <div className="pw-bible-autofill-row">
@@ -13872,10 +13872,10 @@ function NovelWorkspacePage() {
                     </div>
                     <textarea
                       className="pw-bible-input"
-                      rows={6}
+                      rows={12}
                       maxLength={STORY_BIBLE_LIMITS.summary.synopsisShort}
                       value={novel.storyBible.summary.synopsisShort}
-                      placeholder="Write the core synopsis of your story. This is the canon source the assistant should follow."
+                      placeholder="Write your full story synopsis here — the more detail you provide, the better the AI generation will be. Include major plot points, character arcs, key conflicts, turning points, and how the story resolves. This is the foundation for every chapter the AI generates."
                       onChange={(event) =>
                         updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisShort: event.target.value } })
                       }
