@@ -261,9 +261,38 @@ export type LifeEvent = {
 };
 
 export type NonfictionSubtype = "memoir" | "biography" | "true-crime" | "historical" | "investigative";
+export type NonfictionCategory = "biography" | "other";
+
+export type ScrapbookEntry = {
+  id: string;
+  title: string;
+  content: string;
+  linkedEventId: string;
+  createdAt: string;
+};
+
+export type ResearchNote = {
+  id: string;
+  title: string;
+  content: string;
+  source: string;
+  tags: string[];
+  createdAt: string;
+};
+
+export type StoryCard = {
+  id: string;
+  title: string;
+  summary: string;
+  sourceType: "event" | "scrapbook" | "research" | "manual";
+  sourceId: string;
+  chapterSlot: number;
+  sortOrder: number;
+};
 
 export type NonfictionData = {
   subtype: NonfictionSubtype;
+  nfCategory?: NonfictionCategory;
   subjectName: string;
   subjectRelation: string;
   era: string;
@@ -274,6 +303,12 @@ export type NonfictionData = {
   interviewPhase: string;
   interviewCheckpointIdx: number;
   extractedAt: string;
+  scrapbook: ScrapbookEntry[];
+  researchChat: Array<{ role: "ai" | "user"; text: string }>;
+  researchCheckpointIdx: number;
+  researchNotes: ResearchNote[];
+  researchExtractedAt: string;
+  storyCards: StoryCard[];
 };
 
 export type StoryBible = {
@@ -944,6 +979,36 @@ function normalizeStoryBible(raw: unknown): StoryBible {
           interviewPhase: typeof nf.interviewPhase === "string" ? nf.interviewPhase : "big-picture",
           interviewCheckpointIdx: typeof nf.interviewCheckpointIdx === "number" ? nf.interviewCheckpointIdx : 0,
           extractedAt: typeof nf.extractedAt === "string" ? nf.extractedAt : "",
+          nfCategory: (typeof nf.nfCategory === "string" && (nf.nfCategory === "biography" || nf.nfCategory === "other") ? nf.nfCategory : undefined) as NonfictionCategory | undefined,
+          scrapbook: Array.isArray(nf.scrapbook) ? (nf.scrapbook as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `sb-${i}`,
+            title: typeof e.title === "string" ? e.title : "",
+            content: typeof e.content === "string" ? e.content : "",
+            linkedEventId: typeof e.linkedEventId === "string" ? e.linkedEventId : "",
+            createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
+          })) : [],
+          researchChat: Array.isArray(nf.researchChat) ? (nf.researchChat as Array<Record<string, unknown>>).filter(
+            (m) => typeof m.role === "string" && typeof m.text === "string"
+          ).map((m) => ({ role: m.role as "ai" | "user", text: m.text as string })) : [],
+          researchCheckpointIdx: typeof nf.researchCheckpointIdx === "number" ? nf.researchCheckpointIdx : 0,
+          researchNotes: Array.isArray(nf.researchNotes) ? (nf.researchNotes as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `rn-${i}`,
+            title: typeof e.title === "string" ? e.title : "",
+            content: typeof e.content === "string" ? e.content : "",
+            source: typeof e.source === "string" ? e.source : "",
+            tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
+            createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
+          })) : [],
+          researchExtractedAt: typeof nf.researchExtractedAt === "string" ? nf.researchExtractedAt : "",
+          storyCards: Array.isArray(nf.storyCards) ? (nf.storyCards as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `sc-${i}`,
+            title: typeof e.title === "string" ? e.title : "",
+            summary: typeof e.summary === "string" ? e.summary : "",
+            sourceType: (typeof e.sourceType === "string" && ["event","scrapbook","research","manual"].includes(e.sourceType) ? e.sourceType : "manual") as StoryCard["sourceType"],
+            sourceId: typeof e.sourceId === "string" ? e.sourceId : "",
+            chapterSlot: typeof e.chapterSlot === "number" ? e.chapterSlot : -1,
+            sortOrder: typeof e.sortOrder === "number" ? e.sortOrder : i,
+          })) : [],
         };
       })(),
     } : {}),
@@ -1354,6 +1419,12 @@ export function createNovel(title: string, coverImage: string | null = null, nov
           interviewPhase: "big-picture",
           interviewCheckpointIdx: 0,
           extractedAt: "",
+          scrapbook: [],
+          researchChat: [],
+          researchCheckpointIdx: 0,
+          researchNotes: [],
+          researchExtractedAt: "",
+          storyCards: [],
         },
       } : {}),
       braindump: "",
