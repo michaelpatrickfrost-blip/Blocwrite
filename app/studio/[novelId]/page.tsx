@@ -15431,12 +15431,19 @@ function NovelWorkspacePage() {
                 {/* ═══════════════════ NON-FICTION: ABOUT ═══════════════════ */}
                 {bibleSection === "nf-about" && isNF && (
                   <div className="pw-bible-section">
-                    <h3>About This Story</h3>
-                    <p className="pw-field-help" style={{ marginBottom: 12 }}>What kind of non-fiction are you writing? This shapes how AI helps you.</p>
+                    <h3>{nfData?.nfCategory === "biography" ? "About This Life Story" : "About This Book"}</h3>
+                    <p className="pw-field-help" style={{ marginBottom: 12 }}>{nfData?.nfCategory === "biography" ? "Tell us about the life you\u2019re writing. This shapes how AI helps you capture memories and build your narrative." : "Tell us about your book. This shapes how AI helps you organise research and structure your narrative."}</p>
 
                     <label>Type of Non-Fiction</label>
                     <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid var(--pw-border)", marginBottom: 12 }}>
-                      {([
+                      {(nfData?.nfCategory === "biography" ? [
+                        { id: "memoir" as NonfictionSubtype, label: "Memoir", hint: "Your own life story" },
+                        { id: "biography" as NonfictionSubtype, label: "Biography", hint: "Someone else's life story" },
+                      ] : nfData?.nfCategory === "other" ? [
+                        { id: "true-crime" as NonfictionSubtype, label: "True Crime", hint: "Criminal cases & investigations" },
+                        { id: "historical" as NonfictionSubtype, label: "Historical", hint: "Events & eras" },
+                        { id: "investigative" as NonfictionSubtype, label: "Investigative", hint: "Deep-dive reporting" },
+                      ] : [
                         { id: "memoir" as NonfictionSubtype, label: "Memoir", hint: "Your own life story" },
                         { id: "biography" as NonfictionSubtype, label: "Biography", hint: "Someone else's story" },
                         { id: "true-crime" as NonfictionSubtype, label: "True Crime", hint: "Criminal cases & investigations" },
@@ -15455,61 +15462,76 @@ function NovelWorkspacePage() {
                       ))}
                     </div>
 
-                    <label>{(nfData?.subtype === "true-crime") ? "Case / Subject Name" : (nfData?.subtype === "historical") ? "Event / Subject Name" : "Subject Name"}</label>
+                    <label>{nfData?.nfCategory === "biography" ? "Subject Name" : nfData?.subtype === "true-crime" ? "Case / Subject Name" : nfData?.subtype === "historical" ? "Event / Subject Name" : "Subject Name"}</label>
                     <input className="pw-bible-input" maxLength={120}
                       placeholder={
-                        nfData?.subtype === "true-crime" ? "e.g. The Yorkshire Ripper Case" :
-                        nfData?.subtype === "historical" ? "e.g. The Battle of the Somme" :
-                        nfData?.subtype === "biography" ? "e.g. Marie Curie" :
-                        nfData?.subtype === "investigative" ? "e.g. The Theranos Scandal" :
-                        "e.g. John Smith"
+                        nfData?.nfCategory === "biography"
+                          ? (nfData?.subtype === "biography" ? "e.g. Marie Curie" : "e.g. John Smith (or leave blank for yourself)")
+                          : nfData?.subtype === "true-crime" ? "e.g. The Yorkshire Ripper Case"
+                          : nfData?.subtype === "historical" ? "e.g. The Battle of the Somme"
+                          : nfData?.subtype === "investigative" ? "e.g. The Theranos Scandal"
+                          : "e.g. The subject of your book"
                       }
                       value={nfData?.subjectName ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectName: e.target.value } } }))}
                     />
 
                     <label style={{ marginTop: 12 }}>
-                      {nfData?.subtype === "true-crime" ? "Author's Connection" :
-                       nfData?.subtype === "historical" ? "Author's Perspective" :
-                       "Relation to Subject"}
+                      {nfData?.nfCategory === "biography" ? "Relation to Subject" :
+                       nfData?.subtype === "true-crime" ? "Author\u2019s Connection" :
+                       nfData?.subtype === "historical" ? "Author\u2019s Perspective" :
+                       "Author\u2019s Role"}
                     </label>
                     <select className="pw-bible-input" value={nfData?.subjectRelation ?? "myself"}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, subjectRelation: e.target.value } } }))}
                     >
-                      <optgroup label="Personal">
-                        <option value="myself">Myself (Autobiography)</option>
-                        <option value="parent">Parent</option>
-                        <option value="grandparent">Grandparent</option>
-                        <option value="partner">Partner / Spouse</option>
-                        <option value="child">Son / Daughter</option>
-                        <option value="sibling">Sibling</option>
-                        <option value="friend">Friend</option>
-                        <option value="family-other">Other Family Member</option>
-                      </optgroup>
-                      <optgroup label="Professional / Research">
-                        <option value="journalist">Journalist / Reporter</option>
-                        <option value="researcher">Researcher / Historian</option>
-                        <option value="witness">Witness / Observer</option>
-                        <option value="investigator">Investigator</option>
-                        <option value="survivor">Survivor</option>
-                        <option value="victim-family">Victim's Family</option>
-                      </optgroup>
-                      <optgroup label="Subject Type">
-                        <option value="public-figure">Public Figure</option>
-                        <option value="historical-figure">Historical Figure</option>
-                        <option value="criminal">Criminal / Perpetrator</option>
-                        <option value="event">Historical Event</option>
-                        <option value="institution">Institution / Organisation</option>
-                        <option value="other">Other</option>
-                      </optgroup>
+                      {nfData?.nfCategory === "biography" ? (
+                        <>
+                          <optgroup label="Personal">
+                            <option value="myself">Myself (Autobiography)</option>
+                            <option value="parent">Parent</option>
+                            <option value="grandparent">Grandparent</option>
+                            <option value="partner">Partner / Spouse</option>
+                            <option value="child">Son / Daughter</option>
+                            <option value="sibling">Sibling</option>
+                            <option value="friend">Friend</option>
+                            <option value="family-other">Other Family Member</option>
+                          </optgroup>
+                          <optgroup label="Other">
+                            <option value="public-figure">Public Figure</option>
+                            <option value="historical-figure">Historical Figure</option>
+                            <option value="other">Other</option>
+                          </optgroup>
+                        </>
+                      ) : (
+                        <>
+                          <optgroup label="Author Role">
+                            <option value="journalist">Journalist / Reporter</option>
+                            <option value="researcher">Researcher / Historian</option>
+                            <option value="investigator">Investigator</option>
+                            <option value="witness">Witness / Observer</option>
+                            <option value="survivor">Survivor</option>
+                            <option value="victim-family">Victim\u2019s Family</option>
+                          </optgroup>
+                          <optgroup label="Subject Type">
+                            <option value="public-figure">Public Figure</option>
+                            <option value="historical-figure">Historical Figure</option>
+                            <option value="criminal">Criminal / Perpetrator</option>
+                            <option value="event">Historical Event</option>
+                            <option value="institution">Institution / Organisation</option>
+                            <option value="other">Other</option>
+                          </optgroup>
+                        </>
+                      )}
                     </select>
 
                     <label style={{ marginTop: 12 }}>Era / Time Period</label>
                     <input className="pw-bible-input" maxLength={200}
                       placeholder={
+                        nfData?.nfCategory === "biography" ? "e.g. 1960s–2020s, Post-war Britain" :
                         nfData?.subtype === "true-crime" ? "e.g. 1975–1981, with trial in 1982" :
                         nfData?.subtype === "historical" ? "e.g. July–November 1916" :
-                        "e.g. 1960s–2020s, Post-war Britain"
+                        "e.g. 2010–2023"
                       }
                       value={nfData?.era ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, era: e.target.value } } }))}
@@ -15518,9 +15540,10 @@ function NovelWorkspacePage() {
                     <label style={{ marginTop: 12 }}>Setting / Location</label>
                     <input className="pw-bible-input" maxLength={300}
                       placeholder={
+                        nfData?.nfCategory === "biography" ? "e.g. Manchester, then London, with time in Australia" :
                         nfData?.subtype === "true-crime" ? "e.g. Leeds, Bradford, and the West Yorkshire area" :
                         nfData?.subtype === "historical" ? "e.g. The Western Front, northern France" :
-                        "e.g. Manchester, then London, with time in Australia"
+                        "e.g. Silicon Valley, California"
                       }
                       value={nfData?.setting ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, setting: e.target.value } } }))}
@@ -15529,10 +15552,11 @@ function NovelWorkspacePage() {
                     <label style={{ marginTop: 12 }}>Central Theme</label>
                     <textarea className="pw-bible-input" rows={3} maxLength={600}
                       placeholder={
+                        nfData?.nfCategory === "biography" ? "What is the heart of this story? e.g. Overcoming adversity, a love story, finding identity, resilience through hardship..." :
                         nfData?.subtype === "true-crime" ? "e.g. How fear gripped a community, the investigation failures, the pursuit of justice..." :
                         nfData?.subtype === "historical" ? "e.g. The futility of war, sacrifice, the human cost of political decisions..." :
                         nfData?.subtype === "investigative" ? "e.g. How corporate greed endangered lives, the cover-up unravelled..." :
-                        "What is the heart of this story? e.g. Overcoming adversity, a love story, finding identity..."
+                        "What is the central argument or thesis of your book?"
                       }
                       value={nfData?.centralTheme ?? ""}
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, centralTheme: e.target.value } } }))}
@@ -15546,12 +15570,13 @@ function NovelWorkspacePage() {
                             setStoryAiBusyAction("nf-era-context");
                             setStoryAiError(null);
                             try {
+                              const bookTypeLabel = nfData?.nfCategory === "biography" ? (nfData?.subtype === "biography" ? "biography" : "memoir") : (nfData?.subtype || "non-fiction book");
                               const prompt = [
-                                `Generate historical and cultural context for a memoir set in: ${nfData?.era || ""}.`,
+                                `Generate historical and cultural context for a ${bookTypeLabel} set in: ${nfData?.era || ""}.`,
                                 nfData?.setting ? `Location: ${nfData.setting}` : "",
                                 "Return JSON: { \"culturalNotes\": \"3-5 sentences about daily life, culture, and social norms of that era\", \"historicalEvents\": \"key events happening in the world during this time\", \"technology\": \"what technology and communication looked like\", \"musicAndMedia\": \"popular culture, music, TV, films of the era\" }",
                               ].filter(Boolean).join("\n");
-                              const data = await requestOpenRouterJson<{ culturalNotes?: string; historicalEvents?: string; technology?: string; musicAndMedia?: string }>(prompt, 800, { systemMessage: "Era research assistant for memoir writers. Return valid JSON only." });
+                              const data = await requestOpenRouterJson<{ culturalNotes?: string; historicalEvents?: string; technology?: string; musicAndMedia?: string }>(prompt, 800, { systemMessage: "Era research assistant for non-fiction writers. Return valid JSON only." });
                               const lore = [...(novel.storyBible.lore ?? [])];
                               const entries: Array<{ key: string; val: string | undefined; cat: LoreEntry["category"] }> = [
                                 { key: "Cultural Context", val: data.culturalNotes, cat: "Culture" },
