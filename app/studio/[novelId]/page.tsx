@@ -161,6 +161,20 @@ const POV_OPTIONS = [
   { value: "second", label: "Second person (you)" },
   { value: "epistolary", label: "Epistolary / documents" },
 ];
+const POV_OPTIONS_BIO = [
+  { value: "first", label: "First person (I) — telling my own story" },
+  { value: "first-as-told", label: "First person, someone else's voice — as told to" },
+  { value: "third-intimate", label: "Third person intimate — close biographical lens" },
+  { value: "third-omniscient", label: "Third person omniscient — narrator with full context" },
+  { value: "mixed", label: "Mixed / shifting — different POVs across chapters" },
+];
+const POV_OPTIONS_NF = [
+  { value: "first", label: "First person (I) — author's perspective" },
+  { value: "third-reportorial", label: "Third person reportorial — objective reporting voice" },
+  { value: "third-omniscient", label: "Third person omniscient — all-knowing narrator" },
+  { value: "second", label: "Second person (you) — addressing the reader directly" },
+  { value: "mixed", label: "Mixed / shifting — different POVs across sections" },
+];
 const TENSE_OPTIONS = [
   { value: "past", label: "Past" },
   { value: "present", label: "Present" },
@@ -201,6 +215,30 @@ const GENRE_OPTIONS = [
   "Family Saga",
   "Satire",
   "Western",
+] as const;
+const GENRE_OPTIONS_BIO = [
+  "Memoir",
+  "Biography",
+  "Autobiography",
+  "Family History",
+  "Personal Essay Collection",
+  "Coming-of-Age Memoir",
+  "Travel Memoir",
+  "Spiritual Memoir",
+  "Celebrity Memoir",
+  "Military Memoir",
+] as const;
+const GENRE_OPTIONS_NF = [
+  "True Crime",
+  "Investigative Journalism",
+  "Historical Non-Fiction",
+  "Narrative Non-Fiction",
+  "Popular Science",
+  "Political",
+  "Social Commentary",
+  "Cultural Studies",
+  "War & Conflict",
+  "Environmental",
 ] as const;
 const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
 const PLAN_CHAPTER_MAX = 40;
@@ -15241,7 +15279,7 @@ function NovelWorkspacePage() {
                     </div>
                     <div className="pw-bible-grid-3">
                       <div>
-                        <label>POV</label>
+                        <label>{isNF ? "Narrative POV" : "POV"}</label>
                         <select
                           className="pw-bible-input"
                           value={novel.storyBible.styleVoice.pov ?? ""}
@@ -15251,13 +15289,14 @@ function NovelWorkspacePage() {
                             })
                           }
                         >
-                          <option value="">Select POV</option>
-                          {POV_OPTIONS.map((option) => (
+                          <option value="">{isNF ? "Select narrative POV" : "Select POV"}</option>
+                          {(isNF ? (nfData?.nfCategory === "biography" ? POV_OPTIONS_BIO : POV_OPTIONS_NF) : POV_OPTIONS).map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
                           ))}
                         </select>
+                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "How the life story is narrated" : "The perspective of the narrative"}</p>}
                       </div>
                       <div>
                         <label>Tense</label>
@@ -15277,9 +15316,10 @@ function NovelWorkspacePage() {
                             </option>
                           ))}
                         </select>
+                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "Most memoirs use past tense. Present creates immediacy for key scenes." : "Past for historical narrative. Present for investigative immediacy."}</p>}
                       </div>
                       <div>
-                        <label>Narrating character (optional)</label>
+                        <label>{isNF ? (nfData?.nfCategory === "biography" ? "Narrator / Voice" : "Author Perspective") : "Narrating character (optional)"}</label>
                         <select
                           className="pw-bible-input"
                           value={novel.storyBible.styleVoice.povCharacterId ?? ""}
@@ -15296,10 +15336,11 @@ function NovelWorkspacePage() {
                             </option>
                           ))}
                         </select>
+                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "Who tells this story?" : "Whose lens shapes the narrative?"}</p>}
                       </div>
                     </div>
                     <div className="pw-bible-field-head">
-                      <label>Genre &amp; Tone</label>
+                      <label>{isNF ? (nfData?.nfCategory === "biography" ? "Category & Tone" : "Genre & Tone") : "Genre & Tone"}</label>
                       {!aiOff && <div className="pw-bible-field-ai">
                         <select
                           className="pw-bible-input pw-bible-field-select"
@@ -15311,10 +15352,21 @@ function NovelWorkspacePage() {
                             }))
                           }
                         >
-                          <option value="classify">Classify from synopsis</option>
-                          <option value="refresh">Refresh alternatives</option>
-                          <option value="blend">Suggest genre blend</option>
-                          <option value="audience">Align for target audience</option>
+                          {isNF ? (
+                            <>
+                              <option value="classify">{nfData?.nfCategory === "biography" ? "Classify from life story" : "Classify from research"}</option>
+                              <option value="refresh">Refresh alternatives</option>
+                              <option value="blend">{nfData?.nfCategory === "biography" ? "Suggest memoir blend" : "Suggest category blend"}</option>
+                              <option value="audience">Align for target audience</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="classify">Classify from synopsis</option>
+                              <option value="refresh">Refresh alternatives</option>
+                              <option value="blend">Suggest genre blend</option>
+                              <option value="audience">Align for target audience</option>
+                            </>
+                          )}
                         </select>
                         <button
                           type="button"
@@ -15332,7 +15384,7 @@ function NovelWorkspacePage() {
                         value={summaryGenreDraft}
                         onChange={(event) => setSummaryGenreDraft(event.target.value)}
                       >
-                        {GENRE_OPTIONS.map((genreOption) => (
+                        {(isNF ? (nfData?.nfCategory === "biography" ? GENRE_OPTIONS_BIO : GENRE_OPTIONS_NF) : GENRE_OPTIONS).map((genreOption) => (
                           <option key={genreOption} value={genreOption}>
                             {genreOption}
                           </option>
@@ -15343,13 +15395,13 @@ function NovelWorkspacePage() {
                         className="pw-ai-mini-btn pw-bible-field-btn"
                         onClick={() => addSummaryGenre(summaryGenreDraft)}
                       >
-                        Add genre
+                        {isNF ? "Add category" : "Add genre"}
                       </button>
                       <input
                         className="pw-bible-input pw-bible-field-select"
                         value={summaryCustomGenreDraft}
                         maxLength={STORY_BIBLE_LIMITS.summary.listItem}
-                        placeholder="Custom genre"
+                        placeholder={isNF ? "Custom category" : "Custom genre"}
                         onChange={(event) => setSummaryCustomGenreDraft(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key !== "Enter") return;
@@ -15371,7 +15423,7 @@ function NovelWorkspacePage() {
                     </div>
                     <div className="pw-bible-tag-list">
                       {(novel.storyBible.summary.genre ?? []).length === 0 ? (
-                        <p className="pw-overview-empty">No genres selected yet.</p>
+                        <p className="pw-overview-empty">{isNF ? "No categories selected yet." : "No genres selected yet."}</p>
                       ) : (
                         novel.storyBible.summary.genre.map((genreTag) => (
                           <button
@@ -15390,6 +15442,7 @@ function NovelWorkspacePage() {
                     <input
                       className="pw-bible-input"
                       maxLength={SUMMARY_LIST_INPUT_MAX}
+                      placeholder={isNF ? (nfData?.nfCategory === "biography" ? "e.g. intimate, candid, nostalgic, unflinching, warm, bittersweet" : "e.g. authoritative, urgent, measured, revelatory, empathetic, gripping") : "e.g. dark, witty, suspenseful, atmospheric..."}
                       value={novel.storyBible.summary.tone.join(", ")}
                       onChange={(event) =>
                         updateStoryBible({
@@ -15405,13 +15458,17 @@ function NovelWorkspacePage() {
                     />
                     <label>Writing Style</label>
                     <p className="pw-field-help" style={{ marginBottom: 6, marginTop: 0 }}>
-                      Describe the writing style you want — AI will generate voice rules, tone, and style guidance from your description.
+                      {isNF
+                        ? (nfData?.nfCategory === "biography"
+                          ? "Describe the writing style for your life story — AI will generate voice rules that capture the right feel for memoir."
+                          : "Describe the writing style for your book — AI will generate voice rules suited to non-fiction narrative.")
+                        : "Describe the writing style you want — AI will generate voice rules, tone, and style guidance from your description."}
                     </p>
                     <div className="pw-ai-assist-row">
                       <input
                         className="pw-bible-input pw-ai-assist-select"
                         maxLength={STORY_BIBLE_LIMITS.styleVoice.compItem}
-                        placeholder="e.g. dark literary prose, punchy dialogue, sparse and gritty..."
+                        placeholder={isNF ? (nfData?.nfCategory === "biography" ? "e.g. intimate first-person, conversational, vivid sensory detail..." : "e.g. clean reportorial prose, evidence-driven, narrative non-fiction...") : "e.g. dark literary prose, punchy dialogue, sparse and gritty..."}
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
                         onKeyDown={(event) => {
@@ -15430,7 +15487,10 @@ function NovelWorkspacePage() {
                         {storyAiBusyAction === "style-author" ? "Analyzing..." : "Generate Style"}
                       </button>
                     </div>
-                    {isNF && (nfData?.interviewTranscript ?? []).filter(m => m.role === "user").length >= 3 && (
+                    {isNF && (() => {
+                      const chatSource = nfData?.nfCategory === "biography" ? (nfData?.interviewTranscript ?? []) : (nfData?.researchChat ?? []);
+                      return chatSource.filter(m => m.role === "user").length >= 3;
+                    })() && (
                       <div style={{ marginTop: 8, marginBottom: 4 }}>
                         <button
                           type="button"
@@ -15441,7 +15501,8 @@ function NovelWorkspacePage() {
                             setStoryAiBusyAction("style-interview");
                             setStoryAiError(null);
                             try {
-                              const userMsgs = (nfData?.interviewTranscript ?? [])
+                              const chatSource = nfData?.nfCategory === "biography" ? (nfData?.interviewTranscript ?? []) : (nfData?.researchChat ?? []);
+                              const userMsgs = chatSource
                                 .filter(m => m.role === "user")
                                 .map(m => m.text);
                               const sample = userMsgs.slice(0, 20).join("\n\n---\n\n").slice(0, 6000);
@@ -15451,7 +15512,9 @@ function NovelWorkspacePage() {
                                 nfData?.subtype ? `Type: ${nfData.subtype}` : "",
                               ].filter(Boolean).join(". ");
                               const prompt = [
-                                "Analyse these writing samples from an author's life interview. These are casual chat messages — their raw, unfiltered way of communicating.",
+                                nfData?.nfCategory === "biography"
+                                  ? "Analyse these writing samples from an author's life interview. These are casual chat messages — their raw, unfiltered way of communicating."
+                                  : "Analyse these writing samples from an author's research chat. These are informal messages sharing research findings — their natural way of presenting information.",
                                 "",
                                 "CRITICAL: IGNORE all spelling errors, typos, grammar mistakes, and chat shorthand. These are artefacts of typing quickly in a chat box, NOT the author's writing style.",
                                 "Instead, look DEEPER at how they naturally communicate:",
@@ -15478,7 +15541,7 @@ function NovelWorkspacePage() {
                                 voiceRules?: string;
                                 toneTags?: string[];
                                 styleComparables?: string[];
-                              }>(prompt, 500, { systemMessage: "You are a literary voice analyst. Study the writing samples and extract the author's natural voice patterns. Return valid JSON only. Never reference real author names." });
+                              }>(prompt, 500, { systemMessage: nfData?.nfCategory === "biography" ? "You are a literary voice analyst for memoir and biography. Study the writing samples and extract the author's natural storytelling voice. Return valid JSON only. Never reference real author names." : "You are a literary voice analyst for non-fiction. Study the writing samples and extract the author's natural prose and reporting style. Return valid JSON only. Never reference real author names." });
                               const rawRules = typeof data.voiceRules === "string" ? data.voiceRules.trim() : "";
                               const aiComps = Array.isArray(data.styleComparables) ? data.styleComparables.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
                               const aiTone = Array.isArray(data.toneTags) ? data.toneTags.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
@@ -15501,10 +15564,12 @@ function NovelWorkspacePage() {
                             } finally { setStoryAiBusyAction(null); }
                           }}
                         >
-                          {storyAiBusyAction === "style-interview" ? "Analysing your voice..." : "Create from Life Interview"}
+                          {storyAiBusyAction === "style-interview" ? "Analysing your voice..." : (nfData?.nfCategory === "biography" ? "Create from Life Interview" : "Create from Research Chat")}
                         </button>
                         <p className="pw-field-help" style={{ marginTop: 4 }}>
-                          Analyses how you write in the Life Interview to capture your authentic voice and style.
+                          {nfData?.nfCategory === "biography"
+                            ? "Analyses how you write in the Life Interview to capture your authentic voice and style."
+                            : "Analyses how you write in the Researcher Chat to identify your natural prose style."}
                         </p>
                       </div>
                     )}
