@@ -13861,6 +13861,56 @@ function NovelWorkspacePage() {
               </div>
             </div>
 
+            {/* Canon Completeness Score */}
+            {isNF && (() => {
+              const checks = isNF && nfData?.nfCategory === "biography" ? [
+                { label: "Subject name", done: !!nfData?.subjectName },
+                { label: "Central theme", done: !!nfData?.centralTheme },
+                { label: "Era / setting", done: !!(nfData?.era || nfData?.setting) },
+                { label: "3+ life events", done: (nfData?.lifeEvents ?? []).filter(e => e.title).length >= 3 },
+                { label: "5+ interview messages", done: (nfData?.interviewTranscript ?? []).filter(m => m.role === "user").length >= 5 },
+                { label: "Extracted to Canon", done: !!nfData?.extractedAt },
+                { label: "1+ characters", done: (novel?.storyBible.characters ?? []).length >= 1 },
+                { label: "1+ scrapbook memory", done: (nfData?.scrapbook ?? []).filter(s => s.content).length >= 1 },
+                { label: "Story summary", done: !!(novel?.storyBible.summary?.synopsisShort) },
+                { label: "Story board cards", done: (nfData?.storyCards ?? []).length >= 3 },
+              ] : [
+                { label: "Subject / topic", done: !!nfData?.subjectName },
+                { label: "Central theme", done: !!nfData?.centralTheme },
+                { label: "Era / setting", done: !!(nfData?.era || nfData?.setting) },
+                { label: "3+ research notes", done: (nfData?.researchNotes ?? []).filter(n => n.content).length >= 3 },
+                { label: "5+ researcher messages", done: (nfData?.researchChat ?? []).filter(m => m.role === "user").length >= 5 },
+                { label: "Extracted to Canon", done: !!nfData?.researchExtractedAt },
+                { label: "1+ characters", done: (novel?.storyBible.characters ?? []).length >= 1 },
+                { label: "Story summary", done: !!(novel?.storyBible.summary?.synopsisShort) },
+                { label: "Story board cards", done: (nfData?.storyCards ?? []).length >= 3 },
+              ];
+              const done = checks.filter(c => c.done).length;
+              const pct = Math.round((done / checks.length) * 100);
+              const barColor = pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444";
+              return (
+                <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--pw-border-light)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>Canon: {pct}%</span>
+                    <div style={{ flex: 1, height: 6, background: "var(--pw-surface)", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s ease" }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{done}/{checks.length}</span>
+                  </div>
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ fontSize: 10, color: "var(--pw-text-dim)", cursor: "pointer" }}>View checklist</summary>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginTop: 4, paddingBottom: 4 }}>
+                      {checks.map((c, i) => (
+                        <span key={i} style={{ fontSize: 10, color: c.done ? "#22c55e" : "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 3 }}>
+                          {c.done ? "\u2713" : "\u25CB"} {c.label}
+                        </span>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              );
+            })()}
+
             <div className="pw-bible-modal-body">
               <aside className="pw-bible-nav">
                 {(isNF ? (nfData?.nfCategory === "biography" ? [
@@ -15104,6 +15154,75 @@ function NovelWorkspacePage() {
                         ))}
                       </div>
                     )}
+
+                    {/* Auto-Bibliography for non-fiction */}
+                    {isNF && (() => {
+                      const notes = nfData?.researchNotes ?? [];
+                      const interviewCount = (nfData?.interviewTranscript ?? []).filter(m => m.role === "user").length;
+                      const researchChatCount = (nfData?.researchChat ?? []).filter(m => m.role === "user").length;
+                      const sourcedNotes = notes.filter(n => n.source);
+                      if (sourcedNotes.length === 0 && interviewCount === 0 && researchChatCount === 0) return null;
+                      return (
+                        <div style={{ marginTop: 20, padding: "16px 0", borderTop: "1px solid var(--pw-border-light)" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div>
+                              <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--pw-text)" }}>Sources &amp; Bibliography</h4>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "2px 0 0" }}>Auto-generated from your research notes and interviews.</p>
+                            </div>
+                            {!aiOff && sourcedNotes.length >= 2 && (
+                              <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                                onClick={async () => {
+                                  if (storyAiBusyAction) return;
+                                  setStoryAiBusyAction("nf-bibliography");
+                                  setStoryAiError(null);
+                                  try {
+                                    const sourceList = sourcedNotes.map(n => `"${n.title}" — Source: ${n.source}${n.strength ? ` (${n.strength})` : ""}`).join("\n");
+                                    const prompt = [
+                                      "Format these research sources into a clean bibliography / sources list suitable for a non-fiction book.",
+                                      "Group by source type (interviews, archives, documents, media). Use consistent formatting.",
+                                      `Return JSON: { "bibliography": "formatted text..." }`,
+                                      `\nSources:\n${sourceList}`,
+                                    ].join("\n");
+                                    const data = await requestOpenRouterJson<{ bibliography: string }>(prompt, 1500, {
+                                      systemMessage: "Bibliography formatter. Create clean, professional source lists. Return valid JSON only.",
+                                    });
+                                    if (data?.bibliography) {
+                                      setStoryAiError(`BIBLIOGRAPHY:\n\n${data.bibliography}`);
+                                    }
+                                  } catch (err: unknown) {
+                                    if (!(err instanceof Error && err.name === "AbortError")) setStoryAiError(err instanceof Error ? err.message : "Bibliography generation failed");
+                                  } finally { setStoryAiBusyAction(null); }
+                                }}>
+                                {storyAiBusyAction === "nf-bibliography" ? "Formatting..." : "Format Bibliography"}
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--pw-text)" }}>
+                            {sourcedNotes.map((n, i) => {
+                              const strengthColor: Record<string, string> = { primary: "#22c55e", secondary: "#60a5fa", anecdotal: "#f59e0b", unverified: "#ef4444" };
+                              return (
+                                <div key={n.id} style={{ display: "flex", alignItems: "baseline", gap: 6, padding: "3px 0" }}>
+                                  <span style={{ color: "var(--pw-text-dim)", fontSize: 11, minWidth: 20 }}>{i + 1}.</span>
+                                  <span style={{ fontWeight: 600 }}>{n.source}</span>
+                                  {n.title && <span style={{ color: "var(--pw-text-dim)" }}>— {n.title}</span>}
+                                  {n.strength && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: `${strengthColor[n.strength] || "#94a3b8"}20`, color: strengthColor[n.strength] || "#94a3b8", textTransform: "uppercase" }}>{n.strength}</span>}
+                                </div>
+                              );
+                            })}
+                            {interviewCount > 0 && (
+                              <div style={{ padding: "3px 0", color: "var(--pw-text-dim)" }}>
+                                <span style={{ fontWeight: 600, color: "var(--pw-text)" }}>Subject Interview</span> — {interviewCount} exchanges recorded
+                              </div>
+                            )}
+                            {researchChatCount > 0 && (
+                              <div style={{ padding: "3px 0", color: "var(--pw-text-dim)" }}>
+                                <span style={{ fontWeight: 600, color: "var(--pw-text)" }}>Research Chat</span> — {researchChatCount} exchanges recorded
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -15874,7 +15993,15 @@ function NovelWorkspacePage() {
                   <div className="pw-bible-section" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>{(nfData?.subtype === "true-crime" || nfData?.subtype === "investigative") ? "Research Interview" : nfData?.subtype === "historical" ? "Event Interview" : "Life Interview"}</h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <h3 style={{ margin: 0 }}>{(nfData?.subtype === "true-crime" || nfData?.subtype === "investigative") ? "Research Interview" : nfData?.subtype === "historical" ? "Event Interview" : "Life Interview"}</h3>
+                          {(() => {
+                            const phase = nfData?.interviewPhase || "big-picture";
+                            const phaseLabels: Record<string, string> = { "big-picture": "Big Picture", "deep-dive": "Deep Dive", "connections": "Connections", "reflection": "Reflection" };
+                            const phaseColors: Record<string, string> = { "big-picture": "#60a5fa", "deep-dive": "#a78bfa", "connections": "#34d399", "reflection": "#f59e0b" };
+                            return <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: `${phaseColors[phase] || "#60a5fa"}20`, color: phaseColors[phase] || "#60a5fa", textTransform: "uppercase", letterSpacing: "0.04em" }}>Phase: {phaseLabels[phase] || phase}</span>;
+                          })()}
+                        </div>
                         <p className="pw-field-help">{
                           nfData?.subtype === "true-crime" ? "Walk through the case with AI. Describe the events, the investigation, the people. When ready, extract everything into your story." :
                           nfData?.subtype === "investigative" ? "Walk through your investigation with AI. Lay out the evidence, the sources, the timeline. When ready, extract everything." :
@@ -16167,7 +16294,10 @@ function NovelWorkspacePage() {
                           const userText = e.currentTarget.value.trim();
                           e.currentTarget.value = "";
                           const transcript = [...(nfData?.interviewTranscript ?? []), { role: "user" as const, text: userText }];
-                          mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, interviewTranscript: transcript } } }));
+                          const userMsgTotal = transcript.filter(m => m.role === "user").length;
+                          const newPhase = userMsgTotal <= 15 ? "big-picture" : userMsgTotal <= 30 ? "deep-dive" : userMsgTotal <= 45 ? "connections" : "reflection";
+                          const phaseChanged = newPhase !== (nfData?.interviewPhase || "big-picture");
+                          mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, interviewTranscript: transcript, ...(phaseChanged ? { interviewPhase: newPhase } : {}) } } }));
                           if (aiOff) return;
                           setStoryAiBusyAction("nf-interview");
                           try {
@@ -16177,6 +16307,7 @@ function NovelWorkspacePage() {
                               nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "",
                               nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
                             ].filter(Boolean).join(". ");
+                            const existingEvents = (nfData?.lifeEvents ?? []).map(e => e.title).filter(Boolean);
                             const memoryPrompts = [
                               "What sounds, smells, or textures do you remember from that moment?",
                               "Who else was there? What were they doing?",
@@ -16187,16 +16318,25 @@ function NovelWorkspacePage() {
                               "Did anyone say something you still remember word for word?",
                             ];
                             const randomPrompt = memoryPrompts[Math.floor(Math.random() * memoryPrompts.length)];
+                            const phaseGuidance = newPhase === "big-picture"
+                              ? "PHASE: BIG PICTURE. Ask broad, open questions about their life story. Where did they grow up? What shaped them? What are the major chapters of their life? Help them sketch the full landscape before drilling into details."
+                              : newPhase === "deep-dive"
+                              ? `PHASE: DEEP DIVE. The subject has shared the broad strokes. Now drill into specific moments they mentioned. Ask them to take you back to a particular moment — what they saw, heard, felt, smelled. Push for vivid sensory detail and specific dialogue.${existingEvents.length > 0 ? ` Events mentioned so far: ${existingEvents.slice(0, 8).join(", ")}.` : ""} Pick one they haven't fully explored and ask them to relive it.`
+                              : newPhase === "connections"
+                              ? `PHASE: CONNECTIONS. The subject has shared many individual stories. Now help them find the threads between events. Ask how one event led to another. Look for patterns — recurring people, repeated decisions, consequences that echoed years later.${existingEvents.length > 1 ? ` Events so far: ${existingEvents.slice(0, 10).join(", ")}.` : ""} Ask: "Do you see a connection between [event A] and [event B]?"`
+                              : "PHASE: REFLECTION. The subject has shared extensively. Now guide them toward meaning and theme. Ask: What would you want a reader to take away? What did you learn about yourself? If you could tell your younger self one thing, what would it be? Help them find the heart of the story.";
                             const prompt = [
                               `You're conducting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` (${ctx})` : ""}.`,
+                              phaseGuidance,
+                              phaseChanged ? `NOTE: You've just moved into a new interview phase. Acknowledge this shift naturally — e.g. "We've covered a lot of ground. Let me ask you something different..." Don't be robotic about it.` : "",
                               nfData?.subtype === "true-crime" ? "Based on what the author just said, acknowledge the detail, then ask a follow-up about the investigation, the people involved, or the sequence of events. Push for specifics — timeline, evidence, motives."
                                 : nfData?.subtype === "historical" ? "Based on what the author said, ask a follow-up about the historical context, the human stories within, or the consequences of the events."
                                 : nfData?.subtype === "investigative" ? "Based on what the author said, dig deeper into the evidence, the sources, and the revelations. Ask what they discovered next."
-                                : "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper into the memory.",
-                              nfData?.subtype !== "true-crime" && nfData?.subtype !== "investigative" ? `Optionally weave in a sensory memory prompt like: "${randomPrompt}"` : "",
-                              "Keep it natural — like a knowledgeable colleague who's genuinely curious. 2-4 sentences max.",
+                                : "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper.",
+                              newPhase === "deep-dive" ? `Weave in a sensory memory prompt like: "${randomPrompt}"` : "",
+                              "Keep it natural — like a skilled biographer who's genuinely curious. 2-4 sentences max.",
                               `\nRecent conversation:\n${recent}`,
-                            ].join("\n");
+                            ].filter(Boolean).join("\n");
                             const res = await requestOpenRouterText(prompt, 300);
                             const aiText = typeof res === "string" ? res.trim() : "";
                             if (aiText) {
@@ -16215,46 +16355,98 @@ function NovelWorkspacePage() {
                 )}
 
                 {/* ═══════════════════ NON-FICTION: EMOTIONAL TIMELINE ═══════════════════ */}
-                {bibleSection === "nf-timeline" && isNF && (
+                {bibleSection === "nf-timeline" && isNF && (() => {
+                  const emotionValues: Record<string, number> = {
+                    joy: 5, love: 5, pride: 4, hope: 4, excitement: 4, gratitude: 4, relief: 3, peace: 3,
+                    surprise: 2, nostalgia: 2, bittersweet: 1, confusion: 0, anxiety: -1, loneliness: -1,
+                    frustration: -2, anger: -2, fear: -3, shame: -3, guilt: -3, sadness: -4, grief: -5, despair: -5,
+                  };
+                  const rawEvents = (nfData?.lifeEvents ?? []).filter(e => e.title);
+                  const sortedByDate = [...rawEvents].sort((a, b) => {
+                    const da = a.date || ""; const db = b.date || "";
+                    return da.localeCompare(db);
+                  });
+                  const gaps: Array<{ afterIdx: number; years: number; from: string; to: string }> = [];
+                  for (let i = 0; i < sortedByDate.length - 1; i++) {
+                    const dA = sortedByDate[i].date; const dB = sortedByDate[i + 1].date;
+                    if (dA && dB) {
+                      const yA = parseInt(dA.split(/[-/]/)[0]); const yB = parseInt(dB.split(/[-/]/)[0]);
+                      if (!isNaN(yA) && !isNaN(yB) && yB - yA >= 3) {
+                        gaps.push({ afterIdx: i, years: yB - yA, from: dA, to: dB });
+                      }
+                    }
+                  }
+                  return (
                   <div className="pw-bible-section">
-                    <h3>Emotional Timeline</h3>
-                    <p className="pw-field-help" style={{ marginBottom: 16 }}>Visualise the emotional arc of the story. Events are plotted by their emotion to help you see the narrative shape.</p>
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Emotional Timeline</h3>
+                        <p className="pw-field-help" style={{ marginBottom: 0 }}>Visualise the emotional arc. Click any event to expand. Toggle between narrative and chronological order.</p>
+                      </div>
+                      <button type="button" className="pw-ai-mini-btn" onClick={() => {
+                        updateNfData({ timelineSortChron: !(nfData?.timelineSortChron ?? false) });
+                      }}>{nfData?.timelineSortChron ? "Narrative Order" : "Chronological"}</button>
+                    </div>
 
-                    {(nfData?.lifeEvents ?? []).length === 0 ? (
+                    {rawEvents.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
                         <p style={{ fontSize: 14 }}>Add Life Events first to see the emotional timeline.</p>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 12 }}>
                         {(() => {
-                          const emotionValues: Record<string, number> = {
-                            joy: 5, love: 5, pride: 4, hope: 4, excitement: 4, gratitude: 4, relief: 3, peace: 3,
-                            surprise: 2, nostalgia: 2, bittersweet: 1, confusion: 0, anxiety: -1, loneliness: -1,
-                            frustration: -2, anger: -2, fear: -3, shame: -3, guilt: -3, sadness: -4, grief: -5, despair: -5,
-                          };
-                          const events = (nfData?.lifeEvents ?? []).filter(e => e.title);
-                          return events.map((evt) => {
+                          const events = nfData?.timelineSortChron ? sortedByDate : rawEvents;
+                          const items: React.ReactNode[] = [];
+                          events.forEach((evt, idx) => {
                             const emotionKey = evt.emotion.toLowerCase().trim();
                             const val = emotionValues[emotionKey] ?? 0;
                             const pct = ((val + 5) / 10) * 100;
                             const color = val > 2 ? "#22c55e" : val > 0 ? "#a3e635" : val === 0 ? "#94a3b8" : val > -3 ? "#f59e0b" : "#ef4444";
-                            return (
-                              <div key={evt.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                                <span style={{ fontSize: 11, color: "var(--pw-text-dim)", minWidth: 80, textAlign: "right" }}>{evt.date || "—"}</span>
-                                <div style={{ flex: 1, position: "relative", height: 28, background: "var(--pw-surface)", borderRadius: 4, overflow: "hidden" }}>
-                                  <div style={{
-                                    position: "absolute", left: `${Math.min(pct, 95)}%`, top: 2, bottom: 2,
-                                    width: 8, borderRadius: 4, background: color,
-                                    transform: "translateX(-50%)", transition: "left 0.3s",
-                                  }} />
-                                  <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 600, color: "var(--pw-text)" }}>
-                                    {evt.title.slice(0, 40)}
-                                  </span>
+                            const isExpanded = nfData?.timelineExpandedId === evt.id;
+                            items.push(
+                              <div key={evt.id}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer" }}
+                                  onClick={() => updateNfData({ timelineExpandedId: isExpanded ? "" : evt.id })}>
+                                  <span style={{ fontSize: 11, color: "var(--pw-text-dim)", minWidth: 80, textAlign: "right" }}>{evt.date || "—"}</span>
+                                  <div style={{ flex: 1, position: "relative", height: 28, background: "var(--pw-surface)", borderRadius: 4, overflow: "hidden" }}>
+                                    <div style={{
+                                      position: "absolute", left: `${Math.min(pct, 95)}%`, top: 2, bottom: 2,
+                                      width: 8, borderRadius: 4, background: color,
+                                      transform: "translateX(-50%)", transition: "left 0.3s",
+                                    }} />
+                                    <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 600, color: "var(--pw-text)" }}>
+                                      {evt.title.slice(0, 40)}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: 10, color, minWidth: 60, textAlign: "left", fontWeight: 600 }}>{evt.emotion || "neutral"}</span>
                                 </div>
-                                <span style={{ fontSize: 10, color, minWidth: 60, textAlign: "left", fontWeight: 600 }}>{evt.emotion || "neutral"}</span>
+                                {isExpanded && (
+                                  <div style={{ marginLeft: 88, padding: "8px 12px", background: "var(--pw-surface)", borderRadius: 6, fontSize: 12, color: "var(--pw-text)", lineHeight: 1.6, marginBottom: 6 }}>
+                                    <p style={{ margin: 0 }}>{evt.description || "No description yet."}</p>
+                                    {(evt.people ?? []).length > 0 && <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>People: {(evt.people ?? []).join(", ")}</p>}
+                                    {(evt.places ?? []).length > 0 && <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--pw-text-dim)" }}>Places: {(evt.places ?? []).join(", ")}</p>}
+                                  </div>
+                                )}
                               </div>
                             );
+                            if (nfData?.timelineSortChron) {
+                              const gap = gaps.find(g => g.afterIdx === idx);
+                              if (gap) {
+                                items.push(
+                                  <div key={`gap-${idx}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                                    <span style={{ minWidth: 80 }}></span>
+                                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                                      <div style={{ flex: 1, height: 1, background: "#f59e0b40" }}></div>
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>~{gap.years} year gap</span>
+                                      <div style={{ flex: 1, height: 1, background: "#f59e0b40" }}></div>
+                                    </div>
+                                    <span style={{ minWidth: 60 }}></span>
+                                  </div>
+                                );
+                              }
+                            }
                           });
+                          return items;
                         })()}
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--pw-text-dim)", marginTop: 4, padding: "0 88px 0 88px" }}>
                           <span>Despair</span><span>Neutral</span><span>Joy</span>
@@ -16262,7 +16454,8 @@ function NovelWorkspacePage() {
                       </div>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* ═══════════════════ NON-FICTION: RELATIONSHIPS ═══════════════════ */}
                 {bibleSection === "nf-relationships" && isNF && (
@@ -16360,10 +16553,52 @@ function NovelWorkspacePage() {
                           <h3>Scrapbook</h3>
                           <p className="pw-field-help">Write short memories or stories linked to life events. These feed into your plan generation.</p>
                         </div>
-                        <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={() => {
-                          const entry: ScrapbookEntry = { id: `sb-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, title: "", content: "", linkedEventId: "", createdAt: new Date().toISOString() };
-                          updateNfData({ scrapbook: [...scrapbook, entry] });
-                        }}>+ New Memory</button>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {!aiOff && lifeEvents.length >= 3 && (
+                            <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (storyAiBusyAction) return;
+                                setStoryAiBusyAction("nf-memory-spark");
+                                setStoryAiError(null);
+                                try {
+                                  const eventList = lifeEvents.map(e => `"${e.title}"${e.date ? ` (${e.date})` : ""}: ${(e.description || "").slice(0, 100)}`).join("\n");
+                                  const existingTitles = scrapbook.map(s => s.title).filter(Boolean).join(", ");
+                                  const prompt = [
+                                    "Given these life events from a memoir, generate 4-5 targeted memory prompts designed to unlock vivid memories the author hasn't written about yet.",
+                                    "Each prompt should be specific to THEIR life based on the events provided — reference specific events, people, places, or time gaps.",
+                                    "Look for: sensory details not yet explored, time gaps between events, people mentioned but not described, places that might hold more stories, emotional moments that could be expanded.",
+                                    existingTitles ? `Already written about: ${existingTitles}` : "",
+                                    `Return JSON: [{ "prompt": "...", "linkedEventId": "optional event ID to link to" }]`,
+                                    `\nLife Events:\n${eventList}`,
+                                    `\nEvent IDs: ${lifeEvents.map(e => `${e.id}="${e.title}"`).join(", ")}`,
+                                  ].filter(Boolean).join("\n");
+                                  const data = await requestOpenRouterJson<Array<{ prompt: string; linkedEventId?: string }>>(prompt, 800, {
+                                    systemMessage: "Memory prompt specialist for memoir writers. Generate specific, evocative prompts that spark forgotten memories. Return valid JSON only.",
+                                  });
+                                  if (Array.isArray(data) && data.length > 0) {
+                                    const newEntries: ScrapbookEntry[] = data.filter(d => d.prompt).map(d => ({
+                                      id: `sb-spark-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                      title: d.prompt.slice(0, 120),
+                                      content: "",
+                                      linkedEventId: d.linkedEventId && lifeEvents.some(e => e.id === d.linkedEventId) ? d.linkedEventId : "",
+                                      createdAt: new Date().toISOString(),
+                                    }));
+                                    updateNfData({ scrapbook: [...scrapbook, ...newEntries] });
+                                  }
+                                } catch (err: unknown) {
+                                  if (!(err instanceof Error && err.name === "AbortError")) {
+                                    setStoryAiError(err instanceof Error ? err.message : "Memory spark failed");
+                                  }
+                                } finally { setStoryAiBusyAction(null); }
+                              }}>
+                              {storyAiBusyAction === "nf-memory-spark" ? "Sparking..." : "Spark a Memory"}
+                            </button>
+                          )}
+                          <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={() => {
+                            const entry: ScrapbookEntry = { id: `sb-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, title: "", content: "", linkedEventId: "", createdAt: new Date().toISOString() };
+                            updateNfData({ scrapbook: [...scrapbook, entry] });
+                          }}>+ New Memory</button>
+                        </div>
                       </div>
                       {scrapbook.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
@@ -16569,17 +16804,89 @@ function NovelWorkspacePage() {
                 {/* ═══════════════════ NON-FICTION: RESEARCH NOTES (other) ═══════════════════ */}
                 {bibleSection === "nf-research-notes" && isNF && (() => {
                   const notes = nfData?.researchNotes ?? [];
+                  const strengthColors: Record<string, string> = { primary: "#22c55e", secondary: "#60a5fa", anecdotal: "#f59e0b", unverified: "#ef4444" };
                   return (
                     <div className="pw-bible-section">
                       <div className="pw-bible-flex-head">
                         <div>
                           <h3>Research Notes</h3>
-                          <p className="pw-field-help">Structured notes from your research. Add sources, tags, and content. These feed into plan generation.</p>
+                          <p className="pw-field-help">Structured notes from your research. Add sources, tags, and strength ratings. These feed into plan generation.</p>
                         </div>
-                        <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={() => {
-                          const note: ResearchNote = { id: `rn-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, title: "", content: "", source: "", tags: [], createdAt: new Date().toISOString() };
-                          updateNfData({ researchNotes: [...notes, note] });
-                        }}>+ Add Note</button>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {!aiOff && notes.length >= 3 && (
+                            <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (storyAiBusyAction) return;
+                                setStoryAiBusyAction("nf-fact-crossref");
+                                setStoryAiError(null);
+                                try {
+                                  const noteList = notes.map(n => `[${n.id}] "${n.title}" (Source: ${n.source || "none"}): ${(n.content || "").slice(0, 200)}`).join("\n\n");
+                                  const prompt = [
+                                    "Analyze these research notes for contradictions, inconsistencies, or conflicting claims.",
+                                    "Compare dates, facts, names, and claims across notes. Flag anything that contradicts or is inconsistent with another note.",
+                                    "If no contradictions are found, say so.",
+                                    `Return JSON: [{ "noteId1": "...", "noteId2": "...", "issue": "description of the contradiction" }]`,
+                                    `If no contradictions: return []`,
+                                    `\nNotes:\n${noteList}`,
+                                  ].join("\n");
+                                  const data = await requestOpenRouterJson<Array<{ noteId1: string; noteId2: string; issue: string }>>(prompt, 1500, {
+                                    systemMessage: "Fact-checking specialist for non-fiction research. Find contradictions between sources. Return valid JSON only.",
+                                  });
+                                  if (Array.isArray(data) && data.length > 0) {
+                                    const report = data.map(d => {
+                                      const n1 = notes.find(n => n.id === d.noteId1)?.title || d.noteId1;
+                                      const n2 = notes.find(n => n.id === d.noteId2)?.title || d.noteId2;
+                                      return `"${n1}" vs "${n2}": ${d.issue}`;
+                                    }).join("\n\n");
+                                    setStoryAiError(`CONTRADICTIONS FOUND:\n\n${report}`);
+                                  } else {
+                                    setStoryAiError("No contradictions found between your notes.");
+                                  }
+                                } catch (err: unknown) {
+                                  if (!(err instanceof Error && err.name === "AbortError")) setStoryAiError(err instanceof Error ? err.message : "Cross-reference failed");
+                                } finally { setStoryAiBusyAction(null); }
+                              }}>
+                              {storyAiBusyAction === "nf-fact-crossref" ? "Checking..." : "Fact Cross-Ref"}
+                            </button>
+                          )}
+                          {!aiOff && notes.length >= 2 && (
+                            <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (storyAiBusyAction) return;
+                                setStoryAiBusyAction("nf-gap-analysis");
+                                setStoryAiError(null);
+                                try {
+                                  const noteList = notes.map(n => `"${n.title}" (Source: ${n.source || "none"}, Strength: ${n.strength || "unset"}): ${(n.content || "").slice(0, 150)}`).join("\n");
+                                  const subjectCtx = nfData?.subjectName ? `Subject: ${nfData.subjectName}` : "";
+                                  const themeCtx = nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "";
+                                  const prompt = [
+                                    `Analyze these research notes for a ${nfData?.subtype || "non-fiction"} book.${subjectCtx ? ` ${subjectCtx}.` : ""}${themeCtx ? ` ${themeCtx}.` : ""}`,
+                                    "Identify 3-5 research gaps — perspectives, evidence, time periods, or topics that are missing or under-represented.",
+                                    "Consider: missing perspectives (victim/perpetrator/witness/expert), missing time periods, lack of primary sources, topics only covered from one angle.",
+                                    `Return JSON: [{ "gap": "...", "suggestion": "..." }]`,
+                                    `\nExisting notes:\n${noteList}`,
+                                  ].join("\n");
+                                  const data = await requestOpenRouterJson<Array<{ gap: string; suggestion: string }>>(prompt, 1200, {
+                                    systemMessage: "Research methodology expert. Identify gaps in non-fiction research. Return valid JSON only.",
+                                  });
+                                  if (Array.isArray(data) && data.length > 0) {
+                                    const report = data.map(d => `GAP: ${d.gap}\n  Suggestion: ${d.suggestion}`).join("\n\n");
+                                    setStoryAiError(`RESEARCH GAPS IDENTIFIED:\n\n${report}`);
+                                  } else {
+                                    setStoryAiError("No significant gaps identified.");
+                                  }
+                                } catch (err: unknown) {
+                                  if (!(err instanceof Error && err.name === "AbortError")) setStoryAiError(err instanceof Error ? err.message : "Gap analysis failed");
+                                } finally { setStoryAiBusyAction(null); }
+                              }}>
+                              {storyAiBusyAction === "nf-gap-analysis" ? "Analyzing..." : "Find Gaps"}
+                            </button>
+                          )}
+                          <button type="button" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={() => {
+                            const note: ResearchNote = { id: `rn-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, title: "", content: "", source: "", tags: [], createdAt: new Date().toISOString() };
+                            updateNfData({ researchNotes: [...notes, note] });
+                          }}>+ Add Note</button>
+                        </div>
                       </div>
                       {notes.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
@@ -16590,12 +16897,21 @@ function NovelWorkspacePage() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
                           {notes.map((note) => (
                             <div key={note.id} style={{
-                              background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 10, padding: 14,
+                              background: "var(--pw-surface)", border: `1px solid ${note.strength ? (strengthColors[note.strength] || "var(--pw-border-light)") + "40" : "var(--pw-border-light)"}`, borderRadius: 10, padding: 14,
                               display: "flex", flexDirection: "column", gap: 8,
                             }}>
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <input className="pw-bible-input" placeholder="Note title..." value={note.title} style={{ flex: 1, fontWeight: 700, fontSize: 14 }}
                                   onChange={(e) => updateNfData({ researchNotes: notes.map(n => n.id === note.id ? { ...n, title: e.target.value } : n) })} />
+                                <select className="pw-bible-input" value={note.strength || ""} style={{ width: 110, fontSize: 11, fontWeight: 700, color: strengthColors[note.strength || ""] || "var(--pw-text-dim)" }}
+                                  onChange={(e) => updateNfData({ researchNotes: notes.map(n => n.id === note.id ? { ...n, strength: (e.target.value || undefined) as ResearchNote["strength"] } : n) })}>
+                                  <option value="">Strength...</option>
+                                  <option value="primary">Primary</option>
+                                  <option value="secondary">Secondary</option>
+                                  <option value="anecdotal">Anecdotal</option>
+                                  <option value="unverified">Unverified</option>
+                                </select>
+                                {note.strength && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${strengthColors[note.strength]}20`, color: strengthColors[note.strength], textTransform: "uppercase" }}>{note.strength}</span>}
                                 <button type="button" style={{ fontSize: 11, color: "var(--pw-text-dim)", background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
                                   onClick={() => updateNfData({ researchNotes: notes.filter(n => n.id !== note.id) })}>Delete</button>
                               </div>
@@ -16741,6 +17057,73 @@ function NovelWorkspacePage() {
                                 } finally { setStoryAiBusyAction(null); }
                               }}>
                               {storyAiBusyAction === "nf-storyboard-arrange" ? "Arranging..." : "AI Arrange"}
+                            </button>
+                          )}
+                          {!aiOff && cards.length >= 3 && (
+                            <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (!novel || storyAiBusyAction) return;
+                                setStoryAiBusyAction("nf-narrative-threads");
+                                setStoryAiError(null);
+                                try {
+                                  const allContent = cards.map(c => `"${c.title}": ${c.summary?.slice(0, 120) || ""}`).join("\n");
+                                  const evtContent = lifeEvents.map(e => `"${e.title}" (${e.emotion || ""}): ${(e.description || "").slice(0, 80)}`).join("\n");
+                                  const prompt = [
+                                    "Analyze these story elements and identify 3-5 narrative threads — recurring themes, people, places, emotional patterns, or cause-and-effect chains that weave through the material.",
+                                    "For each thread, name it, describe it briefly, and list which card titles belong to it.",
+                                    `Story Cards:\n${allContent}`,
+                                    evtContent ? `\nLife Events:\n${evtContent}` : "",
+                                    `\nReturn JSON: [{ "threadName": "...", "description": "...", "cardTitles": ["..."] }]`,
+                                  ].filter(Boolean).join("\n");
+                                  const data = await requestOpenRouterJson<Array<{ threadName: string; description: string; cardTitles: string[] }>>(prompt, 1500, {
+                                    systemMessage: "Narrative structure analyst. Find recurring threads, themes, and connections across story material. Return valid JSON only.",
+                                  });
+                                  if (Array.isArray(data) && data.length > 0) {
+                                    const threadReport = data.map(t => `**${t.threadName}** — ${t.description}\n  Cards: ${(t.cardTitles || []).join(", ")}`).join("\n\n");
+                                    setStoryAiError(`NARRATIVE THREADS FOUND:\n\n${threadReport}`);
+                                  }
+                                } catch (err: unknown) {
+                                  if (!(err instanceof Error && err.name === "AbortError")) setStoryAiError(err instanceof Error ? err.message : "Thread detection failed");
+                                } finally { setStoryAiBusyAction(null); }
+                              }}>
+                              {storyAiBusyAction === "nf-narrative-threads" ? "Finding..." : "Find Threads"}
+                            </button>
+                          )}
+                          {!aiOff && cards.length >= 3 && planChapters.length === 0 && (
+                            <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                              onClick={async () => {
+                                if (!novel || storyAiBusyAction) return;
+                                setStoryAiBusyAction("nf-suggest-chapters");
+                                setStoryAiError(null);
+                                try {
+                                  const cardList = cards.map(c => `[${c.id}] "${c.title}": ${c.summary?.slice(0, 120) || "(empty)"}`).join("\n");
+                                  const synopsis = novel.storyBible.summary?.synopsisShort?.slice(0, 600) || "";
+                                  const chapterCount = Math.max(6, Math.min(25, Math.ceil(cards.length / 3)));
+                                  const prompt = [
+                                    `Based on these story cards, suggest a chapter structure of approximately ${chapterCount} chapters.`,
+                                    "Group related cards together, create a narrative arc, and name each chapter.",
+                                    "Assign every card to a chapter. The order should make narrative sense.",
+                                    synopsis ? `Book synopsis: ${synopsis}` : "",
+                                    `\nCards:\n${cardList}`,
+                                    `\nReturn JSON: [{ "chapterTitle": "...", "cardIds": ["..."], "briefSynopsis": "..." }]`,
+                                  ].filter(Boolean).join("\n");
+                                  const data = await requestOpenRouterJson<Array<{ chapterTitle: string; cardIds: string[]; briefSynopsis: string }>>(prompt, 2000, {
+                                    systemMessage: "Book structure specialist. Create compelling chapter structures from raw material. Return valid JSON only.",
+                                  });
+                                  if (Array.isArray(data) && data.length > 0) {
+                                    const updated = cards.map(c => {
+                                      const chIdx = data.findIndex(d => (d.cardIds || []).includes(c.id));
+                                      if (chIdx >= 0) return { ...c, chapterSlot: chIdx, sortOrder: (d => (d.cardIds || []).indexOf(c.id))(data[chIdx]) };
+                                      return c;
+                                    });
+                                    updateNfData({ storyCards: updated });
+                                    setStoryAiError(`AI SUGGESTED ${data.length} CHAPTERS:\n\n${data.map((d, i) => `Ch ${i + 1}: ${d.chapterTitle} — ${d.briefSynopsis || ""}`).join("\n")}`);
+                                  }
+                                } catch (err: unknown) {
+                                  if (!(err instanceof Error && err.name === "AbortError")) setStoryAiError(err instanceof Error ? err.message : "Chapter suggestion failed");
+                                } finally { setStoryAiBusyAction(null); }
+                              }}>
+                              {storyAiBusyAction === "nf-suggest-chapters" ? "Suggesting..." : "AI Suggest Chapters"}
                             </button>
                           )}
                         </div>

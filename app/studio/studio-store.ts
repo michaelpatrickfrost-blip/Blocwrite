@@ -278,6 +278,7 @@ export type ResearchNote = {
   source: string;
   tags: string[];
   createdAt: string;
+  strength?: "primary" | "secondary" | "anecdotal" | "unverified";
 };
 
 export type StoryCard = {
@@ -309,6 +310,8 @@ export type NonfictionData = {
   researchNotes: ResearchNote[];
   researchExtractedAt: string;
   storyCards: StoryCard[];
+  timelineSortChron?: boolean;
+  timelineExpandedId?: string;
 };
 
 export type StoryBible = {
@@ -998,6 +1001,7 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             source: typeof e.source === "string" ? e.source : "",
             tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
             createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
+            ...(typeof e.strength === "string" && ["primary","secondary","anecdotal","unverified"].includes(e.strength) ? { strength: e.strength as ResearchNote["strength"] } : {}),
           })) : [],
           researchExtractedAt: typeof nf.researchExtractedAt === "string" ? nf.researchExtractedAt : "",
           storyCards: Array.isArray(nf.storyCards) ? (nf.storyCards as Array<Record<string, unknown>>).map((e, i) => ({
@@ -1009,6 +1013,8 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             chapterSlot: typeof e.chapterSlot === "number" ? e.chapterSlot : -1,
             sortOrder: typeof e.sortOrder === "number" ? e.sortOrder : i,
           })) : [],
+          timelineSortChron: typeof nf.timelineSortChron === "boolean" ? nf.timelineSortChron : false,
+          timelineExpandedId: typeof nf.timelineExpandedId === "string" ? nf.timelineExpandedId : "",
         };
       })(),
     } : {}),
@@ -1425,6 +1431,8 @@ export function createNovel(title: string, coverImage: string | null = null, nov
           researchNotes: [],
           researchExtractedAt: "",
           storyCards: [],
+          timelineSortChron: false,
+          timelineExpandedId: "",
         },
       } : {}),
       braindump: "",
