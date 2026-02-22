@@ -10717,7 +10717,7 @@ function NovelWorkspacePage() {
                     onClick={() => setActiveChapterId(chapter.id)}
                   >
                     <span>{chapter.title || "Untitled chapter"}</span>
-                    <span style={{ display: "block", fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{countChapterWords(chapter).toLocaleString()} words</span>
+                    {aiOff && <span style={{ display: "block", fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{countChapterWords(chapter).toLocaleString()} words</span>}
                   </button>
                   <button
                     type="button"
@@ -10771,7 +10771,7 @@ function NovelWorkspacePage() {
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
             </button>
             <div className="pw-pill">{totalWords.toLocaleString()} words</div>
-            {activeChapter && (
+            {aiOff && activeChapter && (
               <button type="button" className="pw-theme-toggle" onClick={() => setFocusMode(true)} title="Focus mode — distraction-free writing (Escape to exit)">
                 <span style={{ fontSize: 14 }}>○</span>
                 <span style={{ fontSize: 12 }}>Focus</span>
@@ -10800,6 +10800,7 @@ function NovelWorkspacePage() {
               The Editor
             </button>
             )}
+            {aiOff && (
             <button type="button" className="btn"
               style={{ display: "flex", alignItems: "center", gap: 5, position: "relative" }}
               title="Grammar & spelling check (LanguageTool — no AI)"
@@ -10812,6 +10813,7 @@ function NovelWorkspacePage() {
                 <span style={{ background: "var(--pw-accent)", color: "#111", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{visibleMatches.length}</span>
               )}
             </button>
+            )}
             <button type="button" className="btn btn-primary" data-tutorial="plan" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
@@ -10998,7 +11000,8 @@ function NovelWorkspacePage() {
                     </span>
                   );
                 })()}
-                {/* ── Chapter Notes / Scratchpad ── */}
+                {/* ── Chapter Notes / Scratchpad (AI-off only) ── */}
+                {aiOff && (
                 <div style={{ marginBottom: 4 }}>
                   <button
                     type="button"
@@ -11028,6 +11031,7 @@ function NovelWorkspacePage() {
                     />
                   )}
                 </div>
+                )}
 
                 <div className="pw-toolbar-row">
                   {!aiOff && (
@@ -11257,8 +11261,8 @@ function NovelWorkspacePage() {
                   </div>
                 </div>
 
-                {/* ── LanguageTool proofread results panel ── */}
-                {proofreadOpen && (grammarError || visibleMatches.length > 0) && (
+                {/* ── LanguageTool proofread results panel (AI-off only) ── */}
+                {aiOff && proofreadOpen && (grammarError || visibleMatches.length > 0) && (
                   <div style={{
                     background: "var(--pw-surface-alt, rgba(0,0,0,0.03))", border: "1px solid var(--pw-border-light)",
                     borderRadius: 8, padding: "10px 14px", margin: "4px 0 8px", maxHeight: 240, overflowY: "auto",
@@ -11597,13 +11601,15 @@ function NovelWorkspacePage() {
                 })()}
               </div>
 
-              {/* Session tracker bar */}
+              {/* Session tracker bar (AI-off only) */}
+              {aiOff && (
               <div className="pw-session-bar">
                 <span>Session: {sessionMinutes < 60 ? `${sessionMinutes}m` : `${Math.floor(sessionMinutes / 60)}h ${sessionMinutes % 60}m`}</span>
                 <span>{sessionWordsWritten >= 0 ? "+" : ""}{sessionWordsWritten.toLocaleString()} words</span>
                 <span>{sessionPace.toLocaleString()} w/hr</span>
                 <button type="button" onClick={() => { sessionRef.current.startTime = Date.now(); sessionRef.current.startWords = totalWords; setSessionElapsed(0); try { const today = new Date().toDateString(); localStorage.setItem(`pw.session.${today}`, JSON.stringify({ startTime: Date.now(), startWords: totalWords })); } catch { /* */ } }}>New session</button>
               </div>
+              )}
 
               {/* Focus mode exit */}
               {focusMode && (
@@ -11806,7 +11812,8 @@ function NovelWorkspacePage() {
                 </div>
               </div>
 
-              {/* ── Outline View ── */}
+              {/* ── Outline View (AI-off only) ── */}
+              {aiOff && (
               <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
                 <div className="pw-overview-card">
                   <div className="pw-overview-card-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -11856,6 +11863,7 @@ function NovelWorkspacePage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* ── Manuscript Health Score ── */}
               <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
