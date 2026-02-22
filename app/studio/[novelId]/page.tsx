@@ -3617,7 +3617,13 @@ function NovelWorkspacePage() {
     const charList = (relevantChars.length > 0 ? relevantChars : characters.slice(0, 4))
       .map((c) => {
         const alias = c.otherNames?.trim() ? ` | aliases: ${clampPromptText(c.otherNames, 40)}` : "";
-        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}${alias}`;
+        const extras: string[] = [];
+        if (c.appearance) extras.push(`looks: ${clampPromptText(c.appearance, 50)}`);
+        if (c.personality) extras.push(`personality: ${clampPromptText(c.personality, 50)}`);
+        if (c.goals) extras.push(`goals: ${clampPromptText(c.goals, 40)}`);
+        if (c.speakingStyle) extras.push(`speech: ${clampPromptText(c.speakingStyle, 40)}`);
+        const extraStr = extras.length > 0 ? ` [${extras.join("; ")}]` : "";
+        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 40)}` : ""}${alias}${extraStr}`;
       })
       .join("\n  ");
 
@@ -3632,8 +3638,11 @@ function NovelWorkspacePage() {
       ? [...new Map([...planLinkedLocs, ...textMatchedLocs].map((l) => [l.id, l])).values()]
       : textMatchedLocs;
     const locList = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 3))
-      .map((l) => `${l.name}${l.type ? ` [${l.type}]` : ""}`)
-      .join(", ");
+      .map((l) => {
+        const desc = l.description ? ` — ${clampPromptText(l.description, 60)}` : "";
+        return `${l.name}${l.type ? ` [${l.type}]` : ""}${desc}`;
+      })
+      .join("\n  ");
 
     const relevantLore = lore.filter((e) => {
       const title = (e.title || "").toLowerCase();
@@ -3649,11 +3658,11 @@ function NovelWorkspacePage() {
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 5).join(", ")}` : "",
       summary.tone?.length ? `Tone: ${summary.tone.slice(0, 5).join(", ")}` : "",
       charList ? `Characters:\n  ${charList}` : "",
-      locList ? `Locations: ${locList}` : "",
+      locList ? `Locations:\n  ${locList}` : "",
       loreSection ? `Lore rules:\n  ${loreSection}` : "",
     ].filter(Boolean).join("\n");
 
-    return parts.length > 2500 ? `${parts.slice(0, 2400).trimEnd()}\n[condensed]` : parts;
+    return parts.length > 3200 ? `${parts.slice(0, 3100).trimEnd()}\n[condensed]` : parts;
   }
 
   /**
@@ -3696,12 +3705,21 @@ function NovelWorkspacePage() {
       .slice(0, 6)
       .map((c) => {
         const alias = c.otherNames?.trim() ? ` | aliases: ${clampPromptText(c.otherNames, 40)}` : "";
+        const detailParts: string[] = [];
+        if (c.appearance) detailParts.push(`looks: ${clampPromptText(c.appearance, 60)}`);
+        if (c.personality) detailParts.push(`personality: ${clampPromptText(c.personality, 60)}`);
+        if (c.goals) detailParts.push(`goals: ${clampPromptText(c.goals, 50)}`);
+        if (c.fears) detailParts.push(`fears: ${clampPromptText(c.fears, 40)}`);
+        if (c.backstory) detailParts.push(`backstory: ${clampPromptText(c.backstory, 80)}`);
+        if (c.pronouns) detailParts.push(`pronouns: ${c.pronouns}`);
         const speechParts: string[] = [];
-        if ((c as Record<string, unknown>).accent) speechParts.push(`accent: ${clampPromptText(String((c as Record<string, unknown>).accent), 40)}`);
-        if ((c as Record<string, unknown>).speakingStyle) speechParts.push(`speech: ${clampPromptText(String((c as Record<string, unknown>).speakingStyle), 40)}`);
-        if ((c as Record<string, unknown>).voiceNotes) speechParts.push(`voice: ${clampPromptText(String((c as Record<string, unknown>).voiceNotes), 40)}`);
-        const speechInfo = speechParts.length > 0 ? ` [${speechParts.join(", ")}]` : "";
-        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 50)}` : ""}${alias}${speechInfo}`;
+        if (c.accent) speechParts.push(`accent: ${clampPromptText(c.accent, 40)}`);
+        if (c.speakingStyle) speechParts.push(`speech: ${clampPromptText(c.speakingStyle, 40)}`);
+        if (c.voiceNotes) speechParts.push(`voice: ${clampPromptText(c.voiceNotes, 40)}`);
+        if (c.reactionPattern) speechParts.push(`reactions: ${clampPromptText(c.reactionPattern, 40)}`);
+        const detailInfo = detailParts.length > 0 ? `\n    ${detailParts.join("; ")}` : "";
+        const speechInfo = speechParts.length > 0 ? `\n    Speech: ${speechParts.join(", ")}` : "";
+        return `${c.name} (${c.role || "Supporting"})${c.logline ? `: ${clampPromptText(c.logline, 50)}` : ""}${alias}${detailInfo}${speechInfo}`;
       })
       .join("\n  ");
 
@@ -3713,7 +3731,15 @@ function NovelWorkspacePage() {
         });
     const locList = (relevantLocs.length > 0 ? relevantLocs : locations.slice(0, 2))
       .slice(0, 3)
-      .map((l) => `${l.name}: ${clampPromptText(l.description || "", 50)}`)
+      .map((l) => {
+        const parts = [l.name];
+        if (l.type) parts[0] += ` [${l.type}]`;
+        if (l.description) parts.push(clampPromptText(l.description, 80));
+        if (l.sensoryDetails) parts.push(`Sensory: ${clampPromptText(l.sensoryDetails, 60)}`);
+        if (l.significance) parts.push(`Significance: ${clampPromptText(l.significance, 40)}`);
+        if (l.rules) parts.push(`Rules: ${clampPromptText(l.rules, 40)}`);
+        return parts.join(" — ");
+      })
       .join("\n  ");
 
     const relevantLore = lore.filter((e) => {
@@ -4972,14 +4998,58 @@ function NovelWorkspacePage() {
         if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName}`);
         if (nf?.era) parts.push(`Era: ${nf.era}`);
         if (nf?.centralTheme) parts.push(`Central theme: ${nf.centralTheme}`);
+        const synLower = (block.synopsis || "").toLowerCase();
+        const chapterSynLower = (planChapter?.synopsis || "").toLowerCase();
+        const combinedSearch = `${synLower} ${chapterSynLower}`;
+
         const relevantEvents = (nf?.lifeEvents ?? []).filter(e =>
-          block.synopsis?.toLowerCase().includes(e.title.toLowerCase()) ||
-          e.people.some(p => block.synopsis?.toLowerCase().includes(p.toLowerCase()))
+          combinedSearch.includes(e.title.toLowerCase()) ||
+          e.people.some(p => p.length > 1 && combinedSearch.includes(p.toLowerCase()))
         );
         if (relevantEvents.length) {
-          parts.push("Relevant life events:");
-          relevantEvents.forEach(e => parts.push(`  - ${e.title}: ${e.description?.slice(0, 200) || ""}`));
+          parts.push("Relevant life events (use these for authentic detail):");
+          relevantEvents.forEach(e => {
+            parts.push(`  - ${e.title}${e.date ? ` (${e.date})` : ""}: ${e.description?.slice(0, 250) || ""}`);
+            if (e.people.length) parts.push(`    People present: ${e.people.join(", ")}`);
+            if (e.places.length) parts.push(`    Places: ${e.places.join(", ")}`);
+          });
         }
+
+        if (nf?.nfCategory === "biography") {
+          const relevantScrapbook = (nf.scrapbook ?? []).filter(s =>
+            s.content && (
+              combinedSearch.includes(s.title.toLowerCase()) ||
+              (s.linkedEventId && relevantEvents.some(e => e.id === s.linkedEventId))
+            )
+          );
+          if (relevantScrapbook.length) {
+            parts.push("Author's own writing about these moments (match this authentic voice):");
+            relevantScrapbook.forEach(s => parts.push(`  - "${s.title}": ${clampPromptText(s.content, 300)}`));
+          }
+        }
+
+        if (nf?.nfCategory === "other") {
+          const relevantNotes = (nf.researchNotes ?? []).filter(n =>
+            n.content && (
+              combinedSearch.includes(n.title.toLowerCase()) ||
+              n.tags.some(t => t.length > 1 && combinedSearch.includes(t.toLowerCase()))
+            )
+          );
+          if (relevantNotes.length) {
+            parts.push("Research material (use for factual accuracy):");
+            relevantNotes.forEach(n => {
+              parts.push(`  - "${n.title}"${n.source ? ` [Source: ${n.source}]` : ""}${n.strength ? ` (${n.strength})` : ""}: ${clampPromptText(n.content, 200)}`);
+            });
+          }
+        }
+
+        const chapterIdx = novel.chapters.findIndex(c => c.id === targetChapterId);
+        const relevantCards = (nf?.storyCards ?? []).filter(c => c.chapterSlot === chapterIdx && c.summary);
+        if (relevantCards.length) {
+          parts.push("Story board elements assigned to this chapter (incorporate these):");
+          relevantCards.forEach(c => parts.push(`  - ${c.title}: ${clampPromptText(c.summary, 150)}`));
+        }
+
         return parts.join("\n");
       })() : "";
       const spellingRule = profileLangCode === "en-GB" ? "Use BRITISH English spelling and grammar throughout (e.g. colour, realise, honour, favourite, centre, programme, travelling, defence). NEVER use American spellings."
@@ -5000,12 +5070,14 @@ function NovelWorkspacePage() {
       const systemMsg = isNF ? [
         `You are a professional ${nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} author writing in ${profileLangLabel}.`,
         "You write like a published human author. Your prose is natural, varied, and compelling.",
+        "Your PRIMARY job: match the author's established style, voice, and genre conventions from the Style section. If voice rules are provided, follow them precisely — they define how this book should read.",
         povNote,
         nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight." :
         nfData?.subtype === "historical" ? "Write with authority, narrative drive, and period authenticity." :
         nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing." :
         "Write with emotional honesty and literary quality.",
-        "Use real names and places from Canon. Return ONLY prose — no headers, labels, JSON, or metadata.",
+        "Use real names, places, and details from Canon and the Source Material. When the author has written their own memories in the Scrapbook, echo their authentic voice and specific details.",
+        "Return ONLY prose — no headers, labels, JSON, or metadata.",
       ].join(" ") : [
         `You are a professional novelist writing in ${profileLangLabel}. You write like a published human author — natural, skilled, varied prose.`,
         "Your PRIMARY job: match the author's established style, voice, and genre conventions from the Style section.",
@@ -5053,9 +5125,9 @@ function NovelWorkspacePage() {
         previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
         "",
-        nfProseCtx ? `\nMemoir Context:\n${nfProseCtx}` : "",
-        "Canon (style, voice, characters, locations):",
-        fullContext.slice(0, 3000),
+        nfProseCtx ? `\nNon-Fiction Source Material (USE THIS for authentic detail, real names, real events):\n${nfProseCtx}` : "",
+        "Canon (style, voice, characters, locations — FOLLOW THESE CLOSELY):",
+        fullContext.slice(0, 3500),
         "",
         "RULES:",
         `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
@@ -5063,7 +5135,7 @@ function NovelWorkspacePage() {
         "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
         "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
         "- If there is prose after your scene, your ending must flow naturally into it.",
-        isNF ? "- Non-fiction: write with authenticity, sensory memory, and emotional truth." : "- Maintain character and canon consistency throughout.",
+        isNF ? "- Non-fiction: use details from Source Material (life events, scrapbook, research notes). Write with authenticity, sensory memory, and emotional truth. Match the Style & Voice rules exactly." : "- Maintain character and canon consistency throughout. Follow voice rules and style guidance precisely.",
         "- Write like a skilled human author. Varied sentence rhythm. No AI patterns.",
         "- Output the scene prose ONLY. No commentary, no labels, no metadata.",
         !isBestFit ? `- WORD COUNT IS MANDATORY: You MUST write between ${block.wordTarget - 110} and ${block.wordTarget + 110} words. Not fewer, not more. Plan your scene structure before writing to hit this target.` : "",
