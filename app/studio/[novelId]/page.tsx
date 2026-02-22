@@ -15770,56 +15770,95 @@ function NovelWorkspacePage() {
                                     return "";
                                   }
 
-                                  const sys = "Story architect. Return only valid JSON. Keep responses concise.";
+                                  const sys = "You are a story architect for novels. Return only valid JSON.";
                                   type RawBeat = { title: string; description: string; tension: number; locationHint?: string; characterNames?: string[] };
                                   let allBeats: StoryBeat[] = [];
                                   const allCharNames = new Set<string>();
                                   let failed = false;
 
+                                  // Helper: find all Canon character IDs mentioned in text (by name, first name, or last name)
+                                  function findCharIdsInText(text: string, extraNames?: string[]): string[] {
+                                    const haystack = text.toLowerCase();
+                                    const found = new Set<string>();
+                                    for (const c of existingChars) {
+                                      const full = c.name.toLowerCase().trim();
+                                      if (full.length > 1 && haystack.includes(full)) { found.add(c.id); continue; }
+                                      const parts = full.split(/\s+/);
+                                      if (parts.length >= 2) {
+                                        const first = parts[0]; const last = parts[parts.length - 1];
+                                        if (first.length > 2 && haystack.includes(first)) found.add(c.id);
+                                        else if (last.length > 2 && haystack.includes(last)) found.add(c.id);
+                                      }
+                                    }
+                                    if (extraNames) {
+                                      for (const n of extraNames) {
+                                        const match = existingChars.find(c => c.name.toLowerCase() === n.toLowerCase());
+                                        if (match) found.add(match.id);
+                                        else {
+                                          const parts = n.toLowerCase().split(/\s+/);
+                                          for (const c of existingChars) {
+                                            const cParts = c.name.toLowerCase().split(/\s+/);
+                                            if (parts.some(p => p.length > 2 && cParts.some(cp => cp === p))) { found.add(c.id); break; }
+                                          }
+                                        }
+                                      }
+                                    }
+                                    return [...found];
+                                  }
+
+                                  const charNameList = existingChars.map(c => c.name).join(", ");
+
                                   // ═══ BEATS: 3 small calls, one per act ═══
                                   const actConfigs = [
-                                    { act: 1 as const, label: "Act 1 — Setup", count: "4-5", desc: "Introduce the world, characters, and inciting incident. Tension rises from 1 to 3." },
-                                    { act: 2 as const, label: "Act 2 — Confrontation", count: "7-9", desc: "Rising stakes, complications, reversals, midpoint shift, allies and enemies revealed. Tension 3-4." },
-                                    { act: 3 as const, label: "Act 3 — Resolution", count: "4-5", desc: "Climax, final confrontation, resolution, aftermath. Tension peaks at 5 then resolves." },
+                                    { act: 1 as const, label: "Act 1 — Setup", count: "4-5", desc: `Setup: introduce the world, establish the status quo, plant the seeds of conflict, and end with the inciting incident that changes everything. Tension: 1→3. You MUST include these characters by name: ${charNameList}. Introduce 2-3 new characters with realistic human names (e.g. "Rachel Torres", "David Okafor") — NEVER archetype labels like "The Mastermind" or "The Shadow".` },
+                                    { act: 2 as const, label: "Act 2 — Confrontation", count: "7-9", desc: `Confrontation: rising stakes, complications, betrayals, alliances, a midpoint twist that reframes everything, and a dark moment where all seems lost. Tension: 3→4. Continue using: ${charNameList}. Each beat must involve at least 2 named characters interacting.` },
+                                    { act: 3 as const, label: "Act 3 — Resolution", count: "4-5", desc: `Resolution: the final push, climax, confrontation, and aftermath. Tension peaks at 5 then resolves to 2. Every major character (${charNameList}) must appear in at least one Act 3 beat. Tie up character arcs.` },
                                   ];
 
                                   for (const cfg of actConfigs) {
                                     setSpineProgress(`Building beats — ${cfg.label}...`);
                                     const prevBeats = allBeats.length > 0
-                                      ? `\nPrevious beats so far:\n${allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 50)}`).join("\n")}`
+                                      ? `\nBeats so far:\n${allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 60)}`).join("\n")}`
                                       : "";
                                     const prompt = [
                                       `Generate ${cfg.count} story beats for ${cfg.label} of a ${genre} novel.`,
-                                      `${cfg.desc}`,
+                                      `\n${cfg.desc}`,
                                       `\n${arcDirective}`,
                                       `\nSynopsis: ${synopsis.slice(0, 800)}`,
-                                      charCtx ? `\nCharacters:\n  ${charCtx}` : "",
+                                      charCtx ? `\nCanon characters (USE THESE EXACT NAMES in characterNames):\n  ${charCtx}` : "",
                                       locCtx ? `\nLocations: ${locCtx}` : "",
                                       prevBeats,
-                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "2-3 sentences", "tension": 1-5, "locationHint": "place", "characterNames": ["First Last"] }] }`,
-                                      "Use character full names, never 'the protagonist'. Introduce new characters naturally. Be specific about actions.",
+                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "3-4 detailed sentences — who does what, why, and what changes", "tension": 1-5, "locationHint": "place name", "characterNames": ["Exact Name", "Exact Name"] }] }`,
+                                      "",
+                                      "CRITICAL:",
+                                      `- characterNames MUST use the EXACT names from the Canon list above (e.g. "${existingChars[0]?.name || "Elena Voss"}", not "Elena" or "the protagonist").`,
+                                      "- Every beat must have at least 2 characters in characterNames.",
+                                      "- description must be specific: what happens, what's said, what decision is made, what changes.",
+                                      "- New characters MUST have realistic human names (First Last) — e.g. 'Marcus Chen', 'Diane Okafor', 'Tom Sadler'. NEVER use archetype labels like 'The Mastermind', 'The Shadow', 'The Informant', 'The Stranger', 'The Boss'. Every character is a person with a real name.",
                                     ].filter(Boolean).join("\n");
 
-                                    const raw = await smallCall(prompt, 1200, sys);
+                                    const raw = await smallCall(prompt, 1500, sys);
                                     const parsed = extractJson<{ beats?: RawBeat[] }>(raw);
-                                    const beats = parsed?.beats ?? [];
+                                    const rawBeats = parsed?.beats ?? [];
 
-                                    if (beats.length === 0 && cfg.act === 1) {
+                                    if (rawBeats.length === 0 && cfg.act === 1) {
                                       setSpineError("Your AI model couldn't generate story beats. Try a different model or check your API key. The model needs to return valid JSON.");
                                       setSpineBusy(false); setSpineProgress("");
                                       failed = true; break;
                                     }
 
                                     const offset = allBeats.length;
-                                    const actBeats: StoryBeat[] = beats.map((b, i) => {
+                                    const actBeats: StoryBeat[] = rawBeats.map((b, i) => {
                                       (b.characterNames ?? []).forEach(n => allCharNames.add(n));
+                                      const searchText = `${b.title} ${b.description} ${(b.characterNames ?? []).join(" ")}`;
+                                      const charIds = findCharIdsInText(searchText, b.characterNames);
                                       return {
                                         id: `beat-${Date.now().toString(36)}-${offset + i}`,
                                         title: b.title || `Beat ${offset + i + 1}`,
                                         description: b.description || "",
                                         act: cfg.act,
                                         chapterHint: -1,
-                                        characterIds: (b.characterNames ?? []).map(name => existingChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                        characterIds: charIds,
                                         locationHint: b.locationHint || "",
                                         tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
                                         sortOrder: offset + i,
@@ -15827,7 +15866,6 @@ function NovelWorkspacePage() {
                                     });
 
                                     allBeats = [...allBeats, ...actBeats];
-                                    // Save after each act so progress is never lost
                                     updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
                                   }
 
@@ -15845,39 +15883,55 @@ function NovelWorkspacePage() {
                                     const spPrompt = [
                                       `Generate 3-4 subplots for a ${genre} novel.`,
                                       `\nBeats: ${beatList}`,
-                                      `Characters: ${[...allCharNames].join(", ")}`,
-                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1 sentence", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
+                                      `\nCanon characters: ${charNameList}`,
+                                      `Other characters: ${[...allCharNames].filter(n => !existingChars.some(c => c.name.toLowerCase() === n.toLowerCase())).join(", ")}`,
+                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1-2 sentences", "characterNames": ["Exact Name"], "linkedBeatTitles": ["Exact Beat Title"], "status": "setup" }] }`,
+                                      `Use EXACT character names from the Canon list. Use EXACT beat titles.`,
                                     ].join("\n");
-                                    const spRaw = await smallCall(spPrompt, 800, sys);
+                                    const spRaw = await smallCall(spPrompt, 1000, sys);
                                     const spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
-                                    newSubplots = (spParsed?.subplots ?? []).map((s, i) => ({
-                                      id: `sp-${Date.now().toString(36)}-${i}`,
-                                      title: s.title || "", description: s.description || "",
-                                      characterIds: (s.characterNames ?? []).map(n => existingChars.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => allBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      status: "setup" as const,
-                                    }));
+                                    newSubplots = (spParsed?.subplots ?? []).map((s, i) => {
+                                      const searchText = `${s.title} ${s.description} ${(s.characterNames ?? []).join(" ")}`;
+                                      return {
+                                        id: `sp-${Date.now().toString(36)}-${i}`,
+                                        title: s.title || "", description: s.description || "",
+                                        characterIds: findCharIdsInText(searchText, s.characterNames),
+                                        linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => {
+                                          const tl = t.toLowerCase();
+                                          return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
+                                        }).filter((x): x is string => !!x),
+                                        status: "setup" as const,
+                                      };
+                                    });
                                     updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
                                   } catch { /* beats still saved */ }
 
-                                  // ═══ ARCS: single small call ═══
+                                  // ═══ ARCS: one call per main Canon character for reliability ═══
                                   let newArcs: CharacterArc[] = [];
                                   setSpineProgress("Mapping character arcs...");
                                   try {
-                                    const mainNames = [...allCharNames].slice(0, 5);
+                                    const mainCanonChars = existingChars.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting").slice(0, 6);
+                                    const beatTitles = allBeats.map((b, i) => `${i+1}. "${b.title}" (Act ${b.act})`).join(", ");
                                     const arcPrompt = [
-                                      `Generate character arcs for: ${mainNames.join(", ")}`,
-                                      `\nGenre: ${genre}. ${arcDirective}`,
-                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "type", "startState": "...", "endState": "...", "turningPointBeatTitles": ["Beat Title"] }] }`,
+                                      `Generate character arcs for these characters in a ${genre} novel:`,
+                                      mainCanonChars.map(c => `- ${c.name} (${c.role})`).join("\n"),
+                                      `\n${arcDirective}`,
+                                      `\nBeats: ${beatTitles}`,
+                                      `\nReturn JSON: { "arcs": [{ "characterName": "Exact Name", "arcType": "e.g. redemption, fall, coming of age", "startState": "who they are at start", "endState": "who they become", "turningPointBeatTitles": ["Exact Beat Title"] }] }`,
+                                      `Use EXACT character names and EXACT beat titles from the lists above.`,
                                     ].join("\n");
-                                    const arcRaw = await smallCall(arcPrompt, 800, sys);
+                                    const arcRaw = await smallCall(arcPrompt, 1000, sys);
                                     const arcParsed = extractJson<{ arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> }>(arcRaw);
                                     newArcs = (arcParsed?.arcs ?? []).map((a, i) => {
-                                      const charId = existingChars.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
+                                      const charIds = findCharIdsInText(a.characterName, [a.characterName]);
+                                      const charId = charIds[0] || "";
                                       return {
                                         id: `arc-${Date.now().toString(36)}-${i}`,
                                         characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
-                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => allBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => {
+                                          const tl = t.toLowerCase();
+                                          return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
+                                        }).filter((x): x is string => !!x),
                                       };
                                     }).filter(a => a.characterId);
                                   } catch { /* beats + subplots still saved */ }
@@ -16041,7 +16095,17 @@ function NovelWorkspacePage() {
 
                           {/* Character Presence Heatmap */}
                           {beats.length >= 3 && storyCharacters.length > 0 && (() => {
-                            const relevantChars = storyCharacters.filter(c => beats.some(b => b.characterIds.includes(c.id)) || c.role === "Protagonist" || c.role === "Antagonist");
+                            // Check both characterIds AND text-search beat descriptions for character names
+                            function isCharInBeat(charName: string, charId: string, beat: StoryBeat): boolean {
+                              if (beat.characterIds.includes(charId)) return true;
+                              const haystack = `${beat.title} ${beat.description}`.toLowerCase();
+                              const full = charName.toLowerCase();
+                              if (full.length > 1 && haystack.includes(full)) return true;
+                              const parts = full.split(/\s+/);
+                              if (parts.length >= 2 && parts[0].length > 2 && haystack.includes(parts[0])) return true;
+                              return false;
+                            }
+                            const relevantChars = storyCharacters.filter(c => beats.some(b => isCharInBeat(c.name, c.id, b)) || c.role === "Protagonist" || c.role === "Antagonist");
                             if (relevantChars.length === 0) return null;
                             return (
                               <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)", overflowX: "auto" }}>
@@ -16053,7 +16117,7 @@ function NovelWorkspacePage() {
                                     const charCells = [
                                       <div key={`name-${c.id}`} style={{ fontWeight: 500, color: "var(--pw-text)", padding: "2px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10 }} title={c.name}>{c.name}</div>,
                                       ...beats.map(b => {
-                                        const present = b.characterIds.includes(c.id);
+                                        const present = isCharInBeat(c.name, c.id, b);
                                         const hasArcTurn = arcs.some(a => a.characterId === c.id && a.turningPointBeatIds.includes(b.id));
                                         return <div key={`${c.id}-${b.id}`} style={{
                                           background: hasArcTurn ? "var(--pw-accent)" : present ? `${b.act === 1 ? "#3b82f6" : b.act === 2 ? "#f59e0b" : "#ef4444"}55` : "transparent",
