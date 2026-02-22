@@ -44,6 +44,10 @@ import {
   type ScrapbookEntry,
   type ResearchNote,
   type StoryCard,
+  type StoryBeat,
+  type Subplot,
+  type CharacterArc,
+  type PlotSpine,
 } from "../studio-store";
 import { ProfileButton } from "../components/ProfileButton";
 import { ProfilePopup } from "../components/ProfilePopup";
@@ -1046,7 +1050,7 @@ function NovelWorkspacePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showStoryBibleModal, setShowStoryBibleModal] = useState(false);
   const [bibleSection, setBibleSection] = useState<
-    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
+    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "plotSpine" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
   >(
     "summary",
   );
@@ -1111,6 +1115,12 @@ function NovelWorkspacePage() {
   const [focusMode, setFocusMode] = useState(false);
   const [chapterNotesOpen, setChapterNotesOpen] = useState(false);
   const [showOutlineView, setShowOutlineView] = useState(false);
+  const [spineTab, setSpineTab] = useState<"beats" | "subplots" | "arcs">("beats");
+  const [spineExpandedId, setSpineExpandedId] = useState<string | null>(null);
+  const [spineBusy, setSpineBusy] = useState(false);
+  const [spineVariations, setSpineVariations] = useState<Array<{ label: string; beats: StoryBeat[] }> | null>(null);
+  const [spineSubplotSuggestions, setSpineSubplotSuggestions] = useState<Subplot[] | null>(null);
+  const [spineArcSuggestions, setSpineArcSuggestions] = useState<Array<{ characterId: string; characterName: string; options: CharacterArc[] }> | null>(null);
   const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
   const [sessionElapsed, setSessionElapsed] = useState(0);
 
@@ -2423,10 +2433,11 @@ function NovelWorkspacePage() {
   }
 
   function sanitizePlanChapterEntry(planChapter: PlanChapter): PlanChapter {
+    const synopsisClamp = hasPlotSpine() ? 3000 : 2000;
     return {
       ...planChapter,
       title: clampText(planChapter.title, 120),
-      synopsis: clampText(planChapter.synopsis, 1600),
+      synopsis: clampText(planChapter.synopsis, synopsisClamp),
       characterIds: clampTextList(planChapter.characterIds, 40, 120),
       locationIds: clampTextList(planChapter.locationIds, 40, 120),
       manuscriptChapterId: clampText(planChapter.manuscriptChapterId ?? "", 120),
@@ -3506,6 +3517,100 @@ function NovelWorkspacePage() {
     return contextParts;
   }
 
+  function buildPlotSpineChapterContext(chapterIndex: number, totalChapters: number): string {
+    const spine = novel?.storyBible.plotSpine;
+    if (!spine || spine.beats.length === 0) return "";
+    const beats = spine.beats;
+    const subplots = spine.subplots;
+    const arcs = spine.characterArcs;
+    const chars = novel?.storyBible.characters ?? [];
+
+    // Map beats to chapters: use chapterHint if set, otherwise distribute by act
+    const beatsForChapter: StoryBeat[] = [];
+    const assignedBeats = beats.filter(b => b.chapterHint >= 0);
+    const unassignedBeats = beats.filter(b => b.chapterHint < 0);
+
+    for (const b of assignedBeats) {
+      if (b.chapterHint === chapterIndex) beatsForChapter.push(b);
+    }
+    if (unassignedBeats.length > 0 && totalChapters > 0) {
+      const perChapter = Math.ceil(unassignedBeats.length / totalChapters);
+      const start = chapterIndex * perChapter;
+      const end = Math.min(start + perChapter, unassignedBeats.length);
+      for (let i = start; i < end; i++) beatsForChapter.push(unassignedBeats[i]);
+    }
+
+    if (beatsForChapter.length === 0) return "";
+
+    const parts: string[] = ["=== PLOT SPINE — THIS IS YOUR PRIMARY GUIDE ===", ""];
+    parts.push("YOUR BEATS FOR THIS CHAPTER (you MUST cover all of these):");
+    for (const b of beatsForChapter) {
+      const charNames = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
+      parts.push(`  Beat: "${b.title}" (tension: ${b.tension}/5)`);
+      parts.push(`    ${b.description}`);
+      if (charNames.length > 0 || b.locationHint) {
+        parts.push(`    ${charNames.length > 0 ? `Characters: ${charNames.join(", ")}` : ""}${b.locationHint ? ` | Location: ${b.locationHint}` : ""}`);
+      }
+      parts.push("");
+    }
+
+    // Active subplots at this chapter position
+    const chapterBeatIds = new Set(beatsForChapter.map(b => b.id));
+    const allPriorBeatIds = new Set<string>();
+    for (let ci = 0; ci <= chapterIndex; ci++) {
+      for (const b of assignedBeats) { if (b.chapterHint === ci) allPriorBeatIds.add(b.id); }
+      if (unassignedBeats.length > 0 && totalChapters > 0) {
+        const pc = Math.ceil(unassignedBeats.length / totalChapters);
+        const s = ci * pc; const e = Math.min(s + pc, unassignedBeats.length);
+        for (let i = s; i < e; i++) allPriorBeatIds.add(unassignedBeats[i].id);
+      }
+    }
+    const activeSubplots = subplots.filter(sp => sp.linkedBeatIds.some(id => allPriorBeatIds.has(id)));
+    if (activeSubplots.length > 0) {
+      parts.push("ACTIVE SUBPLOTS AT THIS POINT:");
+      for (const sp of activeSubplots) {
+        const touchesThisChapter = sp.linkedBeatIds.some(id => chapterBeatIds.has(id));
+        parts.push(`  "${sp.title}" — STATUS: ${sp.status}${touchesThisChapter ? " (active in THIS chapter)" : ""}`);
+        parts.push(`    ${sp.description.slice(0, 200)}`);
+      }
+      parts.push("");
+    }
+
+    // Character arc states
+    const activeArcs = arcs.filter(a => {
+      const charInChapter = beatsForChapter.some(b => b.characterIds.includes(a.characterId));
+      const hasTurningPoint = a.turningPointBeatIds.some(id => chapterBeatIds.has(id));
+      return charInChapter || hasTurningPoint;
+    });
+    if (activeArcs.length > 0) {
+      parts.push("CHARACTER ARC STATES FOR THIS CHAPTER:");
+      for (const arc of activeArcs) {
+        const charName = chars.find(c => c.id === arc.characterId)?.name || "?";
+        const hasTurningPoint = arc.turningPointBeatIds.some(id => chapterBeatIds.has(id));
+        parts.push(`  ${charName}: "${arc.startState}" → "${arc.endState}" (${arc.arcType})`);
+        if (hasTurningPoint) {
+          parts.push(`    ★ TURNING POINT IN THIS CHAPTER — show this shift happening as a pivotal moment.`);
+        }
+      }
+      parts.push("");
+    }
+
+    parts.push("=== END PLOT SPINE ===");
+    parts.push("");
+    parts.push("CRITICAL RULES:");
+    parts.push("- The beats above are the BACKBONE of this chapter. Every beat must be covered.");
+    parts.push("- Add connective tissue BETWEEN beats: transitions, emotional reactions, small moments of reflection, sensory detail.");
+    parts.push("- Advance each active subplot — show its status changing.");
+    parts.push("- If a character arc turning point falls in this chapter, make it a PIVOTAL moment.");
+    parts.push("- Do NOT invent new major plot points that contradict the spine.");
+    parts.push("- You CAN add minor texture: a phone call, a memory, a physical detail, a secondary character reaction — as long as it serves the beats.");
+    return parts.join("\n");
+  }
+
+  function hasPlotSpine(): boolean {
+    return (novel?.storyBible.plotSpine?.beats?.length ?? 0) > 0;
+  }
+
   function buildPhase1TitlesPrompt(count: number): string {
     const context = buildPhase1OutlineContext();
     const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
@@ -3532,17 +3637,53 @@ function NovelWorkspacePage() {
         : pacingMode === "fast"
           ? "- Pacing: fast. Start with a strong hook and keep momentum high while preserving clarity."
           : "- Pacing: balanced. Begin with grounded setup and tension-building before larger turns.";
+    const spineCtx = (() => {
+      const spine = novel?.storyBible.plotSpine;
+      if (!spine || spine.beats.length === 0) return "";
+      const chars = novel?.storyBible.characters ?? [];
+      const lines: string[] = ["=== PLOT SPINE (distribute these beats across chapters) ==="];
+      for (const act of [1, 2, 3] as const) {
+        const actBeats = spine.beats.filter(b => b.act === act);
+        if (actBeats.length === 0) continue;
+        lines.push(`\nAct ${act}:`);
+        for (const b of actBeats) {
+          const charNames = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
+          lines.push(`  "${b.title}" (tension: ${b.tension}) — ${b.description.slice(0, 150)}${charNames.length ? ` [${charNames.join(", ")}]` : ""}${b.locationHint ? ` @ ${b.locationHint}` : ""}`);
+        }
+      }
+      if (spine.subplots.length > 0) {
+        lines.push("\nSubplots:");
+        for (const sp of spine.subplots) lines.push(`  "${sp.title}" (${sp.status}): ${sp.description.slice(0, 100)}`);
+      }
+      if (spine.characterArcs.length > 0) {
+        lines.push("\nCharacter Arcs:");
+        for (const a of spine.characterArcs) {
+          const charName = chars.find(c => c.id === a.characterId)?.name || "?";
+          lines.push(`  ${charName}: "${a.startState}" → "${a.endState}" (${a.arcType})`);
+        }
+      }
+      lines.push("=== END PLOT SPINE ===");
+      return lines.join("\n");
+    })();
+    const hasSpine = spineCtx.length > 0;
+    const sentenceTarget = hasSpine ? "12-18" : "8-12";
     return [
       "Using the Canon below, create a chapter-by-chapter INTERNAL drafting blueprint for this novel.",
       "This blueprint is used by AI to generate scene blocks and prose, so be HIGHLY DETAILED about what happens in each chapter.",
       "Return JSON only in this exact shape:",
-      `{ "chapters": [{ "title": "string", "summary": "8-12 sentence detailed chapter blueprint" }] }`,
+      `{ "chapters": [{ "title": "string", "summary": "${sentenceTarget} sentence detailed chapter blueprint" }] }`,
       "",
+      ...(hasSpine ? [
+        "IMPORTANT: A Plot Spine has been provided. You MUST distribute ALL story beats across the chapters. Every beat must appear in at least one chapter. Subplots must be woven through the appropriate chapters. Character arcs must progress across the chapters with turning points placed where indicated.",
+        "",
+        spineCtx,
+        "",
+      ] : []),
       "Rules:",
       `- Return exactly ${planTarget} chapters.`,
       "- Each chapter must advance the plot. No filler.",
       "- Titles must be unique.",
-      "- Summaries must be 8-12 sentences of DETAILED plot blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.",
+      `- Summaries must be ${sentenceTarget} sentences of DETAILED plot blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.`,
       "- Include: opening beat, middle development (transitional moments, emotional dynamics, character interactions), and closing beat for each chapter.",
       "- Go beyond the synopsis — add the connective tissue between major plot points. Think of what a novelist needs to write the actual scenes.",
       "- Summaries must mention character names, locations, and key events by name so they can be cross-referenced.",
@@ -3918,10 +4059,13 @@ function NovelWorkspacePage() {
           ? "- Pace this chapter tightly: immediate tension, crisp progression, minimal drag."
           : "- Pace this chapter with balanced progression: setup, development, and movement.";
     const arcGuidance = buildChapterArcGuidance(chapterIndex, totalChapters);
+    const spineChapterCtx = !isNF && hasPlotSpine() ? buildPlotSpineChapterContext(chapterIndex, totalChapters) : "";
+    const sentTgt = spineChapterCtx ? "12-18" : "8-12";
     return [
       "Expand this chapter into a DETAILED INTERNAL WRITER BLUEPRINT used to generate scene blocs and prose. Use Canon names exactly.",
       "This is NOT reader-facing copy. Do not write teaser blurbs or marketing language.",
-      `Return JSON: { "synopsis": "8-12 sentences with concrete events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      `Return JSON: { "synopsis": "${sentTgt} sentences with concrete events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      ...(spineChapterCtx ? [spineChapterCtx, ""] : []),
       "Synopsis must be a DETAILED blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.",
       "Include: opening beat, middle development (transitional moments, character reactions, emotional shifts), and closing beat.",
       "Go beyond the outline — add the connective tissue between major plot points that a prose writer needs.",
@@ -4429,10 +4573,11 @@ function NovelWorkspacePage() {
     prior: { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[]; lore?: string[] },
     systemMsg: string,
   ) {
+    const repairSentTgt = hasPlotSpine() ? "12-18" : "8-12";
     const repairPrompt = [
       "Your previous chapter plan was too vague or incomplete for scene-block generation.",
       "Rewrite it as a DETAILED INTERNAL drafting blueprint.",
-      `Return JSON: { "synopsis": "8-12 sentences with explicit events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
+      `Return JSON: { "synopsis": "${repairSentTgt} sentences with explicit events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
       "Requirements:",
       "- clear sequence of what happens from chapter opening to chapter close",
       "- include middle beats: transitional moments, character reactions, emotional shifts",
@@ -6766,7 +6911,10 @@ function NovelWorkspacePage() {
     let planNewCharIds: string[] = [];
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
-      const systemMsg = "You are a PLOT outliner and story architect, not a prose writer. Write DETAILED chapter blueprints describing what HAPPENS — actions, character reactions, emotional dynamics, consequences, and changes. Each chapter blueprint should read like a screenwriter's expanded beat sheet: opening beat, middle development, and closing beat. Include motivations, interpersonal dynamics, and cause-and-effect chains. Never write prose scenes or dialogue. Every chapter must cover NEW ground — never repeat the same scene type or emotional beat from a previous chapter. Respect all Canon. Return only valid JSON.";
+      const spineActive = !isNF && hasPlotSpine();
+      const systemMsg = spineActive
+        ? "You are a PLOT outliner and story architect. The user has built a detailed Plot Spine with story beats, subplots, and character arcs. Your job is to expand each chapter's assigned beats into a rich, detailed chapter blueprint. Follow the spine precisely — it is the user's vision for their story. Add emotional depth, scene transitions, and character dynamics between the beats, but never contradict or skip a beat. Track subplot progression and character arc evolution across chapters. Return only valid JSON."
+        : "You are a PLOT outliner and story architect, not a prose writer. Write DETAILED chapter blueprints describing what HAPPENS — actions, character reactions, emotional dynamics, consequences, and changes. Each chapter blueprint should read like a screenwriter's expanded beat sheet: opening beat, middle development, and closing beat. Include motivations, interpersonal dynamics, and cause-and-effect chains. Never write prose scenes or dialogue. Every chapter must cover NEW ground — never repeat the same scene type or emotional beat from a previous chapter. Respect all Canon. Return only valid JSON.";
       const context = buildPhase1OutlineContext();
       const pacingMode = novel.storyBible.bookPlan?.pacingMode ?? "balanced";
       const pacingHint =
@@ -7178,13 +7326,16 @@ function NovelWorkspacePage() {
           "",
           synopsisFormatGuide,
           "",
+          ...(spineActive ? [buildPlotSpineChapterContext(index, allTitles.length), ""] : []),
           storySoFar ? `ALREADY HAPPENED (do not repeat — continue AFTER this):\n${storySoFar}\n` : "",
           whatChangedLast ? `PICK UP FROM: ${whatChangedLast}\n` : "",
           blockedLocations,
-          structuralBeat,
+          ...(!spineActive ? [structuralBeat] : []),
           genreGuidance,
           "",
-          "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, who does what, what decisions are made, how characters react, what changes, and what consequences follow.",
+          spineActive
+            ? `- Write 12-18 sentences of DETAILED CHAPTER BLUEPRINT covering every beat from the Plot Spine above. Flesh out each beat with emotional reactions, character dynamics, dialogue topics, and transitions.`
+            : "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, who does what, what decisions are made, how characters react, what changes, and what consequences follow.",
           "- Go BEYOND the outline. The synopsis is the skeleton — you must add the middle beats, transitional moments, emotional dynamics, and character interactions that make this chapter feel like a real chapter in a published novel.",
           "- Include: opening beat (how the chapter starts), rising tension or development in the middle, and a clear chapter-ending beat.",
           "- Name specific actions, dialogue topics, emotional shifts, and discoveries. Be concrete — 'Elena confronts Marcus about the forged documents and he deflects by revealing her father's involvement' NOT 'they argue about the past'.",
@@ -7216,7 +7367,8 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const raw = await requestOpenRouterText(chapterPrompt, 1500, 180000, systemMsg, false, 0.6);
+          const chapterTokenLimit = spineActive ? 2500 : 1500;
+          const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 180000, systemMsg, false, 0.6);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -7493,7 +7645,7 @@ function NovelWorkspacePage() {
           chapterOutline,
           "",
           "RULES:",
-          "- Each synopsis MUST be a detailed blueprint — at least 8-12 sentences per chapter.",
+          `- Each synopsis MUST be a detailed blueprint — at least ${hasPlotSpine() ? "12-18" : "8-12"} sentences per chapter.`,
           "- Include specific character actions, emotional beats, key plot developments, character dynamics, and transitional moments.",
           "- Go beyond the outline: add middle beats, character reactions, emotional shifts, and cause-and-effect chains.",
           "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
@@ -8249,6 +8401,16 @@ function NovelWorkspacePage() {
       storyBible: {
         ...n.storyBible,
         nonfiction: { ...n.storyBible.nonfiction!, ...patch },
+      },
+    }));
+  }
+
+  function updatePlotSpine(patch: Partial<PlotSpine>) {
+    mutateNovel((n) => ({
+      ...n,
+      storyBible: {
+        ...n.storyBible,
+        plotSpine: { beats: [], subplots: [], characterArcs: [], ...n.storyBible.plotSpine, ...patch },
       },
     }));
   }
@@ -14304,11 +14466,12 @@ function NovelWorkspacePage() {
                     { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "summary" as const, label: "Summary" },
                   ]) : [
-                    { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "summary" as const, label: "Summary" },
+                    { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "characters" as const, label: "Characters" },
                     { id: "locations" as const, label: "Locations" },
                     { id: "worldbuilding" as const, label: "Worldbuilding" },
+                    { id: "plotSpine" as const, label: "Plot Spine" },
                     { id: "boltons" as const, label: "Bolt-Ons" },
                   ]
                 ).map((item) => (
@@ -15229,6 +15392,541 @@ function NovelWorkspacePage() {
                 )}
 
                 {/* Knowledge & Reveals moved to NCC */}
+
+                {bibleSection === "plotSpine" && !isNF && (
+                  <div className="pw-bible-section">
+                    <div className="pw-bible-flex-head">
+                      <div>
+                        <h3>Plot Spine</h3>
+                        <p className="pw-field-help">Build the backbone of your story — beats, subplots, and character arcs that drive chapter generation.</p>
+                      </div>
+                    </div>
+
+                    {/* Internal tabs */}
+                    <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--pw-border-light)", marginBottom: 12 }}>
+                      {(["beats", "subplots", "arcs"] as const).map((t) => (
+                        <button key={t} type="button" onClick={() => { setSpineTab(t); setSpineExpandedId(null); }}
+                          style={{
+                            padding: "8px 16px", fontSize: 12, fontWeight: spineTab === t ? 700 : 500,
+                            color: spineTab === t ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                            background: "none", border: "none", borderBottom: spineTab === t ? "2px solid var(--pw-accent)" : "2px solid transparent",
+                            cursor: "pointer", transition: "all 0.15s",
+                          }}>
+                          {t === "beats" ? `Beats (${(novel.storyBible.plotSpine?.beats ?? []).length})` : t === "subplots" ? `Subplots (${(novel.storyBible.plotSpine?.subplots ?? []).length})` : `Arcs (${(novel.storyBible.plotSpine?.characterArcs ?? []).length})`}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ═══ BEATS TAB ═══ */}
+                    {spineTab === "beats" && (() => {
+                      const beats = novel.storyBible.plotSpine?.beats ?? [];
+                      const storyCharacters = novel.storyBible.characters ?? [];
+                      return (
+                        <div>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                            <button type="button" className="btn" disabled={spineBusy} onClick={() => {
+                              const id = `beat-${Date.now().toString(36)}`;
+                              updatePlotSpine({ beats: [...beats, { id, title: "", description: "", act: (beats.length < 4 ? 1 : beats.length < 12 ? 2 : 3) as 1|2|3, chapterHint: -1, characterIds: [], locationHint: "", tension: 3 as 1|2|3|4|5, sortOrder: beats.length }] });
+                              setSpineExpandedId(id);
+                            }}>+ Add Beat</button>
+                            {!aiOff && (
+                              <>
+                                <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={async () => {
+                                  if (!novel || spineBusy) return;
+                                  setSpineBusy(true);
+                                  setSpineVariations(null);
+                                  try {
+                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
+                                    const charCtx = storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 60) : ""}`).join("; ");
+                                    const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => l.name).join(", ");
+                                    const loreCtx = (novel.storyBible.lore ?? []).slice(0, 4).map(l => l.title).join(", ");
+                                    const variations: Array<{ label: string; beats: StoryBeat[] }> = [];
+                                    const styles = [
+                                      { label: "Character-Driven", hint: "Focus on emotional turning points, relationship shifts, and internal character struggles. Let character decisions drive the plot." },
+                                      { label: "Plot-Driven", hint: "Focus on external events, twists, escalating conflicts, and high-stakes set pieces. Keep the pace propulsive." },
+                                      { label: "Tension Arc", hint: "Build tension steadily from a low opening to a shattering climax. Use slow reveals, mounting dread, and dramatic irony." },
+                                    ];
+                                    for (const style of styles) {
+                                      if (aiAbortRef.current?.signal.aborted) break;
+                                      const prompt = [
+                                        `Generate 12-20 story beats for a ${genre} novel.`,
+                                        `Style: ${style.hint}`,
+                                        `\nSynopsis:\n${synopsis.slice(0, 2000)}`,
+                                        charCtx ? `\nCharacters: ${charCtx}` : "",
+                                        locCtx ? `\nLocations: ${locCtx}` : "",
+                                        loreCtx ? `\nLore: ${loreCtx}` : "",
+                                        `\nReturn JSON: { "beats": [{ "title": "...", "description": "detailed 2-3 sentence description of what happens", "act": 1|2|3, "tension": 1-5, "locationHint": "place name", "characterNames": ["Name1"] }] }`,
+                                        "Distribute beats across 3 acts (roughly 25% Act 1, 50% Act 2, 25% Act 3).",
+                                        "Each beat should advance the story — never repeat similar events.",
+                                        "Use character names from the list above. You may suggest new minor characters if needed.",
+                                      ].filter(Boolean).join("\n");
+                                      const sysMsg = "You are a story structure architect. Generate a complete story beat sheet that serves as the backbone for chapter generation. Be specific and detailed in each beat. Return only valid JSON.";
+                                      const raw = await requestOpenRouterText(prompt, 3000, 120000, sysMsg, false, 0.7);
+                                      try {
+                                        let parsed: { beats: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> } | null = null;
+                                        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+                                        if (parsed?.beats?.length) {
+                                          variations.push({
+                                            label: style.label,
+                                            beats: parsed.beats.map((b, i) => ({
+                                              id: `beat-${Date.now().toString(36)}-${i}`,
+                                              title: b.title || `Beat ${i + 1}`,
+                                              description: b.description || "",
+                                              act: ([1, 2, 3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                              chapterHint: -1,
+                                              characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                              locationHint: b.locationHint || "",
+                                              tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                              sortOrder: i,
+                                            })),
+                                          });
+                                        }
+                                      } catch { /* skip bad variation */ }
+                                    }
+                                    if (variations.length > 0) setSpineVariations(variations);
+                                  } catch (err) {
+                                    console.error("Beat generation failed:", err);
+                                  } finally {
+                                    setSpineBusy(false);
+                                  }
+                                }}>
+                                  {spineBusy ? "Generating..." : "✦ AI Generate Beats"}
+                                </button>
+                                {beats.length > 0 && (
+                                  <button type="button" className="btn" disabled={spineBusy} onClick={async () => {
+                                    if (!novel || spineBusy) return;
+                                    setSpineBusy(true);
+                                    try {
+                                      const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                      const existingBeats = beats.map((b, i) => `${i + 1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 100)}`).join("\n");
+                                      const prompt = [
+                                        "Here are the existing story beats:",
+                                        existingBeats,
+                                        `\nSynopsis: ${synopsis.slice(0, 1000)}`,
+                                        "\nGenerate 3-5 NEW beats that fill gaps between existing ones — transitions, complications, or quieter moments that the story needs.",
+                                        `Return JSON: { "beats": [{ "title": "...", "description": "2-3 sentences", "act": 1|2|3, "tension": 1-5, "insertAfterIndex": number }] }`,
+                                        "insertAfterIndex is the 0-based index in the existing beat list where this new beat should be inserted.",
+                                      ].join("\n");
+                                      const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are a story structure architect. Fill gaps in an existing beat sheet. Return only valid JSON.", false, 0.6);
+                                      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                      if (jsonMatch) {
+                                        const parsed = JSON.parse(jsonMatch[0]) as { beats: Array<{ title: string; description: string; act: number; tension: number; insertAfterIndex?: number }> };
+                                        if (parsed.beats?.length) {
+                                          const newBeats = parsed.beats.map((b, i) => ({
+                                            id: `beat-${Date.now().toString(36)}-fill-${i}`,
+                                            title: b.title, description: b.description,
+                                            act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                            chapterHint: -1, characterIds: [] as string[], locationHint: "",
+                                            tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                            sortOrder: (b.insertAfterIndex ?? beats.length) + 0.5 + i * 0.01,
+                                          }));
+                                          const merged = [...beats, ...newBeats].sort((a, b) => a.sortOrder - b.sortOrder).map((b, i) => ({ ...b, sortOrder: i }));
+                                          updatePlotSpine({ beats: merged });
+                                        }
+                                      }
+                                    } catch { /* */ } finally { setSpineBusy(false); }
+                                  }}>✦ Fill Gaps</button>
+                                )}
+                              </>
+                            )}
+                          </div>
+
+                          {/* Variation picker */}
+                          {spineVariations && (
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose a variation:</div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                {spineVariations.map((v, vi) => (
+                                  <button key={vi} type="button" className="btn" onClick={() => { updatePlotSpine({ beats: v.beats, generatedAt: new Date().toISOString() }); setSpineVariations(null); }}
+                                    style={{ flex: "1 1 200px", textAlign: "left", padding: "10px 14px", minHeight: 80 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{v.label}</div>
+                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{v.beats.length} beats across 3 acts</div>
+                                    <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4 }}>
+                                      {v.beats.slice(0, 3).map(b => b.title).join(" → ")}...
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                              <button type="button" onClick={() => setSpineVariations(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer", marginTop: 6 }}>Dismiss</button>
+                            </div>
+                          )}
+
+                          {/* Beat list */}
+                          {beats.length === 0 && !spineVariations ? (
+                            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", padding: "20px 0", textAlign: "center" }}>
+                              No beats yet. Add beats manually or use AI to generate a full story structure.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              {beats.map((beat, idx) => {
+                                const isExpanded = spineExpandedId === beat.id;
+                                const charNames = beat.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name).filter(Boolean);
+                                return (
+                                  <div key={beat.id} style={{
+                                    border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: isExpanded ? "10px 12px" : "8px 12px",
+                                    background: isExpanded ? "var(--pw-surface-alt)" : "transparent",
+                                    borderLeft: `3px solid ${beat.act === 1 ? "#3b82f6" : beat.act === 2 ? "#f59e0b" : "#ef4444"}`,
+                                  }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
+                                        <button type="button" disabled={idx === 0} onClick={() => {
+                                          const b = [...beats]; const [m] = b.splice(idx, 1); b.splice(idx - 1, 0, m);
+                                          updatePlotSpine({ beats: b.map((x, i) => ({ ...x, sortOrder: i })) });
+                                        }} style={{ background: "none", border: "none", fontSize: 10, opacity: idx === 0 ? 0.2 : 0.5, cursor: idx === 0 ? "default" : "pointer", padding: 0, color: "var(--pw-text-dim)" }}>▲</button>
+                                        <button type="button" disabled={idx === beats.length - 1} onClick={() => {
+                                          const b = [...beats]; const [m] = b.splice(idx, 1); b.splice(idx + 1, 0, m);
+                                          updatePlotSpine({ beats: b.map((x, i) => ({ ...x, sortOrder: i })) });
+                                        }} style={{ background: "none", border: "none", fontSize: 10, opacity: idx === beats.length - 1 ? 0.2 : 0.5, cursor: idx === beats.length - 1 ? "default" : "pointer", padding: 0, color: "var(--pw-text-dim)" }}>▼</button>
+                                      </div>
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: beat.act === 1 ? "#3b82f6" : beat.act === 2 ? "#f59e0b" : "#ef4444", flexShrink: 0 }}>Act {beat.act}</span>
+                                      <button type="button" onClick={() => setSpineExpandedId(isExpanded ? null : beat.id)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--pw-text)", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>
+                                        {beat.title || "Untitled beat"}
+                                      </button>
+                                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }} title={`Tension: ${beat.tension}/5`}>
+                                        {[1,2,3,4,5].map(t => <span key={t} style={{ width: 6, height: 6, borderRadius: "50%", background: t <= beat.tension ? "var(--pw-accent)" : "var(--pw-border-light)" }} />)}
+                                      </div>
+                                      {charNames.length > 0 && <span style={{ fontSize: 10, color: "var(--pw-text-dim)", flexShrink: 0 }}>{charNames.length} char{charNames.length > 1 ? "s" : ""}</span>}
+                                      <button type="button" onClick={() => { updatePlotSpine({ beats: beats.filter(b => b.id !== beat.id).map((b, i) => ({ ...b, sortOrder: i })) }); if (isExpanded) setSpineExpandedId(null); }} style={{ background: "none", border: "none", fontSize: 12, color: "var(--pw-text-dim)", cursor: "pointer", opacity: 0.4, flexShrink: 0 }} title="Delete">×</button>
+                                    </div>
+                                    {!isExpanded && beat.description && (
+                                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "4px 0 0 28px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{beat.description.slice(0, 120)}</p>
+                                    )}
+                                    {isExpanded && (
+                                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, paddingLeft: 28 }}>
+                                        <input value={beat.title} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, title: e.target.value } : b) })} placeholder="Beat title" style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "var(--pw-text)", outline: "none" }} />
+                                        <textarea value={beat.description} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, description: e.target.value } : b) })} placeholder="What happens in this beat? Be detailed — who does what, why, and what changes as a result..." rows={4} style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "8px 10px", fontSize: 13, color: "var(--pw-text)", outline: "none", resize: "vertical" }} />
+                                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>Act:
+                                            <select value={beat.act} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, act: Number(e.target.value) as 1|2|3 } : b) })} style={{ marginLeft: 4, fontSize: 11, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "2px 6px", color: "var(--pw-text)" }}>
+                                              <option value={1}>1 — Setup</option><option value={2}>2 — Confrontation</option><option value={3}>3 — Resolution</option>
+                                            </select>
+                                          </label>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>Tension:
+                                            <select value={beat.tension} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, tension: Number(e.target.value) as 1|2|3|4|5 } : b) })} style={{ marginLeft: 4, fontSize: 11, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "2px 6px", color: "var(--pw-text)" }}>
+                                              <option value={1}>1 — Low</option><option value={2}>2</option><option value={3}>3 — Mid</option><option value={4}>4</option><option value={5}>5 — Peak</option>
+                                            </select>
+                                          </label>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>Chapter hint:
+                                            <select value={beat.chapterHint} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, chapterHint: Number(e.target.value) } : b) })} style={{ marginLeft: 4, fontSize: 11, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "2px 6px", color: "var(--pw-text)" }}>
+                                              <option value={-1}>Unassigned</option>
+                                              {novel.chapters.map((ch, ci) => <option key={ch.id} value={ci}>Ch {ci + 1}: {ch.title || "Untitled"}</option>)}
+                                            </select>
+                                          </label>
+                                        </div>
+                                        <input value={beat.locationHint} onChange={(e) => updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, locationHint: e.target.value } : b) })} placeholder="Location (e.g. Kitchen, City park)" style={{ width: "100%", maxWidth: 300, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "5px 10px", fontSize: 12, color: "var(--pw-text)", outline: "none" }} />
+                                        <div>
+                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 4 }}>Characters in this beat:</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            {storyCharacters.map(c => {
+                                              const active = beat.characterIds.includes(c.id);
+                                              return (
+                                                <button key={c.id} type="button" onClick={() => {
+                                                  const ids = active ? beat.characterIds.filter(x => x !== c.id) : [...beat.characterIds, c.id];
+                                                  updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, characterIds: ids } : b) });
+                                                }} style={{
+                                                  fontSize: 11, padding: "2px 8px", borderRadius: 12,
+                                                  background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)",
+                                                  border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                                  color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400,
+                                                }}>{c.name}</button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ═══ SUBPLOTS TAB ═══ */}
+                    {spineTab === "subplots" && (() => {
+                      const subplots = novel.storyBible.plotSpine?.subplots ?? [];
+                      const beats = novel.storyBible.plotSpine?.beats ?? [];
+                      const storyCharacters = novel.storyBible.characters ?? [];
+                      return (
+                        <div>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                            <button type="button" className="btn" disabled={spineBusy} onClick={() => {
+                              const id = `sp-${Date.now().toString(36)}`;
+                              updatePlotSpine({ subplots: [...subplots, { id, title: "", description: "", characterIds: [], linkedBeatIds: [], status: "setup" }] });
+                              setSpineExpandedId(id);
+                            }}>+ Add Subplot</button>
+                            {!aiOff && beats.length >= 3 && (
+                              <button type="button" className="btn btn-primary" disabled={spineBusy} onClick={async () => {
+                                setSpineBusy(true);
+                                setSpineSubplotSuggestions(null);
+                                try {
+                                  const beatCtx = beats.map((b, i) => `${i + 1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
+                                  const charCtx = storyCharacters.slice(0, 10).map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 50) : ""}`).join("; ");
+                                  const existingSp = subplots.length > 0 ? `\nExisting subplots (do NOT duplicate): ${subplots.map(s => s.title).join(", ")}` : "";
+                                  const prompt = [
+                                    "Given these story beats and characters, suggest 3 compelling subplots:",
+                                    `\nBeats:\n${beatCtx}`,
+                                    `\nCharacters: ${charCtx}`,
+                                    existingSp,
+                                    `\nSynopsis: ${(novel.storyBible.summary?.synopsisShort || "").slice(0, 800)}`,
+                                    `\nReturn JSON: { "subplots": [{ "title": "...", "description": "2-3 sentences describing the subplot arc", "characterNames": ["Name"], "linkedBeatIndices": [0, 3, 7], "status": "setup" }] }`,
+                                    "Each subplot should involve 1-3 characters and touch 2-5 existing beats. Make them feel organic to the main story, not forced.",
+                                  ].join("\n");
+                                  const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are a story architect. Suggest subplots that enrich the main story. Return only valid JSON.", false, 0.7);
+                                  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                  if (jsonMatch) {
+                                    const parsed = JSON.parse(jsonMatch[0]) as { subplots: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatIndices?: number[]; status?: string }> };
+                                    if (parsed.subplots?.length) {
+                                      setSpineSubplotSuggestions(parsed.subplots.map((s, i) => ({
+                                        id: `sp-sug-${Date.now().toString(36)}-${i}`,
+                                        title: s.title,
+                                        description: s.description,
+                                        characterIds: (s.characterNames ?? []).map(n => storyCharacters.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
+                                        linkedBeatIds: (s.linkedBeatIndices ?? []).map(idx => beats[idx]?.id).filter((x): x is string => !!x),
+                                        status: "setup" as const,
+                                      })));
+                                    }
+                                  }
+                                } catch { /* */ } finally { setSpineBusy(false); }
+                              }}>
+                                {spineBusy ? "Generating..." : "✦ AI Suggest Subplots"}
+                              </button>
+                            )}
+                          </div>
+
+                          {spineSubplotSuggestions && (
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Suggested subplots:</div>
+                              {spineSubplotSuggestions.map((s) => (
+                                <div key={s.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--pw-border-light)" }}>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13 }}>{s.title}</div>
+                                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "2px 0" }}>{s.description}</p>
+                                    <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Touches {s.linkedBeatIds.length} beats</span>
+                                  </div>
+                                  <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => {
+                                    updatePlotSpine({ subplots: [...subplots, { ...s, id: `sp-${Date.now().toString(36)}` }] });
+                                    setSpineSubplotSuggestions(prev => prev?.filter(x => x.id !== s.id) ?? null);
+                                  }}>Add</button>
+                                  <button type="button" onClick={() => setSpineSubplotSuggestions(prev => prev?.filter(x => x.id !== s.id) ?? null)} style={{ background: "none", border: "none", fontSize: 12, color: "var(--pw-text-dim)", cursor: "pointer" }}>×</button>
+                                </div>
+                              ))}
+                              {spineSubplotSuggestions.length === 0 && <button type="button" onClick={() => setSpineSubplotSuggestions(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer" }}>Dismiss</button>}
+                            </div>
+                          )}
+
+                          {subplots.length === 0 && !spineSubplotSuggestions ? (
+                            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", padding: "20px 0", textAlign: "center" }}>
+                              No subplots yet. Add them manually or generate beats first, then use AI to suggest subplots.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              {subplots.map((sp) => {
+                                const isExpanded = spineExpandedId === sp.id;
+                                const statusColors = { setup: "#3b82f6", developing: "#f59e0b", climax: "#ef4444", resolved: "#22c55e" };
+                                return (
+                                  <div key={sp.id} style={{ border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: isExpanded ? "10px 12px" : "8px 12px", background: isExpanded ? "var(--pw-surface-alt)" : "transparent" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: `${statusColors[sp.status]}22`, color: statusColors[sp.status], textTransform: "uppercase", flexShrink: 0 }}>{sp.status}</span>
+                                      <button type="button" onClick={() => setSpineExpandedId(isExpanded ? null : sp.id)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--pw-text)", fontSize: 13, fontWeight: 600 }}>
+                                        {sp.title || "Untitled subplot"}
+                                      </button>
+                                      <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{sp.linkedBeatIds.length} beats</span>
+                                      <button type="button" onClick={() => updatePlotSpine({ subplots: subplots.filter(s => s.id !== sp.id) })} style={{ background: "none", border: "none", fontSize: 12, color: "var(--pw-text-dim)", cursor: "pointer", opacity: 0.4 }}>×</button>
+                                    </div>
+                                    {isExpanded && (
+                                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                                        <input value={sp.title} onChange={(e) => updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, title: e.target.value } : s) })} placeholder="Subplot title" style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "var(--pw-text)", outline: "none" }} />
+                                        <textarea value={sp.description} onChange={(e) => updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, description: e.target.value } : s) })} placeholder="Describe this subplot arc..." rows={3} style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "8px 10px", fontSize: 13, color: "var(--pw-text)", outline: "none", resize: "vertical" }} />
+                                        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>Status:
+                                            <select value={sp.status} onChange={(e) => updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, status: e.target.value as Subplot["status"] } : s) })} style={{ marginLeft: 4, fontSize: 11, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "2px 6px", color: "var(--pw-text)" }}>
+                                              <option value="setup">Setup</option><option value="developing">Developing</option><option value="climax">Climax</option><option value="resolved">Resolved</option>
+                                            </select>
+                                          </label>
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 4 }}>Characters:</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            {storyCharacters.map(c => {
+                                              const active = sp.characterIds.includes(c.id);
+                                              return <button key={c.id} type="button" onClick={() => { const ids = active ? sp.characterIds.filter(x => x !== c.id) : [...sp.characterIds, c.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, characterIds: ids } : s) }); }} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{c.name}</button>;
+                                            })}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 4 }}>Linked beats:</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            {beats.map(b => {
+                                              const active = sp.linkedBeatIds.includes(b.id);
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? sp.linkedBeatIds.filter(x => x !== b.id) : [...sp.linkedBeatIds, b.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, linkedBeatIds: ids } : s) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{b.title || "Untitled"}</button>;
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ═══ CHARACTER ARCS TAB ═══ */}
+                    {spineTab === "arcs" && (() => {
+                      const arcs = novel.storyBible.plotSpine?.characterArcs ?? [];
+                      const beats = novel.storyBible.plotSpine?.beats ?? [];
+                      const storyCharacters = novel.storyBible.characters ?? [];
+                      return (
+                        <div>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                            <button type="button" className="btn" disabled={spineBusy} onClick={() => {
+                              const id = `arc-${Date.now().toString(36)}`;
+                              updatePlotSpine({ characterArcs: [...arcs, { id, characterId: storyCharacters[0]?.id || "", arcType: "", startState: "", endState: "", turningPointBeatIds: [] }] });
+                              setSpineExpandedId(id);
+                            }}>+ Add Arc</button>
+                            {!aiOff && storyCharacters.length > 0 && beats.length >= 3 && (
+                              <button type="button" className="btn btn-primary" disabled={spineBusy} onClick={async () => {
+                                setSpineBusy(true);
+                                setSpineArcSuggestions(null);
+                                try {
+                                  const mainChars = storyCharacters.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest").slice(0, 4);
+                                  const fallbackChars = mainChars.length === 0 ? storyCharacters.slice(0, 3) : mainChars;
+                                  const beatCtx = beats.map((b, i) => `${i + 1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 60)}`).join("\n");
+                                  const existingArcs = arcs.length > 0 ? `\nExisting arcs (do NOT duplicate): ${arcs.map(a => { const ch = storyCharacters.find(c => c.id === a.characterId); return `${ch?.name || "?"}: ${a.arcType}`; }).join(", ")}` : "";
+                                  const allSuggestions: Array<{ characterId: string; characterName: string; options: CharacterArc[] }> = [];
+                                  for (const char of fallbackChars) {
+                                    if (aiAbortRef.current?.signal.aborted) break;
+                                    const charDetail = [char.name, char.role, char.logline, char.personality, char.goals, char.fears, char.backstory].filter(Boolean).join("; ").slice(0, 300);
+                                    const prompt = [
+                                      `Suggest 3 different character arc options for ${char.name}:`,
+                                      `Character: ${charDetail}`,
+                                      `\nBeats:\n${beatCtx}`,
+                                      existingArcs,
+                                      `\nReturn JSON: { "arcs": [{ "arcType": "e.g. redemption, fall from grace, coming of age", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatIndices": [3, 7, 12] }] }`,
+                                      "Each arc should be a distinct journey. turningPointBeatIndices are 0-based indices into the beat list where the character's arc shifts.",
+                                    ].join("\n");
+                                    const raw = await requestOpenRouterText(prompt, 1500, 60000, "You are a character arc specialist. Suggest compelling character journeys. Return only valid JSON.", false, 0.7);
+                                    try {
+                                      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                      if (jsonMatch) {
+                                        const parsed = JSON.parse(jsonMatch[0]) as { arcs: Array<{ arcType: string; startState: string; endState: string; turningPointBeatIndices?: number[] }> };
+                                        if (parsed.arcs?.length) {
+                                          allSuggestions.push({
+                                            characterId: char.id,
+                                            characterName: char.name,
+                                            options: parsed.arcs.map((a, i) => ({
+                                              id: `arc-sug-${char.id}-${i}`,
+                                              characterId: char.id,
+                                              arcType: a.arcType,
+                                              startState: a.startState,
+                                              endState: a.endState,
+                                              turningPointBeatIds: (a.turningPointBeatIndices ?? []).map(idx => beats[idx]?.id).filter((x): x is string => !!x),
+                                            })),
+                                          });
+                                        }
+                                      }
+                                    } catch { /* skip */ }
+                                  }
+                                  if (allSuggestions.length > 0) setSpineArcSuggestions(allSuggestions);
+                                } catch { /* */ } finally { setSpineBusy(false); }
+                              }}>
+                                {spineBusy ? "Generating..." : "✦ AI Suggest Arcs"}
+                              </button>
+                            )}
+                          </div>
+
+                          {spineArcSuggestions && (
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose an arc for each character:</div>
+                              {spineArcSuggestions.map((group) => (
+                                <div key={group.characterId} style={{ marginBottom: 12 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>{group.characterName}</div>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    {group.options.map((opt) => (
+                                      <button key={opt.id} type="button" className="btn" onClick={() => {
+                                        updatePlotSpine({ characterArcs: [...arcs.filter(a => a.characterId !== opt.characterId), { ...opt, id: `arc-${Date.now().toString(36)}` }] });
+                                        setSpineArcSuggestions(prev => prev?.filter(g => g.characterId !== group.characterId) ?? null);
+                                      }} style={{ flex: "1 1 160px", textAlign: "left", padding: "8px 12px" }}>
+                                        <div style={{ fontWeight: 600, fontSize: 12 }}>{opt.arcType}</div>
+                                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{opt.startState} → {opt.endState}</div>
+                                        <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 2 }}>{opt.turningPointBeatIds.length} turning points</div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                              {spineArcSuggestions.length === 0 && <button type="button" onClick={() => setSpineArcSuggestions(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer" }}>Dismiss</button>}
+                            </div>
+                          )}
+
+                          {arcs.length === 0 && !spineArcSuggestions ? (
+                            <p style={{ fontSize: 13, color: "var(--pw-text-dim)", padding: "20px 0", textAlign: "center" }}>
+                              No character arcs yet. Add characters and beats first, then use AI to suggest arc journeys.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              {arcs.map((arc) => {
+                                const isExpanded = spineExpandedId === arc.id;
+                                const charName = storyCharacters.find(c => c.id === arc.characterId)?.name || "Unknown";
+                                return (
+                                  <div key={arc.id} style={{ border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: isExpanded ? "10px 12px" : "8px 12px", background: isExpanded ? "var(--pw-surface-alt)" : "transparent" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-accent)", flexShrink: 0 }}>{charName}</span>
+                                      <button type="button" onClick={() => setSpineExpandedId(isExpanded ? null : arc.id)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--pw-text)", fontSize: 13 }}>
+                                        <span style={{ fontWeight: 600 }}>{arc.arcType || "Unnamed arc"}</span>
+                                        {arc.startState && arc.endState && <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}> — {arc.startState} → {arc.endState}</span>}
+                                      </button>
+                                      <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{arc.turningPointBeatIds.length} turns</span>
+                                      <button type="button" onClick={() => updatePlotSpine({ characterArcs: arcs.filter(a => a.id !== arc.id) })} style={{ background: "none", border: "none", fontSize: 12, color: "var(--pw-text-dim)", cursor: "pointer", opacity: 0.4 }}>×</button>
+                                    </div>
+                                    {isExpanded && (
+                                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                                        <div style={{ display: "flex", gap: 8 }}>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)", flex: 1 }}>Character:
+                                            <select value={arc.characterId} onChange={(e) => updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, characterId: e.target.value } : a) })} style={{ display: "block", marginTop: 2, width: "100%", fontSize: 12, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "4px 6px", color: "var(--pw-text)" }}>
+                                              {storyCharacters.map(c => <option key={c.id} value={c.id}>{c.name} ({c.role})</option>)}
+                                            </select>
+                                          </label>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)", flex: 1 }}>Arc type:
+                                            <input value={arc.arcType} onChange={(e) => updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, arcType: e.target.value } : a) })} placeholder="e.g. redemption, coming of age" style={{ display: "block", marginTop: 2, width: "100%", fontSize: 12, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "4px 8px", color: "var(--pw-text)", outline: "none" }} />
+                                          </label>
+                                        </div>
+                                        <div style={{ display: "flex", gap: 8 }}>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)", flex: 1 }}>Start state:
+                                            <input value={arc.startState} onChange={(e) => updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, startState: e.target.value } : a) })} placeholder="Who they are at the beginning" style={{ display: "block", marginTop: 2, width: "100%", fontSize: 12, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "4px 8px", color: "var(--pw-text)", outline: "none" }} />
+                                          </label>
+                                          <label style={{ fontSize: 11, color: "var(--pw-text-dim)", flex: 1 }}>End state:
+                                            <input value={arc.endState} onChange={(e) => updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, endState: e.target.value } : a) })} placeholder="Who they become" style={{ display: "block", marginTop: 2, width: "100%", fontSize: 12, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "4px 8px", color: "var(--pw-text)", outline: "none" }} />
+                                          </label>
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 4 }}>Turning points (beats where the arc shifts):</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            {beats.map(b => {
+                                              const active = arc.turningPointBeatIds.includes(b.id);
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? arc.turningPointBeatIds.filter(x => x !== b.id) : [...arc.turningPointBeatIds, b.id]; updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, turningPointBeatIds: ids } : a) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{active ? "★ " : ""}{b.title || "Untitled"}</button>;
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {bibleSection === "boltons" && (
                   <div className="pw-bible-section">

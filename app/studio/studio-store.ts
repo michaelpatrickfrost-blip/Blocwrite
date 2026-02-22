@@ -115,6 +115,43 @@ export type TimelineEvent = {
   affectedEntities?: { type: "Character" | "Location" | "Faction" | "Item"; id: string }[];
 };
 
+export type StoryBeat = {
+  id: string;
+  title: string;
+  description: string;
+  act: 1 | 2 | 3;
+  chapterHint: number;
+  characterIds: string[];
+  locationHint: string;
+  tension: 1 | 2 | 3 | 4 | 5;
+  sortOrder: number;
+};
+
+export type Subplot = {
+  id: string;
+  title: string;
+  description: string;
+  characterIds: string[];
+  linkedBeatIds: string[];
+  status: "setup" | "developing" | "climax" | "resolved";
+};
+
+export type CharacterArc = {
+  id: string;
+  characterId: string;
+  arcType: string;
+  startState: string;
+  endState: string;
+  turningPointBeatIds: string[];
+};
+
+export type PlotSpine = {
+  beats: StoryBeat[];
+  subplots: Subplot[];
+  characterArcs: CharacterArc[];
+  generatedAt?: string;
+};
+
 export type GlossaryTerm = {
   id: string;
   term: string;
@@ -329,6 +366,7 @@ export type StoryBible = {
   boltons: Bolton[];
   knowledgeMap: KnowledgeMap;
   aiContext: AIContextSettings;
+  plotSpine?: PlotSpine;
   nonfiction?: NonfictionData;
   // Legacy simple fields kept for backward compatibility with existing UI while Canon evolves.
   braindump: string;
@@ -955,6 +993,44 @@ function normalizeStoryBible(raw: unknown): StoryBible {
       return { entries, scanIssues, lastScanAt: typeof raw?.lastScanAt === "string" ? (raw!.lastScanAt as string) : undefined };
     })(),
     aiContext,
+    plotSpine: (() => {
+      const ps = record.plotSpine && typeof record.plotSpine === "object" ? (record.plotSpine as Record<string, unknown>) : null;
+      if (!ps) return undefined;
+      const beats: StoryBeat[] = Array.isArray(ps.beats) ? (ps.beats as Record<string, unknown>[]).map((b, i) => ({
+        id: typeof b.id === "string" && b.id ? b.id : `beat-${i}`,
+        title: typeof b.title === "string" ? b.title : "",
+        description: typeof b.description === "string" ? b.description : "",
+        act: ([1, 2, 3].includes(Number(b.act)) ? Number(b.act) : 1) as 1 | 2 | 3,
+        chapterHint: typeof b.chapterHint === "number" ? b.chapterHint : -1,
+        characterIds: Array.isArray(b.characterIds) ? (b.characterIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
+        locationHint: typeof b.locationHint === "string" ? b.locationHint : "",
+        tension: ([1, 2, 3, 4, 5].includes(Number(b.tension)) ? Number(b.tension) : 3) as 1 | 2 | 3 | 4 | 5,
+        sortOrder: typeof b.sortOrder === "number" ? b.sortOrder : i,
+      })) : [];
+      const subplots: Subplot[] = Array.isArray(ps.subplots) ? (ps.subplots as Record<string, unknown>[]).map((s, i) => ({
+        id: typeof s.id === "string" && s.id ? s.id : `sp-${i}`,
+        title: typeof s.title === "string" ? s.title : "",
+        description: typeof s.description === "string" ? s.description : "",
+        characterIds: Array.isArray(s.characterIds) ? (s.characterIds as unknown[]).filter((x): x is string => typeof x === "string") : [],
+        linkedBeatIds: Array.isArray(s.linkedBeatIds) ? (s.linkedBeatIds as unknown[]).filter((x): x is string => typeof x === "string") : [],
+        status: (typeof s.status === "string" && ["setup", "developing", "climax", "resolved"].includes(s.status) ? s.status : "setup") as Subplot["status"],
+      })) : [];
+      const characterArcs: CharacterArc[] = Array.isArray(ps.characterArcs) ? (ps.characterArcs as Record<string, unknown>[]).map((a, i) => ({
+        id: typeof a.id === "string" && a.id ? a.id : `arc-${i}`,
+        characterId: typeof a.characterId === "string" ? a.characterId : "",
+        arcType: typeof a.arcType === "string" ? a.arcType : "",
+        startState: typeof a.startState === "string" ? a.startState : "",
+        endState: typeof a.endState === "string" ? a.endState : "",
+        turningPointBeatIds: Array.isArray(a.turningPointBeatIds) ? (a.turningPointBeatIds as unknown[]).filter((x): x is string => typeof x === "string") : [],
+      })) : [];
+      if (beats.length === 0 && subplots.length === 0 && characterArcs.length === 0) return undefined;
+      return {
+        beats,
+        subplots,
+        characterArcs,
+        generatedAt: typeof ps.generatedAt === "string" ? ps.generatedAt : undefined,
+      };
+    })(),
     ...(record.nonfiction && typeof record.nonfiction === "object" ? {
       nonfiction: (() => {
         const nf = record.nonfiction as Record<string, unknown>;
