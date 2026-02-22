@@ -3876,6 +3876,7 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 
 @keyframes pw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.08); } }
 .pw-plan-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; border-radius: 50%; animation: pw-spin 0.7s linear infinite; }
 
 /* ── The Plan Modal ── */

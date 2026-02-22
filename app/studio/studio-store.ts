@@ -4,6 +4,12 @@ export type SceneBlock = {
   focus: string;          // "default" | "dialogue" | "action" | "introspection" | "atmosphere"
   notes: string;          // optional user notes
   prose: string;          // generated / manually edited prose for this scene
+  openingLine?: string;   // how this scene should open — first-line guidance
+  closingHook?: string;   // how this scene should end and bridge into the next
+  emotionalArc?: string;  // emotional journey within this scene (e.g. "anxious → resolved")
+  sensoryPalette?: string; // key sensory details to weave in (sight, sound, smell, texture, taste)
+  dialogueNotes?: string; // key conversations, exchanges, subtext cues
+  tension?: number;       // tension level 1-5 for pacing guidance
 };
 
 export type Chapter = {

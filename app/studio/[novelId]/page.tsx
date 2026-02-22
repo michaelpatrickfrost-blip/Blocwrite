@@ -4798,7 +4798,7 @@ function NovelWorkspacePage() {
 
     const BLOC_COUNT = 4;
     const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
-    const systemMsg = `Novel outliner. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
+    const systemMsg = `You are a senior developmental editor and story architect. Build a detailed scene-by-scene writer's blueprint. Think deeply about narrative flow, emotional pacing, and sensory grounding. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
 
     // Build a rich character roster for synopses — names, roles, pronouns, key traits
     const allChars = novel.storyBible.characters ?? [];
@@ -4833,39 +4833,55 @@ function NovelWorkspacePage() {
        * SINGLE BATCH CALL — generate all bloc synopses at once.
        * ══════════════════════════════════════════════════════════════ */
 
-      type BatchBlocResult = { blocs?: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> };
+      type BatchBlocResult = { blocs?: Array<{ synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }> };
 
       const focusIds = FOCUS_PRESETS.map((p) => p.id).join(", ");
 
       const batchPrompt = [
-        `Split this chapter into EXACTLY ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into prose.`,
+        `You are a senior developmental editor building a scene-by-scene WRITER'S BLUEPRINT for a single chapter. This blueprint will be the primary instruction set for a prose author — every detail you include directly shapes the quality of the final novel.`,
+        ``,
+        `Split this chapter into EXACTLY ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into polished prose. Think deeply about how each scene opens, builds, and hands off to the next — like a relay race where the baton pass matters as much as the sprint.`,
         ``,
         `CRITICAL: You MUST return EXACTLY ${BLOC_COUNT} blocs — not 1, not 2, not 3 — EXACTLY ${BLOC_COUNT}.`,
         ``,
         `Return ONLY this JSON structure:`,
-        `{ "blocs": [{ "synopsis": "...", "focus": "...", "wordTarget": 600 }, ...] }`,
+        `{ "blocs": [{ "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 3, "focus": "...", "wordTarget": 600 }, ...] }`,
         ``,
-        `For each bloc:`,
-        `- "synopsis": 1-3 concrete sentences describing the scene beat`,
-        `- "focus": the best writing focus for this scene, one of: ${focusIds}`,
-        `- "wordTarget": recommended word count (0 for best-fit, or 400/600/800/1000/1500) — choose based on scene complexity and pacing`,
+        `For EACH bloc, provide ALL of these fields:`,
+        ``,
+        `- "synopsis": 4-8 DETAILED sentences. This is the writer's roadmap. Describe exactly what happens — character actions, reactions, revelations, micro-decisions, power shifts. Include the scene GOAL (what the POV character wants), the OBSTACLE (what's blocking them), and the OUTCOME (how it shifts). Name every character involved. Mention specific gestures, body language cues, and spatial movement. This is NOT a summary — it's a set of rich instructions that a prose author will follow beat by beat.`,
+        ``,
+        `- "openingLine": A specific instruction for how the scene should BEGIN. Examples: "Open mid-conversation — Elena is already pushing back, voice tight", "Start with a sensory jolt — the crack of the door hitting the wall", "Begin in Marcus's head — he's replaying the argument while staring at the rain". The opening must either hook the reader or seamlessly continue from the previous bloc.`,
+        ``,
+        `- "closingHook": How this scene should END and bridge into the next bloc. This is crucial for flow. Examples: "End on the unanswered phone ringing — tension carries into next scene", "Close with Elena's whispered 'I know what you did' — a line that recontextualises everything", "Trail off mid-thought as the door opens — cut to next scene". The closing of bloc N must make bloc N+1 feel inevitable.`,
+        ``,
+        `- "emotionalArc": The emotional journey WITHIN this single scene, written as a trajectory. Examples: "confident → shaken → quietly resolved", "playful banter → an accidental confession → awkward retreat", "numb detachment → a crack of vulnerability when she sees the photo". This guides the prose writer's emotional pacing.`,
+        ``,
+        `- "sensoryPalette": 2-4 specific sensory details the prose writer should weave in. NOT generic ("it was cold") — SPECIFIC and evocative. Examples: "the metallic taste of adrenaline; fluorescent lights humming; her coffee gone cold, a skin forming on top", "wet tarmac reflecting streetlights; the weight of the envelope in his coat pocket; a dog barking three streets away". Ground the scene in the real, physical world.`,
+        ``,
+        `- "dialogueNotes": Key exchanges or subtext cues. What conversations MUST happen, what's said vs. what's meant. Examples: "Elena confronts Marcus about the missing file — he deflects with humour but she notices his hand trembling", "No spoken dialogue — communicate through loaded silences, a shared glance, the way she moves his jacket off her chair". Even in non-dialogue-heavy scenes, note the communication dynamics.`,
+        ``,
+        `- "tension": A number 1-5 rating. 1 = calm/reflective, 2 = mild unease, 3 = building pressure, 4 = high stakes confrontation, 5 = peak crisis/climax. This guides sentence length, paragraph density, and pacing.`,
+        ``,
+        `- "focus": Best writing mode for this scene, one of: ${focusIds}`,
+        ``,
+        `- "wordTarget": Recommended word count (0 for best-fit, or 400/600/800/1000/1500). Longer for pivotal moments, shorter for transitional beats.`,
         "",
         "═══ CHARACTER ROSTER — USE THESE EXACT NAMES ═══",
         `The following characters exist in this story. You MUST use their EXACT names (not generic labels like "the protagonist" or "the hero"). Every synopsis must reference characters by their proper name.`,
         "",
         `  ${characterRoster}`,
         "",
-        "RULES:",
+        "BLUEPRINT RULES:",
         `- Return EXACTLY ${BLOC_COUNT} blocs in the array. This is mandatory.`,
-        "- Each synopsis must be 1-3 concrete sentences (at least 15 words) describing what HAPPENS — actions, dialogue beats, emotional shifts.",
-        "- ALWAYS use the character's PROPER NAME (e.g. 'Elena', 'Marcus') — NEVER use generic labels like 'the protagonist', 'the hero', 'the main character', 'Character A'.",
-        "- If multiple characters interact, name each one explicitly.",
-        "- All blocs share ONE primary location unless a transition is essential for the plot.",
-        "- Bloc 1 opens the chapter. The final bloc resolves or closes the chapter.",
-        "- Each bloc flows naturally into the next — no jumps.",
-        "- Be specific: name characters, describe actions, state emotional shifts and consequences.",
-        "- Do NOT write generic synopses like 'continuation of the scene' or 'the story continues'. Each must describe a distinct beat.",
-        "- This is an internal drafting plan, NOT reader-facing copy.",
+        "- Think like a novelist planning their own chapter. Each bloc should feel like you're talking to yourself about how to write this scene brilliantly.",
+        "- ALWAYS use the character's PROPER NAME (e.g. 'Elena', 'Marcus') — NEVER use generic labels.",
+        "- FLOW IS EVERYTHING: Bloc 1's closingHook must set up Bloc 2's openingLine. Bloc 2's closingHook must set up Bloc 3. And so on. A reader should never feel a seam between scenes.",
+        "- VARY THE RHYTHM: If Bloc 1 is dialogue-heavy, make Bloc 2 more introspective or action-driven. Alternate tension levels. Don't write four scenes that all feel the same.",
+        "- Bloc 1 opens the chapter with a HOOK — not setup, not throat-clearing. Drop the reader into something alive.",
+        `- The final bloc must close the chapter with either a cliffhanger, a resonant image, an emotional landing, or a question that pulls the reader into the next chapter.`,
+        "- Be ruthlessly specific in every field. Vague instructions produce vague prose.",
+        "- This is an internal drafting blueprint, NOT reader-facing copy.",
         "",
         storyPosition.chapterNumber > 0
           ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
@@ -4873,28 +4889,29 @@ function NovelWorkspacePage() {
         storyPosition.arcGuidance,
         `Chapter: ${activeChapter.title}`,
         `Chapter synopsis: ${chapterSynopsis}`,
-        previousChapterSynopsis ? `Previous chapter: ${clampPromptText(previousChapterSynopsis, 200)}` : "",
-        nextChapterSynopsis ? `Next chapter: ${clampPromptText(nextChapterSynopsis, 200)}` : "",
+        previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 300)}` : "",
+        nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 300)}` : "",
         "",
         context,
         "",
-        `REMINDER: Return EXACTLY ${BLOC_COUNT} blocs. Use character NAMES, not generic labels.`,
+        `FINAL REMINDER: Return EXACTLY ${BLOC_COUNT} blocs. Every field filled. Use character NAMES. Make every closingHook flow into the next openingLine.`,
       ].filter(Boolean).join("\n");
 
-      let batchBlocs: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> = [];
+      type BlocEntry = { synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number };
+      let batchBlocs: BlocEntry[] = [];
 
-      // Attempt batch call (with 2 retries max)
+      // Attempt batch call (with 2 retries max) — higher token budget for rich blueprints
       for (let attempt = 0; attempt < 3 && batchBlocs.length < BLOC_COUNT; attempt++) {
         try {
           const raw = await requestOpenRouterText(
             batchPrompt,
-            800,
-            240000,
+            2400,
+            300000,
             systemMsg,
             false,
-            0.3,
+            0.4,
           );
-          let parsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string; focus?: string; wordTarget?: number }>>(raw);
+          let parsed = parseJsonFromAi<BatchBlocResult | BlocEntry[]>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
@@ -4904,23 +4921,20 @@ function NovelWorkspacePage() {
           } else if (parsed && typeof parsed === "object") {
             const obj = parsed as Record<string, unknown>;
             if (Array.isArray(obj.blocs)) {
-              batchBlocs = obj.blocs as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
+              batchBlocs = obj.blocs as BlocEntry[];
             } else if (Array.isArray(obj.blocks)) {
-              batchBlocs = obj.blocks as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
+              batchBlocs = obj.blocks as BlocEntry[];
             } else if (Array.isArray(obj.scenes)) {
-              batchBlocs = obj.scenes as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>;
+              batchBlocs = obj.scenes as BlocEntry[];
             } else {
-              // Try any array value
               for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
+                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as BlocEntry[]; break; }
               }
             }
           }
-          // Validate entries — must be a real synopsis, not a stub
           batchBlocs = batchBlocs.filter((b) => {
             const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
             if (syn.length < 15) return false;
-            // Reject generic stubs
             const lower = syn.toLowerCase();
             if (/^(continuation|the (story|scene|chapter) continues)/.test(lower)) return false;
             return true;
@@ -4941,7 +4955,19 @@ function NovelWorkspacePage() {
         if (synopsis.length >= 15) {
           const suggestedFocus = typeof b.focus === "string" && validFocusIds.includes(b.focus) ? b.focus : "default";
           const suggestedTarget = typeof b.wordTarget === "number" && validWordTargets.includes(b.wordTarget) ? b.wordTarget : 0;
-          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: suggestedFocus, wordTarget: suggestedTarget });
+          blocks.push({
+            ...DEFAULT_SCENE_BLOCK,
+            synopsis,
+            notes: chapterLevelBolton,
+            focus: suggestedFocus,
+            wordTarget: suggestedTarget,
+            openingLine: typeof b.openingLine === "string" ? b.openingLine.trim() : undefined,
+            closingHook: typeof b.closingHook === "string" ? b.closingHook.trim() : undefined,
+            emotionalArc: typeof b.emotionalArc === "string" ? b.emotionalArc.trim() : undefined,
+            sensoryPalette: typeof b.sensoryPalette === "string" ? b.sensoryPalette.trim() : undefined,
+            dialogueNotes: typeof b.dialogueNotes === "string" ? b.dialogueNotes.trim() : undefined,
+            tension: typeof b.tension === "number" && b.tension >= 1 && b.tension <= 5 ? b.tension : undefined,
+          });
         }
       }
 
@@ -4952,23 +4978,23 @@ function NovelWorkspacePage() {
             `IMPORTANT: Your previous response did not return ${BLOC_COUNT} blocs. Try again.`,
             batchPrompt,
           ].join("\n\n");
-          const retryRaw = await requestOpenRouterText(retryPrompt, 800, 240000, systemMsg, false, 0.3);
-          let retryParsed = parseJsonFromAi<BatchBlocResult | Array<{ synopsis?: string; focus?: string; wordTarget?: number }>>(retryRaw);
+          const retryRaw = await requestOpenRouterText(retryPrompt, 2400, 300000, systemMsg, false, 0.4);
+          let retryParsed = parseJsonFromAi<BatchBlocResult | BlocEntry[]>(retryRaw);
           if (!retryParsed) {
             const repaired = attemptCloseTruncatedJson(retryRaw.trim());
             if (repaired) try { retryParsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
           }
-          let retryBlocs: Array<{ synopsis?: string; focus?: string; wordTarget?: number }> = [];
+          let retryBlocs: BlocEntry[] = [];
           if (Array.isArray(retryParsed)) {
             retryBlocs = retryParsed;
           } else if (retryParsed && typeof retryParsed === "object") {
             const obj = retryParsed as Record<string, unknown>;
             for (const key of ["blocs", "blocks", "scenes"]) {
-              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
+              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as BlocEntry[]; break; }
             }
             if (!retryBlocs.length) {
               for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as Array<{ synopsis?: string; focus?: string; wordTarget?: number }>; break; }
+                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as BlocEntry[]; break; }
               }
             }
           }
@@ -4984,7 +5010,15 @@ function NovelWorkspacePage() {
               if (synopsis.length >= 15) {
                 const sf = typeof rb.focus === "string" && validFocusIds.includes(rb.focus) ? rb.focus : "default";
                 const st = typeof rb.wordTarget === "number" && validWordTargets.includes(rb.wordTarget) ? rb.wordTarget : 0;
-                blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: sf, wordTarget: st });
+                blocks.push({
+                  ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: sf, wordTarget: st,
+                  openingLine: typeof rb.openingLine === "string" ? rb.openingLine.trim() : undefined,
+                  closingHook: typeof rb.closingHook === "string" ? rb.closingHook.trim() : undefined,
+                  emotionalArc: typeof rb.emotionalArc === "string" ? rb.emotionalArc.trim() : undefined,
+                  sensoryPalette: typeof rb.sensoryPalette === "string" ? rb.sensoryPalette.trim() : undefined,
+                  dialogueNotes: typeof rb.dialogueNotes === "string" ? rb.dialogueNotes.trim() : undefined,
+                  tension: typeof rb.tension === "number" && rb.tension >= 1 && rb.tension <= 5 ? rb.tension : undefined,
+                });
               }
             }
           }
@@ -5300,8 +5334,33 @@ function NovelWorkspacePage() {
         const fp = FOCUS_PRESETS.find((p) => p.id === b.focus);
         const fh = fp && b.focus !== "default" ? ` [Focus: ${fp.hint}]` : "";
         const wt = b.wordTarget === 0 ? "best fit" : `~${b.wordTarget} words`;
-        return `Scene ${i + 1} (${wt}${fh}):\n${b.synopsis || "(no synopsis)"}`;
+        const tensionLabel = b.tension ? ` [Tension: ${b.tension}/5]` : "";
+        const parts = [`Scene ${i + 1} (${wt}${fh}${tensionLabel}):`];
+        parts.push(b.synopsis || "(no synopsis)");
+        if (b.emotionalArc) parts.push(`  Emotional arc: ${b.emotionalArc}`);
+        return parts.join("\n");
       }).join("\n\n");
+
+      // Build the rich blueprint for the target scene
+      const blueprintParts: string[] = [];
+      blueprintParts.push(`══ WRITER'S BLUEPRINT FOR SCENE ${blockIndex + 1} ══`);
+      blueprintParts.push(`Synopsis: ${block.synopsis}`);
+      if (block.openingLine) blueprintParts.push(`\nOPENING INSTRUCTION: ${block.openingLine}\nFollow this guidance for how the scene begins. The first paragraph sets the reader's emotional footing — make it count.`);
+      if (block.emotionalArc) blueprintParts.push(`\nEMOTIONAL ARC: ${block.emotionalArc}\nThis is the emotional trajectory the reader should feel through this scene. Start at the first emotion, let it shift through the middle, and land on the final state. Let the pacing, sentence structure, and word choice reflect these shifts.`);
+      if (block.sensoryPalette) blueprintParts.push(`\nSENSORY PALETTE — WEAVE THESE IN: ${block.sensoryPalette}\nDon't dump these all in one paragraph. Thread them through the scene naturally — a detail here, a texture there. Let the reader feel grounded in the physical world.`);
+      if (block.dialogueNotes) blueprintParts.push(`\nDIALOGUE & COMMUNICATION: ${block.dialogueNotes}\nFollow these cues for what needs to be said (and what's left unsaid). Real dialogue has rhythm — interruptions, trailing off, answering questions that weren't asked, ignoring questions that were.`);
+      if (block.tension) {
+        const tensionGuides: Record<number, string> = {
+          1: "Tension 1/5 — CALM: Longer sentences, gentle pacing, room to breathe. Reflective. Let the reader rest here.",
+          2: "Tension 2/5 — SIMMERING: Something's not quite right. Subtle unease in the details. Normal surface, currents underneath.",
+          3: "Tension 3/5 — BUILDING: Shorter paragraphs, stakes rising, characters feeling pressure. The reader should lean forward.",
+          4: "Tension 4/5 — HIGH STAKES: Clipped dialogue, urgent movement, consequences feel real and immediate. No filler, no padding.",
+          5: "Tension 5/5 — PEAK CRISIS: Maximum intensity. Short punchy sentences. Every word earns its place. This is the moment everything has been building to.",
+        };
+        blueprintParts.push(`\nPACING: ${tensionGuides[block.tension] || `Tension ${block.tension}/5`}`);
+      }
+      if (block.closingHook) blueprintParts.push(`\nCLOSING INSTRUCTION: ${block.closingHook}\nThis is how the scene must END. The last line or image should create momentum — the reader's eye should slide right into the next section without stopping.`);
+      blueprintParts.push(`══ END BLUEPRINT ══`);
 
       const prompt = [
         "STYLE AND TONE — THIS IS YOUR TOP PRIORITY:",
@@ -5311,8 +5370,10 @@ function NovelWorkspacePage() {
         focusHint,
         "",
         isBestFit
-          ? `Write prose for SCENE ${blockIndex + 1} ONLY. Let the synopsis complexity guide the length. Write a natural, well-paced scene.`
+          ? `Write prose for SCENE ${blockIndex + 1} ONLY. Let the blueprint complexity guide the length. Write a natural, well-paced scene.`
           : `Write prose for SCENE ${blockIndex + 1} ONLY. STRICT WORD COUNT TARGET: ${block.wordTarget} words (tolerance: ±110 words, so between ${block.wordTarget - 110} and ${block.wordTarget + 110} words). COUNT YOUR WORDS. This is a hard requirement, not a suggestion.`,
+        "",
+        blueprintParts.join("\n"),
         "",
         `Chapter: ${activeChapter.title}`,
         storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
@@ -5329,6 +5390,7 @@ function NovelWorkspacePage() {
             ? `PROSE FROM END OF PREVIOUS CHAPTER (your scene continues from here):\n"""${prevChapterEnding}"""`
             : "",
         immediatePrevBloc?.synopsis ? `\nPrevious scene synopsis: ${immediatePrevBloc.synopsis}` : "",
+        immediatePrevBloc?.closingHook ? `Previous scene's closing cue: ${immediatePrevBloc.closingHook}` : "",
         followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
         previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
         nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
@@ -5339,7 +5401,8 @@ function NovelWorkspacePage() {
         "",
         "RULES:",
         `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
-        "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. If a character is at school, they cannot also be at home. Track where every character IS at the end of the previous scene and continue from THAT state.",
+        "- THE BLUEPRINT ABOVE IS YOUR PRIMARY INSTRUCTION SET. Follow the opening instruction, emotional arc, sensory palette, dialogue notes, pacing guidance, and closing instruction precisely.",
+        "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. Track where every character IS at the end of the previous scene and continue from THAT state.",
         "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
         "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
         "- If there is prose after your scene, your ending must flow naturally into it.",
@@ -11564,6 +11627,19 @@ function NovelWorkspacePage() {
                                 </div>
                               </div>
                               <textarea className="pw-block-synopsis" placeholder="Scene synopsis..." value={block.synopsis} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, synopsis: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} rows={2} />
+                              {(block.openingLine || block.closingHook || block.emotionalArc || block.sensoryPalette || block.dialogueNotes || block.tension) && (
+                                <div style={{ padding: "6px 10px 8px", margin: "2px 0 4px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)", borderRadius: 6, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" }}>
+                                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--pw-accent)", marginBottom: 4, opacity: 0.8 }}>Blueprint</div>
+                                  <div style={{ display: "grid", gap: 3, fontSize: 11, lineHeight: 1.45, color: "var(--pw-text-dim)" }}>
+                                    {block.openingLine && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Opening:</span>{block.openingLine}</div>}
+                                    {block.emotionalArc && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Emotional arc:</span>{block.emotionalArc}</div>}
+                                    {block.sensoryPalette && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Senses:</span>{block.sensoryPalette}</div>}
+                                    {block.dialogueNotes && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Dialogue:</span>{block.dialogueNotes}</div>}
+                                    {block.tension && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Tension:</span>{"●".repeat(block.tension)}{"○".repeat(5 - block.tension)} ({block.tension}/5)</div>}
+                                    {block.closingHook && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Closing:</span>{block.closingHook}</div>}
+                                  </div>
+                                </div>
+                              )}
                               <div className="pw-block-toolbar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                                 <div className="pw-block-word-pills">
                                   {WORD_TARGET_OPTIONS.map((opt) => (
@@ -15556,13 +15632,47 @@ function NovelWorkspacePage() {
                             </div>
                           )}
 
-                          {/* Progress indicator */}
-                          {spineBusy && spineProgress && (
-                            <div style={{ marginBottom: 14, padding: "10px 14px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", borderRadius: 8, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{ width: 14, height: 14, border: "2px solid var(--pw-accent)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                              <span style={{ fontSize: 13, color: "var(--pw-text)", fontWeight: 500 }}>{spineProgress}</span>
-                            </div>
-                          )}
+                          {/* Progress stepper */}
+                          {spineBusy && spineProgress && (() => {
+                            const phases = [
+                              { key: "beats", label: "Building story beats", icon: "📐" },
+                              { key: "subplots", label: "Weaving subplots", icon: "🔀" },
+                              { key: "arcs", label: "Mapping character arcs", icon: "🎭" },
+                              { key: "done", label: "Finalising spine", icon: "✓" },
+                            ];
+                            const activeIdx = spineProgress.toLowerCase().includes("beat") ? 0
+                              : spineProgress.toLowerCase().includes("subplot") ? 1
+                              : spineProgress.toLowerCase().includes("arc") || spineProgress.toLowerCase().includes("character") ? 2
+                              : spineProgress.toLowerCase().includes("final") || spineProgress.toLowerCase().includes("profile") ? 3 : 0;
+                            return (
+                              <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" }}>
+                                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                                  {phases.map((p, i) => (
+                                    <div key={p.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                                      <div style={{
+                                        width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
+                                        background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" : "var(--pw-surface)",
+                                        border: i === activeIdx ? "2px solid var(--pw-accent)" : "1px solid var(--pw-border-light)",
+                                        color: i < activeIdx ? "#000" : i === activeIdx ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                        fontWeight: 700,
+                                        animation: i === activeIdx ? "pulse 1.5s ease-in-out infinite" : "none",
+                                      }}>
+                                        {i < activeIdx ? "✓" : p.icon}
+                                      </div>
+                                      <span style={{ fontSize: 9, fontWeight: i === activeIdx ? 700 : 500, color: i <= activeIdx ? "var(--pw-text)" : "var(--pw-text-dim)", textAlign: "center", lineHeight: 1.2 }}>{p.label}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <div style={{ flex: 1, height: 3, background: "var(--pw-border-light)", borderRadius: 2, overflow: "hidden" }}>
+                                    <div style={{ width: `${Math.min(100, ((activeIdx + 0.5) / phases.length) * 100)}%`, height: "100%", background: "var(--pw-accent)", borderRadius: 2, transition: "width 0.5s ease" }} />
+                                  </div>
+                                  <span style={{ fontSize: 11, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>{spineProgress}</span>
+                                </div>
+                                <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 6, lineHeight: 1.4 }}>Each phase saves automatically — if something fails, your progress is kept.</p>
+                              </div>
+                            );
+                          })()}
 
                           {/* Arc Picker Modal */}
                           {spineShowArcPicker && (
@@ -15606,98 +15716,125 @@ function NovelWorkspacePage() {
                                   setSpineBusy(true);
                                   setSpineSuggestedChars(null);
                                   setSpineDoctorResult(null);
+
+                                  const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                  const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
+                                  const existingChars = storyCharacters.slice(0, 10);
+                                  const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 60) : ""}`).join("\n  ");
+                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 40) : ""}`).join("; ");
+                                  const loreCtx = (novel.storyBible.lore ?? []).slice(0, 4).map(l => `${l.title}: ${(l.content || "").slice(0, 40)}`).join("; ");
+                                  const arcPreset = STORY_ARC_OPTIONS.find(a => a.id === spineArcChoice);
+                                  const arcDirective = arcPreset
+                                    ? `\nARC: ${arcPreset.name} — ${arcPreset.hint.slice(0, 120)}`
+                                    : `\nARC (custom): ${(spineArcChoice || "").slice(0, 200)}`;
+
+                                  let newBeats: StoryBeat[] = [];
+                                  let allCharNamesInBeats = new Set<string>();
+                                  let newCharNames: string[] = [];
+                                  let beatSummary = "";
+
+                                  // ═══ PHASE 1: BEATS (most important — save immediately) ═══
+                                  setSpineProgress("Building story beats across 3 acts...");
+                                  for (let attempt = 0; attempt < 2; attempt++) {
+                                    try {
+                                      const beatsPrompt = [
+                                        `Build a beat sheet for a ${genre} novel.`,
+                                        arcDirective,
+                                        `\nSynopsis: ${synopsis.slice(0, 1200)}`,
+                                        charCtx ? `\nCharacters:\n  ${charCtx}` : "",
+                                        locCtx ? `\nLocations: ${locCtx}` : "",
+                                        loreCtx ? `\nLore: ${loreCtx}` : "",
+                                        `\nReturn JSON: { "beats": [{ "title": "...", "description": "2-3 sentences", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                                        "",
+                                        "RULES:",
+                                        "- 14-20 beats across 3 acts (25% / 50% / 25%).",
+                                        "- Use ALL existing characters AND introduce NEW ones (6-12+ total). Full names only.",
+                                        "- Each beat names specific characters. Be concrete about actions and consequences.",
+                                        "- Follow the narrative arc faithfully.",
+                                      ].filter(Boolean).join("\n");
+                                      const beatsRaw = await requestOpenRouterText(beatsPrompt, 3000, 150000, "Expert story architect. Create detailed beats with named characters. Return only valid JSON.", false, 0.75);
+                                      const beatsJson = beatsRaw.match(/\{[\s\S]*\}/);
+                                      if (!beatsJson) { if (attempt === 0) continue; throw new Error("No valid JSON returned for beats"); }
+                                      let beatsParsed: { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> } | null = null;
+                                      try { beatsParsed = JSON.parse(beatsJson[0]); } catch { const repaired = attemptCloseTruncatedJson(beatsJson[0]); if (repaired) beatsParsed = JSON.parse(repaired); }
+                                      if (!beatsParsed?.beats?.length) { if (attempt === 0) continue; throw new Error("No beats in response"); }
+
+                                      allCharNamesInBeats = new Set<string>();
+                                      beatsParsed.beats.forEach(b => (b.characterNames ?? []).forEach(n => allCharNamesInBeats.add(n)));
+                                      const existingCharNames = new Set(existingChars.map(c => c.name.toLowerCase()));
+                                      newCharNames = [...allCharNamesInBeats].filter(n => !existingCharNames.has(n.toLowerCase()));
+
+                                      newBeats = beatsParsed.beats.map((b, i) => ({
+                                        id: `beat-${Date.now().toString(36)}-${i}`,
+                                        title: b.title || `Beat ${i + 1}`, description: b.description || "",
+                                        act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                        chapterHint: -1,
+                                        characterIds: (b.characterNames ?? []).map(name => existingChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                        locationHint: b.locationHint || "",
+                                        tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                        sortOrder: i,
+                                      }));
+
+                                      // Save beats immediately so nothing is lost
+                                      updatePlotSpine({ beats: newBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
+                                      beatSummary = newBeats.map((b, i) => `${i+1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 60)}`).join("\n");
+                                      break;
+                                    } catch (err) {
+                                      if (attempt === 1) {
+                                        console.error("Beats generation failed after retry:", err);
+                                        setSpineBusy(false); setSpineProgress("");
+                                        return;
+                                      }
+                                      setSpineProgress("Beats attempt 1 didn't work — retrying...");
+                                    }
+                                  }
+
+                                  if (newBeats.length === 0) { setSpineBusy(false); setSpineProgress(""); return; }
+
+                                  // ═══ PHASE 2: SUBPLOTS (graceful — beats already saved) ═══
+                                  let newSubplots: Subplot[] = [];
+                                  setSpineProgress("Weaving subplots through the story...");
                                   try {
-                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
-                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
-                                    const existingChars = storyCharacters.slice(0, 10);
-                                    const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 80) : ""}${c.goals ? " | Goals: " + c.goals.slice(0, 50) : ""}${c.fears ? " | Fears: " + c.fears.slice(0, 50) : ""}`).join("\n  ");
-                                    const locCtx = (novel.storyBible.locations ?? []).slice(0, 8).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 60) : ""}`).join("; ");
-                                    const loreCtx = (novel.storyBible.lore ?? []).slice(0, 6).map(l => `${l.title}: ${(l.content || "").slice(0, 60)}`).join("; ");
-                                    const arcPreset = STORY_ARC_OPTIONS.find(a => a.id === spineArcChoice);
-                                    const arcDirective = arcPreset
-                                      ? `\nNARRATIVE ARC: ${arcPreset.name}\n${arcPreset.hint}`
-                                      : `\nNARRATIVE ARC (user-defined):\n${spineArcChoice}`;
-
-                                    // Phase 1: Generate beats
-                                    setSpineProgress("Building story beats across 3 acts...");
-                                    const beatsPrompt = [
-                                      `Build a complete beat sheet for a ${genre} novel following this arc structure.`,
-                                      arcDirective,
-                                      `\nSynopsis:\n${synopsis.slice(0, 2000)}`,
-                                      charCtx ? `\nExisting characters (use these AND create new ones the story needs):\n  ${charCtx}` : "",
-                                      locCtx ? `\nLocations: ${locCtx}` : "",
-                                      loreCtx ? `\nLore/worldbuilding: ${loreCtx}` : "",
-                                      `\nReturn JSON: { "beats": [{ "title": "...", "description": "3-4 detailed sentences of what happens, who's involved, what changes", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
-                                      "",
-                                      "CRITICAL RULES:",
-                                      "- Generate 14-20 beats distributed across 3 acts (25% Act 1 / 50% Act 2 / 25% Act 3).",
-                                      "- A real novel has 6-12+ named characters. Use ALL existing characters from the list above.",
-                                      "- ALSO naturally introduce NEW characters the story needs: allies, rivals, mentors, love interests, informants, authority figures, family members, witnesses, betrayers. Give every new character a proper full name (First Last).",
-                                      "- Each beat must name specific characters by name — never 'someone' or 'a stranger'.",
-                                      "- Beats should show characters interacting, conflicting, supporting, betraying, discovering. Stories are about PEOPLE.",
-                                      "- Follow the chosen narrative arc structure faithfully. Shape the tension curve to match.",
-                                      "- Be specific: what do characters say, decide, discover, feel? Not vague summaries.",
-                                    ].filter(Boolean).join("\n");
-                                    const beatsRaw = await requestOpenRouterText(beatsPrompt, 4000, 180000, "You are an expert story architect who builds rich, populated story worlds. Every story needs a full cast of characters — not just 2 people. Create detailed beats with named characters. Return only valid JSON.", false, 0.75);
-                                    let beatsJson = beatsRaw.match(/\{[\s\S]*\}/);
-                                    const beatsParsed = beatsJson ? JSON.parse(beatsJson[0]) as { beats: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> } : null;
-                                    if (!beatsParsed?.beats?.length) throw new Error("No beats generated");
-
-                                    const allCharNamesInBeats = new Set<string>();
-                                    beatsParsed.beats.forEach(b => (b.characterNames ?? []).forEach(n => allCharNamesInBeats.add(n)));
-                                    const existingCharNames = new Set(existingChars.map(c => c.name.toLowerCase()));
-                                    const newCharNames = [...allCharNamesInBeats].filter(n => !existingCharNames.has(n.toLowerCase()));
-
-                                    const newBeats: StoryBeat[] = beatsParsed.beats.map((b, i) => ({
-                                      id: `beat-${Date.now().toString(36)}-${i}`,
-                                      title: b.title || `Beat ${i + 1}`, description: b.description || "",
-                                      act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
-                                      chapterHint: -1,
-                                      characterIds: (b.characterNames ?? []).map(name => existingChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      locationHint: b.locationHint || "",
-                                      tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                      sortOrder: i,
-                                    }));
-
-                                    // Phase 2: Generate subplots
-                                    setSpineProgress("Weaving subplots through the story...");
-                                    const beatSummary = newBeats.map((b, i) => `${i+1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
                                     const subplotsPrompt = [
-                                      `Given these story beats, generate 3-5 compelling subplots.`,
+                                      `Generate 3-5 subplots for a ${genre} novel with these beats.`,
                                       `\nBeats:\n${beatSummary}`,
-                                      `\nAll characters: ${[...allCharNamesInBeats].join(", ")}`,
-                                      `Genre: ${genre}`,
+                                      `\nCharacters: ${[...allCharNamesInBeats].join(", ")}`,
                                       arcDirective,
-                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "2-3 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
-                                      "Each subplot should involve 2-3 characters and touch 3-6 beats. Make them feel organic. Include relationship subplots, secret subplots, and thematic subplots.",
+                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1-2 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
+                                      "Each subplot should involve 2-3 characters and touch 3-6 beats.",
                                     ].join("\n");
-                                    const spRaw = await requestOpenRouterText(subplotsPrompt, 2000, 90000, "You are a story architect. Generate subplots that enrich the main narrative. Return only valid JSON.", false, 0.7);
+                                    const spRaw = await requestOpenRouterText(subplotsPrompt, 1500, 90000, "Story architect. Generate subplots. Return only valid JSON.", false, 0.7);
                                     const spJson = spRaw.match(/\{[\s\S]*\}/);
-                                    const spParsed = spJson ? JSON.parse(spJson[0]) as { subplots: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> } : null;
-                                    const newSubplots: Subplot[] = (spParsed?.subplots ?? []).map((s, i) => ({
+                                    let spParsed: { subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> } | null = null;
+                                    if (spJson) { try { spParsed = JSON.parse(spJson[0]); } catch { const rep = attemptCloseTruncatedJson(spJson[0]); if (rep) spParsed = JSON.parse(rep); } }
+                                    newSubplots = (spParsed?.subplots ?? []).map((s, i) => ({
                                       id: `sp-${Date.now().toString(36)}-${i}`,
                                       title: s.title || "", description: s.description || "",
                                       characterIds: (s.characterNames ?? []).map(n => existingChars.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
                                       linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
                                       status: "setup" as const,
                                     }));
+                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
+                                  } catch (err) { console.warn("Subplots generation failed (beats preserved):", err); }
 
-                                    // Phase 3: Generate character arcs
-                                    setSpineProgress("Mapping character arcs and transformations...");
+                                  // ═══ PHASE 3: CHARACTER ARCS (graceful — beats + subplots saved) ═══
+                                  let newArcs: CharacterArc[] = [];
+                                  setSpineProgress("Mapping character arcs and transformations...");
+                                  try {
                                     const mainCharNames = [...allCharNamesInBeats].slice(0, 6);
                                     const arcsPrompt = [
-                                      `Generate character arcs for the main characters in this story.`,
-                                      `\nCharacters to create arcs for: ${mainCharNames.join(", ")}`,
+                                      `Generate character arcs for: ${mainCharNames.join(", ")}`,
                                       `\nBeats:\n${beatSummary}`,
                                       `Genre: ${genre}`,
                                       arcDirective,
-                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "e.g. redemption, fall from grace, coming of age, disillusionment, empowerment", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }] }`,
-                                      "Create 1 arc per main character. Each should have 2-4 turning points at specific beats.",
+                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "e.g. redemption, coming of age", "startState": "who they are", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }] }`,
+                                      "1 arc per character, 2-4 turning points each.",
                                     ].join("\n");
-                                    const arcRaw = await requestOpenRouterText(arcsPrompt, 2000, 90000, "You are a character arc specialist. Map meaningful character transformations. Return only valid JSON.", false, 0.7);
+                                    const arcRaw = await requestOpenRouterText(arcsPrompt, 1500, 90000, "Character arc specialist. Map character transformations. Return only valid JSON.", false, 0.7);
                                     const arcJson = arcRaw.match(/\{[\s\S]*\}/);
-                                    const arcParsed = arcJson ? JSON.parse(arcJson[0]) as { arcs: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> } : null;
-                                    const newArcs: CharacterArc[] = (arcParsed?.arcs ?? []).map((a, i) => {
+                                    let arcParsed: { arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> } | null = null;
+                                    if (arcJson) { try { arcParsed = JSON.parse(arcJson[0]); } catch { const rep = attemptCloseTruncatedJson(arcJson[0]); if (rep) arcParsed = JSON.parse(rep); } }
+                                    newArcs = (arcParsed?.arcs ?? []).map((a, i) => {
                                       const charId = existingChars.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
                                       return {
                                         id: `arc-${Date.now().toString(36)}-${i}`,
@@ -15705,26 +15842,28 @@ function NovelWorkspacePage() {
                                         turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
                                       };
                                     }).filter(a => a.characterId);
+                                  } catch (err) { console.warn("Arcs generation failed (beats + subplots preserved):", err); }
 
-                                    setSpineProgress("Finalising spine...");
-                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
+                                  // Final save with everything we managed to get
+                                  setSpineProgress("Finalising spine...");
+                                  updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
 
-                                    // Suggest new characters for Canon
-                                    if (newCharNames.length > 0) {
-                                      const charDescriptions: Array<{ name: string; role: string; logline: string }> = [];
-                                      for (const name of newCharNames.slice(0, 10)) {
-                                        const appearances = beatsParsed.beats.filter(b => (b.characterNames ?? []).some(cn => cn.toLowerCase() === name.toLowerCase()));
-                                        const role = appearances.length >= 4 ? "Supporting" : appearances.length >= 2 ? "Supporting" : "Minor";
-                                        const contexts = appearances.slice(0, 3).map(b => b.description.slice(0, 60)).join("; ");
-                                        charDescriptions.push({ name, role, logline: contexts || "Appears in the story" });
-                                      }
-                                      setSpineSuggestedChars(charDescriptions);
+                                  // Suggest new characters
+                                  if (newCharNames.length > 0) {
+                                    const charDescriptions: Array<{ name: string; role: string; logline: string }> = [];
+                                    for (const name of newCharNames.slice(0, 10)) {
+                                      const beatMatches = newBeats.filter(b => (b.characterIds ?? []).length > 0 || b.description.toLowerCase().includes(name.toLowerCase()));
+                                      const role = beatMatches.length >= 4 ? "Supporting" : "Minor";
+                                      const contexts = beatMatches.slice(0, 3).map(b => b.description.slice(0, 60)).join("; ");
+                                      charDescriptions.push({ name, role, logline: contexts || "Appears in the story" });
                                     }
-                                  } catch (err) { console.error("Full spine generation failed:", err); } finally { setSpineBusy(false); setSpineProgress(""); }
+                                    setSpineSuggestedChars(charDescriptions);
+                                  }
+                                  setSpineBusy(false); setSpineProgress("");
                                 }}>Build Spine</button>
                                 <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); }}>Cancel</button>
                               </div>
-                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>This builds your entire story structure in 3 phases — beats, subplots, and character arcs. It typically takes 30-60 seconds depending on your AI model. You'll see progress updates as each phase completes.</p>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>Builds your story in 3 phases — beats, subplots, and character arcs. Takes 30-60 seconds. Each phase saves automatically, so if anything fails your progress is kept.</p>
                             </div>
                           )}
 
