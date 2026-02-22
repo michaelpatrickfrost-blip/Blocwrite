@@ -1123,6 +1123,10 @@ function NovelWorkspacePage() {
   const [spineArcSuggestions, setSpineArcSuggestions] = useState<Array<{ characterId: string; characterName: string; options: CharacterArc[] }> | null>(null);
   const [spineDoctorResult, setSpineDoctorResult] = useState<{ issues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }>; score: number; summary: string } | null>(null);
   const [spineEnrichingBeatId, setSpineEnrichingBeatId] = useState<string | null>(null);
+  const [spineProgress, setSpineProgress] = useState("");
+  const [spineSuggestedChars, setSpineSuggestedChars] = useState<Array<{ name: string; role: string; logline: string }> | null>(null);
+  const [spineArcChoice, setSpineArcChoice] = useState<string | null>(null);
+  const [spineShowArcPicker, setSpineShowArcPicker] = useState(false);
   const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
   const [sessionElapsed, setSessionElapsed] = useState(0);
 
@@ -15447,82 +15451,30 @@ function NovelWorkspacePage() {
                       const clampedScore = Math.min(100, score);
                       const scoreColor = clampedScore >= 80 ? "#22c55e" : clampedScore >= 50 ? "#f59e0b" : "#ef4444";
 
+                      const STORY_ARC_OPTIONS = [
+                        { id: "heros-journey", name: "Hero's Journey", hint: "Ordinary world → call to adventure → trials → transformation → return. The protagonist leaves their comfort zone, faces escalating challenges, and returns changed. Classic arc used in most adventure and coming-of-age stories." },
+                        { id: "rags-to-riches", name: "Rags to Riches", hint: "A character starts with nothing and rises through talent, luck, or determination. Early humiliation gives way to growing confidence and eventual triumph — but the journey tests what they're willing to sacrifice." },
+                        { id: "tragedy", name: "Tragedy", hint: "A great character is undone by a fatal flaw. They rise, overreach, and fall. The audience watches a preventable destruction unfold. The ending is devastating but earned." },
+                        { id: "rebirth", name: "Rebirth", hint: "A character trapped in darkness or stagnation is gradually reawakened. Something — a person, event, or realization — cracks through their defenses and they transform into someone new." },
+                        { id: "voyage-return", name: "Voyage & Return", hint: "Characters enter a strange new world, face its dangers and wonders, and return home changed. The unfamiliar world forces them to confront truths about themselves." },
+                        { id: "overcoming-monster", name: "Overcoming the Monster", hint: "A threat looms — a person, system, force — and the protagonist must defeat it. The monster seems impossible to beat. Allies gather, plans form, sacrifices are made." },
+                        { id: "quest", name: "The Quest", hint: "A group sets out on a mission with a clear goal. The journey matters as much as the destination — bonds are tested, detours reveal character, and the prize may not be what they expected." },
+                        { id: "comedy", name: "Comedy / Tangled Web", hint: "Confusion, misunderstandings, and tangled relationships escalate before unraveling into resolution. Characters work at cross-purposes, creating chaos that eventually sorts itself out." },
+                        { id: "mystery-revelation", name: "Mystery / Revelation", hint: "Something is hidden. Layer by layer, the truth is uncovered — each revelation changes what the reader thought they knew. Trust no one. Everyone has secrets." },
+                      ];
+
                       return (
                         <div>
-                          {/* Build Full Spine + Story Doctor buttons */}
+                          {/* Build Full Spine + Story Doctor + Clear buttons */}
                           {!aiOff && (
-                            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-                              <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={async () => {
-                                if (!novel || spineBusy) return;
-                                setSpineBusy(true);
-                                try {
-                                  const synopsis = novel.storyBible.summary?.synopsisShort || "";
-                                  const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
-                                  const charCtx = storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 80) : ""}${c.goals ? " Goals: " + c.goals.slice(0, 50) : ""}${c.fears ? " Fears: " + c.fears.slice(0, 50) : ""}`).join("\n  ");
-                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 50) : ""}`).join("; ");
-                                  const loreCtx = (novel.storyBible.lore ?? []).slice(0, 4).map(l => `${l.title}: ${(l.content || "").slice(0, 50)}`).join("; ");
-                                  const prompt = [
-                                    `Build a complete story spine for a ${genre} novel.`,
-                                    `\nSynopsis:\n${synopsis.slice(0, 2000)}`,
-                                    charCtx ? `\nCharacters:\n  ${charCtx}` : "",
-                                    locCtx ? `\nLocations: ${locCtx}` : "",
-                                    loreCtx ? `\nLore: ${loreCtx}` : "",
-                                    `\nReturn JSON with THREE sections:`,
-                                    `{`,
-                                    `  "beats": [{ "title": "...", "description": "2-3 detailed sentences", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["Name"] }],`,
-                                    `  "subplots": [{ "title": "...", "description": "2-3 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }],`,
-                                    `  "arcs": [{ "characterName": "...", "arcType": "e.g. redemption", "startState": "who they are", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }]`,
-                                    `}`,
-                                    "",
-                                    "Generate 12-18 beats across 3 acts (25% / 50% / 25%). Each beat must advance the story.",
-                                    "Generate 2-4 subplots that weave through the beats organically.",
-                                    "Generate 1 arc per main character showing their transformation.",
-                                    "Use character names from the list. You may suggest 1-2 new minor characters if needed.",
-                                    "Be specific and detailed — these will drive chapter generation.",
-                                  ].filter(Boolean).join("\n");
-                                  const raw = await requestOpenRouterText(prompt, 4000, 180000, "You are an expert story architect. Build a complete story spine with beats, subplots, and character arcs. Return only valid JSON.", false, 0.7);
-                                  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                                  if (jsonMatch) {
-                                    const parsed = JSON.parse(jsonMatch[0]) as {
-                                      beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }>;
-                                      subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }>;
-                                      arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }>;
-                                    };
-                                    const newBeats: StoryBeat[] = (parsed.beats ?? []).map((b, i) => ({
-                                      id: `beat-${Date.now().toString(36)}-${i}`,
-                                      title: b.title || `Beat ${i + 1}`, description: b.description || "",
-                                      act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
-                                      chapterHint: -1,
-                                      characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      locationHint: b.locationHint || "",
-                                      tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                      sortOrder: i,
-                                    }));
-                                    const newSubplots: Subplot[] = (parsed.subplots ?? []).map((s, i) => ({
-                                      id: `sp-${Date.now().toString(36)}-${i}`,
-                                      title: s.title || "", description: s.description || "",
-                                      characterIds: (s.characterNames ?? []).map(n => storyCharacters.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      status: "setup" as const,
-                                    }));
-                                    const newArcs: CharacterArc[] = (parsed.arcs ?? []).map((a, i) => {
-                                      const charId = storyCharacters.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
-                                      return {
-                                        id: `arc-${Date.now().toString(36)}-${i}`,
-                                        characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
-                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      };
-                                    }).filter(a => a.characterId);
-                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
-                                  }
-                                } catch (err) { console.error("Full spine generation failed:", err); } finally { setSpineBusy(false); }
-                              }}>
-                                {spineBusy ? "Building..." : beats.length > 0 ? "✦ Rebuild Full Spine" : "✦ Build Full Spine"}
+                            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                              <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={() => setSpineShowArcPicker(true)}>
+                                {beats.length > 0 ? "✦ Rebuild Full Spine" : "✦ Build Full Spine"}
                               </button>
                               {beats.length >= 3 && (
                                 <button type="button" className="btn" disabled={spineBusy} onClick={async () => {
                                   if (!novel || spineBusy) return;
-                                  setSpineBusy(true); setSpineDoctorResult(null);
+                                  setSpineBusy(true); setSpineDoctorResult(null); setSpineProgress("Story Doctor is analysing your spine...");
                                   try {
                                     const beatCtx = beats.map((b, i) => `${i + 1}. [Act ${b.act}, tension: ${b.tension}] "${b.title}": ${b.description.slice(0, 100)}`).join("\n");
                                     const spCtx = subplots.map(s => `"${s.title}" (${s.status}): touches ${s.linkedBeatIds.length} beats`).join("; ");
@@ -15544,11 +15496,221 @@ function NovelWorkspacePage() {
                                       const parsed = JSON.parse(jsonMatch[0]);
                                       if (parsed.issues) setSpineDoctorResult({ issues: parsed.issues, score: parsed.score ?? 50, summary: parsed.summary ?? "" });
                                     }
-                                  } catch { /* */ } finally { setSpineBusy(false); }
+                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
                                 }}>
-                                  {spineBusy ? "Analyzing..." : "🩺 Story Doctor"}
+                                  {spineBusy ? "Wait..." : "🩺 Story Doctor"}
                                 </button>
                               )}
+                              {beats.length > 0 && (
+                                <button type="button" className="btn" disabled={spineBusy} onClick={() => { if (confirm("Clear entire spine? This removes all beats, subplots, and character arcs.")) { updatePlotSpine({ beats: [], subplots: [], characterArcs: [], generatedAt: undefined }); setSpineDoctorResult(null); setSpineSuggestedChars(null); } }} style={{ fontSize: 11, opacity: 0.7 }}>
+                                  Clear Spine
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Progress indicator */}
+                          {spineBusy && spineProgress && (
+                            <div style={{ marginBottom: 14, padding: "10px 14px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", borderRadius: 8, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ width: 14, height: 14, border: "2px solid var(--pw-accent)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                              <span style={{ fontSize: 13, color: "var(--pw-text)", fontWeight: 500 }}>{spineProgress}</span>
+                            </div>
+                          )}
+
+                          {/* Arc Picker Modal */}
+                          {spineShowArcPicker && (
+                            <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
+                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick a narrative shape for your story, or describe your own. This guides how the AI builds your beats, subplots, and characters.</p>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                                {STORY_ARC_OPTIONS.map(arc => (
+                                  <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
+                                    style={{
+                                      textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+                                      background: spineArcChoice === arc.id ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)" : "var(--pw-surface)",
+                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                      transition: "all 0.15s",
+                                    }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</div>
+                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{arc.hint}</div>
+                                  </button>
+                                ))}
+                              </div>
+                              <div style={{ marginBottom: 12 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", display: "block", marginBottom: 4 }}>Or describe your own arc direction:</label>
+                                <textarea
+                                  value={spineArcChoice && !STORY_ARC_OPTIONS.some(a => a.id === spineArcChoice) ? spineArcChoice : ""}
+                                  onChange={(e) => setSpineArcChoice(e.target.value || null)}
+                                  placeholder="e.g. 'A slow-burn revenge story where the protagonist methodically dismantles the empire that destroyed their family, but starts to question if they've become the thing they hate...'"
+                                  rows={3}
+                                  style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "8px 10px", fontSize: 12, color: "var(--pw-text)", outline: "none", resize: "vertical" }}
+                                />
+                              </div>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button type="button" className="btn btn-primary" disabled={!spineArcChoice} onClick={async () => {
+                                  setSpineShowArcPicker(false);
+                                  if (!novel || spineBusy || !spineArcChoice) return;
+                                  setSpineBusy(true);
+                                  setSpineSuggestedChars(null);
+                                  setSpineDoctorResult(null);
+                                  try {
+                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
+                                    const existingChars = storyCharacters.slice(0, 10);
+                                    const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 80) : ""}${c.goals ? " | Goals: " + c.goals.slice(0, 50) : ""}${c.fears ? " | Fears: " + c.fears.slice(0, 50) : ""}`).join("\n  ");
+                                    const locCtx = (novel.storyBible.locations ?? []).slice(0, 8).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 60) : ""}`).join("; ");
+                                    const loreCtx = (novel.storyBible.lore ?? []).slice(0, 6).map(l => `${l.title}: ${(l.content || "").slice(0, 60)}`).join("; ");
+                                    const arcPreset = STORY_ARC_OPTIONS.find(a => a.id === spineArcChoice);
+                                    const arcDirective = arcPreset
+                                      ? `\nNARRATIVE ARC: ${arcPreset.name}\n${arcPreset.hint}`
+                                      : `\nNARRATIVE ARC (user-defined):\n${spineArcChoice}`;
+
+                                    // Phase 1: Generate beats
+                                    setSpineProgress("Building story beats across 3 acts...");
+                                    const beatsPrompt = [
+                                      `Build a complete beat sheet for a ${genre} novel following this arc structure.`,
+                                      arcDirective,
+                                      `\nSynopsis:\n${synopsis.slice(0, 2000)}`,
+                                      charCtx ? `\nExisting characters (use these AND create new ones the story needs):\n  ${charCtx}` : "",
+                                      locCtx ? `\nLocations: ${locCtx}` : "",
+                                      loreCtx ? `\nLore/worldbuilding: ${loreCtx}` : "",
+                                      `\nReturn JSON: { "beats": [{ "title": "...", "description": "3-4 detailed sentences of what happens, who's involved, what changes", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                                      "",
+                                      "CRITICAL RULES:",
+                                      "- Generate 14-20 beats distributed across 3 acts (25% Act 1 / 50% Act 2 / 25% Act 3).",
+                                      "- A real novel has 6-12+ named characters. Use ALL existing characters from the list above.",
+                                      "- ALSO naturally introduce NEW characters the story needs: allies, rivals, mentors, love interests, informants, authority figures, family members, witnesses, betrayers. Give every new character a proper full name (First Last).",
+                                      "- Each beat must name specific characters by name — never 'someone' or 'a stranger'.",
+                                      "- Beats should show characters interacting, conflicting, supporting, betraying, discovering. Stories are about PEOPLE.",
+                                      "- Follow the chosen narrative arc structure faithfully. Shape the tension curve to match.",
+                                      "- Be specific: what do characters say, decide, discover, feel? Not vague summaries.",
+                                    ].filter(Boolean).join("\n");
+                                    const beatsRaw = await requestOpenRouterText(beatsPrompt, 4000, 180000, "You are an expert story architect who builds rich, populated story worlds. Every story needs a full cast of characters — not just 2 people. Create detailed beats with named characters. Return only valid JSON.", false, 0.75);
+                                    let beatsJson = beatsRaw.match(/\{[\s\S]*\}/);
+                                    const beatsParsed = beatsJson ? JSON.parse(beatsJson[0]) as { beats: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> } : null;
+                                    if (!beatsParsed?.beats?.length) throw new Error("No beats generated");
+
+                                    const allCharNamesInBeats = new Set<string>();
+                                    beatsParsed.beats.forEach(b => (b.characterNames ?? []).forEach(n => allCharNamesInBeats.add(n)));
+                                    const existingCharNames = new Set(existingChars.map(c => c.name.toLowerCase()));
+                                    const newCharNames = [...allCharNamesInBeats].filter(n => !existingCharNames.has(n.toLowerCase()));
+
+                                    const newBeats: StoryBeat[] = beatsParsed.beats.map((b, i) => ({
+                                      id: `beat-${Date.now().toString(36)}-${i}`,
+                                      title: b.title || `Beat ${i + 1}`, description: b.description || "",
+                                      act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                      chapterHint: -1,
+                                      characterIds: (b.characterNames ?? []).map(name => existingChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      locationHint: b.locationHint || "",
+                                      tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                      sortOrder: i,
+                                    }));
+
+                                    // Phase 2: Generate subplots
+                                    setSpineProgress("Weaving subplots through the story...");
+                                    const beatSummary = newBeats.map((b, i) => `${i+1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
+                                    const subplotsPrompt = [
+                                      `Given these story beats, generate 3-5 compelling subplots.`,
+                                      `\nBeats:\n${beatSummary}`,
+                                      `\nAll characters: ${[...allCharNamesInBeats].join(", ")}`,
+                                      `Genre: ${genre}`,
+                                      arcDirective,
+                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "2-3 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
+                                      "Each subplot should involve 2-3 characters and touch 3-6 beats. Make them feel organic. Include relationship subplots, secret subplots, and thematic subplots.",
+                                    ].join("\n");
+                                    const spRaw = await requestOpenRouterText(subplotsPrompt, 2000, 90000, "You are a story architect. Generate subplots that enrich the main narrative. Return only valid JSON.", false, 0.7);
+                                    const spJson = spRaw.match(/\{[\s\S]*\}/);
+                                    const spParsed = spJson ? JSON.parse(spJson[0]) as { subplots: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> } : null;
+                                    const newSubplots: Subplot[] = (spParsed?.subplots ?? []).map((s, i) => ({
+                                      id: `sp-${Date.now().toString(36)}-${i}`,
+                                      title: s.title || "", description: s.description || "",
+                                      characterIds: (s.characterNames ?? []).map(n => existingChars.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      status: "setup" as const,
+                                    }));
+
+                                    // Phase 3: Generate character arcs
+                                    setSpineProgress("Mapping character arcs and transformations...");
+                                    const mainCharNames = [...allCharNamesInBeats].slice(0, 6);
+                                    const arcsPrompt = [
+                                      `Generate character arcs for the main characters in this story.`,
+                                      `\nCharacters to create arcs for: ${mainCharNames.join(", ")}`,
+                                      `\nBeats:\n${beatSummary}`,
+                                      `Genre: ${genre}`,
+                                      arcDirective,
+                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "e.g. redemption, fall from grace, coming of age, disillusionment, empowerment", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }] }`,
+                                      "Create 1 arc per main character. Each should have 2-4 turning points at specific beats.",
+                                    ].join("\n");
+                                    const arcRaw = await requestOpenRouterText(arcsPrompt, 2000, 90000, "You are a character arc specialist. Map meaningful character transformations. Return only valid JSON.", false, 0.7);
+                                    const arcJson = arcRaw.match(/\{[\s\S]*\}/);
+                                    const arcParsed = arcJson ? JSON.parse(arcJson[0]) as { arcs: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> } : null;
+                                    const newArcs: CharacterArc[] = (arcParsed?.arcs ?? []).map((a, i) => {
+                                      const charId = existingChars.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
+                                      return {
+                                        id: `arc-${Date.now().toString(36)}-${i}`,
+                                        characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
+                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      };
+                                    }).filter(a => a.characterId);
+
+                                    setSpineProgress("Finalising spine...");
+                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
+
+                                    // Suggest new characters for Canon
+                                    if (newCharNames.length > 0) {
+                                      const charDescriptions: Array<{ name: string; role: string; logline: string }> = [];
+                                      for (const name of newCharNames.slice(0, 10)) {
+                                        const appearances = beatsParsed.beats.filter(b => (b.characterNames ?? []).some(cn => cn.toLowerCase() === name.toLowerCase()));
+                                        const role = appearances.length >= 4 ? "Supporting" : appearances.length >= 2 ? "Supporting" : "Minor";
+                                        const contexts = appearances.slice(0, 3).map(b => b.description.slice(0, 60)).join("; ");
+                                        charDescriptions.push({ name, role, logline: contexts || "Appears in the story" });
+                                      }
+                                      setSpineSuggestedChars(charDescriptions);
+                                    }
+                                  } catch (err) { console.error("Full spine generation failed:", err); } finally { setSpineBusy(false); setSpineProgress(""); }
+                                }}>Build Spine</button>
+                                <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); }}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Suggested new characters */}
+                          {spineSuggestedChars && spineSuggestedChars.length > 0 && (
+                            <div style={{ marginBottom: 16, padding: 14, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>New Characters Found</div>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>The spine introduced these characters. Add them to your Canon so the AI can reference their profiles during generation.</p>
+                              {spineSuggestedChars.map((c, i) => (
+                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < spineSuggestedChars.length - 1 ? "1px solid var(--pw-border-light)" : "none" }}>
+                                  <div style={{ flex: 1 }}>
+                                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--pw-text)" }}>{c.name}</span>
+                                    <span style={{ fontSize: 11, color: "var(--pw-text-dim)", marginLeft: 6 }}>({c.role})</span>
+                                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "2px 0 0" }}>{c.logline.slice(0, 120)}</p>
+                                  </div>
+                                  <button type="button" className="btn" style={{ fontSize: 11, flexShrink: 0 }} onClick={() => {
+                                    const newChar: Character = {
+                                      id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                      name: c.name,
+                                      role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
+                                      logline: c.logline,
+                                    };
+                                    mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, newChar] } }));
+                                    setSpineSuggestedChars(prev => prev?.filter((_, idx) => idx !== i) ?? null);
+                                  }}>+ Add to Canon</button>
+                                </div>
+                              ))}
+                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => {
+                                  const newChars: Character[] = spineSuggestedChars.map(c => ({
+                                    id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                    name: c.name,
+                                    role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
+                                    logline: c.logline,
+                                  }));
+                                  mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...newChars] } }));
+                                  setSpineSuggestedChars(null);
+                                }}>Add All to Canon</button>
+                                <button type="button" onClick={() => setSpineSuggestedChars(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer" }}>Dismiss</button>
+                              </div>
                             </div>
                           )}
 
