@@ -7645,8 +7645,9 @@ function NovelWorkspacePage() {
         `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 600)}`,
         `Chapters:\n${chapterTitles}`,
         "",
-        "Suggest 3 different story arc directions for this novel.",
-        "Each must feel genuinely different — different emotional journeys, different structures.",
+        hasPlotSpine()
+          ? "Suggest 3 different EMOTIONAL ENHANCEMENT directions for this novel. The plot is already set — these should be different emotional lenses, tonal approaches, and character depth strategies that enrich the existing story without changing any events."
+          : "Suggest 3 different story arc directions for this novel. Each must feel genuinely different — different emotional journeys, different structures.",
         "Score each for narrative strength. Recommend which is best.",
         "",
         "Return JSON only:",
@@ -7742,10 +7743,31 @@ function NovelWorkspacePage() {
 
       const existingCharNames = (novel.storyBible.characters ?? []).map((c) => c.name).filter(Boolean);
 
+      const spine = novel.storyBible.plotSpine;
+      const spineIsActive = spine && spine.beats.length > 0;
+
+      let spineContext = "";
+      if (spineIsActive) {
+        const chars = novel.storyBible.characters ?? [];
+        const beatLines = spine.beats.map((b) => {
+          const names = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
+          return `  - [Act ${b.act}] "${b.title}" (tension ${b.tension}/5): ${b.description.slice(0, 200)}${names.length ? ` [${names.join(", ")}]` : ""}`;
+        }).join("\n");
+        const subplotLines = spine.subplots.map(sp => `  - "${sp.title}" (${sp.status}): ${sp.description.slice(0, 150)}`).join("\n");
+        spineContext = [
+          "",
+          "=== PLOT SPINE (IMMUTABLE — DO NOT ALTER) ===",
+          beatLines,
+          subplotLines ? `Subplots:\n${subplotLines}` : "",
+          "=== END PLOT SPINE ===",
+        ].filter(Boolean).join("\n");
+      }
+
       const storyContext = [
         `Novel: "${novel.title}"`,
         `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
         `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 800)}`,
+        spineContext,
         "",
         `Chosen arc direction: "${choice.name}"`,
         `Arc description: ${choice.description}`,
@@ -7765,7 +7787,30 @@ function NovelWorkspacePage() {
           return `Chapter ${globalIdx + 1} — "${ch.title}":\n${ch.synopsis || "(no synopsis yet)"}`;
         }).join("\n\n");
 
-        const batchPrompt = [
+        const batchPrompt = spineIsActive ? [
+          storyContext,
+          "",
+          `Full chapter list (${totalChapters} chapters total):\n${allTitles}`,
+          "",
+          `ENHANCE synopses for chapters ${batchStart + 1}–${batchEnd} using the "${choice.name}" arc direction.`,
+          "",
+          "Current synopses for this batch:",
+          chapterOutline,
+          "",
+          "RULES (CRITICAL):",
+          "- You are ENHANCING, not rewriting. The Plot Spine is IMMUTABLE.",
+          "- Every plot beat, event, and story point in the existing synopsis MUST remain. Do NOT remove, replace, or contradict any of them.",
+          "- ADD richness: deepen emotional reactions, sharpen character dynamics, add sensory detail, strengthen transitions between scenes, add internal conflict and subtext.",
+          "- ADD connective tissue: smoother transitions between beats, foreshadowing, echoes of earlier chapters, thematic resonance.",
+          "- ADD emotional depth: show how characters FEEL about what's happening, not just what they do. Layer in tension, doubt, hope, dread.",
+          "- The arc direction tells you the EMOTIONAL LENS — apply it as atmosphere, tone, and character interiority, not as plot changes.",
+          "- Each synopsis MUST be at least 15-25 sentences. Always LONGER and RICHER than the original — never shorter.",
+          "- Every character must have a proper human name (First Last). NEVER use role labels.",
+          "- Return the full list of character names mentioned across all synopses in this batch.",
+          "",
+          `Return JSON: { "synopses": [${batchSize} entries], "characters": ["First Last", ...] }`,
+          `Exactly ${batchSize} synopsis entries. Each must be a rich, detailed blueprint paragraph.`,
+        ].join("\n") : [
           storyContext,
           "",
           `Full chapter list (${totalChapters} chapters total):\n${allTitles}`,
@@ -7776,7 +7821,7 @@ function NovelWorkspacePage() {
           chapterOutline,
           "",
           "RULES:",
-          `- Each synopsis MUST be a detailed blueprint — at least ${hasPlotSpine() ? "12-18" : "8-12"} sentences per chapter.`,
+          "- Each synopsis MUST be a detailed blueprint — at least 12-20 sentences per chapter.",
           "- Include specific character actions, emotional beats, key plot developments, character dynamics, and transitional moments.",
           "- Go beyond the outline: add middle beats, character reactions, emotional shifts, and cause-and-effect chains.",
           "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
@@ -7794,7 +7839,10 @@ function NovelWorkspacePage() {
         const result = await requestOpenRouterJson<{ synopses?: string[]; characters?: string[] }>(
           batchPrompt,
           tokenBudget,
-          { systemMessage: "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.", timeoutMs: Math.max(240000, batchSize * 30000) },
+          { systemMessage: spineIsActive
+            ? "Expert story enhancer. Deepen and enrich chapter synopses without changing any plot events. Preserve every beat. Return ONLY valid JSON."
+            : "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.",
+            timeoutMs: Math.max(240000, batchSize * 30000) },
         );
 
         const batchSynopses = Array.isArray(result?.synopses) ? result.synopses : [];
@@ -12587,7 +12635,7 @@ function NovelWorkspacePage() {
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                       </div>
                       <div>
-                        <span style={{ fontWeight: 700, fontSize: 14 }}>Arc Intelligence</span>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{hasPlotSpine() ? "Story Enhancer" : "Arc Intelligence"}</span>
                         {novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
                           <span style={{
                             marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
@@ -12639,8 +12687,12 @@ function NovelWorkspacePage() {
                         width: 24, height: 24, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)",
                         borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
                       }} />
-                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>Generating 3 arc paths for {planChapters.length} chapters...</p>
-                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>This may take a moment — each path includes full chapter synopses</p>
+                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>
+                        {hasPlotSpine() ? `Generating 3 enhancement directions for ${planChapters.length} chapters...` : `Generating 3 arc paths for ${planChapters.length} chapters...`}
+                      </p>
+                      <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "6px 0 0", opacity: 0.6 }}>
+                        {hasPlotSpine() ? "This will suggest ways to deepen your story without changing any plot events" : "This may take a moment — each path includes full chapter synopses"}
+                      </p>
                     </div>
                   )}
 
@@ -12660,7 +12712,9 @@ function NovelWorkspacePage() {
                           }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                             <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>
-                              Note: Applying an arc will update chapter synopses. Your existing prose won&apos;t be changed but you may want to review chapters afterwards.
+                              {hasPlotSpine()
+                                ? "Note: Enhancing will add depth to chapter synopses while keeping all plot events intact. Your existing prose won\u2019t be changed."
+                                : "Note: Applying an arc will update chapter synopses. Your existing prose won\u2019t be changed but you may want to review chapters afterwards."}
                             </span>
                           </div>
                         )}
@@ -12673,13 +12727,15 @@ function NovelWorkspacePage() {
                           }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                             <span style={{ fontSize: 12, color: "#a3e635", fontWeight: 600 }}>
-                              &ldquo;{choices[selectedIdx]?.name}&rdquo; applied — chapter synopses updated
+                              &ldquo;{choices[selectedIdx]?.name}&rdquo; applied — chapter synopses {hasPlotSpine() ? "enhanced" : "updated"}
                             </span>
                           </div>
                         )}
 
                         <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 12, lineHeight: 1.5 }}>
-                          Choose an arc direction. Selecting one will rewrite all chapter synopses to follow that narrative path.
+                          {hasPlotSpine()
+                            ? "Choose an enhancement direction. This will deepen your chapter synopses with richer emotional detail, stronger transitions, and more character depth — without changing any plot events from your Plot Spine."
+                            : "Choose an arc direction. Selecting one will rewrite all chapter synopses to follow that narrative path."}
                         </div>
 
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -12762,7 +12818,7 @@ function NovelWorkspacePage() {
                                           transition: "all 0.15s",
                                         }}
                                       >
-                                        {isApplying ? "Applying..." : "Apply This Arc"}
+                                        {isApplying ? (hasPlotSpine() ? "Enhancing..." : "Applying...") : (hasPlotSpine() ? "Enhance With This" : "Apply This Arc")}
                                       </button>
                                     )}
                                     {isSelected && (
