@@ -4984,3 +4984,54 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 }
 .pw-tutorial-restart-btn svg { opacity: 0.6; }
 
+/* ── Focus / Distraction-Free Mode ── */
+.pw-focus-mode .pw-sidebar { display: none !important; }
+.pw-focus-mode .pw-topbar { display: none !important; }
+.pw-focus-mode .pw-main { margin-left: 0 !important; max-width: 100% !important; }
+.pw-focus-mode .pw-editor-input,
+.pw-focus-mode .pw-block-prose-seamless {
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.pw-focus-mode .pw-toolbar-row { display: none !important; }
+.pw-focus-mode .pw-entity-bar { display: none !important; }
+.pw-focus-exit {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 200;
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border-light);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--pw-text-dim);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+.pw-focus-exit:hover { opacity: 1; }
+.pw-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--pw-text-dim);
+  border-top: 1px solid var(--pw-border-light);
+  background: var(--pw-surface);
+}
+.pw-session-bar span { white-space: nowrap; }
+.pw-session-bar button {
+  background: none;
+  border: none;
+  color: var(--pw-text-dim);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.6;
+  text-decoration: underline;
+}
+.pw-session-bar button:hover { opacity: 1; }
+

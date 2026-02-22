@@ -13,6 +13,7 @@ export type Chapter = {
   content: string;            // chapter body (prose only — the actual novel text)
   sceneBlocks?: SceneBlock[]; // planning blocks (not exported, not counted in word count)
   goalWords?: number;
+  notes?: string;             // personal scratchpad — not exported, not sent to AI
   createdAt: string;
   updatedAt: string;
 };

@@ -1108,6 +1108,11 @@ function NovelWorkspacePage() {
   const [editorTextAlign, setEditorTextAlign] = useState<"left" | "center" | "right" | "justify">("left");
   const [editorFontSize, setEditorFontSize] = useState<number>(17.5);
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+  const [focusMode, setFocusMode] = useState(false);
+  const [chapterNotesOpen, setChapterNotesOpen] = useState(false);
+  const [showOutlineView, setShowOutlineView] = useState(false);
+  const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
+  const [sessionElapsed, setSessionElapsed] = useState(0);
 
 
   // ── Right-click prose context menu ──
@@ -1189,6 +1194,33 @@ function NovelWorkspacePage() {
     try { localStorage.setItem("bw-theme", next); } catch { /* ignore */ }
     document.documentElement.setAttribute("data-theme", next);
   }
+
+  useEffect(() => {
+    if (!sessionRef.current.initialized) {
+      sessionRef.current.initialized = true;
+      try {
+        const today = new Date().toDateString();
+        const saved = localStorage.getItem(`pw.session.${today}`);
+        if (saved) {
+          const d = JSON.parse(saved);
+          sessionRef.current.startTime = d.startTime || Date.now();
+          sessionRef.current.startWords = d.startWords || 0;
+        }
+      } catch { /* */ }
+    }
+    const timer = setInterval(() => {
+      setSessionElapsed(Math.floor((Date.now() - sessionRef.current.startTime) / 1000));
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && focusMode) setFocusMode(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [focusMode]);
 
   useEffect(() => {
     if (!storyAiBusyAction) {
@@ -1495,6 +1527,31 @@ function NovelWorkspacePage() {
   const [ignoredMatchKeys, setIgnoredMatchKeys] = useState<string[]>([]);
   const [proofreadFilter, setProofreadFilter] = useState<ProofreadCategoryId | "all">("all");
   const [proofreadOpen, setProofreadOpen] = useState(false);
+
+  async function runLanguageToolCheck() {
+    if (!activeChapter || grammarChecking) return;
+    setGrammarChecking(true);
+    setGrammarError(null);
+    setIgnoredMatchKeys([]);
+    try {
+      const text = activeChapter.content || "";
+      if (!text.trim()) { setGrammarMatches([]); setLastCheckedContent(text); setGrammarChecking(false); return; }
+      const res = await fetch("/api/grammar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language: grammarLocale }),
+      });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const data = await res.json();
+      setGrammarMatches(Array.isArray(data.matches) ? data.matches : []);
+      setLastCheckedContent(text);
+      setProofreadOpen(true);
+    } catch (err: unknown) {
+      setGrammarError(err instanceof Error ? err.message : "Grammar check failed");
+    } finally {
+      setGrammarChecking(false);
+    }
+  }
 
   const novelId = params?.novelId;
 
@@ -8322,7 +8379,7 @@ function NovelWorkspacePage() {
 
   function updateChapter(
     chapterId: string,
-    patch: { title?: string; subtitle?: string; content?: string; goalWords?: number; sceneBlocks?: SceneBlock[] },
+    patch: { title?: string; subtitle?: string; content?: string; goalWords?: number; sceneBlocks?: SceneBlock[]; notes?: string },
     immediateUndo?: boolean,
   ) {
     // If content or sceneBlocks are changing, save current state to undo history
@@ -10548,6 +10605,14 @@ function NovelWorkspacePage() {
 
   const totalWords = countNovelWords(novel);
   const chapterWords = activeChapter ? countChapterWords(activeChapter) : 0;
+  if (sessionRef.current.startWords === 0 && totalWords > 0) {
+    sessionRef.current.startWords = totalWords;
+    try { const today = new Date().toDateString(); localStorage.setItem(`pw.session.${today}`, JSON.stringify({ startTime: sessionRef.current.startTime, startWords: totalWords })); } catch { /* */ }
+  }
+  const sessionWordsWritten = totalWords - sessionRef.current.startWords;
+  const sessionMinutes = Math.max(1, Math.floor((Date.now() - sessionRef.current.startTime) / 60000));
+  const sessionPace = sessionMinutes > 0 ? Math.round((sessionWordsWritten / sessionMinutes) * 60) : 0;
+  void sessionElapsed;
   const selectedChapterCount =
     exportScope === "all" ? novel.chapters.length : selectedExportChapterIds.length;
   const progress = Math.min(100, Math.round((totalWords / Math.max(novel.goalWords || 1, 1)) * 100));
@@ -10614,7 +10679,7 @@ function NovelWorkspacePage() {
 
   return (
     <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
-      <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}`}>
+      <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}${focusMode ? " pw-focus-mode" : ""}`}>
         <aside className="pw-sidebar" data-tutorial="sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
             <div className="pw-logo-swap">
@@ -10651,7 +10716,8 @@ function NovelWorkspacePage() {
                     data-num={String(idx + 1)}
                     onClick={() => setActiveChapterId(chapter.id)}
                   >
-                    {chapter.title || "Untitled chapter"}
+                    <span>{chapter.title || "Untitled chapter"}</span>
+                    <span style={{ display: "block", fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{countChapterWords(chapter).toLocaleString()} words</span>
                   </button>
                   <button
                     type="button"
@@ -10705,6 +10771,12 @@ function NovelWorkspacePage() {
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
             </button>
             <div className="pw-pill">{totalWords.toLocaleString()} words</div>
+            {activeChapter && (
+              <button type="button" className="pw-theme-toggle" onClick={() => setFocusMode(true)} title="Focus mode — distraction-free writing (Escape to exit)">
+                <span style={{ fontSize: 14 }}>○</span>
+                <span style={{ fontSize: 12 }}>Focus</span>
+              </button>
+            )}
             {canUndo && activeChapter && (
               <button
                 type="button"
@@ -10728,6 +10800,18 @@ function NovelWorkspacePage() {
               The Editor
             </button>
             )}
+            <button type="button" className="btn"
+              style={{ display: "flex", alignItems: "center", gap: 5, position: "relative" }}
+              title="Grammar & spelling check (LanguageTool — no AI)"
+              disabled={grammarChecking || !activeChapter?.content?.trim()}
+              onClick={() => void runLanguageToolCheck()}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+              {grammarChecking ? "Checking..." : "Spellcheck"}
+              {visibleMatches.length > 0 && !grammarChecking && (
+                <span style={{ background: "var(--pw-accent)", color: "#111", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{visibleMatches.length}</span>
+              )}
+            </button>
             <button type="button" className="btn btn-primary" data-tutorial="plan" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
@@ -10914,6 +10998,37 @@ function NovelWorkspacePage() {
                     </span>
                   );
                 })()}
+                {/* ── Chapter Notes / Scratchpad ── */}
+                <div style={{ marginBottom: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setChapterNotesOpen(!chapterNotesOpen)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      fontSize: 12, color: "var(--pw-text-dim)", display: "flex",
+                      alignItems: "center", gap: 4, padding: "4px 0", opacity: 0.7,
+                    }}
+                  >
+                    <span style={{ transform: chapterNotesOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", display: "inline-block" }}>▸</span>
+                    Notes {activeChapter.notes?.trim() ? `(${activeChapter.notes.trim().split(/\s+/).length} words)` : ""}
+                  </button>
+                  {chapterNotesOpen && (
+                    <textarea
+                      value={activeChapter.notes || ""}
+                      onChange={(e) => updateChapter(activeChapter.id, { notes: e.target.value })}
+                      placeholder="Personal notes for this chapter — ideas, reminders, outlines..."
+                      style={{
+                        width: "100%", minHeight: 80, maxHeight: 200, resize: "vertical",
+                        background: "var(--pw-surface-alt, rgba(0,0,0,0.05))",
+                        border: "1px solid var(--pw-border-light)",
+                        borderRadius: 6, padding: "8px 10px", fontSize: 13,
+                        color: "var(--pw-text)", fontFamily: "var(--font-sans)",
+                        outline: "none",
+                      }}
+                    />
+                  )}
+                </div>
+
                 <div className="pw-toolbar-row">
                   {!aiOff && (
                   <button
@@ -11141,6 +11256,70 @@ function NovelWorkspacePage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── LanguageTool proofread results panel ── */}
+                {proofreadOpen && (grammarError || visibleMatches.length > 0) && (
+                  <div style={{
+                    background: "var(--pw-surface-alt, rgba(0,0,0,0.03))", border: "1px solid var(--pw-border-light)",
+                    borderRadius: 8, padding: "10px 14px", margin: "4px 0 8px", maxHeight: 240, overflowY: "auto",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)" }}>
+                        {grammarError ? "Error" : `${visibleMatches.length} suggestion${visibleMatches.length === 1 ? "" : "s"}`}
+                        {grammarIsStale && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--pw-text-dim)", opacity: 0.6 }}>(stale — re-run to refresh)</span>}
+                      </span>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <select value={proofreadFilter} onChange={(e) => setProofreadFilter(e.target.value as ProofreadCategoryId | "all")} style={{ fontSize: 11, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 4, padding: "2px 6px", color: "var(--pw-text)" }}>
+                          <option value="all">All</option>
+                          {PROOFREAD_CATEGORIES.map((cat) => <option key={cat.id} value={cat.id}>{cat.chip} ({proofreadBuckets[cat.id].length})</option>)}
+                        </select>
+                        <button type="button" onClick={() => { setProofreadOpen(false); setGrammarMatches([]); }} style={{ background: "none", border: "none", fontSize: 14, cursor: "pointer", color: "var(--pw-text-dim)" }} title="Close">×</button>
+                      </div>
+                    </div>
+                    {grammarError ? (
+                      <p style={{ fontSize: 12, color: "#e55" }}>{grammarError}</p>
+                    ) : (
+                      displayedCategories.map((cat) => {
+                        const items = proofreadBuckets[cat.id];
+                        if (items.length === 0) return null;
+                        return (
+                          <div key={cat.id} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.03em" }}>{cat.chip}</div>
+                            {items.map(({ key, match }) => (
+                              <div key={key} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: 12, color: "var(--pw-text)", margin: 0 }}>{match.message}</p>
+                                  {match.replacements && match.replacements.length > 0 && (
+                                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
+                                      {match.replacements.slice(0, 3).map((rep: { value: string }, ri: number) => (
+                                        <button key={ri} type="button" onClick={() => {
+                                          if (!activeChapter) return;
+                                          const offset = typeof match.offset === "number" ? match.offset : 0;
+                                          const len = typeof match.length === "number" ? match.length : 0;
+                                          const before = activeChapter.content.slice(0, offset);
+                                          const after = activeChapter.content.slice(offset + len);
+                                          updateChapter(activeChapter.id, { content: before + rep.value + after });
+                                          setIgnoredMatchKeys((prev) => [...prev, key]);
+                                        }} style={{
+                                          fontSize: 11, padding: "1px 8px", borderRadius: 4,
+                                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)",
+                                          color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600,
+                                        }}>{rep.value}</button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <button type="button" onClick={() => setIgnoredMatchKeys((prev) => [...prev, key])} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer", opacity: 0.5, flexShrink: 0 }} title="Ignore">Skip</button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
                 {(() => {
                   const blocks = getSceneBlocks(activeChapter);
                   return (
@@ -11418,6 +11597,25 @@ function NovelWorkspacePage() {
                 })()}
               </div>
 
+              {/* Session tracker bar */}
+              <div className="pw-session-bar">
+                <span>Session: {sessionMinutes < 60 ? `${sessionMinutes}m` : `${Math.floor(sessionMinutes / 60)}h ${sessionMinutes % 60}m`}</span>
+                <span>{sessionWordsWritten >= 0 ? "+" : ""}{sessionWordsWritten.toLocaleString()} words</span>
+                <span>{sessionPace.toLocaleString()} w/hr</span>
+                <button type="button" onClick={() => { sessionRef.current.startTime = Date.now(); sessionRef.current.startWords = totalWords; setSessionElapsed(0); try { const today = new Date().toDateString(); localStorage.setItem(`pw.session.${today}`, JSON.stringify({ startTime: Date.now(), startWords: totalWords })); } catch { /* */ } }}>New session</button>
+              </div>
+
+              {/* Focus mode exit */}
+              {focusMode && (
+                <button type="button" className="pw-focus-exit" onClick={() => setFocusMode(false)}>
+                  ✕ Exit Focus <span style={{ opacity: 0.5, marginLeft: 4 }}>Esc</span>
+                </button>
+              )}
+              {focusMode && (
+                <div style={{ position: "fixed", bottom: 16, right: 20, fontSize: 12, color: "var(--pw-text-dim)", opacity: 0.4 }}>
+                  {chapterWords.toLocaleString()} words
+                </div>
+              )}
 
             </div>
           ) : (
@@ -11605,6 +11803,57 @@ function NovelWorkspacePage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* ── Outline View ── */}
+              <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
+                <div className="pw-overview-card">
+                  <div className="pw-overview-card-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <h3>Chapter Outline</h3>
+                    <button type="button" className="btn" style={{ fontSize: 12 }} onClick={() => setShowOutlineView(!showOutlineView)}>
+                      {showOutlineView ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  {showOutlineView && (
+                    <div style={{ padding: "4px 0" }}>
+                      {novel.chapters.length === 0 ? (
+                        <p style={{ fontSize: 13, color: "var(--pw-text-dim)", padding: "12px 0" }}>No chapters yet.</p>
+                      ) : (
+                        novel.chapters.map((ch, idx) => {
+                          const wc = countChapterWords(ch);
+                          const preview = ch.content?.trim() ? ch.content.trim().slice(0, 100).replace(/\n/g, " ") + (ch.content.trim().length > 100 ? "…" : "") : "";
+                          return (
+                            <div key={ch.id} style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "8px 4px",
+                              borderBottom: "1px solid var(--pw-border-light)",
+                            }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+                                <button type="button" disabled={idx === 0} onClick={() => {
+                                  const chs = [...novel.chapters]; const [moved] = chs.splice(idx, 1); chs.splice(idx - 1, 0, moved); updateNovel({ chapters: chs });
+                                }} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", fontSize: 11, opacity: idx === 0 ? 0.2 : 0.6, padding: 0, lineHeight: 1, color: "var(--pw-text-dim)" }}>▲</button>
+                                <button type="button" disabled={idx === novel.chapters.length - 1} onClick={() => {
+                                  const chs = [...novel.chapters]; const [moved] = chs.splice(idx, 1); chs.splice(idx + 1, 0, moved); updateNovel({ chapters: chs });
+                                }} style={{ background: "none", border: "none", cursor: idx === novel.chapters.length - 1 ? "default" : "pointer", fontSize: 11, opacity: idx === novel.chapters.length - 1 ? 0.2 : 0.6, padding: 0, lineHeight: 1, color: "var(--pw-text-dim)" }}>▼</button>
+                              </div>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--pw-text-dim)", flexShrink: 0, minWidth: 22 }}>{idx + 1}.</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <input
+                                  value={ch.title}
+                                  onChange={(e) => updateChapter(ch.id, { title: e.target.value })}
+                                  placeholder="Untitled chapter"
+                                  style={{ width: "100%", background: "transparent", border: "none", fontSize: 13, fontWeight: 600, color: "var(--pw-text)", outline: "none", padding: 0 }}
+                                />
+                                {preview && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}</p>}
+                              </div>
+                              <span style={{ fontSize: 11, color: "var(--pw-text-dim)", flexShrink: 0 }}>{wc.toLocaleString()} w</span>
+                              <button type="button" onClick={() => { setActiveChapterId(ch.id); }} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-accent)", cursor: "pointer", flexShrink: 0 }}>Open</button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
