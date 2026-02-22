@@ -15468,10 +15468,16 @@ function NovelWorkspacePage() {
                           {/* Build Full Spine + Story Doctor + Clear buttons */}
                           {!aiOff && (
                             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-                              <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={() => setSpineShowArcPicker(true)}>
-                                {beats.length > 0 ? "✦ Rebuild Full Spine" : "✦ Build Full Spine"}
-                              </button>
-                              {beats.length >= 3 && (
+                              {beats.length === 0 ? (
+                                <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={() => setSpineShowArcPicker(true)}>
+                                  ✦ Build Full Spine
+                                </button>
+                              ) : (
+                                <button type="button" className="btn" style={{ opacity: 0.5, cursor: "help" }} onClick={() => alert("Your spine is already built with interconnected beats, subplots, and character arcs. Regenerating would overwrite all your work and break the connections you've crafted.\n\nTo start fresh, use \"Clear Spine\" first — then build a new one.")}>
+                                  ✦ Build Full Spine
+                                </button>
+                              )}
+                              {beats.length >= 3 && !spineDoctorResult && (
                                 <button type="button" className="btn" disabled={spineBusy} onClick={async () => {
                                   if (!novel || spineBusy) return;
                                   setSpineBusy(true); setSpineDoctorResult(null); setSpineProgress("Story Doctor is analysing your spine...");
@@ -15847,7 +15853,6 @@ function NovelWorkspacePage() {
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                   <span style={{ fontSize: 18, fontWeight: 800, color: spineDoctorResult.score >= 80 ? "#22c55e" : spineDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{spineDoctorResult.score}</span>
                                   <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>/100</span>
-                                  <button type="button" onClick={() => setSpineDoctorResult(null)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", fontSize: 14 }}>×</button>
                                 </div>
                               </div>
                               {spineDoctorResult.summary && <p style={{ fontSize: 12, color: "var(--pw-text)", marginBottom: 10, lineHeight: 1.5, fontStyle: "italic" }}>{spineDoctorResult.summary}</p>}
@@ -15862,10 +15867,63 @@ function NovelWorkspacePage() {
                                       </div>
                                       <div style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 500 }}>{issue.message}</div>
                                       <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{issue.suggestion}</div>
+                                      {!aiOff && (issue.severity === "critical" || issue.severity === "warning") && (
+                                        <button type="button" className="btn" disabled={spineBusy} style={{ fontSize: 10, marginTop: 6, padding: "3px 10px" }} onClick={async () => {
+                                          if (spineBusy) return;
+                                          setSpineBusy(true);
+                                          setSpineProgress(`Fixing: ${issue.message.slice(0, 40)}...`);
+                                          try {
+                                            const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
+                                            const currentSubplots = novel.storyBible.plotSpine?.subplots ?? [];
+                                            const currentArcs = novel.storyBible.plotSpine?.characterArcs ?? [];
+                                            const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
+                                            const spCtx = currentSubplots.map(s => `"${s.title}" (${s.status})`).join("; ");
+                                            const arcCtxStr = currentArcs.map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
+                                            const fixPrompt = [
+                                              "Fix this specific issue in the story spine WITHOUT breaking anything else.",
+                                              `\nISSUE: ${issue.message}`,
+                                              `SUGGESTED FIX: ${issue.suggestion}`,
+                                              `AREA: ${issue.area}`,
+                                              `\nCurrent beats:\n${beatCtx}`,
+                                              spCtx ? `Subplots: ${spCtx}` : "",
+                                              arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
+                                              `\nApply the fix by returning the MODIFIED spine. Only change what's needed to fix THIS issue.`,
+                                              `Return JSON: {`,
+                                              `  "beats": [same format as above, include ALL beats - modified and unmodified],`,
+                                              `  "explanation": "1-2 sentences explaining what you changed"`,
+                                              `}`,
+                                              `Each beat: { "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["Name"] }`,
+                                              "IMPORTANT: Return ALL beats, not just changed ones. Keep unchanged beats exactly as they were.",
+                                            ].filter(Boolean).join("\n");
+                                            const raw = await requestOpenRouterText(fixPrompt, 4000, 120000, "You are a story editor. Fix the specific issue without breaking the rest of the spine. Return only valid JSON.", false, 0.4);
+                                            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                            if (jsonMatch) {
+                                              const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }>; explanation?: string };
+                                              if (parsed.beats?.length) {
+                                                const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
+                                                  id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
+                                                  title: b.title || "", description: b.description || "",
+                                                  act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                                  chapterHint: currentBeats[bi]?.chapterHint ?? -1,
+                                                  characterIds: currentBeats[bi]?.characterIds ?? [],
+                                                  locationHint: b.locationHint || currentBeats[bi]?.locationHint || "",
+                                                  tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                                  sortOrder: bi,
+                                                }));
+                                                updatePlotSpine({ beats: fixedBeats });
+                                                setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter((_, idx) => idx !== i) } : null);
+                                              }
+                                            }
+                                          } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                        }}>Fix This</button>
+                                      )}
                                     </div>
                                   );
                                 })}
                               </div>
+                              {spineDoctorResult.issues.length === 0 && (
+                                <p style={{ fontSize: 12, color: "#22c55e", fontWeight: 600, marginTop: 8 }}>All issues resolved. Your spine is in great shape.</p>
+                              )}
                             </div>
                           )}
 
