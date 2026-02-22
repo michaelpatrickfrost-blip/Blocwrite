@@ -1124,6 +1124,7 @@ function NovelWorkspacePage() {
   const [spineDoctorResult, setSpineDoctorResult] = useState<{ issues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }>; score: number; summary: string } | null>(null);
   const [spineEnrichingBeatId, setSpineEnrichingBeatId] = useState<string | null>(null);
   const [spineProgress, setSpineProgress] = useState("");
+  const [spineError, setSpineError] = useState("");
   const [spineSuggestedChars, setSpineSuggestedChars] = useState<Array<{ name: string; role: string; logline: string }> | null>(null);
   const [spineArcChoice, setSpineArcChoice] = useState<string | null>(null);
   const [spineShowArcPicker, setSpineShowArcPicker] = useState(false);
@@ -15635,22 +15636,26 @@ function NovelWorkspacePage() {
                           {/* Progress stepper */}
                           {spineBusy && spineProgress && (() => {
                             const phases = [
-                              { key: "beats", label: "Building story beats", icon: "📐" },
-                              { key: "subplots", label: "Weaving subplots", icon: "🔀" },
-                              { key: "arcs", label: "Mapping character arcs", icon: "🎭" },
-                              { key: "done", label: "Finalising spine", icon: "✓" },
+                              { key: "act1", label: "Act 1", icon: "1" },
+                              { key: "act2", label: "Act 2", icon: "2" },
+                              { key: "act3", label: "Act 3", icon: "3" },
+                              { key: "subplots", label: "Subplots", icon: "🔀" },
+                              { key: "arcs", label: "Arcs", icon: "🎭" },
                             ];
-                            const activeIdx = spineProgress.toLowerCase().includes("beat") ? 0
-                              : spineProgress.toLowerCase().includes("subplot") ? 1
-                              : spineProgress.toLowerCase().includes("arc") || spineProgress.toLowerCase().includes("character") ? 2
-                              : spineProgress.toLowerCase().includes("final") || spineProgress.toLowerCase().includes("profile") ? 3 : 0;
+                            const prog = spineProgress.toLowerCase();
+                            const activeIdx = prog.includes("act 1") || prog.includes("setup") ? 0
+                              : prog.includes("act 2") || prog.includes("confrontation") ? 1
+                              : prog.includes("act 3") || prog.includes("resolution") ? 2
+                              : prog.includes("subplot") ? 3
+                              : prog.includes("arc") || prog.includes("character") ? 4
+                              : prog.includes("final") ? 5 : 0;
                             return (
                               <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" }}>
-                                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                                   {phases.map((p, i) => (
-                                    <div key={p.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                                    <div key={p.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
                                       <div style={{
-                                        width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
+                                        width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
                                         background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" : "var(--pw-surface)",
                                         border: i === activeIdx ? "2px solid var(--pw-accent)" : "1px solid var(--pw-border-light)",
                                         color: i < activeIdx ? "#000" : i === activeIdx ? "var(--pw-accent)" : "var(--pw-text-dim)",
@@ -15659,7 +15664,7 @@ function NovelWorkspacePage() {
                                       }}>
                                         {i < activeIdx ? "✓" : p.icon}
                                       </div>
-                                      <span style={{ fontSize: 9, fontWeight: i === activeIdx ? 700 : 500, color: i <= activeIdx ? "var(--pw-text)" : "var(--pw-text-dim)", textAlign: "center", lineHeight: 1.2 }}>{p.label}</span>
+                                      <span style={{ fontSize: 8, fontWeight: i === activeIdx ? 700 : 500, color: i <= activeIdx ? "var(--pw-text)" : "var(--pw-text-dim)", textAlign: "center", lineHeight: 1.1 }}>{p.label}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -15667,12 +15672,27 @@ function NovelWorkspacePage() {
                                   <div style={{ flex: 1, height: 3, background: "var(--pw-border-light)", borderRadius: 2, overflow: "hidden" }}>
                                     <div style={{ width: `${Math.min(100, ((activeIdx + 0.5) / phases.length) * 100)}%`, height: "100%", background: "var(--pw-accent)", borderRadius: 2, transition: "width 0.5s ease" }} />
                                   </div>
-                                  <span style={{ fontSize: 11, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>{spineProgress}</span>
                                 </div>
-                                <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 6, lineHeight: 1.4 }}>Each phase saves automatically — if something fails, your progress is kept.</p>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                                  <div style={{ width: 12, height: 12, border: "2px solid var(--pw-accent)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                                  <span style={{ fontSize: 11, color: "var(--pw-text)", fontWeight: 500 }}>{spineProgress}</span>
+                                </div>
+                                <p style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4, lineHeight: 1.3 }}>Each phase saves as it completes — your progress is safe.</p>
                               </div>
                             );
                           })()}
+
+                          {/* Spine error message */}
+                          {spineError && !spineBusy && (
+                            <div style={{ marginBottom: 14, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.25)", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              <span style={{ color: "#ef4444", fontSize: 16, lineHeight: 1, flexShrink: 0 }}>⚠</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: "#ef4444", marginBottom: 2 }}>Spine generation failed</div>
+                                <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>{spineError}</div>
+                              </div>
+                              <button type="button" onClick={() => setSpineError("")} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+                            </div>
+                          )}
 
                           {/* Arc Picker Modal */}
                           {spineShowArcPicker && (
@@ -15714,146 +15734,165 @@ function NovelWorkspacePage() {
                                   setSpineShowArcPicker(false);
                                   if (!novel || spineBusy || !spineArcChoice) return;
                                   setSpineBusy(true);
+                                  setSpineError("");
                                   setSpineSuggestedChars(null);
                                   setSpineDoctorResult(null);
 
                                   const synopsis = novel.storyBible.summary?.synopsisShort || "";
                                   const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
                                   const existingChars = storyCharacters.slice(0, 10);
-                                  const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 60) : ""}`).join("\n  ");
-                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 40) : ""}`).join("; ");
-                                  const loreCtx = (novel.storyBible.lore ?? []).slice(0, 4).map(l => `${l.title}: ${(l.content || "").slice(0, 40)}`).join("; ");
+                                  const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 50) : ""}`).join("\n  ");
+                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 5).map(l => l.name).join(", ");
                                   const arcPreset = STORY_ARC_OPTIONS.find(a => a.id === spineArcChoice);
                                   const arcDirective = arcPreset
-                                    ? `\nARC: ${arcPreset.name} — ${arcPreset.hint.slice(0, 120)}`
-                                    : `\nARC (custom): ${(spineArcChoice || "").slice(0, 200)}`;
+                                    ? `ARC: ${arcPreset.name} — ${arcPreset.hint.slice(0, 100)}`
+                                    : `ARC: ${(spineArcChoice || "").slice(0, 150)}`;
 
-                                  let newBeats: StoryBeat[] = [];
-                                  let allCharNamesInBeats = new Set<string>();
-                                  let newCharNames: string[] = [];
-                                  let beatSummary = "";
+                                  // Helper: parse JSON from AI response with repair fallback
+                                  function extractJson<T>(raw: string): T | null {
+                                    const m = raw.match(/\{[\s\S]*\}/);
+                                    if (!m) return null;
+                                    try { return JSON.parse(m[0]) as T; } catch {
+                                      const repaired = attemptCloseTruncatedJson(m[0]);
+                                      if (repaired) try { return JSON.parse(repaired) as T; } catch { /* */ }
+                                    }
+                                    return null;
+                                  }
 
-                                  // ═══ PHASE 1: BEATS (most important — save immediately) ═══
-                                  setSpineProgress("Building story beats across 3 acts...");
-                                  for (let attempt = 0; attempt < 2; attempt++) {
-                                    try {
-                                      const beatsPrompt = [
-                                        `Build a beat sheet for a ${genre} novel.`,
-                                        arcDirective,
-                                        `\nSynopsis: ${synopsis.slice(0, 1200)}`,
-                                        charCtx ? `\nCharacters:\n  ${charCtx}` : "",
-                                        locCtx ? `\nLocations: ${locCtx}` : "",
-                                        loreCtx ? `\nLore: ${loreCtx}` : "",
-                                        `\nReturn JSON: { "beats": [{ "title": "...", "description": "2-3 sentences", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
-                                        "",
-                                        "RULES:",
-                                        "- 14-20 beats across 3 acts (25% / 50% / 25%).",
-                                        "- Use ALL existing characters AND introduce NEW ones (6-12+ total). Full names only.",
-                                        "- Each beat names specific characters. Be concrete about actions and consequences.",
-                                        "- Follow the narrative arc faithfully.",
-                                      ].filter(Boolean).join("\n");
-                                      const beatsRaw = await requestOpenRouterText(beatsPrompt, 3000, 150000, "Expert story architect. Create detailed beats with named characters. Return only valid JSON.", false, 0.75);
-                                      const beatsJson = beatsRaw.match(/\{[\s\S]*\}/);
-                                      if (!beatsJson) { if (attempt === 0) continue; throw new Error("No valid JSON returned for beats"); }
-                                      let beatsParsed: { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> } | null = null;
-                                      try { beatsParsed = JSON.parse(beatsJson[0]); } catch { const repaired = attemptCloseTruncatedJson(beatsJson[0]); if (repaired) beatsParsed = JSON.parse(repaired); }
-                                      if (!beatsParsed?.beats?.length) { if (attempt === 0) continue; throw new Error("No beats in response"); }
+                                  // Helper: single small AI call with 1 retry
+                                  async function smallCall(prompt: string, tokens: number, sys: string): Promise<string> {
+                                    for (let a = 0; a < 2; a++) {
+                                      try {
+                                        const r = await requestOpenRouterText(prompt, tokens, 60000, sys, false, 0.7);
+                                        if (r && r.trim().length > 5) return r;
+                                      } catch { /* retry */ }
+                                    }
+                                    return "";
+                                  }
 
-                                      allCharNamesInBeats = new Set<string>();
-                                      beatsParsed.beats.forEach(b => (b.characterNames ?? []).forEach(n => allCharNamesInBeats.add(n)));
-                                      const existingCharNames = new Set(existingChars.map(c => c.name.toLowerCase()));
-                                      newCharNames = [...allCharNamesInBeats].filter(n => !existingCharNames.has(n.toLowerCase()));
+                                  const sys = "Story architect. Return only valid JSON. Keep responses concise.";
+                                  type RawBeat = { title: string; description: string; tension: number; locationHint?: string; characterNames?: string[] };
+                                  let allBeats: StoryBeat[] = [];
+                                  const allCharNames = new Set<string>();
+                                  let failed = false;
 
-                                      newBeats = beatsParsed.beats.map((b, i) => ({
-                                        id: `beat-${Date.now().toString(36)}-${i}`,
-                                        title: b.title || `Beat ${i + 1}`, description: b.description || "",
-                                        act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                  // ═══ BEATS: 3 small calls, one per act ═══
+                                  const actConfigs = [
+                                    { act: 1 as const, label: "Act 1 — Setup", count: "4-5", desc: "Introduce the world, characters, and inciting incident. Tension rises from 1 to 3." },
+                                    { act: 2 as const, label: "Act 2 — Confrontation", count: "7-9", desc: "Rising stakes, complications, reversals, midpoint shift, allies and enemies revealed. Tension 3-4." },
+                                    { act: 3 as const, label: "Act 3 — Resolution", count: "4-5", desc: "Climax, final confrontation, resolution, aftermath. Tension peaks at 5 then resolves." },
+                                  ];
+
+                                  for (const cfg of actConfigs) {
+                                    setSpineProgress(`Building beats — ${cfg.label}...`);
+                                    const prevBeats = allBeats.length > 0
+                                      ? `\nPrevious beats so far:\n${allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 50)}`).join("\n")}`
+                                      : "";
+                                    const prompt = [
+                                      `Generate ${cfg.count} story beats for ${cfg.label} of a ${genre} novel.`,
+                                      `${cfg.desc}`,
+                                      `\n${arcDirective}`,
+                                      `\nSynopsis: ${synopsis.slice(0, 800)}`,
+                                      charCtx ? `\nCharacters:\n  ${charCtx}` : "",
+                                      locCtx ? `\nLocations: ${locCtx}` : "",
+                                      prevBeats,
+                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "2-3 sentences", "tension": 1-5, "locationHint": "place", "characterNames": ["First Last"] }] }`,
+                                      "Use character full names, never 'the protagonist'. Introduce new characters naturally. Be specific about actions.",
+                                    ].filter(Boolean).join("\n");
+
+                                    const raw = await smallCall(prompt, 1200, sys);
+                                    const parsed = extractJson<{ beats?: RawBeat[] }>(raw);
+                                    const beats = parsed?.beats ?? [];
+
+                                    if (beats.length === 0 && cfg.act === 1) {
+                                      setSpineError("Your AI model couldn't generate story beats. Try a different model or check your API key. The model needs to return valid JSON.");
+                                      setSpineBusy(false); setSpineProgress("");
+                                      failed = true; break;
+                                    }
+
+                                    const offset = allBeats.length;
+                                    const actBeats: StoryBeat[] = beats.map((b, i) => {
+                                      (b.characterNames ?? []).forEach(n => allCharNames.add(n));
+                                      return {
+                                        id: `beat-${Date.now().toString(36)}-${offset + i}`,
+                                        title: b.title || `Beat ${offset + i + 1}`,
+                                        description: b.description || "",
+                                        act: cfg.act,
                                         chapterHint: -1,
                                         characterIds: (b.characterNames ?? []).map(name => existingChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
                                         locationHint: b.locationHint || "",
                                         tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                        sortOrder: i,
-                                      }));
+                                        sortOrder: offset + i,
+                                      };
+                                    });
 
-                                      // Save beats immediately so nothing is lost
-                                      updatePlotSpine({ beats: newBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
-                                      beatSummary = newBeats.map((b, i) => `${i+1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 60)}`).join("\n");
-                                      break;
-                                    } catch (err) {
-                                      if (attempt === 1) {
-                                        console.error("Beats generation failed after retry:", err);
-                                        setSpineBusy(false); setSpineProgress("");
-                                        return;
-                                      }
-                                      setSpineProgress("Beats attempt 1 didn't work — retrying...");
-                                    }
+                                    allBeats = [...allBeats, ...actBeats];
+                                    // Save after each act so progress is never lost
+                                    updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
                                   }
 
-                                  if (newBeats.length === 0) { setSpineBusy(false); setSpineProgress(""); return; }
+                                  if (failed || allBeats.length === 0) {
+                                    if (!failed) setSpineError("No beats were generated. Try a different AI model.");
+                                    setSpineBusy(false); setSpineProgress("");
+                                    return;
+                                  }
 
-                                  // ═══ PHASE 2: SUBPLOTS (graceful — beats already saved) ═══
+                                  // ═══ SUBPLOTS: single small call ═══
                                   let newSubplots: Subplot[] = [];
-                                  setSpineProgress("Weaving subplots through the story...");
+                                  setSpineProgress("Weaving subplots...");
                                   try {
-                                    const subplotsPrompt = [
-                                      `Generate 3-5 subplots for a ${genre} novel with these beats.`,
-                                      `\nBeats:\n${beatSummary}`,
-                                      `\nCharacters: ${[...allCharNamesInBeats].join(", ")}`,
-                                      arcDirective,
-                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1-2 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
-                                      "Each subplot should involve 2-3 characters and touch 3-6 beats.",
+                                    const beatList = allBeats.map((b, i) => `${i+1}. "${b.title}"`).join(", ");
+                                    const spPrompt = [
+                                      `Generate 3-4 subplots for a ${genre} novel.`,
+                                      `\nBeats: ${beatList}`,
+                                      `Characters: ${[...allCharNames].join(", ")}`,
+                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1 sentence", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }] }`,
                                     ].join("\n");
-                                    const spRaw = await requestOpenRouterText(subplotsPrompt, 1500, 90000, "Story architect. Generate subplots. Return only valid JSON.", false, 0.7);
-                                    const spJson = spRaw.match(/\{[\s\S]*\}/);
-                                    let spParsed: { subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> } | null = null;
-                                    if (spJson) { try { spParsed = JSON.parse(spJson[0]); } catch { const rep = attemptCloseTruncatedJson(spJson[0]); if (rep) spParsed = JSON.parse(rep); } }
+                                    const spRaw = await smallCall(spPrompt, 800, sys);
+                                    const spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
                                     newSubplots = (spParsed?.subplots ?? []).map((s, i) => ({
                                       id: `sp-${Date.now().toString(36)}-${i}`,
                                       title: s.title || "", description: s.description || "",
                                       characterIds: (s.characterNames ?? []).map(n => existingChars.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
-                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => allBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
                                       status: "setup" as const,
                                     }));
-                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
-                                  } catch (err) { console.warn("Subplots generation failed (beats preserved):", err); }
+                                    updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
+                                  } catch { /* beats still saved */ }
 
-                                  // ═══ PHASE 3: CHARACTER ARCS (graceful — beats + subplots saved) ═══
+                                  // ═══ ARCS: single small call ═══
                                   let newArcs: CharacterArc[] = [];
-                                  setSpineProgress("Mapping character arcs and transformations...");
+                                  setSpineProgress("Mapping character arcs...");
                                   try {
-                                    const mainCharNames = [...allCharNamesInBeats].slice(0, 6);
-                                    const arcsPrompt = [
-                                      `Generate character arcs for: ${mainCharNames.join(", ")}`,
-                                      `\nBeats:\n${beatSummary}`,
-                                      `Genre: ${genre}`,
-                                      arcDirective,
-                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "e.g. redemption, coming of age", "startState": "who they are", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }] }`,
-                                      "1 arc per character, 2-4 turning points each.",
+                                    const mainNames = [...allCharNames].slice(0, 5);
+                                    const arcPrompt = [
+                                      `Generate character arcs for: ${mainNames.join(", ")}`,
+                                      `\nGenre: ${genre}. ${arcDirective}`,
+                                      `\nReturn JSON: { "arcs": [{ "characterName": "...", "arcType": "type", "startState": "...", "endState": "...", "turningPointBeatTitles": ["Beat Title"] }] }`,
                                     ].join("\n");
-                                    const arcRaw = await requestOpenRouterText(arcsPrompt, 1500, 90000, "Character arc specialist. Map character transformations. Return only valid JSON.", false, 0.7);
-                                    const arcJson = arcRaw.match(/\{[\s\S]*\}/);
-                                    let arcParsed: { arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> } | null = null;
-                                    if (arcJson) { try { arcParsed = JSON.parse(arcJson[0]); } catch { const rep = attemptCloseTruncatedJson(arcJson[0]); if (rep) arcParsed = JSON.parse(rep); } }
+                                    const arcRaw = await smallCall(arcPrompt, 800, sys);
+                                    const arcParsed = extractJson<{ arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> }>(arcRaw);
                                     newArcs = (arcParsed?.arcs ?? []).map((a, i) => {
                                       const charId = existingChars.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
                                       return {
                                         id: `arc-${Date.now().toString(36)}-${i}`,
                                         characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
-                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => allBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
                                       };
                                     }).filter(a => a.characterId);
-                                  } catch (err) { console.warn("Arcs generation failed (beats + subplots preserved):", err); }
+                                  } catch { /* beats + subplots still saved */ }
 
-                                  // Final save with everything we managed to get
                                   setSpineProgress("Finalising spine...");
-                                  updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
+                                  updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
 
                                   // Suggest new characters
+                                  const existingCharNamesLower = new Set(existingChars.map(c => c.name.toLowerCase()));
+                                  const newCharNames = [...allCharNames].filter(n => !existingCharNamesLower.has(n.toLowerCase()));
                                   if (newCharNames.length > 0) {
                                     const charDescriptions: Array<{ name: string; role: string; logline: string }> = [];
                                     for (const name of newCharNames.slice(0, 10)) {
-                                      const beatMatches = newBeats.filter(b => (b.characterIds ?? []).length > 0 || b.description.toLowerCase().includes(name.toLowerCase()));
-                                      const role = beatMatches.length >= 4 ? "Supporting" : "Minor";
+                                      const beatMatches = allBeats.filter(b => b.description.toLowerCase().includes(name.toLowerCase()));
+                                      const role = beatMatches.length >= 3 ? "Supporting" : "Minor";
                                       const contexts = beatMatches.slice(0, 3).map(b => b.description.slice(0, 60)).join("; ");
                                       charDescriptions.push({ name, role, logline: contexts || "Appears in the story" });
                                     }
