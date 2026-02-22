@@ -1115,12 +1115,14 @@ function NovelWorkspacePage() {
   const [focusMode, setFocusMode] = useState(false);
   const [chapterNotesOpen, setChapterNotesOpen] = useState(false);
   const [showOutlineView, setShowOutlineView] = useState(false);
-  const [spineTab, setSpineTab] = useState<"beats" | "subplots" | "arcs">("beats");
+  const [spineTab, setSpineTab] = useState<"overview" | "beats" | "subplots" | "arcs">("overview");
   const [spineExpandedId, setSpineExpandedId] = useState<string | null>(null);
   const [spineBusy, setSpineBusy] = useState(false);
   const [spineVariations, setSpineVariations] = useState<Array<{ label: string; beats: StoryBeat[] }> | null>(null);
   const [spineSubplotSuggestions, setSpineSubplotSuggestions] = useState<Subplot[] | null>(null);
   const [spineArcSuggestions, setSpineArcSuggestions] = useState<Array<{ characterId: string; characterName: string; options: CharacterArc[] }> | null>(null);
+  const [spineDoctorResult, setSpineDoctorResult] = useState<{ issues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }>; score: number; summary: string } | null>(null);
+  const [spineEnrichingBeatId, setSpineEnrichingBeatId] = useState<string | null>(null);
   const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
   const [sessionElapsed, setSessionElapsed] = useState(0);
 
@@ -15404,7 +15406,7 @@ function NovelWorkspacePage() {
 
                     {/* Internal tabs */}
                     <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--pw-border-light)", marginBottom: 12 }}>
-                      {(["beats", "subplots", "arcs"] as const).map((t) => (
+                      {(["overview", "beats", "subplots", "arcs"] as const).map((t) => (
                         <button key={t} type="button" onClick={() => { setSpineTab(t); setSpineExpandedId(null); }}
                           style={{
                             padding: "8px 16px", fontSize: 12, fontWeight: spineTab === t ? 700 : 500,
@@ -15412,10 +15414,309 @@ function NovelWorkspacePage() {
                             background: "none", border: "none", borderBottom: spineTab === t ? "2px solid var(--pw-accent)" : "2px solid transparent",
                             cursor: "pointer", transition: "all 0.15s",
                           }}>
-                          {t === "beats" ? `Beats (${(novel.storyBible.plotSpine?.beats ?? []).length})` : t === "subplots" ? `Subplots (${(novel.storyBible.plotSpine?.subplots ?? []).length})` : `Arcs (${(novel.storyBible.plotSpine?.characterArcs ?? []).length})`}
+                          {t === "overview" ? "Overview" : t === "beats" ? `Beats (${(novel.storyBible.plotSpine?.beats ?? []).length})` : t === "subplots" ? `Subplots (${(novel.storyBible.plotSpine?.subplots ?? []).length})` : `Arcs (${(novel.storyBible.plotSpine?.characterArcs ?? []).length})`}
                         </button>
                       ))}
                     </div>
+
+                    {/* ═══ OVERVIEW TAB ═══ */}
+                    {spineTab === "overview" && (() => {
+                      const beats = novel.storyBible.plotSpine?.beats ?? [];
+                      const subplots = novel.storyBible.plotSpine?.subplots ?? [];
+                      const arcs = novel.storyBible.plotSpine?.characterArcs ?? [];
+                      const storyCharacters = novel.storyBible.characters ?? [];
+                      const act1 = beats.filter(b => b.act === 1);
+                      const act2 = beats.filter(b => b.act === 2);
+                      const act3 = beats.filter(b => b.act === 3);
+                      const charsWithArcs = new Set(arcs.map(a => a.characterId));
+                      const mainChars = storyCharacters.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest");
+                      const missingArcs = mainChars.filter(c => !charsWithArcs.has(c.id));
+                      const unresolvedSubplots = subplots.filter(s => s.status !== "resolved");
+                      const charsInBeats = new Set(beats.flatMap(b => b.characterIds));
+                      const orphanChars = storyCharacters.filter(c => !charsInBeats.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Supporting"));
+
+                      // Completeness score
+                      let score = 0;
+                      if (beats.length >= 8) score += 25; else if (beats.length >= 4) score += 15; else if (beats.length > 0) score += 5;
+                      if (act1.length > 0 && act2.length > 0 && act3.length > 0) score += 15; else if (act1.length > 0 || act3.length > 0) score += 5;
+                      if (subplots.length >= 2) score += 20; else if (subplots.length >= 1) score += 10;
+                      if (arcs.length >= 2) score += 20; else if (arcs.length >= 1) score += 10;
+                      if (missingArcs.length === 0 && mainChars.length > 0) score += 10;
+                      if (orphanChars.length === 0) score += 5;
+                      if (beats.every(b => b.description.length > 30)) score += 5;
+                      const clampedScore = Math.min(100, score);
+                      const scoreColor = clampedScore >= 80 ? "#22c55e" : clampedScore >= 50 ? "#f59e0b" : "#ef4444";
+
+                      return (
+                        <div>
+                          {/* Build Full Spine + Story Doctor buttons */}
+                          {!aiOff && (
+                            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                              <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={async () => {
+                                if (!novel || spineBusy) return;
+                                setSpineBusy(true);
+                                try {
+                                  const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                  const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
+                                  const charCtx = storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 80) : ""}${c.goals ? " Goals: " + c.goals.slice(0, 50) : ""}${c.fears ? " Fears: " + c.fears.slice(0, 50) : ""}`).join("\n  ");
+                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => `${l.name}${l.description ? ": " + l.description.slice(0, 50) : ""}`).join("; ");
+                                  const loreCtx = (novel.storyBible.lore ?? []).slice(0, 4).map(l => `${l.title}: ${(l.content || "").slice(0, 50)}`).join("; ");
+                                  const prompt = [
+                                    `Build a complete story spine for a ${genre} novel.`,
+                                    `\nSynopsis:\n${synopsis.slice(0, 2000)}`,
+                                    charCtx ? `\nCharacters:\n  ${charCtx}` : "",
+                                    locCtx ? `\nLocations: ${locCtx}` : "",
+                                    loreCtx ? `\nLore: ${loreCtx}` : "",
+                                    `\nReturn JSON with THREE sections:`,
+                                    `{`,
+                                    `  "beats": [{ "title": "...", "description": "2-3 detailed sentences", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["Name"] }],`,
+                                    `  "subplots": [{ "title": "...", "description": "2-3 sentences", "characterNames": ["Name"], "linkedBeatTitles": ["Beat Title"], "status": "setup" }],`,
+                                    `  "arcs": [{ "characterName": "...", "arcType": "e.g. redemption", "startState": "who they are", "endState": "who they become", "turningPointBeatTitles": ["Beat Title"] }]`,
+                                    `}`,
+                                    "",
+                                    "Generate 12-18 beats across 3 acts (25% / 50% / 25%). Each beat must advance the story.",
+                                    "Generate 2-4 subplots that weave through the beats organically.",
+                                    "Generate 1 arc per main character showing their transformation.",
+                                    "Use character names from the list. You may suggest 1-2 new minor characters if needed.",
+                                    "Be specific and detailed — these will drive chapter generation.",
+                                  ].filter(Boolean).join("\n");
+                                  const raw = await requestOpenRouterText(prompt, 4000, 180000, "You are an expert story architect. Build a complete story spine with beats, subplots, and character arcs. Return only valid JSON.", false, 0.7);
+                                  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                  if (jsonMatch) {
+                                    const parsed = JSON.parse(jsonMatch[0]) as {
+                                      beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }>;
+                                      subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }>;
+                                      arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }>;
+                                    };
+                                    const newBeats: StoryBeat[] = (parsed.beats ?? []).map((b, i) => ({
+                                      id: `beat-${Date.now().toString(36)}-${i}`,
+                                      title: b.title || `Beat ${i + 1}`, description: b.description || "",
+                                      act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                      chapterHint: -1,
+                                      characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      locationHint: b.locationHint || "",
+                                      tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                      sortOrder: i,
+                                    }));
+                                    const newSubplots: Subplot[] = (parsed.subplots ?? []).map((s, i) => ({
+                                      id: `sp-${Date.now().toString(36)}-${i}`,
+                                      title: s.title || "", description: s.description || "",
+                                      characterIds: (s.characterNames ?? []).map(n => storyCharacters.find(c => c.name.toLowerCase() === n.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      status: "setup" as const,
+                                    }));
+                                    const newArcs: CharacterArc[] = (parsed.arcs ?? []).map((a, i) => {
+                                      const charId = storyCharacters.find(c => c.name.toLowerCase() === a.characterName.toLowerCase())?.id || "";
+                                      return {
+                                        id: `arc-${Date.now().toString(36)}-${i}`,
+                                        characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
+                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => newBeats.find(b => b.title.toLowerCase() === t.toLowerCase())?.id).filter((x): x is string => !!x),
+                                      };
+                                    }).filter(a => a.characterId);
+                                    updatePlotSpine({ beats: newBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
+                                  }
+                                } catch (err) { console.error("Full spine generation failed:", err); } finally { setSpineBusy(false); }
+                              }}>
+                                {spineBusy ? "Building..." : beats.length > 0 ? "✦ Rebuild Full Spine" : "✦ Build Full Spine"}
+                              </button>
+                              {beats.length >= 3 && (
+                                <button type="button" className="btn" disabled={spineBusy} onClick={async () => {
+                                  if (!novel || spineBusy) return;
+                                  setSpineBusy(true); setSpineDoctorResult(null);
+                                  try {
+                                    const beatCtx = beats.map((b, i) => `${i + 1}. [Act ${b.act}, tension: ${b.tension}] "${b.title}": ${b.description.slice(0, 100)}`).join("\n");
+                                    const spCtx = subplots.map(s => `"${s.title}" (${s.status}): touches ${s.linkedBeatIds.length} beats`).join("; ");
+                                    const arcCtx = arcs.map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.startState} → ${a.endState} (${a.turningPointBeatIds.length} turning points)`; }).join("; ");
+                                    const prompt = [
+                                      "Analyze this story spine for structural issues. Be a tough but constructive story editor.",
+                                      `\nBeats:\n${beatCtx}`,
+                                      spCtx ? `\nSubplots: ${spCtx}` : "\nNo subplots defined.",
+                                      arcCtx ? `\nCharacter Arcs: ${arcCtx}` : "\nNo character arcs defined.",
+                                      `\nCharacters: ${storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})`).join(", ")}`,
+                                      `\nGenre: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "fiction"}`,
+                                      `\nReturn JSON: { "score": 1-100, "summary": "1-2 sentence overall assessment", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "pacing|structure|characters|subplots|arcs|tension", "message": "what's wrong", "suggestion": "how to fix it" }] }`,
+                                      "Check for: act balance (25/50/25 ideal), tension curve shape, missing character arcs for main characters, dangling subplots, consecutive low-tension beats, missing climax, weak opening, unresolved threads, characters who appear once then vanish, plot holes.",
+                                      "Be specific. Reference beat titles and character names. 4-8 issues typical.",
+                                    ].join("\n");
+                                    const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are an expert story editor and structural analyst. Analyze story spines for weaknesses. Return only valid JSON.", false, 0.3);
+                                    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                    if (jsonMatch) {
+                                      const parsed = JSON.parse(jsonMatch[0]);
+                                      if (parsed.issues) setSpineDoctorResult({ issues: parsed.issues, score: parsed.score ?? 50, summary: parsed.summary ?? "" });
+                                    }
+                                  } catch { /* */ } finally { setSpineBusy(false); }
+                                }}>
+                                  {spineBusy ? "Analyzing..." : "🩺 Story Doctor"}
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Completeness score */}
+                          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+                            <div style={{ flex: "1 1 140px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Spine Score</div>
+                              <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor, lineHeight: 1.2, marginTop: 2 }}>{clampedScore}<span style={{ fontSize: 14, fontWeight: 500 }}>/100</span></div>
+                            </div>
+                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Beats</div>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{beats.length}</div>
+                              <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Act 1: {act1.length} · 2: {act2.length} · 3: {act3.length}</div>
+                            </div>
+                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Subplots</div>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{subplots.length}</div>
+                              <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{unresolvedSubplots.length} unresolved</div>
+                            </div>
+                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Arcs</div>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{arcs.length}</div>
+                              <div style={{ fontSize: 10, color: missingArcs.length > 0 ? "#f59e0b" : "var(--pw-text-dim)" }}>{missingArcs.length > 0 ? `${missingArcs.map(c => c.name).join(", ")} missing` : "All main chars covered"}</div>
+                            </div>
+                          </div>
+
+                          {/* Tension Arc Visualization */}
+                          {beats.length >= 3 && (
+                            <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8 }}>Tension Arc</div>
+                              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 60 }}>
+                                {beats.map((b, i) => {
+                                  const h = (b.tension / 5) * 100;
+                                  const isAct1Last = b.act === 1 && (beats[i + 1]?.act ?? 1) !== 1;
+                                  const isAct2Last = b.act === 2 && (beats[i + 1]?.act ?? 2) !== 2;
+                                  const actColor = b.act === 1 ? "#3b82f6" : b.act === 2 ? "#f59e0b" : "#ef4444";
+                                  return (
+                                    <div key={b.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", borderRight: (isAct1Last || isAct2Last) ? "2px dashed rgba(255,255,255,0.15)" : undefined, paddingRight: (isAct1Last || isAct2Last) ? 2 : 0 }}>
+                                      <div
+                                        title={`${b.title} — Tension ${b.tension}/5`}
+                                        style={{ width: "100%", maxWidth: 30, height: `${h}%`, background: `linear-gradient(to top, ${actColor}88, ${actColor})`, borderRadius: "3px 3px 0 0", minHeight: 4, transition: "height 0.3s", cursor: "pointer" }}
+                                        onClick={() => { setSpineTab("beats"); setSpineExpandedId(b.id); }}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                                <span style={{ fontSize: 9, color: "#3b82f6", fontWeight: 600 }}>Act 1 ({act1.length})</span>
+                                <span style={{ fontSize: 9, color: "#f59e0b", fontWeight: 600 }}>Act 2 ({act2.length})</span>
+                                <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 600 }}>Act 3 ({act3.length})</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Character Presence Heatmap */}
+                          {beats.length >= 3 && storyCharacters.length > 0 && (() => {
+                            const relevantChars = storyCharacters.filter(c => beats.some(b => b.characterIds.includes(c.id)) || c.role === "Protagonist" || c.role === "Antagonist");
+                            if (relevantChars.length === 0) return null;
+                            return (
+                              <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)", overflowX: "auto" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8 }}>Character Presence</div>
+                                <div style={{ display: "grid", gridTemplateColumns: `100px repeat(${beats.length}, 1fr)`, gap: 1, fontSize: 10 }}>
+                                  <div style={{ fontWeight: 600, color: "var(--pw-text-dim)", padding: "2px 4px" }} />
+                                  {beats.map((b, i) => <div key={b.id} style={{ textAlign: "center", color: "var(--pw-text-dim)", padding: "2px 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 8 }} title={b.title}>{i + 1}</div>)}
+                                  {relevantChars.map(c => {
+                                    const charCells = [
+                                      <div key={`name-${c.id}`} style={{ fontWeight: 500, color: "var(--pw-text)", padding: "2px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10 }} title={c.name}>{c.name}</div>,
+                                      ...beats.map(b => {
+                                        const present = b.characterIds.includes(c.id);
+                                        const hasArcTurn = arcs.some(a => a.characterId === c.id && a.turningPointBeatIds.includes(b.id));
+                                        return <div key={`${c.id}-${b.id}`} style={{
+                                          background: hasArcTurn ? "var(--pw-accent)" : present ? `${b.act === 1 ? "#3b82f6" : b.act === 2 ? "#f59e0b" : "#ef4444"}55` : "transparent",
+                                          borderRadius: 2, minHeight: 14, border: "1px solid var(--pw-border-light)",
+                                        }} title={present ? `${c.name} in "${b.title}"${hasArcTurn ? " ★ turning point" : ""}` : ""} />;
+                                      }),
+                                    ];
+                                    return charCells;
+                                  })}
+                                </div>
+                                <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 9, color: "var(--pw-text-dim)" }}>
+                                  <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#3b82f655", verticalAlign: "middle", marginRight: 3 }} />Present</span>
+                                  <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--pw-accent)", verticalAlign: "middle", marginRight: 3 }} />Arc Turning Point</span>
+                                </div>
+                                {orphanChars.length > 0 && (
+                                  <div style={{ marginTop: 6, fontSize: 10, color: "#f59e0b" }}>
+                                    Missing from all beats: {orphanChars.map(c => c.name).join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Conflict Web */}
+                          {arcs.length >= 2 && (() => {
+                            const arcChars = arcs.map(a => ({ ...a, name: storyCharacters.find(c => c.id === a.characterId)?.name || "?" }));
+                            const conflicts: Array<{ char1: string; char2: string; tension: string }> = [];
+                            for (let i = 0; i < arcChars.length; i++) {
+                              for (let j = i + 1; j < arcChars.length; j++) {
+                                const sharedBeats = beats.filter(b => b.characterIds.includes(arcChars[i].characterId) && b.characterIds.includes(arcChars[j].characterId));
+                                if (sharedBeats.length > 0) {
+                                  const sharedSubplots = subplots.filter(s => s.characterIds.includes(arcChars[i].characterId) && s.characterIds.includes(arcChars[j].characterId));
+                                  conflicts.push({
+                                    char1: arcChars[i].name, char2: arcChars[j].name,
+                                    tension: `${sharedBeats.length} shared beat${sharedBeats.length > 1 ? "s" : ""}${sharedSubplots.length > 0 ? `, ${sharedSubplots.length} subplot${sharedSubplots.length > 1 ? "s" : ""}` : ""}`,
+                                  });
+                                }
+                              }
+                            }
+                            if (conflicts.length === 0) return null;
+                            return (
+                              <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8 }}>Conflict Web</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {conflicts.map((c, i) => (
+                                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                                      <span style={{ fontWeight: 600, color: "var(--pw-accent)" }}>{c.char1}</span>
+                                      <span style={{ flex: 1, borderBottom: "1px dashed var(--pw-border-light)", position: "relative" }}>
+                                        <span style={{ position: "absolute", top: -8, left: "50%", transform: "translateX(-50%)", fontSize: 9, color: "var(--pw-text-dim)", background: "var(--pw-surface-alt)", padding: "0 4px", whiteSpace: "nowrap" }}>{c.tension}</span>
+                                      </span>
+                                      <span style={{ fontWeight: 600, color: "var(--pw-accent)" }}>{c.char2}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Story Doctor Results */}
+                          {spineDoctorResult && (
+                            <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, border: "1px solid var(--pw-border-light)", background: "var(--pw-surface-alt)" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>Story Doctor Report</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 18, fontWeight: 800, color: spineDoctorResult.score >= 80 ? "#22c55e" : spineDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{spineDoctorResult.score}</span>
+                                  <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>/100</span>
+                                  <button type="button" onClick={() => setSpineDoctorResult(null)} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", fontSize: 14 }}>×</button>
+                                </div>
+                              </div>
+                              {spineDoctorResult.summary && <p style={{ fontSize: 12, color: "var(--pw-text)", marginBottom: 10, lineHeight: 1.5, fontStyle: "italic" }}>{spineDoctorResult.summary}</p>}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {spineDoctorResult.issues.map((issue, i) => {
+                                  const sevColors = { critical: "#ef4444", warning: "#f59e0b", tip: "#3b82f6" };
+                                  return (
+                                    <div key={i} style={{ padding: "8px 10px", borderRadius: 6, background: `${sevColors[issue.severity]}08`, borderLeft: `3px solid ${sevColors[issue.severity]}` }}>
+                                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 2 }}>
+                                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: sevColors[issue.severity] }}>{issue.severity}</span>
+                                        <span style={{ fontSize: 9, color: "var(--pw-text-dim)", textTransform: "uppercase" }}>{issue.area}</span>
+                                      </div>
+                                      <div style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 500 }}>{issue.message}</div>
+                                      <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{issue.suggestion}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Empty state */}
+                          {beats.length === 0 && (
+                            <div style={{ textAlign: "center", padding: "30px 20px", color: "var(--pw-text-dim)" }}>
+                              <p style={{ fontSize: 14, marginBottom: 8 }}>Your story spine is empty</p>
+                              <p style={{ fontSize: 12 }}>Use <strong>Build Full Spine</strong> above to generate a complete structure from your synopsis, or switch to the <strong>Beats</strong> tab to add beats manually.</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* ═══ BEATS TAB ═══ */}
                     {spineTab === "beats" && (() => {
@@ -15635,6 +15936,41 @@ function NovelWorkspacePage() {
                                             })}
                                           </div>
                                         </div>
+                                        {!aiOff && beat.description.length > 10 && (
+                                          <button type="button" className="btn" disabled={spineBusy || spineEnrichingBeatId === beat.id} onClick={async () => {
+                                            setSpineEnrichingBeatId(beat.id);
+                                            setSpineBusy(true);
+                                            try {
+                                              const prevBeat = beats[idx - 1];
+                                              const nextBeat = beats[idx + 1];
+                                              const charNames = beat.characterIds.map(id => storyCharacters.find(c => c.id === id)).filter(Boolean).map(c => `${c!.name} (${c!.role})${c!.personality ? " — " + c!.personality.slice(0, 40) : ""}`).join("; ");
+                                              const prompt = [
+                                                "Enrich this story beat with more detail, emotional texture, and sensory specifics.",
+                                                `\nCurrent beat: "${beat.title}"\n${beat.description}`,
+                                                charNames ? `Characters: ${charNames}` : "",
+                                                beat.locationHint ? `Location: ${beat.locationHint}` : "",
+                                                prevBeat ? `Previous beat: "${prevBeat.title}" — ${prevBeat.description.slice(0, 80)}` : "",
+                                                nextBeat ? `Next beat: "${nextBeat.title}" — ${nextBeat.description.slice(0, 80)}` : "",
+                                                `Genre: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "fiction"}`,
+                                                "\nRewrite the description to be 4-6 sentences. Add:",
+                                                "- Emotional dynamics between characters",
+                                                "- Sensory details (what the characters see, hear, feel)",
+                                                "- Internal conflict or decision points",
+                                                "- A clear cause → effect chain",
+                                                "- How this connects to the previous and next beat",
+                                                "\nReturn JSON: { \"description\": \"enriched description\" }",
+                                              ].filter(Boolean).join("\n");
+                                              const raw = await requestOpenRouterText(prompt, 800, 60000, "You are a story detail specialist. Enrich story beats with emotional depth. Return only valid JSON.", false, 0.6);
+                                              const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                              if (jsonMatch) {
+                                                const parsed = JSON.parse(jsonMatch[0]) as { description: string };
+                                                if (parsed.description) updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, description: parsed.description } : b) });
+                                              }
+                                            } catch { /* */ } finally { setSpineBusy(false); setSpineEnrichingBeatId(null); }
+                                          }} style={{ fontSize: 11 }}>
+                                            {spineEnrichingBeatId === beat.id ? "Enriching..." : "✦ Enrich Beat"}
+                                          </button>
+                                        )}
                                       </div>
                                     )}
                                   </div>
