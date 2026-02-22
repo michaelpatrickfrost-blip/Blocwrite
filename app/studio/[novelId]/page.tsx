@@ -5302,11 +5302,19 @@ function NovelWorkspacePage() {
 
       const humanWritingRules = [
         "WRITE LIKE A HUMAN AUTHOR, NOT AN AI. This is the most important rule.",
-        "NEVER use em dashes (—). Use commas, full stops, or semicolons instead.",
-        "NEVER use these AI clichés: 'a chill ran down', 'little did they know', 'the weight of', 'a sense of', 'couldn't help but', 'a mixture of', 'the silence was deafening', 'time seemed to', 'knot in their stomach', 'pierced the silence'.",
-        "Vary sentence length naturally — mix short punchy sentences with longer flowing ones. Do NOT make every sentence the same length.",
-        "Use concrete sensory details, not abstract emotional labels. Show emotions through action and body language, not by naming them.",
-        "Dialogue should sound like real people talking — contractions, interruptions, half-finished thoughts. Not every line needs a dialogue tag.",
+        "",
+        "EM DASH RULE: Do NOT overuse em dashes (\u2014). Use them ONLY where grammatically correct (parenthetical asides, interrupted speech). NEVER use them as a lazy substitute for commas, full stops, colons, or semicolons. If you find yourself reaching for an em dash, use a different punctuation mark instead. Maximum 1-2 per 500 words.",
+        "",
+        "BANNED AI WORDS \u2014 NEVER use any of these words or phrases. They are dead giveaways of AI writing:",
+        "fluorescent, iridescent, luminescent, gossamer, ethereal, palpable, visceral, tangible, cacophony, symphony (when not about music), tapestry (when not about fabric), cascade, labyrinth, mosaic, crucible, kaleidoscope, juxtaposition, dichotomy, paradigm, nuance (as a verb), uncharted, multifaceted, intricate, myriad, delve, embark, testament, resonate, aforementioned, pivotal, commendable, noteworthy, invaluable, comprehensive, facilitate, leverage (as a verb), utilize, underscore, realm, landscape (figurative), navigate (figurative), foster, harness, bolster, spearhead, whilst",
+        "",
+        "BANNED AI PHRASES \u2014 NEVER use any of these:",
+        "'a chill ran down', 'little did they know', 'the weight of', 'a sense of', 'couldn't help but', 'a mixture of', 'the silence was deafening', 'time seemed to', 'knot in their stomach', 'pierced the silence', 'hung in the air', 'sent a shiver', 'a wave of', 'washed over', 'it was as if', 'in that moment', 'something shifted', 'the air crackled', 'electricity between them', 'swallowed hard', 'let out a breath', 'didn't realize they'd been holding', 'eyes searched', 'dark pools', 'steeled themselves', 'jaw clenched', 'fists clenched at their sides', 'heart hammered', 'blood ran cold', 'the world fell away', 'time stood still', 'pregnant pause', 'deafening silence', 'couldn't quite place'",
+        "",
+        "SENTENCE VARIETY: Vary length naturally. Short punchy sentences mixed with longer flowing ones. Do NOT make every sentence the same structure or length. Avoid starting consecutive sentences with the same word.",
+        "SHOW DON'T TELL: Use concrete sensory details, not abstract emotional labels. Show emotions through action, body language, and dialogue, not by naming them. 'She was angry' = bad. 'She slammed the mug down hard enough to crack the handle' = good.",
+        "DIALOGUE: Real people talk with contractions, interruptions, half-finished thoughts, non-sequiturs. Not every line needs a dialogue tag. Vary tags when used (don't just use 'said' but also don't overdo exotic tags).",
+        "AVOID PURPLE PROSE: Don't over-describe. Not every sunset needs three adjectives. Trust the reader.",
         spellingRule,
       ].join("\n");
 
