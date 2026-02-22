@@ -15451,17 +15451,26 @@ function NovelWorkspacePage() {
                       const clampedScore = Math.min(100, score);
                       const scoreColor = clampedScore >= 80 ? "#22c55e" : clampedScore >= 50 ? "#f59e0b" : "#ef4444";
 
-                      const STORY_ARC_OPTIONS = [
-                        { id: "heros-journey", name: "Hero's Journey", hint: "Ordinary world → call to adventure → trials → transformation → return. The protagonist leaves their comfort zone, faces escalating challenges, and returns changed. Classic arc used in most adventure and coming-of-age stories." },
-                        { id: "rags-to-riches", name: "Rags to Riches", hint: "A character starts with nothing and rises through talent, luck, or determination. Early humiliation gives way to growing confidence and eventual triumph — but the journey tests what they're willing to sacrifice." },
-                        { id: "tragedy", name: "Tragedy", hint: "A great character is undone by a fatal flaw. They rise, overreach, and fall. The audience watches a preventable destruction unfold. The ending is devastating but earned." },
-                        { id: "rebirth", name: "Rebirth", hint: "A character trapped in darkness or stagnation is gradually reawakened. Something — a person, event, or realization — cracks through their defenses and they transform into someone new." },
-                        { id: "voyage-return", name: "Voyage & Return", hint: "Characters enter a strange new world, face its dangers and wonders, and return home changed. The unfamiliar world forces them to confront truths about themselves." },
-                        { id: "overcoming-monster", name: "Overcoming the Monster", hint: "A threat looms — a person, system, force — and the protagonist must defeat it. The monster seems impossible to beat. Allies gather, plans form, sacrifices are made." },
-                        { id: "quest", name: "The Quest", hint: "A group sets out on a mission with a clear goal. The journey matters as much as the destination — bonds are tested, detours reveal character, and the prize may not be what they expected." },
-                        { id: "comedy", name: "Comedy / Tangled Web", hint: "Confusion, misunderstandings, and tangled relationships escalate before unraveling into resolution. Characters work at cross-purposes, creating chaos that eventually sorts itself out." },
-                        { id: "mystery-revelation", name: "Mystery / Revelation", hint: "Something is hidden. Layer by layer, the truth is uncovered — each revelation changes what the reader thought they knew. Trust no one. Everyone has secrets." },
+                      const ALL_ARC_OPTIONS = [
+                        { id: "heros-journey", name: "Hero's Journey", genres: ["fantasy", "sci-fi", "adventure", "ya", "young adult", "action", "epic"], hint: "Ordinary world → call to adventure → trials → transformation → return. The protagonist leaves their comfort zone, faces escalating challenges, and returns changed." },
+                        { id: "rags-to-riches", name: "Rags to Riches", genres: ["drama", "romance", "historical", "literary", "contemporary", "ya"], hint: "A character starts with nothing and rises through talent, luck, or determination. Early humiliation gives way to growing confidence and eventual triumph — but the journey tests what they're willing to sacrifice." },
+                        { id: "tragedy", name: "Tragedy", genres: ["literary", "drama", "thriller", "dark", "noir", "historical", "gothic"], hint: "A great character is undone by a fatal flaw. They rise, overreach, and fall. The audience watches a preventable destruction unfold. The ending is devastating but earned." },
+                        { id: "rebirth", name: "Rebirth", genres: ["literary", "romance", "drama", "contemporary", "women", "upmarket"], hint: "A character trapped in darkness or stagnation is gradually reawakened. Something — a person, event, or realization — cracks through their defenses and they transform into someone new." },
+                        { id: "voyage-return", name: "Voyage & Return", genres: ["fantasy", "sci-fi", "adventure", "portal", "ya", "horror"], hint: "Characters enter a strange new world, face its dangers and wonders, and return home changed. The unfamiliar world forces them to confront truths about themselves." },
+                        { id: "overcoming-monster", name: "Overcoming the Monster", genres: ["thriller", "horror", "action", "fantasy", "crime", "suspense", "adventure"], hint: "A threat looms — a person, system, force — and the protagonist must defeat it. The monster seems impossible to beat. Allies gather, plans form, sacrifices are made." },
+                        { id: "quest", name: "The Quest", genres: ["fantasy", "adventure", "sci-fi", "epic", "action", "western"], hint: "A group sets out on a mission with a clear goal. The journey matters as much as the destination — bonds are tested, detours reveal character, and the prize may not be what they expected." },
+                        { id: "comedy", name: "Comedy / Tangled Web", genres: ["comedy", "romance", "rom-com", "contemporary", "satire", "cozy"], hint: "Confusion, misunderstandings, and tangled relationships escalate before unraveling into resolution. Characters work at cross-purposes, creating chaos that eventually sorts itself out." },
+                        { id: "mystery-revelation", name: "Mystery / Revelation", genres: ["mystery", "thriller", "crime", "detective", "noir", "suspense", "psychological"], hint: "Something is hidden. Layer by layer, the truth is uncovered — each revelation changes what the reader thought they knew. Trust no one. Everyone has secrets." },
+                        { id: "love-story", name: "Love Story", genres: ["romance", "rom-com", "drama", "contemporary", "historical", "ya"], hint: "Two people are drawn together despite obstacles — distance, family, timing, secrets, or their own fears. The story builds through connection, tension, and vulnerability toward union or heartbreak." },
+                        { id: "descent", name: "Descent into Darkness", genres: ["horror", "thriller", "psychological", "dark", "gothic", "noir", "crime"], hint: "A character spirals deeper into obsession, madness, or moral corruption. Each choice takes them further from who they were. The reader watches, gripped, hoping they'll turn back — knowing they won't." },
                       ];
+                      const userGenres = (novel.storyBible.summary?.genre ?? []).map(g => g.toLowerCase());
+                      const STORY_ARC_OPTIONS = [...ALL_ARC_OPTIONS].sort((a, b) => {
+                        const aMatch = a.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
+                        const bMatch = b.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
+                        return bMatch - aMatch;
+                      });
+                      const topMatchCount = STORY_ARC_OPTIONS[0] ? STORY_ARC_OPTIONS[0].genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length : 0;
 
                       return (
                         <div>
@@ -15498,10 +15507,42 @@ function NovelWorkspacePage() {
                                     ].join("\n");
                                     const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are an expert story editor and structural analyst. Analyze story spines for weaknesses. Return only valid JSON.", false, 0.3);
                                     const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                    let aiIssues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }> = [];
+                                    let aiScore = 50;
+                                    let aiSummary = "";
                                     if (jsonMatch) {
                                       const parsed = JSON.parse(jsonMatch[0]);
-                                      if (parsed.issues) setSpineDoctorResult({ issues: parsed.issues, score: parsed.score ?? 50, summary: parsed.summary ?? "" });
+                                      aiIssues = parsed.issues ?? [];
+                                      aiScore = parsed.score ?? 50;
+                                      aiSummary = parsed.summary ?? "";
                                     }
+                                    // Client-side: detect Canon characters missing from all beats
+                                    const charsInBeats = new Set(beats.flatMap(b => b.characterIds));
+                                    const missingChars = storyCharacters.filter(c => !charsInBeats.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Supporting" || c.role === "Love Interest"));
+                                    if (missingChars.length > 0) {
+                                      aiIssues.unshift({
+                                        severity: "critical",
+                                        area: "characters",
+                                        message: `Missing from all beats: ${missingChars.map(c => c.name).join(", ")}. These Canon characters don't appear anywhere in your story spine.`,
+                                        suggestion: `Weave ${missingChars.map(c => c.name).join(", ")} into existing beats where they naturally belong, or create new beats that involve them.`,
+                                      });
+                                      aiScore = Math.max(10, aiScore - 15);
+                                    }
+                                    // Detect main characters without arcs
+                                    const charsWithArcs = new Set(arcs.map(a => a.characterId));
+                                    const noArcChars = storyCharacters.filter(c => !charsWithArcs.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist"));
+                                    if (noArcChars.length > 0) {
+                                      const alreadyHasArcIssue = aiIssues.some(i => i.area === "arcs" && noArcChars.some(c => i.message.includes(c.name)));
+                                      if (!alreadyHasArcIssue) {
+                                        aiIssues.push({
+                                          severity: "warning",
+                                          area: "arcs",
+                                          message: `${noArcChars.map(c => c.name).join(", ")} ${noArcChars.length === 1 ? "has" : "have"} no character arc defined.`,
+                                          suggestion: `Add character arcs in the Arcs tab, or use AI Suggest Arcs to generate arc options.`,
+                                        });
+                                      }
+                                    }
+                                    setSpineDoctorResult({ issues: aiIssues, score: aiScore, summary: aiSummary });
                                   } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
                                 }}>
                                   {spineBusy ? "Wait..." : "🩺 Story Doctor"}
@@ -15529,18 +15570,24 @@ function NovelWorkspacePage() {
                               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
                               <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick a narrative shape for your story, or describe your own. This guides how the AI builds your beats, subplots, and characters.</p>
                               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                                {STORY_ARC_OPTIONS.map(arc => (
+                                {STORY_ARC_OPTIONS.map(arc => {
+                                  const genreMatch = arc.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
+                                  const isRecommended = genreMatch > 0 && genreMatch >= topMatchCount;
+                                  return (
                                   <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
                                     style={{
                                       textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                                      background: spineArcChoice === arc.id ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)" : "var(--pw-surface)",
-                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                      background: spineArcChoice === arc.id ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)" : isRecommended ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)" : "var(--pw-surface)",
+                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : isRecommended ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.3)" : "var(--pw-border-light)"}`,
                                       transition: "all 0.15s",
                                     }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <span style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</span>
+                                      {isRecommended && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>}
+                                    </div>
                                     <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{arc.hint}</div>
-                                  </button>
-                                ))}
+                                  </button>);
+                                })}
                               </div>
                               <div style={{ marginBottom: 12 }}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", display: "block", marginBottom: 4 }}>Or describe your own arc direction:</label>
@@ -15677,6 +15724,7 @@ function NovelWorkspacePage() {
                                 }}>Build Spine</button>
                                 <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); }}>Cancel</button>
                               </div>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>This builds your entire story structure in 3 phases — beats, subplots, and character arcs. It typically takes 30-60 seconds depending on your AI model. You'll see progress updates as each phase completes.</p>
                             </div>
                           )}
 
@@ -15704,7 +15752,7 @@ function NovelWorkspacePage() {
                                   }}>+ Add to Canon</button>
                                 </div>
                               ))}
-                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                                 <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => {
                                   const newChars: Character[] = spineSuggestedChars.map(c => ({
                                     id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
@@ -15715,6 +15763,47 @@ function NovelWorkspacePage() {
                                   mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...newChars] } }));
                                   setSpineSuggestedChars(null);
                                 }}>Add All to Canon</button>
+                                <button type="button" className="btn btn-primary" style={{ fontSize: 11 }} disabled={spineBusy} onClick={async () => {
+                                  if (spineBusy || !novel) return;
+                                  setSpineBusy(true);
+                                  setSpineProgress("Building character profiles...");
+                                  try {
+                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                                    const beatCtx = (novel.storyBible.plotSpine?.beats ?? []).map(b => `"${b.title}": ${b.description.slice(0, 60)}`).join("; ");
+                                    const charList = spineSuggestedChars.map(c => `${c.name} (${c.role}): ${c.logline.slice(0, 80)}`).join("\n");
+                                    const prompt = [
+                                      `Build full character profiles for these characters in a ${genre} novel.`,
+                                      `\nSynopsis: ${synopsis.slice(0, 500)}`,
+                                      `\nStory context: ${beatCtx.slice(0, 800)}`,
+                                      `\nCharacters to profile:\n${charList}`,
+                                      `\nReturn JSON: { "characters": [{ "name": "...", "role": "Supporting"|"Minor", "logline": "1 sentence hook", "appearance": "physical description", "personality": "key traits", "goals": "what they want", "fears": "what they dread", "backstory": "2-3 sentences of background" }] }`,
+                                      "Make each profile feel like a real person. Appearance, personality, goals, fears, and backstory should all feel grounded in the story world.",
+                                    ].join("\n");
+                                    const raw = await requestOpenRouterText(prompt, 3000, 120000, "You are a character designer. Build vivid, specific character profiles. Return only valid JSON.", false, 0.6);
+                                    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                    if (jsonMatch) {
+                                      const parsed = JSON.parse(jsonMatch[0]) as { characters?: Array<{ name: string; role?: string; logline?: string; appearance?: string; personality?: string; goals?: string; fears?: string; backstory?: string }> };
+                                      if (parsed.characters?.length) {
+                                        const newChars: Character[] = parsed.characters.map(c => ({
+                                          id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                          name: c.name || "Unknown",
+                                          role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
+                                          logline: c.logline || "",
+                                          appearance: c.appearance || "",
+                                          personality: c.personality || "",
+                                          goals: c.goals || "",
+                                          fears: c.fears || "",
+                                          backstory: c.backstory || "",
+                                        }));
+                                        mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...newChars] } }));
+                                        setSpineSuggestedChars(null);
+                                      }
+                                    }
+                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                }}>
+                                  {spineBusy ? "Building profiles..." : "Add All & Build Profiles"}
+                                </button>
                                 <button type="button" onClick={() => setSpineSuggestedChars(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer" }}>Dismiss</button>
                               </div>
                             </div>
@@ -15856,6 +15945,56 @@ function NovelWorkspacePage() {
                                 </div>
                               </div>
                               {spineDoctorResult.summary && <p style={{ fontSize: 12, color: "var(--pw-text)", marginBottom: 10, lineHeight: 1.5, fontStyle: "italic" }}>{spineDoctorResult.summary}</p>}
+                              {!aiOff && spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length > 1 && (
+                                <button type="button" className="btn btn-primary" disabled={spineBusy} style={{ fontSize: 12, marginBottom: 10, width: "100%" }} onClick={async () => {
+                                  if (spineBusy || !novel) return;
+                                  const fixableIssues = spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning");
+                                  if (fixableIssues.length === 0) return;
+                                  setSpineBusy(true);
+                                  setSpineProgress(`Fixing all ${fixableIssues.length} issues...`);
+                                  try {
+                                    const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
+                                    const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [chars: " + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
+                                    const spCtx = (novel.storyBible.plotSpine?.subplots ?? []).map(s => `"${s.title}" (${s.status})`).join("; ");
+                                    const arcCtxStr = (novel.storyBible.plotSpine?.characterArcs ?? []).map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
+                                    const issueList = fixableIssues.map((i, idx) => `${idx + 1}. [${i.severity}/${i.area}] ${i.message} → Fix: ${i.suggestion}`).join("\n");
+                                    const charNames = storyCharacters.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
+                                    const fixAllPrompt = [
+                                      "Fix ALL of the following issues in the story spine. Apply every fix simultaneously without breaking anything.",
+                                      `\nISSUES TO FIX:\n${issueList}`,
+                                      `\nCanon Characters: ${charNames}`,
+                                      `\nCurrent beats:\n${beatCtx}`,
+                                      spCtx ? `Subplots: ${spCtx}` : "",
+                                      arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
+                                      `\nReturn JSON with the COMPLETE fixed beat list:`,
+                                      `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                                      "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Add new beats if needed. Weave missing characters into existing beats naturally.",
+                                      "Use character names from the Canon list. Every fix must be applied.",
+                                    ].filter(Boolean).join("\n");
+                                    const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in the spine simultaneously. Return only valid JSON.", false, 0.4);
+                                    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                    if (jsonMatch) {
+                                      const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
+                                      if (parsed.beats?.length) {
+                                        const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
+                                          id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
+                                          title: b.title || "", description: b.description || "",
+                                          act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                          chapterHint: currentBeats[bi]?.chapterHint ?? -1,
+                                          characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                          locationHint: b.locationHint || "",
+                                          tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                          sortOrder: bi,
+                                        }));
+                                        updatePlotSpine({ beats: fixedBeats });
+                                        setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter(i => i.severity === "tip"), score: Math.min(100, prev.score + 25) } : null);
+                                      }
+                                    }
+                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                }}>
+                                  {spineBusy ? spineProgress : `Fix All ${spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length} Issues`}
+                                </button>
+                              )}
                               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                 {spineDoctorResult.issues.map((issue, i) => {
                                   const sevColors = { critical: "#ef4444", warning: "#f59e0b", tip: "#3b82f6" };
@@ -15876,37 +16015,35 @@ function NovelWorkspacePage() {
                                             const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
                                             const currentSubplots = novel.storyBible.plotSpine?.subplots ?? [];
                                             const currentArcs = novel.storyBible.plotSpine?.characterArcs ?? [];
-                                            const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
+                                            const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [" + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
                                             const spCtx = currentSubplots.map(s => `"${s.title}" (${s.status})`).join("; ");
                                             const arcCtxStr = currentArcs.map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
+                                            const charNames = storyCharacters.map(c => `${c.name} (${c.role})`).join(", ");
                                             const fixPrompt = [
                                               "Fix this specific issue in the story spine WITHOUT breaking anything else.",
                                               `\nISSUE: ${issue.message}`,
                                               `SUGGESTED FIX: ${issue.suggestion}`,
                                               `AREA: ${issue.area}`,
+                                              `\nCanon Characters: ${charNames}`,
                                               `\nCurrent beats:\n${beatCtx}`,
                                               spCtx ? `Subplots: ${spCtx}` : "",
                                               arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
                                               `\nApply the fix by returning the MODIFIED spine. Only change what's needed to fix THIS issue.`,
-                                              `Return JSON: {`,
-                                              `  "beats": [same format as above, include ALL beats - modified and unmodified],`,
-                                              `  "explanation": "1-2 sentences explaining what you changed"`,
-                                              `}`,
-                                              `Each beat: { "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["Name"] }`,
-                                              "IMPORTANT: Return ALL beats, not just changed ones. Keep unchanged beats exactly as they were.",
+                                              `Return JSON: { "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                                              "IMPORTANT: Return ALL beats, not just changed ones. Keep unchanged beats exactly as they were. Use Canon character names.",
                                             ].filter(Boolean).join("\n");
                                             const raw = await requestOpenRouterText(fixPrompt, 4000, 120000, "You are a story editor. Fix the specific issue without breaking the rest of the spine. Return only valid JSON.", false, 0.4);
                                             const jsonMatch = raw.match(/\{[\s\S]*\}/);
                                             if (jsonMatch) {
-                                              const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }>; explanation?: string };
+                                              const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
                                               if (parsed.beats?.length) {
                                                 const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
                                                   id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
                                                   title: b.title || "", description: b.description || "",
                                                   act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
                                                   chapterHint: currentBeats[bi]?.chapterHint ?? -1,
-                                                  characterIds: currentBeats[bi]?.characterIds ?? [],
-                                                  locationHint: b.locationHint || currentBeats[bi]?.locationHint || "",
+                                                  characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                                  locationHint: b.locationHint || "",
                                                   tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
                                                   sortOrder: bi,
                                                 }));
