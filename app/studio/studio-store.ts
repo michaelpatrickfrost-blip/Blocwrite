@@ -209,6 +209,8 @@ export type BookPlanChapter = {
   locationIds: string[];
   loreIds: string[];
   manuscriptChapterId?: string;
+  beatIds?: string[];
+  subplotIds?: string[];
 };
 
 /** Arc Intelligence Engine — narrative arc analysis per plan */

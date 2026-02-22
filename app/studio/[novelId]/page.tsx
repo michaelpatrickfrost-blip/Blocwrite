@@ -2440,7 +2440,7 @@ function NovelWorkspacePage() {
   }
 
   function sanitizePlanChapterEntry(planChapter: PlanChapter): PlanChapter {
-    const synopsisClamp = hasPlotSpine() ? 3000 : 2000;
+    const synopsisClamp = hasPlotSpine() ? 5000 : 3500;
     return {
       ...planChapter,
       title: clampText(planChapter.title, 120),
@@ -7311,15 +7311,16 @@ function NovelWorkspacePage() {
       const genreGuidance = getGenreGuidance();
 
       const synopsisFormatGuide = [
-        "FORMAT: Write a DETAILED CHAPTER BLUEPRINT, not prose. This is your working plan — the more detail, the better the prose generation will be.",
-        "BAD example: 'John sits at his desk, staring out the window. Rain streaks down the glass as he picks up his pen.'",
-        "BAD example: 'John has a conversation with his wife about their problems. Things get tense. He decides to leave.'",
-        "GOOD example: 'John discovers his wife has been hiding letters from his estranged brother for over six months. He confronts her in the kitchen after finding one tucked inside a cookbook. She initially denies it, then breaks down and reveals the brother is dying of cancer and has been asking to reconcile. John is torn between years of resentment over the family business fallout and the urgency of his brother's condition. He decides to drive upstate to visit despite their history, but his wife refuses to accompany him, citing her own unresolved anger at how the brother treated their daughter. Their argument escalates into a deeper confrontation about loyalty and forgiveness, ending with John packing a bag in silence while his wife watches from the doorway. The chapter closes with John finding a photo of the two brothers as children tucked into the last letter, which shakes his resolve to stay angry.'",
+        "FORMAT: Write a FULL CHAPTER BLUEPRINT — not prose, not a summary, but a dense beat-by-beat roadmap that an AI prose writer will follow exactly. Every detail you include here becomes a scene. Every detail you leave out becomes a gap the prose writer must invent. MORE DETAIL = BETTER PROSE.",
         "",
-        "Write like the GOOD example — layer in motivations, emotional dynamics, specific details, and cause-and-effect chains.",
-        "Include: WHO does WHAT, WHY they do it, HOW others react, and what CHANGES as a result.",
-        "Go beyond the synopsis outline — add middle beats, transitional moments, emotional turning points, and character dynamics that enrich the chapter.",
-        "Think of the synopsis as the skeleton. You are adding muscle and connective tissue. The prose writer needs enough detail to write compelling scenes without inventing plot.",
+        "BAD (too vague): 'John has a conversation with his wife about their problems. Things get tense. He decides to leave.'",
+        "BAD (prose, not blueprint): 'John sits at his desk, staring out the window. Rain streaks down the glass.'",
+        "",
+        "GOOD (this is what we need):",
+        "'The chapter opens with John finding a hidden letter from his estranged brother tucked inside a cookbook while searching for a recipe. His hands go still as he recognises the handwriting. He reads it standing at the kitchen counter — the brother, Daniel, is dying of stage 4 pancreatic cancer and has been writing monthly, begging to reconcile. John discovers six more letters hidden in different spots around the house, all opened and resealed. He confronts his wife Maria in the kitchen, holding the stack. She initially deflects — \"I was protecting you\" — but when pressed, admits she has been reading and hiding them for months because she didn't want John to go through the pain of reconnecting only to watch Daniel die. John is furious but also conflicted: he hasn't spoken to Daniel in eleven years since the family business split. Maria reveals one more thing she held back — Daniel has been asking specifically about their daughter Sophie, wanting to meet her before he dies. This shifts the argument from marital betrayal to something deeper about family and forgiveness. John announces he's driving upstate the next morning. Maria refuses to come, citing how Daniel humiliated Sophie at the last family gathering. They argue about whether protecting Sophie or giving her a dying uncle is the right call. The chapter ends with John packing a bag in silence, Maria watching from the bedroom doorway. He finds a photo of himself and Daniel as boys, arms around each other at a lake. He puts it in his bag without saying anything.'",
+        "",
+        "Write at THIS level of detail. Every beat should describe specific actions, specific dialogue topics, specific emotional reactions, and specific consequences.",
+        "Think of yourself as a screenwriter writing a scene breakdown — the prose writer reading this should know exactly what happens, moment by moment, without inventing anything.",
       ].join("\n");
 
       for (let index = 0; index < allTitles.length; index++) {
@@ -7330,7 +7331,7 @@ function NovelWorkspacePage() {
         const structuralBeat = getStructuralBeat(index, allTitles.length);
 
         const storySoFar = generatedSynopses.length > 0
-          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 700)}`).join("\n\n")
+          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 1000)}`).join("\n\n")
           : "";
 
         const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
@@ -7341,7 +7342,7 @@ function NovelWorkspacePage() {
           : "";
 
         const whatChangedLast = prevSynopsis
-          ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-3).join(". "), 350)}`
+          ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-4).join(". "), 500)}`
           : "";
 
         const nfStoryCards = novel.storyBible.nonfiction?.storyCards ?? [];
@@ -7368,10 +7369,11 @@ function NovelWorkspacePage() {
           nfSubtype === "true-crime" ? "- True crime narrative: evidence, investigation, pursuit." : "",
           nfSubtype === "biography" ? "- Biography: defining moments and turning points." : "",
           nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
-          "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, what decisions are made, what changes, what consequences follow.",
-          "- Go BEYOND the outline. Add middle beats — transitional moments, emotional dynamics, internal reflections, and interpersonal exchanges that make this chapter feel like a real chapter in a published book.",
-          "- Include: the opening moment, how the narrative develops through the middle, and the closing beat or transition.",
-          "- Be specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
+          "- Write 12-20 sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail here, the better the prose.",
+          "- OPENING: How does the chapter begin? What's the first image, action, or event? Where are we and who is present?",
+          "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment: what triggers it, who's involved, what's discovered or decided, how people react, and what shifts as a result.",
+          "- CLOSING: How does the chapter end? What moment or revelation carries into the next chapter?",
+          "- Be extremely specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
           "- If the author has placed Story Board cards in this chapter, use those as the primary content source.",
           "",
           "ANTI-REPETITION RULES:",
@@ -7404,15 +7406,18 @@ function NovelWorkspacePage() {
           genreGuidance,
           "",
           spineActive
-            ? `- Write 12-18 sentences of DETAILED CHAPTER BLUEPRINT covering every beat from the Plot Spine above. Flesh out each beat with emotional reactions, character dynamics, dialogue topics, and transitions.`
-            : "- Write 8-12 sentences of DETAILED CHAPTER BLUEPRINT: what happens, who does what, what decisions are made, how characters react, what changes, and what consequences follow.",
-          "- Go BEYOND the outline. The synopsis is the skeleton — you must add the middle beats, transitional moments, emotional dynamics, and character interactions that make this chapter feel like a real chapter in a published novel.",
-          "- Include: opening beat (how the chapter starts), rising tension or development in the middle, and a clear chapter-ending beat.",
-          "- Name specific actions, dialogue topics, emotional shifts, and discoveries. Be concrete — 'Elena confronts Marcus about the forged documents and he deflects by revealing her father's involvement' NOT 'they argue about the past'.",
-          "- Every sentence should advance the story. No scene-setting, no describing postures or weather.",
-          "- State WHO does WHAT and what CHANGES as a result.",
+            ? `- Write 15-25 sentences of DETAILED CHAPTER BLUEPRINT. This is the primary instruction set for AI prose generation — the MORE detail you provide, the BETTER the prose will be. Cover every beat from the Plot Spine above and expand each with:`
+            : "- Write 12-20 sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail you provide here, the better the final prose will be.",
+          "- OPENING: How does the chapter begin? What's the first image, action, or line of dialogue? Where is the POV character and what are they doing/feeling?",
+          "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment, describe: what triggers it, who's involved, what's said or done, how characters react emotionally and physically, and what shifts as a result.",
+          "- DIALOGUE CUES: Note the key conversations that must happen — what's discussed, what's revealed, what subtext is running underneath.",
+          "- EMOTIONAL THROUGHLINE: Track the POV character's emotional state from the start to end of the chapter. How does it shift and why?",
+          "- CLOSING: How does the chapter end? What image, line, or moment carries the reader into the next chapter?",
+          "- SPECIFICITY: 'Elena confronts Marcus about the forged documents; he deflects by revealing her father was the original forger, which shatters Elena's belief that her father was innocent — she leaves the room mid-sentence, hands shaking' NOT 'they argue about the past'.",
+          "- Every sentence must advance the story. No scene-setting filler, no describing weather or postures.",
+          "- State WHO does WHAT, WHY, HOW others react, and what CHANGES as a result.",
           "- ONE location only. Return a single place name string.",
-          "- Only characters who appear and act (2-4 typically). Proper names only.",
+          "- Only characters who appear and act (2-5 typically). Proper names only.",
           "",
           "ANTI-REPETITION RULES (CRITICAL):",
           "- NEVER repeat scenes, confrontations, or emotional beats from previous chapters. If a confrontation already happened, this chapter must show the AFTERMATH or a NEW conflict.",
@@ -7437,7 +7442,7 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const chapterTokenLimit = spineActive ? 2500 : 1500;
+          const chapterTokenLimit = spineActive ? 3500 : 2500;
           const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 180000, systemMsg, false, 0.6);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
@@ -7519,6 +7524,62 @@ function NovelWorkspacePage() {
         }, { skipSync: index < allTitles.length - 1 });
       }
       setPlanGenerateProgressIdx(null);
+
+      /* ── Phase 3: Auto-assign beat IDs & subplot IDs to chapters ── */
+      if (spineActive) {
+        const spine = novel!.storyBible.plotSpine!;
+        const totalCh = allTitles.length;
+        const assignedBeats = spine.beats.filter(b => b.chapterHint >= 0);
+        const unassignedBeats = spine.beats.filter(b => b.chapterHint < 0);
+        const perChapter = totalCh > 0 ? Math.ceil(unassignedBeats.length / totalCh) : 0;
+
+        const chapterBeatMap: string[][] = [];
+        const updatedBeats = [...spine.beats];
+
+        for (let ci = 0; ci < totalCh; ci++) {
+          const ids: string[] = [];
+          for (const b of assignedBeats) {
+            if (b.chapterHint === ci) ids.push(b.id);
+          }
+          if (perChapter > 0) {
+            const start = ci * perChapter;
+            const end = Math.min(start + perChapter, unassignedBeats.length);
+            for (let i = start; i < end; i++) {
+              ids.push(unassignedBeats[i].id);
+              const bIdx = updatedBeats.findIndex(b => b.id === unassignedBeats[i].id);
+              if (bIdx >= 0) updatedBeats[bIdx] = { ...updatedBeats[bIdx], chapterHint: ci };
+            }
+          }
+          chapterBeatMap.push(ids);
+        }
+
+        const chapterSubplotMap: string[][] = [];
+        for (let ci = 0; ci < totalCh; ci++) {
+          const chBeatSet = new Set(chapterBeatMap[ci]);
+          const spIds = spine.subplots
+            .filter(sp => sp.linkedBeatIds.some(bid => chBeatSet.has(bid)))
+            .map(sp => sp.id);
+          chapterSubplotMap.push(spIds);
+        }
+
+        mutateNovel((current) => {
+          const plan = current.storyBible.bookPlan;
+          if (!plan) return current;
+          const updatedPlanChapters = plan.chapters.map((ch, ci) => ({
+            ...ch,
+            beatIds: chapterBeatMap[ci] ?? [],
+            subplotIds: chapterSubplotMap[ci] ?? [],
+          }));
+          return {
+            ...current,
+            storyBible: {
+              ...current.storyBible,
+              plotSpine: { ...spine, beats: updatedBeats },
+              bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+            },
+          };
+        });
+      }
 
       planNewCharIds = mergedCharacters
         .filter((c) => !existingCharIdsBefore.has(c.id))
