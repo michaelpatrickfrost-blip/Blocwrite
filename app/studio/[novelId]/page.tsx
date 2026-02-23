@@ -15652,19 +15652,19 @@ function NovelWorkspacePage() {
                                     setSpineArcDynamicLoading(true);
                                     try {
                                       const aiPrompt = [
-                                        "Create 5 story-arc options for this novel.",
+                                        "Create 4 story-arc options for this novel.",
                                         `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
-                                        `Synopsis: ${synopsis.slice(0, 900)}`,
-                                        'Return JSON: { "options": [{ "name": "2-6 words", "description": "2-3 sentences", "rationale": "why this fits genre" }] }',
+                                        `Synopsis: ${synopsis.slice(0, 650)}`,
+                                        'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits genre" }] }',
                                         "Make each option genuinely different and genre-specific.",
                                       ].join("\n");
                                       const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
                                         aiPrompt,
-                                        1100,
-                                        { timeoutMs: 90000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
+                                        700,
+                                        { timeoutMs: 35000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
                                       );
                                       const options = (ai?.options ?? [])
-                                        .slice(0, 5)
+                                        .slice(0, 4)
                                         .map((o, i) => ({
                                           id: `opt-${i + 1}`,
                                           name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
@@ -15824,7 +15824,7 @@ function NovelWorkspacePage() {
                           {spineShowArcPicker && (
                             <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
                               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
-                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>AI is generating 5 genre-specific arc directions for this story.</p>
+                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>AI is generating 4 genre-specific arc directions for this story.</p>
                               {spineArcDynamicLoading && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>Analyzing genre + synopsis and crafting arc options...</p>}
                               {spineArcDynamicOptions && spineArcDynamicOptions.length > 0 && (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
@@ -15860,19 +15860,19 @@ function NovelWorkspacePage() {
                                       setSpineArcDynamicLoading(true);
                                       try {
                                         const aiPrompt = [
-                                          "Create 5 story-arc options for this novel.",
+                                          "Create 4 story-arc options for this novel.",
                                           `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
-                                          `Synopsis: ${synopsis.slice(0, 900)}`,
-                                          'Return JSON: { "options": [{ "name": "2-6 words", "description": "2-3 sentences", "rationale": "why this fits genre" }] }',
+                                          `Synopsis: ${synopsis.slice(0, 650)}`,
+                                          'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits genre" }] }',
                                           "Make each option genuinely different and genre-specific.",
                                         ].join("\n");
                                         const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
                                           aiPrompt,
-                                          1100,
-                                          { timeoutMs: 90000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
+                                          700,
+                                          { timeoutMs: 35000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
                                         );
                                         const options = (ai?.options ?? [])
-                                          .slice(0, 5)
+                                          .slice(0, 4)
                                           .map((o, i) => ({
                                             id: `opt-${i + 1}`,
                                             name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
@@ -15965,6 +15965,71 @@ function NovelWorkspacePage() {
                                     const v = (value ?? "").trim();
                                     return v.length > 0 ? v : fallback;
                                   };
+                                  const existingNameMap = new Map(existingChars.map((c) => [normalizeCharacterNameKey(c.name), c.name] as const));
+                                  const usedGeneratedNameKeys = new Set(existingChars.map((c) => normalizeCharacterNameKey(c.name)));
+                                  const fallbackHumanNames = [
+                                    "Maya Bennett", "Ethan Cole", "Nina Alvarez", "Marcus Reid", "Leah Okafor",
+                                    "Daniel Park", "Ava Sinclair", "Jonah Cross", "Priya Nair", "Lucas Grant",
+                                  ];
+                                  const bannedRoleTokens = new Set([
+                                    "the", "nurse", "doctor", "dr", "informant", "stranger", "boss", "chief", "officer",
+                                    "detective", "captain", "sergeant", "guard", "receptionist", "teacher", "professor",
+                                    "lawyer", "attorney", "judge", "agent", "assistant", "manager", "cashier", "bartender",
+                                    "waiter", "waitress", "driver", "paramedic", "therapist", "counsellor", "counselor",
+                                  ]);
+                                  const cleanNameToken = (token: string) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z'-]+$/g, "");
+                                  const toTitleCase = (token: string) => token.length <= 1 ? token.toUpperCase() : token[0].toUpperCase() + token.slice(1).toLowerCase();
+                                  const nextFallbackHumanName = () => {
+                                    for (const name of fallbackHumanNames) {
+                                      const key = normalizeCharacterNameKey(name);
+                                      if (!usedGeneratedNameKeys.has(key)) {
+                                        usedGeneratedNameKeys.add(key);
+                                        return name;
+                                      }
+                                    }
+                                    const id = usedGeneratedNameKeys.size + 1;
+                                    const generated = `Alex Rowan ${id}`;
+                                    usedGeneratedNameKeys.add(normalizeCharacterNameKey(generated));
+                                    return generated;
+                                  };
+                                  const normalizeHumanName = (rawName: string): string | null => {
+                                    const raw = (rawName || "").trim();
+                                    if (!raw) return null;
+                                    const exactExisting = existingNameMap.get(normalizeCharacterNameKey(raw));
+                                    if (exactExisting) return exactExisting;
+                                    const tokens = raw
+                                      .replace(/[()"'`]/g, " ")
+                                      .split(/\s+/)
+                                      .map(cleanNameToken)
+                                      .filter(Boolean);
+                                    if (tokens.length < 2 || tokens.length > 3) return null;
+                                    if (tokens.some((t) => bannedRoleTokens.has(t.toLowerCase()))) return null;
+                                    if (tokens.some((t) => t.length < 2)) return null;
+                                    const normalized = tokens.map(toTitleCase).join(" ");
+                                    if (normalized.toLowerCase().startsWith("the ")) return null;
+                                    return normalized;
+                                  };
+                                  const enforceHumanNames = (names?: string[]) => {
+                                    const out: string[] = [];
+                                    const seen = new Set<string>();
+                                    for (const raw of names ?? []) {
+                                      const normalized = normalizeHumanName(raw) ?? nextFallbackHumanName();
+                                      const key = normalizeCharacterNameKey(normalized);
+                                      if (!seen.has(key)) {
+                                        seen.add(key);
+                                        out.push(normalized);
+                                      }
+                                    }
+                                    while (out.length < 2) {
+                                      const fallback = nextFallbackHumanName();
+                                      const key = normalizeCharacterNameKey(fallback);
+                                      if (!seen.has(key)) {
+                                        seen.add(key);
+                                        out.push(fallback);
+                                      }
+                                    }
+                                    return out;
+                                  };
 
                                   // Helper: find all Canon character IDs mentioned in text (by name, first name, or last name)
                                   function findCharIdsInText(text: string, extraNames?: string[]): string[] {
@@ -16024,7 +16089,7 @@ function NovelWorkspacePage() {
                                       `- characterNames MUST use the EXACT names from the Canon list above (e.g. "${existingChars[0]?.name || "Elena Voss"}", not "Elena" or "the protagonist").`,
                                       "- Every beat must have at least 2 characters in characterNames.",
                                       "- description must be specific: what happens, what's said, what decision is made, what changes.",
-                                      "- New characters MUST have realistic human names (First Last) — e.g. 'Marcus Chen', 'Diane Okafor', 'Tom Sadler'. NEVER use archetype labels like 'The Mastermind', 'The Shadow', 'The Informant', 'The Stranger', 'The Boss'. Every character is a person with a real name.",
+                                      "- New characters MUST have realistic human names (First Last) — e.g. 'Marcus Chen', 'Diane Okafor', 'Tom Sadler'. NEVER use archetype labels/titles like 'The Mastermind', 'The Shadow', 'The Informant', 'The Stranger', 'The Boss', 'Nurse', or 'Doctor'. Every person is a human with a real name.",
                                     ].filter(Boolean).join("\n");
 
                                     const raw = await smallCall(prompt, 1500, sys);
@@ -16045,14 +16110,15 @@ function NovelWorkspacePage() {
                                       if (fallbackBeats.length > 0) {
                                         const offset2 = allBeats.length;
                                         allBeats = [...allBeats, ...fallbackBeats.map((b, i) => {
-                                          (b.characterNames ?? []).forEach(n => allCharNames.add(n));
+                                          const safeNames = enforceHumanNames(b.characterNames);
+                                          safeNames.forEach((n) => allCharNames.add(n));
                                           return {
                                             id: `beat-${Date.now().toString(36)}-${offset2 + i}`,
                                             title: ensureText(b.title, `Beat ${offset2 + i + 1}`),
                                             description: ensureText(b.description, `Key turning point that raises pressure in this ${genre} story.`),
                                             act: cfg.act,
                                             chapterHint: -1,
-                                            characterIds: findCharIdsInText(`${b.title} ${b.description} ${(b.characterNames ?? []).join(" ")}`, b.characterNames),
+                                            characterIds: findCharIdsInText(`${b.title} ${b.description} ${safeNames.join(" ")}`, safeNames),
                                             locationHint: b.locationHint || "",
                                             tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : (cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5)) as 1|2|3|4|5,
                                             sortOrder: offset2 + i,
@@ -16068,9 +16134,10 @@ function NovelWorkspacePage() {
 
                                     const offset = allBeats.length;
                                     const actBeats: StoryBeat[] = rawBeats.map((b, i) => {
-                                      (b.characterNames ?? []).forEach(n => allCharNames.add(n));
-                                      const searchText = `${b.title} ${b.description} ${(b.characterNames ?? []).join(" ")}`;
-                                      const charIds = findCharIdsInText(searchText, b.characterNames);
+                                      const safeNames = enforceHumanNames(b.characterNames);
+                                      safeNames.forEach((n) => allCharNames.add(n));
+                                      const searchText = `${b.title} ${b.description} ${safeNames.join(" ")}`;
+                                      const charIds = findCharIdsInText(searchText, safeNames);
                                       return {
                                         id: `beat-${Date.now().toString(36)}-${offset + i}`,
                                         title: ensureText(b.title, `Beat ${offset + i + 1}`),
