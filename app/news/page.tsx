@@ -59,7 +59,7 @@ export default function NewsPage() {
         .news-post-body li { font-size: 16.5px; line-height: 1.85; margin-bottom: 4px; color: #3a3a42; }
         .news-post-body blockquote {
           margin: 20px 0; padding: 16px 22px;
-          border-left: 4px solid #c8e630;
+          border-left: 4px solid #7c5cfc;
           background: #f8f8fa; border-radius: 0 12px 12px 0;
           font-style: italic; color: #4a4d56;
         }
@@ -68,7 +68,7 @@ export default function NewsPage() {
           max-width: 100%; height: auto; border-radius: 12px;
           margin: 20px 0; border: 1px solid #e8e9ed;
         }
-        .news-post-body a { color: #4d6a00; text-decoration: underline; text-underline-offset: 3px; }
+        .news-post-body a { color: #5c46c9; text-decoration: underline; text-underline-offset: 3px; }
         .news-post-body a:hover { color: #111; }
         .news-post-body strong { font-weight: 700; color: #111114; }
 
@@ -115,7 +115,7 @@ export default function NewsPage() {
             <Link href="/subscribe" style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "10px 24px", fontSize: 13, fontWeight: 600,
-              color: "#111114", background: "#c8e630", border: "none",
+              color: "#111114", background: "#7c5cfc", border: "none",
               borderRadius: 12, textDecoration: "none",
             }}>
               Start Free Trial
@@ -126,7 +126,7 @@ export default function NewsPage() {
 
       {/* ── Hero ── */}
       <section className="news-hero" style={{
-        background: "#0e0e12", color: "#fff",
+        background: "#0c0c1d", color: "#fff",
         padding: "72px 28px 64px", textAlign: "center",
       }}>
         <div style={{ maxWidth: 660, margin: "0 auto" }}>
@@ -134,7 +134,7 @@ export default function NewsPage() {
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 99,
             background: "rgba(200,230,48,0.1)", border: "1px solid rgba(200,230,48,0.2)",
-            fontSize: 13, fontWeight: 600, color: "#c8e630", marginBottom: 20,
+            fontSize: 13, fontWeight: 600, color: "#7c5cfc", marginBottom: 20,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Blocwrite Blog
@@ -201,7 +201,7 @@ export default function NewsPage() {
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "5px 12px", borderRadius: 99,
                   background: "rgba(200,230,48,0.1)",
-                  fontSize: 12, fontWeight: 600, color: "#4d6a00",
+                  fontSize: 12, fontWeight: 600, color: "#5c46c9",
                   textTransform: "uppercase", letterSpacing: "0.05em",
                   marginBottom: 16,
                 }}>
@@ -249,7 +249,7 @@ export default function NewsPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "52px 0 44px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <footer style={{ padding: "52px 0 44px", background: "#0c0c1d", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />

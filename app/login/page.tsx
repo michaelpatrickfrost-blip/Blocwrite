@@ -186,7 +186,7 @@ function LoginForm() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#000",
+        background: "#0c0c1d",
       }}
     >
       <div
@@ -271,7 +271,7 @@ function LoginForm() {
                   onChange={(e) => setForgotEmail(e.target.value)}
                   placeholder="you@email.com"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                 />
               </div>
@@ -296,7 +296,7 @@ function LoginForm() {
                 disabled={forgotStatus === "sending"}
                 style={{
                   marginTop: 4, width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                  borderRadius: 10, border: "none", background: "#e6ff4b", color: "#1e1c1c",
+                  borderRadius: 10, border: "none", background: "#7c5cfc", color: "#ffffff",
                   cursor: forgotStatus === "sending" ? "wait" : "pointer",
                   opacity: forgotStatus === "sending" ? 0.6 : 1, transition: "opacity 0.15s", letterSpacing: "0.02em",
                 }}
@@ -343,7 +343,7 @@ function LoginForm() {
                   placeholder="Your name"
                   style={inputStyle}
                   onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#e6ff4b")
+                    (e.currentTarget.style.borderColor = "#7c5cfc")
                   }
                   onBlur={(e) =>
                     (e.currentTarget.style.borderColor =
@@ -377,7 +377,7 @@ function LoginForm() {
                 placeholder="you@email.com"
                 style={inputStyle}
                 onFocus={(e) =>
-                  (e.currentTarget.style.borderColor = "#e6ff4b")
+                  (e.currentTarget.style.borderColor = "#7c5cfc")
                 }
                 onBlur={(e) =>
                   (e.currentTarget.style.borderColor =
@@ -414,7 +414,7 @@ function LoginForm() {
                 }
                 style={inputStyle}
                 onFocus={(e) =>
-                  (e.currentTarget.style.borderColor = "#e6ff4b")
+                  (e.currentTarget.style.borderColor = "#7c5cfc")
                 }
                 onBlur={(e) =>
                   (e.currentTarget.style.borderColor =
@@ -451,8 +451,8 @@ function LoginForm() {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "#e6ff4b",
-                color: "#1e1c1c",
+                background: "#7c5cfc",
+                color: "#ffffff",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading ? 0.6 : 1,
                 transition: "opacity 0.15s",
@@ -530,7 +530,7 @@ function LoginForm() {
                     onChange={(e) => setTrialCode(e.target.value.toUpperCase())}
                     placeholder="BW-XXXXXX"
                     style={{ ...inputStyle, fontFamily: "monospace", letterSpacing: "0.08em", fontSize: 16, textAlign: "center" }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                   />
                 </div>
@@ -544,7 +544,7 @@ function LoginForm() {
                     onChange={(e) => setTrialPassword(e.target.value)}
                     placeholder="Enter trial password"
                     style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                   />
                 </div>
@@ -560,7 +560,7 @@ function LoginForm() {
                   disabled={trialLoading || !trialCode.trim() || !trialPassword.trim()}
                   style={{
                     width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                    borderRadius: 10, border: "none", background: "#e6ff4b", color: "#1e1c1c",
+                    borderRadius: 10, border: "none", background: "#7c5cfc", color: "#ffffff",
                     cursor: trialLoading ? "wait" : "pointer",
                     opacity: trialLoading ? 0.6 : 1, transition: "opacity 0.15s",
                   }}
@@ -637,7 +637,7 @@ function LoginForm() {
                 disabled={loading}
                 style={{
                   width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                  borderRadius: 10, border: "none", background: "#e6ff4b", color: "#1e1c1c",
+                  borderRadius: 10, border: "none", background: "#7c5cfc", color: "#ffffff",
                   cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1,
                   transition: "opacity 0.15s", letterSpacing: "0.02em",
                 }}

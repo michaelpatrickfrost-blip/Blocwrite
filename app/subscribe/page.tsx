@@ -55,7 +55,7 @@ export default function SubscribePage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#000",
+        background: "#0c0c1d",
         color: "#f0f0f0",
       }}
     >
@@ -146,8 +146,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(230,255,75,0.1)",
-                color: "#e6ff4b",
+                background: "rgba(124,92,252,0.1)",
+                color: "#7c5cfc",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -179,7 +179,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#e6ff4b",
+                      color: "#7c5cfc",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -217,8 +217,8 @@ export default function SubscribePage() {
           <div
             style={{
               borderRadius: 16,
-              border: "1px solid rgba(230,255,75,0.3)",
-              background: "rgba(230,255,75,0.04)",
+              border: "1px solid rgba(124,92,252,0.3)",
+              background: "rgba(124,92,252,0.04)",
               padding: "32px 28px",
               display: "flex",
               flexDirection: "column",
@@ -232,8 +232,8 @@ export default function SubscribePage() {
                 right: 20,
                 padding: "4px 14px",
                 borderRadius: 8,
-                background: "#e6ff4b",
-                color: "#1e1c1c",
+                background: "#7c5cfc",
+                color: "#ffffff",
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: "0.04em",
@@ -277,8 +277,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(230,255,75,0.1)",
-                color: "#e6ff4b",
+                background: "rgba(124,92,252,0.1)",
+                color: "#7c5cfc",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -310,7 +310,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#e6ff4b",
+                      color: "#7c5cfc",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -333,8 +333,8 @@ export default function SubscribePage() {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "#e6ff4b",
-                color: "#1e1c1c",
+                background: "#7c5cfc",
+                color: "#ffffff",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading === "monthly" ? 0.4 : 1,
                 transition: "opacity 0.15s",

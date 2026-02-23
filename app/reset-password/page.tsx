@@ -80,7 +80,7 @@ function ResetPasswordForm() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          background: "#000",
+          background: "#0c0c1d",
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 400 }}>
@@ -96,8 +96,8 @@ function ResetPasswordForm() {
               display: "inline-block",
               marginTop: 16,
               padding: "10px 24px",
-              background: "#e6ff4b",
-              color: "#1e1c1c",
+              background: "#7c5cfc",
+              color: "#ffffff",
               borderRadius: 8,
               fontWeight: 600,
               fontSize: 14,
@@ -119,7 +119,7 @@ function ResetPasswordForm() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#000",
+        background: "#0c0c1d",
       }}
     >
       <div
@@ -194,7 +194,7 @@ function ResetPasswordForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 6 characters"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                 />
               </div>
@@ -216,7 +216,7 @@ function ResetPasswordForm() {
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="Re-enter password"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#e6ff4b")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                 />
               </div>
@@ -249,8 +249,8 @@ function ResetPasswordForm() {
                   fontWeight: 700,
                   borderRadius: 10,
                   border: "none",
-                  background: "#e6ff4b",
-                  color: "#1e1c1c",
+                  background: "#7c5cfc",
+                  color: "#ffffff",
                   cursor: loading ? "wait" : "pointer",
                   opacity: loading ? 0.6 : 1,
                   transition: "opacity 0.15s",

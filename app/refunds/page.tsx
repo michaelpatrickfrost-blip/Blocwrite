@@ -3,7 +3,7 @@ import Link from "next/link";
 const C = {
   bg: "#ffffff",
   bgSoft: "#f8f8fa",
-  text: "#1a1a1f",
+  text: "#1a1a2e",
   textSoft: "#5a5d66",
   textMuted: "#9ea0a8",
   border: "#e5e6ea",

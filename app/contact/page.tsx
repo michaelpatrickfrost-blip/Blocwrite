@@ -6,12 +6,12 @@ import { FormEvent, useState } from "react";
 const C = {
   bg: "#ffffff",
   bgSoft: "#f8f8fa",
-  bgDark: "#1a1a1f",
-  text: "#1a1a1f",
+  bgDark: "#1a1a2e",
+  text: "#1a1a2e",
   textSoft: "#64666d",
   textMuted: "#9ea0a8",
   border: "#e5e6ea",
-  btnBg: "linear-gradient(135deg, #2a2a30, #1a1a1f)",
+  btnBg: "linear-gradient(135deg, #2a2a30, #1a1a2e)",
   btnText: "#ffffff",
 };
 

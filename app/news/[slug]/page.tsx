@@ -16,13 +16,13 @@ type Post = {
 const C = {
   bg: "#ffffff",
   bgSoft: "#f8f8fa",
-  bgDark: "#0e0e12",
+  bgDark: "#0c0c1d",
   text: "#111114",
   textSoft: "#4a4d56",
   textMuted: "#8c8f98",
   border: "#e8e9ed",
-  accent: "#c8e630",
-  accentText: "#4d6a00",
+  accent: "#7c5cfc",
+  accentText: "#5c46c9",
 };
 
 function formatDate(iso: string) {
