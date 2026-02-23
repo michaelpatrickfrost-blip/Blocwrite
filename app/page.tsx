@@ -235,263 +235,301 @@ function TrustBar() {
   );
 }
 
-/* ── Shared animated preview shell ── */
-const PV = {
-  bg: "#13132b",
-  card: "#1a1a38",
-  border: "rgba(124,92,252,0.18)",
-  text: "#e4e2f0",
-  dim: "#706f8a",
-  accent: "#7c5cfc",
-  accentSoft: "rgba(124,92,252,0.15)",
-  gold: "#e2c87e",
-  green: "#34d399",
-  red: "#f87171",
-  orange: "#fb923c",
-};
+/* ── Premium static UI illustrations ── */
+const P = { bg: "#0e0e24", card: "#161636", card2: "#1c1c42", border: "rgba(124,92,252,0.12)", glow: "rgba(124,92,252,0.06)", text: "#e8e6f4", dim: "#68678a", muted: "#4a4970", accent: "#7c5cfc", gold: "#e2c87e", green: "#34d399", red: "#ef4444", orange: "#fb923c", cyan: "#22d3ee" };
 
-function PreviewShell({ children }: { children: React.ReactNode }) {
+function Shell({ accent, children }: { accent: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: PV.bg, borderRadius: 16, border: `1px solid ${PV.border}`, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.4)", maxWidth: 480, width: "100%" }}>
+    <div style={{ background: P.bg, borderRadius: 20, overflow: "hidden", maxWidth: 480, width: "100%", border: `1px solid ${P.border}`, boxShadow: `0 24px 64px rgba(0,0,0,0.5), 0 0 80px ${accent}11, inset 0 1px 0 rgba(255,255,255,0.04)` }}>
       {children}
-      <style>{`
-        @keyframes pvFadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
-        @keyframes pvSlideIn { from { opacity:0; transform:translateX(-16px) } to { opacity:1; transform:translateX(0) } }
-        @keyframes pvGrow { from { transform:scaleX(0) } to { transform:scaleX(1) } }
-        @keyframes pvPulse { 0%,100% { opacity:0.4 } 50% { opacity:1 } }
-        @keyframes pvDraw { from { stroke-dashoffset:200 } to { stroke-dashoffset:0 } }
-        @keyframes pvType { from { width:0 } to { width:100% } }
-        @keyframes pvCount { from { opacity:0 } to { opacity:1 } }
-      `}</style>
     </div>
   );
 }
 
 function PlotSpinePreview() {
   const beats = [
-    { act: "ACT I", label: "Inciting Incident", pct: 15 },
-    { act: "ACT I", label: "First Plot Point", pct: 25 },
-    { act: "ACT II", label: "Rising Action", pct: 45 },
-    { act: "ACT II", label: "Midpoint Reversal", pct: 55 },
-    { act: "ACT III", label: "Climax", pct: 80 },
-    { act: "ACT III", label: "Resolution", pct: 95 },
+    { act: "I", label: "The Ordinary World", detail: "Elena teaches at the university. Routine. Safe.", ch: "1–2", color: P.cyan },
+    { act: "I", label: "Inciting Incident", detail: "A letter arrives from her missing father.", ch: "3", color: P.cyan },
+    { act: "II", label: "Rising Complications", detail: "She traces the letter to a coastal town. Allies and enemies emerge.", ch: "4–8", color: P.gold },
+    { act: "II", label: "Midpoint Reversal", detail: "Her father is alive — but doesn't want to be found.", ch: "9", color: P.gold },
+    { act: "II", label: "Crisis Point", detail: "Betrayal. The ally she trusted is working against her.", ch: "10–12", color: P.orange },
+    { act: "III", label: "Climax", detail: "Confrontation at the lighthouse. Everything comes to light.", ch: "13–14", color: P.red },
+    { act: "III", label: "Resolution", detail: "Elena chooses her own truth. A new beginning.", ch: "15", color: P.green },
   ];
-  const chars = ["Elena Voss", "Jack Mercer", "Dr Singh"];
   return (
-    <PreviewShell>
-      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: PV.accent, letterSpacing: "0.08em" }}>PLOT SPINE</span>
-        <span style={{ fontSize: 11, color: PV.dim, background: PV.accentSoft, padding: "3px 10px", borderRadius: 20 }}>Three-Act Structure</span>
+    <Shell accent={P.accent}>
+      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.accent, boxShadow: `0 0 8px ${P.accent}` }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: P.text, letterSpacing: "0.04em" }}>Plot Spine</span>
+        </div>
+        <span style={{ fontSize: 10, color: P.accent, background: `${P.accent}14`, padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>Three-Act Structure</span>
       </div>
-      {/* Tension Arc */}
-      <div style={{ padding: "16px 20px 0" }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>TENSION ARC</div>
-        <svg viewBox="0 0 400 80" style={{ width: "100%", height: 60 }}>
-          <defs><linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={PV.accent} stopOpacity="0.1"/><stop offset="50%" stopColor={PV.accent} stopOpacity="0.3"/><stop offset="100%" stopColor={PV.accent} stopOpacity="0.05"/></linearGradient></defs>
-          <path d="M0,70 C60,65 100,50 140,40 C180,30 200,15 240,10 C280,5 320,8 360,25 C380,35 400,55 400,70" fill="url(#arcGrad)" stroke="none" />
-          <path d="M0,70 C60,65 100,50 140,40 C180,30 200,15 240,10 C280,5 320,8 360,25 C380,35 400,55 400,70" fill="none" stroke={PV.accent} strokeWidth="2" strokeDasharray="200" style={{ animation: "pvDraw 2.5s ease-out forwards" }} />
-          {[15,25,50,55,80,95].map((x,i) => (
-            <circle key={i} cx={x*4} cy={[62,50,22,14,10,45][i]} r="4" fill={PV.accent} style={{ animation: `pvFadeUp 0.4s ${0.3+i*0.3}s both` }} />
+      {/* Tension curve */}
+      <div style={{ padding: "14px 22px 6px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>TENSION</span>
+          <div style={{ display: "flex", gap: 12 }}>
+            {["Act I", "Act II", "Act III"].map((a, i) => (
+              <span key={a} style={{ fontSize: 9, fontWeight: 600, color: [P.cyan, P.gold, P.red][i], letterSpacing: "0.06em" }}>{a}</span>
+            ))}
+          </div>
+        </div>
+        <svg viewBox="0 0 420 70" style={{ width: "100%", height: 52, display: "block" }}>
+          <defs>
+            <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={P.accent} stopOpacity="0.25"/><stop offset="100%" stopColor={P.accent} stopOpacity="0"/></linearGradient>
+          </defs>
+          <path d="M0,60 C30,58 60,55 100,48 C140,40 160,32 200,20 C220,14 240,8 260,6 C280,10 300,16 330,12 C350,10 370,30 400,52 L420,60 L420,70 L0,70Z" fill="url(#tg)" />
+          <path d="M0,60 C30,58 60,55 100,48 C140,40 160,32 200,20 C220,14 240,8 260,6 C280,10 300,16 330,12 C350,10 370,30 400,52" fill="none" stroke={P.accent} strokeWidth="2" strokeLinecap="round" />
+          {/* Beat dots on curve */}
+          {[[42,52],[100,48],[200,20],[260,6],[330,12],[370,25],[405,50]].map(([cx,cy],i) => (
+            <circle key={i} cx={cx} cy={cy} r="4" fill={beats[i].color} stroke={P.bg} strokeWidth="2" />
           ))}
         </svg>
       </div>
-      {/* Story Beats */}
-      <div style={{ padding: "4px 20px 12px" }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>STORY BEATS</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Beats list */}
+      <div style={{ padding: "4px 22px 18px" }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>STORY BEATS</span>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 0 }}>
           {beats.map((b, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `pvSlideIn 0.4s ${0.2+i*0.15}s both` }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: i < 2 ? PV.green : i < 4 ? PV.gold : PV.red, width: 42, flexShrink: 0 }}>{b.act}</span>
-              <span style={{ fontSize: 12, color: PV.text, flex: 1 }}>{b.label}</span>
-              <div style={{ width: 60, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                <div style={{ width: `${b.pct}%`, height: "100%", borderRadius: 2, background: PV.accent, transformOrigin: "left", animation: `pvGrow 0.6s ${0.4+i*0.15}s both` }} />
+            <div key={i} style={{ display: "flex", gap: 0, borderLeft: `2px solid ${b.color}`, marginLeft: 4, padding: "6px 0 6px 12px" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: b.color }}>ACT {b.act}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>{b.label}</span>
+                  <span style={{ fontSize: 9, color: P.muted, marginLeft: "auto", flexShrink: 0 }}>Ch {b.ch}</span>
+                </div>
+                <span style={{ fontSize: 10, color: P.dim, lineHeight: 1.5, marginTop: 2, display: "block" }}>{b.detail}</span>
               </div>
             </div>
           ))}
         </div>
       </div>
-      {/* Character presence */}
-      <div style={{ padding: "8px 20px 16px", borderTop: `1px solid ${PV.border}` }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>CHARACTER PRESENCE</div>
-        {chars.map((c, ci) => (
-          <div key={c} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, animation: `pvFadeUp 0.3s ${0.8+ci*0.2}s both` }}>
-            <span style={{ fontSize: 11, color: PV.text, width: 80, flexShrink: 0 }}>{c}</span>
-            <div style={{ flex: 1, display: "flex", gap: 3 }}>
-              {Array.from({ length: 6 }).map((_, bi) => {
-                const on = ci === 0 ? true : ci === 1 ? bi !== 2 && bi !== 4 : bi > 1 && bi < 5;
-                return <div key={bi} style={{ width: 14, height: 14, borderRadius: 3, background: on ? [PV.accent, PV.gold, PV.green][ci] : "rgba(255,255,255,0.05)", opacity: on ? 0.85 : 0.3, animation: `pvPulse 2s ${bi*0.2}s infinite` }} />;
-              })}
-            </div>
+      {/* Subplot + Character strip */}
+      <div style={{ padding: "10px 22px 16px", borderTop: `1px solid ${P.border}`, display: "flex", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.1em" }}>SUBPLOTS</span>
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+            {["Elena & Jack — trust arc", "The missing letters", "University cover-up"].map((s, i) => (
+              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: [P.accent, P.gold, P.orange][i] }} />
+                <span style={{ fontSize: 10, color: P.dim }}>{s}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <div style={{ flex: 1 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.1em" }}>CHARACTERS</span>
+          <div style={{ marginTop: 6, display: "flex", gap: -4 }}>
+            {[{ i: "E", c: P.accent }, { i: "J", c: P.gold }, { i: "D", c: P.red }, { i: "S", c: P.green }].map((ch, ci) => (
+              <div key={ci} style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${ch.c}, ${ch.c}66)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", marginLeft: ci > 0 ? -4 : 0, border: `2px solid ${P.bg}`, position: "relative", zIndex: 4 - ci }}>
+                {ch.i}
+              </div>
+            ))}
+            <span style={{ fontSize: 10, color: P.dim, marginLeft: 8, alignSelf: "center" }}>4 tracked</span>
+          </div>
+        </div>
       </div>
-    </PreviewShell>
+    </Shell>
   );
 }
 
 function CanonPreview() {
-  const tabs = ["Characters", "Locations", "Lore", "Style & Voice"];
-  const characters = [
-    { name: "Elena Voss", role: "Protagonist", traits: ["Resourceful", "Haunted"] },
-    { name: "Jack Mercer", role: "Ally", traits: ["Loyal", "Witty"] },
-    { name: "Dr Singh", role: "Antagonist", traits: ["Brilliant", "Cold"] },
-  ];
   return (
-    <PreviewShell>
-      <div style={{ padding: "16px 20px 0", borderBottom: `1px solid ${PV.border}` }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: PV.gold, letterSpacing: "0.08em" }}>THE CANON</span>
-        <div style={{ display: "flex", gap: 0, marginTop: 12 }}>
-          {tabs.map((t, i) => (
-            <div key={t} style={{ fontSize: 11, fontWeight: 600, padding: "8px 14px", color: i === 0 ? PV.accent : PV.dim, borderBottom: i === 0 ? `2px solid ${PV.accent}` : "2px solid transparent", cursor: "default" }}>{t}</div>
+    <Shell accent={P.gold}>
+      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.gold, boxShadow: `0 0 8px ${P.gold}` }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: P.text, letterSpacing: "0.04em" }}>Canon</span>
+        </div>
+        <div style={{ display: "flex", gap: 2 }}>
+          {["Characters", "Locations", "Lore", "Voice"].map((t, i) => (
+            <span key={t} style={{ fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 14, color: i === 0 ? "#fff" : P.muted, background: i === 0 ? `${P.accent}30` : "transparent" }}>{t}</span>
           ))}
         </div>
       </div>
-      <div style={{ padding: "16px 20px 20px" }}>
-        {characters.map((c, i) => (
-          <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 14px", marginBottom: 8, borderRadius: 10, background: PV.card, border: `1px solid ${PV.border}`, animation: `pvFadeUp 0.5s ${0.2+i*0.25}s both` }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${[PV.accent, PV.gold, PV.red][i]}, ${PV.bg})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
-              {c.name[0]}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: PV.text }}>{c.name}</span>
-                <span style={{ fontSize: 10, color: PV.dim, background: PV.accentSoft, padding: "2px 8px", borderRadius: 10 }}>{c.role}</span>
+      {/* Character cards */}
+      <div style={{ padding: "14px 22px 0" }}>
+        {[
+          { name: "Elena Voss", role: "Protagonist", desc: "University lecturer, sharp-witted, carries guilt over her father's disappearance. Speaks in clipped, precise sentences.", traits: ["Resourceful", "Guarded", "Determined"], color: P.accent },
+          { name: "Jack Mercer", role: "Ally", desc: "Ex-journalist with a dry sense of humour. Knows the coastal town's secrets. Drinks too much coffee.", traits: ["Loyal", "Perceptive", "Reckless"], color: P.gold },
+          { name: "Dr Amara Singh", role: "Antagonist", desc: "Elena's department head. Polished exterior hiding ruthless ambition. Never raises her voice.", traits: ["Brilliant", "Calculating", "Patient"], color: P.red },
+        ].map((c, i) => (
+          <div key={c.name} style={{ padding: "14px 16px", marginBottom: 10, borderRadius: 14, background: P.card, border: `1px solid ${P.border}`, position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, width: 3, height: "100%", background: c.color, borderRadius: "0 2px 2px 0" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg, ${c.color}40, ${c.color}10)`, border: `1px solid ${c.color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: c.color, flexShrink: 0 }}>
+                {c.name[0]}
               </div>
-              <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
-                {c.traits.map(t => (
-                  <span key={t} style={{ fontSize: 10, color: PV.dim, padding: "2px 7px", borderRadius: 6, border: `1px solid ${PV.border}` }}>{t}</span>
-                ))}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>{c.name}</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 8, background: `${c.color}18`, color: c.color }}>{c.role}</span>
+                </div>
               </div>
             </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={PV.dim} strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+            <p style={{ fontSize: 10, color: P.dim, lineHeight: 1.6, margin: "0 0 8px" }}>{c.desc}</p>
+            <div style={{ display: "flex", gap: 5 }}>
+              {c.traits.map(t => (
+                <span key={t} style={{ fontSize: 9, color: P.muted, padding: "3px 8px", borderRadius: 6, background: P.card2 }}>{t}</span>
+              ))}
+            </div>
           </div>
         ))}
-        <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
-          {[{ n: "5", l: "Characters" }, { n: "16", l: "Locations" }, { n: "7", l: "Lore entries" }].map((s, i) => (
-            <div key={s.l} style={{ animation: `pvFadeUp 0.4s ${1+i*0.15}s both` }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: PV.accent }}>{s.n}</span>
-              <span style={{ fontSize: 10, color: PV.dim, marginLeft: 4 }}>{s.l}</span>
-            </div>
-          ))}
-        </div>
       </div>
-    </PreviewShell>
+      {/* Stats bar */}
+      <div style={{ padding: "12px 22px 16px", borderTop: `1px solid ${P.border}`, display: "flex", justifyContent: "space-between" }}>
+        {[{ n: "5", l: "Characters", c: P.accent }, { n: "16", l: "Locations", c: P.gold }, { n: "7", l: "Lore entries", c: P.green }, { n: "3", l: "Bolt-Ons", c: P.orange }].map(s => (
+          <div key={s.l} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.n}</div>
+            <div style={{ fontSize: 9, color: P.muted, fontWeight: 600, letterSpacing: "0.04em" }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+    </Shell>
   );
 }
 
 function BlocsPreview() {
-  const scenes = [
-    { id: 1, title: "The Discovery", words: 847, status: "done" },
-    { id: 2, title: "Confrontation at the Docks", words: 612, status: "writing" },
-    { id: 3, title: "The Hidden Letter", words: 0, status: "planned" },
-  ];
   return (
-    <PreviewShell>
-      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <Shell accent="#6246ea">
+      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#6246ea", letterSpacing: "0.08em" }}>SCENE BLOCS</span>
-          <span style={{ fontSize: 11, color: PV.dim }}>Ch. 3 — The Vanishing Body</span>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6246ea", boxShadow: "0 0 8px #6246ea" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>Scene Blocs</span>
+          <span style={{ fontSize: 10, color: P.muted }}>Ch. 5 — The Lighthouse</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: PV.dim }}>Blocs</span>
-          <div style={{ width: 28, height: 16, borderRadius: 8, background: PV.accent, position: "relative" }}>
-            <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, right: 2 }} />
+          <span style={{ fontSize: 10, color: P.dim }}>Blocs</span>
+          <div style={{ width: 28, height: 14, borderRadius: 7, background: P.accent }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#fff", margin: "2px 2px 2px auto" }} />
           </div>
         </div>
       </div>
-      <div style={{ padding: "16px 20px 20px" }}>
-        {scenes.map((s, i) => (
-          <div key={s.id} style={{ marginBottom: 12, borderRadius: 10, background: PV.card, border: `1px solid ${s.status === "writing" ? PV.accent : PV.border}`, overflow: "hidden", animation: `pvFadeUp 0.5s ${0.2+i*0.25}s both` }}>
-            <div style={{ padding: "12px 14px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: PV.accent }}>SCENE {s.id}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: PV.text }}>{s.title}</span>
-                </div>
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: s.status === "done" ? "rgba(52,211,153,0.12)" : s.status === "writing" ? PV.accentSoft : "rgba(255,255,255,0.04)", color: s.status === "done" ? PV.green : s.status === "writing" ? PV.accent : PV.dim }}>
-                  {s.status === "done" ? "Complete" : s.status === "writing" ? "Drafting..." : "Planned"}
-                </span>
-              </div>
-              {s.status === "writing" && (
-                <div style={{ fontSize: 12, color: PV.dim, lineHeight: 1.6, overflow: "hidden" }}>
-                  <div style={{ animation: "pvType 3s steps(40) infinite", whiteSpace: "nowrap", overflow: "hidden", color: PV.text }}>
-                    Rain hammered the corrugated roof as Mercer pulled the envelope from his coat...
-                  </div>
-                </div>
-              )}
-              {s.status === "done" && (
-                <div style={{ fontSize: 12, color: PV.dim, lineHeight: 1.6 }}>
-                  Elena pushed through the warehouse door. The air tasted of rust and old secrets...
-                </div>
-              )}
-              {s.status === "planned" && (
-                <div style={{ fontSize: 11, color: PV.dim, fontStyle: "italic" }}>Elena finds the letter hidden inside the piano. Flashback to her mother&apos;s warning.</div>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
-                <span style={{ fontSize: 10, color: PV.dim }}>{s.words > 0 ? `${s.words} words` : "—"}</span>
-                {s.words > 0 && (
-                  <div style={{ width: 60, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                    <div style={{ width: `${Math.min(100, (s.words / 1000) * 100)}%`, height: "100%", borderRadius: 2, background: s.status === "done" ? PV.green : PV.accent, transformOrigin: "left", animation: `pvGrow 0.8s ${0.5+i*0.2}s both` }} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", animation: `pvFadeUp 0.4s 1.2s both` }}>
-          <div style={{ width: 20, height: 20, borderRadius: 6, border: `1px dashed ${PV.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: PV.dim }}>+</div>
-          <span style={{ fontSize: 11, color: PV.dim }}>Generate prose for this scene</span>
-        </div>
-      </div>
-    </PreviewShell>
-  );
-}
 
-function NFPreview() {
-  const events = [
-    { year: "1987", title: "Born in Sheffield", emotion: 8, color: PV.gold },
-    { year: "1995", title: "Family moves to London", emotion: 5, color: PV.accent },
-    { year: "2003", title: "First published article", emotion: 9, color: PV.green },
-    { year: "2011", title: "The diagnosis", emotion: 2, color: PV.red },
-  ];
-  return (
-    <PreviewShell>
-      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: PV.orange, letterSpacing: "0.08em" }}>NON-FICTION</span>
-        <span style={{ fontSize: 11, color: PV.dim, background: "rgba(251,146,60,0.1)", padding: "3px 10px", borderRadius: 20 }}>Biography</span>
-      </div>
-      {/* Mini Life Interview */}
-      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${PV.border}` }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>LIFE INTERVIEW</div>
-        <div style={{ animation: "pvFadeUp 0.5s 0.2s both" }}>
-          <div style={{ fontSize: 12, color: PV.accent, marginBottom: 4, fontWeight: 600 }}>AI: What moment changed everything for you?</div>
-          <div style={{ fontSize: 12, color: PV.text, padding: "8px 12px", background: PV.card, borderRadius: 8, border: `1px solid ${PV.border}`, overflow: "hidden" }}>
-            <div style={{ whiteSpace: "nowrap", overflow: "hidden", animation: "pvType 4s steps(50) infinite" }}>
-              It was the summer of 2003 when I got the call from the editor. Everything shifted after that...
-            </div>
+      {/* Scene 1 — Complete */}
+      <div style={{ margin: "14px 22px 0", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px solid ${P.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: P.green, letterSpacing: "0.08em" }}>SCENE 1</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>Arrival at the Coast</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={P.green} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span style={{ fontSize: 9, color: P.green, fontWeight: 600 }}>1,247 words</span>
           </div>
         </div>
+        <p style={{ fontSize: 11, color: P.dim, lineHeight: 1.65, margin: 0 }}>
+          Elena steps off the train into salt air and silence. The town is smaller than she remembers. She checks into the inn, unpacks her father&apos;s last letter, and reads it again for the hundredth time.
+        </p>
       </div>
-      {/* Timeline */}
-      <div style={{ padding: "12px 20px 16px" }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 10 }}>EMOTIONAL TIMELINE</div>
-        <div style={{ position: "relative", paddingLeft: 20 }}>
-          <div style={{ position: "absolute", left: 6, top: 0, bottom: 0, width: 2, background: PV.border }} />
-          {events.map((e, i) => (
-            <div key={e.year} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, animation: `pvSlideIn 0.4s ${0.4+i*0.2}s both`, position: "relative" }}>
-              <div style={{ position: "absolute", left: -14, width: 10, height: 10, borderRadius: "50%", background: e.color, border: `2px solid ${PV.bg}` }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: e.color, width: 36, flexShrink: 0 }}>{e.year}</span>
-              <span style={{ fontSize: 12, color: PV.text, flex: 1 }}>{e.title}</span>
-              <div style={{ display: "flex", gap: 2 }}>
-                {Array.from({ length: 10 }).map((_, di) => (
-                  <div key={di} style={{ width: 3, height: 10, borderRadius: 1, background: di < e.emotion ? e.color : "rgba(255,255,255,0.05)", opacity: di < e.emotion ? 0.7 : 0.3 }} />
-                ))}
-              </div>
+
+      {/* Scene 2 — AI generating */}
+      <div style={{ margin: "10px 22px 0", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px solid ${P.accent}40`, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${P.accent}, transparent)` }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: P.accent, letterSpacing: "0.08em" }}>SCENE 2</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>The Locked Room</span>
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 600, color: P.accent, background: `${P.accent}14`, padding: "3px 10px", borderRadius: 10 }}>AI generating...</span>
+        </div>
+        <div style={{ fontSize: 11, color: P.text, lineHeight: 1.7, margin: "0 0 6px", borderLeft: `2px solid ${P.accent}40`, paddingLeft: 10 }}>
+          The door hadn&apos;t been opened in years. Elena ran her fingers along the frame, feeling where the paint had cracked and peeled. Inside, dust lay like snow on every surface. A desk by the window. A chair pushed back as if someone had just stood up.
+        </div>
+        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+          {[{ l: "Target", v: "1,200" }, { l: "Written", v: "634" }, { l: "Tone", v: "Suspense" }].map(x => (
+            <div key={x.l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 9, color: P.muted }}>{x.l}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: P.text }}>{x.v}</span>
             </div>
           ))}
         </div>
       </div>
-    </PreviewShell>
+
+      {/* Scene 3 — Blueprint */}
+      <div style={{ margin: "10px 22px 14px", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px dashed ${P.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.08em" }}>SCENE 3</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: P.dim }}>What the Tide Brought In</span>
+          </div>
+          <span style={{ fontSize: 9, color: P.muted }}>Planned</span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {["Opening: Elena walks the shoreline at dawn", "Tension: 7/10", "POV: Close third", "Sensory: salt, wet sand, grey light"].map(t => (
+            <span key={t} style={{ fontSize: 9, color: P.muted, padding: "3px 8px", borderRadius: 6, background: P.card2, border: `1px solid ${P.border}` }}>{t}</span>
+          ))}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+function NFPreview() {
+  return (
+    <Shell accent={P.orange}>
+      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.orange, boxShadow: `0 0 8px ${P.orange}` }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>Non-Fiction</span>
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 600, color: P.orange, background: `${P.orange}14`, padding: "4px 12px", borderRadius: 20 }}>Biography</span>
+      </div>
+
+      {/* Life Interview */}
+      <div style={{ padding: "14px 22px", borderBottom: `1px solid ${P.border}` }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>LIFE INTERVIEW — PHASE 2 OF 4</span>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ width: 24, height: 24, borderRadius: 8, background: `${P.accent}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={P.accent} strokeWidth="2"><path d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            </div>
+            <div style={{ fontSize: 11, color: P.accent, fontWeight: 600, lineHeight: 1.5 }}>Tell me about a person who shaped who you became. What did they teach you without meaning to?</div>
+          </div>
+          <div style={{ marginLeft: 34, fontSize: 11, color: P.text, lineHeight: 1.6, padding: "8px 12px", background: P.card, borderRadius: 10, border: `1px solid ${P.border}` }}>
+            My grandmother. She never said much but she&apos;d sit with me while I read. That silence taught me patience. She&apos;d been through the war but never talked about it...
+          </div>
+          <div style={{ marginLeft: 34, display: "flex", gap: 6 }}>
+            <span style={{ fontSize: 9, color: P.green, background: `${P.green}14`, padding: "2px 8px", borderRadius: 8 }}>Auto-extracted to Canon</span>
+            <span style={{ fontSize: 9, color: P.muted, background: P.card2, padding: "2px 8px", borderRadius: 8 }}>Grandmother — new character</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div style={{ padding: "14px 22px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>EMOTIONAL TIMELINE</span>
+          <span style={{ fontSize: 9, color: P.muted }}>12 events mapped</span>
+        </div>
+        {/* Timeline bar */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, marginBottom: 10 }}>
+          {[6,4,8,3,7,9,2,5,8,10,6,7].map((h, i) => (
+            <div key={i} style={{ flex: 1, height: `${h * 10}%`, borderRadius: "3px 3px 0 0", background: h >= 8 ? P.gold : h <= 3 ? P.red : `${P.accent}40` }} />
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ fontSize: 9, color: P.muted }}>1952</span>
+          <span style={{ fontSize: 9, color: P.muted }}>1970</span>
+          <span style={{ fontSize: 9, color: P.muted }}>1988</span>
+          <span style={{ fontSize: 9, color: P.muted }}>2006</span>
+          <span style={{ fontSize: 9, color: P.muted }}>2024</span>
+        </div>
+        {/* Key moments */}
+        {[
+          { y: "1967", t: "The war letter arrives", e: "Grief", c: P.red },
+          { y: "1985", t: "First day at the newspaper", e: "Hope", c: P.gold },
+          { y: "2003", t: "The book deal", e: "Joy", c: P.green },
+        ].map(ev => (
+          <div key={ev.y} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: ev.c, width: 30, flexShrink: 0 }}>{ev.y}</span>
+            <span style={{ fontSize: 11, color: P.text, flex: 1 }}>{ev.t}</span>
+            <span style={{ fontSize: 9, color: ev.c, background: `${ev.c}14`, padding: "2px 8px", borderRadius: 8 }}>{ev.e}</span>
+          </div>
+        ))}
+      </div>
+    </Shell>
   );
 }
 
