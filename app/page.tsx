@@ -229,23 +229,22 @@ function Hero() {
 /* ── Trust Bar ── */
 function TrustBar() {
   const items = [
-    { icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z", label: "7 days free", sub: "Full access, no card upfront" },
-    { icon: "M13 10V3L4 14h7v7l9-11h-7z", label: "You bring your own AI key", sub: "We never charge for AI \u2014 you choose your model" },
-    { icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z", label: "Your writing stays private", sub: "No training on your data, ever" },
-    { icon: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4", label: "Export-ready manuscripts", sub: "Clean EPUB & DOCX, zero AI metadata" },
+    { emoji: "⚡", label: "7-day free trial", sub: "Full access. No card upfront." },
+    { emoji: "🔑", label: "You bring the AI", sub: "Your key, your model, your cost." },
+    { emoji: "🔒", label: "Writing stays private", sub: "No training. No sharing. Ever." },
+    { emoji: "📄", label: "Publish-ready export", sub: "Clean EPUB & DOCX output." },
   ];
   return (
-    <section style={{ background: C.bgWhite, padding: "40px 0", borderBottom: `1px solid ${C.border}` }}>
-      <div className="bw-trust-grid" style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 32 }}>
-        {items.map((s) => (
-          <div key={s.label} style={{ textAlign: "center", padding: "0 8px" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c5cfc" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={s.icon}/></svg>
-              </div>
-            </div>
-            <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: C.text }}>{s.label}</p>
-            <p style={{ fontSize: 13, color: C.textMuted, margin: "4px 0 0", lineHeight: 1.5 }}>{s.sub}</p>
+    <section style={{ background: C.bgDark, padding: "0" }}>
+      <div className="bw-trust-grid" style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0 }}>
+        {items.map((s, i) => (
+          <div key={s.label} style={{
+            textAlign: "center", padding: "36px 20px",
+            borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none",
+          }}>
+            <span style={{ fontSize: 28, display: "block", marginBottom: 14 }}>{s.emoji}</span>
+            <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: "#fff" }}>{s.label}</p>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", margin: "6px 0 0", lineHeight: 1.5 }}>{s.sub}</p>
           </div>
         ))}
       </div>
