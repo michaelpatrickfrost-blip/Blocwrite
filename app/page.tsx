@@ -203,7 +203,7 @@ function Hero() {
           </a>
         </div>
 
-        {/* App screenshot in browser frame */}
+        {/* App preview — CSS rendered */}
         <div className="bw-hero-mockup-wrap" style={{ marginTop: 72, position: "relative", maxWidth: 860, margin: "72px auto 0" }}>
           <div className="bw-float" style={{
             borderRadius: 16, overflow: "hidden",
@@ -218,7 +218,7 @@ function Hero() {
                 <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>blocwrite.com/studio</span>
               </span>
             </div>
-            <img src="/screenshots/overview.png?v=4" alt="Blocwrite Studio — novel overview" style={{ width: "100%", height: "auto", display: "block" }} />
+            <HeroAppPreview />
           </div>
         </div>
       </div>
@@ -253,24 +253,298 @@ function TrustBar() {
   );
 }
 
-/* ── Showcase — 3 hero features with real screenshots ── */
-function ScreenFrame({ src, alt }: { src: string; alt: string }) {
+/* ── Shared mini-preview primitives ── */
+const D = {
+  bg: "#0c0c1d", sidebar: "#0a0a18", surface: "#14142e", surfaceAlt: "#1a1a3a",
+  border: "rgba(255,255,255,0.06)", borderLight: "rgba(255,255,255,0.04)",
+  accent: "#b8a4ff", accentDim: "rgba(124,92,252,0.06)", accentBorder: "rgba(124,92,252,0.14)",
+  grad: "linear-gradient(135deg, #7c5cfc 0%, #b8a4ff 100%)",
+  text: "#e8e8f0", textMuted: "#9494a8", textDim: "#6a6a82",
+};
+const Bar = ({ w, c, h = 4 }: { w: string; c?: string; h?: number }) => (
+  <div style={{ height: h, borderRadius: h, background: "rgba(255,255,255,0.04)", width: "100%", overflow: "hidden" }}>
+    <div style={{ height: "100%", width: w, borderRadius: h, background: c || D.grad }} />
+  </div>
+);
+const Pill = ({ children, active }: { children: string; active?: boolean }) => (
+  <span style={{ fontSize: 8, fontWeight: 600, padding: "2px 7px", borderRadius: 99, background: active ? D.accentDim : "transparent", border: `1px solid ${active ? D.accentBorder : D.border}`, color: active ? D.accent : D.textDim, whiteSpace: "nowrap" }}>{children}</span>
+);
+const Swatch = ({ c }: { c: string }) => <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: c, flexShrink: 0 }} />;
+const MiniBtn = ({ children, primary }: { children: string; primary?: boolean }) => (
+  <span style={{ fontSize: 8, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: primary ? D.grad : D.surfaceAlt, color: primary ? "#fff" : D.textMuted, border: primary ? "none" : `1px solid ${D.border}`, whiteSpace: "nowrap" }}>{children}</span>
+);
+const AppFrame = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ borderRadius: 14, overflow: "hidden", background: D.surface, border: `1px solid ${D.border}`, boxShadow: "0 20px 60px rgba(12,12,29,0.18), 0 4px 16px rgba(12,12,29,0.06)" }}>
+    {children}
+  </div>
+);
+const SidebarNav = ({ items, active }: { items: string[]; active: number }) => (
+  <div style={{ width: 120, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "10px 6px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+    {items.map((label, i) => (
+      <div key={label} style={{ fontSize: 9, fontWeight: i === active ? 650 : 500, padding: "5px 8px", borderRadius: 8, color: i === active ? D.accent : D.textDim, background: i === active ? D.accentDim : "transparent", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+    ))}
+  </div>
+);
+
+/* ── Plot Spine Preview ── */
+function PlotSpinePreview() {
   return (
-    <div style={{ borderRadius: 14, overflow: "hidden", border: `1px solid ${C.border}`, boxShadow: "0 20px 60px rgba(12,12,29,0.12), 0 4px 16px rgba(12,12,29,0.04)" }}>
-      <img src={src} alt={alt} style={{ width: "100%", height: "auto", display: "block" }} />
-    </div>
+    <AppFrame>
+      <div style={{ display: "flex", minHeight: 280 }}>
+        <SidebarNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={5} />
+        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 12, borderBottom: `1px solid ${D.borderLight}`, paddingBottom: 8 }}>
+            {["Overview", "Beats (12)", "Subplots (3)", "Arcs (4)"].map((t, i) => (
+              <span key={t} style={{ fontSize: 9, fontWeight: i === 0 ? 700 : 500, color: i === 0 ? D.accent : D.textDim, borderBottom: i === 0 ? `2px solid ${D.accent}` : "2px solid transparent", paddingBottom: 4 }}>{t}</span>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 12, border: `3px solid #22c55e`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "#22c55e" }}>87</span>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
+              <span style={{ fontSize: 9, fontWeight: 600, color: D.textMuted }}>Spine Completeness</span>
+              <Bar w="87%" c="#22c55e" h={5} />
+              <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+                <span style={{ fontSize: 8, color: D.textDim }}>Act 1: 4 beats</span>
+                <span style={{ fontSize: 8, color: D.textDim }}>Act 2: 5 beats</span>
+                <span style={{ fontSize: 8, color: D.textDim }}>Act 3: 3 beats</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+            <span style={{ fontSize: 8, fontWeight: 700, color: D.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Story Beats</span>
+            {[
+              { act: 1, title: "The Inciting Incident", tension: 2 },
+              { act: 1, title: "The First Threshold", tension: 3 },
+              { act: 2, title: "Rising Complications", tension: 4 },
+              { act: 2, title: "The Midpoint Reversal", tension: 5 },
+            ].map((b) => (
+              <div key={b.title} style={{ padding: "5px 8px", borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 7, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: D.accentDim, color: D.accent }}>ACT {b.act}</span>
+                <span style={{ fontSize: 9, fontWeight: 600, color: D.text, flex: 1 }}>{b.title}</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {[1,2,3,4,5].map(n => <Swatch key={n} c={n <= b.tension ? "#f59e0b" : "rgba(255,255,255,0.08)"} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
+
+/* ── Canon Preview ── */
+function CanonPreview() {
+  return (
+    <AppFrame>
+      <div style={{ display: "flex", minHeight: 280 }}>
+        <SidebarNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={2} />
+        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: D.text }}>Characters</span>
+            <MiniBtn primary>+ Add character</MiniBtn>
+          </div>
+          {[
+            { name: "Eleanor Voss", role: "Protagonist", col: "#7c5cfc" },
+            { name: "Marcus Reid", role: "Antagonist", col: "#ff6b6b" },
+            { name: "Dr. Sarah Chen", role: "Mentor", col: "#e2c87e" },
+          ].map((ch) => (
+            <div key={ch.name} style={{ padding: "8px 10px", borderRadius: 10, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${ch.col}18`, border: `1px solid ${ch.col}33`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: ch.col }}>{ch.name[0]}</span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10, fontWeight: 650, color: D.text }}>{ch.name}</div>
+                <div style={{ fontSize: 8, color: D.textDim, marginTop: 1 }}>{ch.role}</div>
+                <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
+                  {["Backstory", "Voice", "Secrets"].map(tag => (
+                    <span key={tag} style={{ fontSize: 7, padding: "1px 5px", borderRadius: 4, background: D.accentDim, color: D.accent, border: `1px solid ${D.accentBorder}` }}>{tag}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 8, color: D.textDim, textAlign: "center", marginTop: 2 }}>3 characters • 4 locations • 6 lore entries</div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
+
+/* ── Blocs Preview ── */
+function BlocsPreview() {
+  return (
+    <AppFrame>
+      <div style={{ display: "flex", minHeight: 280 }}>
+        {/* Mini sidebar with chapter numbers */}
+        <div style={{ width: 44, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "10px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          {[1,2,3,4,5,6].map(n => (
+            <div key={n} style={{ width: 26, height: 26, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: n === 3 ? 700 : 500, color: n === 3 ? D.accent : D.textDim, background: n === 3 ? D.accentDim : "transparent" }}>{n}</div>
+          ))}
+        </div>
+        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 14, fontWeight: 750, color: D.text, letterSpacing: "-0.02em" }}>Chapter 3: The Crossing</span>
+          </div>
+          {/* Scene blocks */}
+          {[
+            { num: 1, synopsis: "Eleanor arrives at the abandoned station. Rain hammers the platform.", words: "800", tension: 3 },
+            { num: 2, synopsis: "A confrontation with Marcus under the bridge. Dialogue-heavy, rising tension.", words: "600", tension: 4 },
+          ].map(sc => (
+            <div key={sc.num} style={{ borderRadius: 12, border: `1px solid ${D.border}`, background: D.surface, overflow: "hidden" }}>
+              <div style={{ padding: "6px 10px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: D.textMuted }}>Scene {sc.num}</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {[1,2,3,4,5].map(n => <Swatch key={n} c={n <= sc.tension ? "#f59e0b" : "rgba(255,255,255,0.08)"} />)}
+                </div>
+              </div>
+              <div style={{ padding: "8px 10px" }}>
+                <div style={{ fontSize: 9, color: D.textMuted, lineHeight: 1.5, marginBottom: 8 }}>{sc.synopsis}</div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  {["Best Fit", "400", "600", "800", "1000"].map((w) => (
+                    <Pill key={w} active={w === sc.words}>{w}</Pill>
+                  ))}
+                  <span style={{ marginLeft: "auto" }}><MiniBtn>Blueprint ▾</MiniBtn></span>
+                </div>
+              </div>
+              {sc.num === 1 && (
+                <div style={{ margin: "0 10px 8px", padding: "6px 8px", borderRadius: 8, background: "rgba(124,92,252,0.03)", border: `1px solid rgba(124,92,252,0.08)` }}>
+                  <div style={{ fontSize: 7, fontWeight: 700, color: D.accent, textTransform: "uppercase", marginBottom: 4, letterSpacing: "0.06em" }}>Blueprint</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 12px" }}>
+                    {[
+                      ["Opening", "Rain on empty tracks..."],
+                      ["Emotion", "Isolation → cautious hope"],
+                      ["Senses", "Diesel, wet concrete, echo"],
+                      ["Closing", "A light flickers on..."],
+                    ].map(([label, val]) => (
+                      <div key={label} style={{ fontSize: 7, color: D.textDim }}>
+                        <span style={{ color: D.textMuted, fontWeight: 600 }}>{label}: </span>{val}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
+            <MiniBtn primary>✦ Generate prose</MiniBtn>
+          </div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
+
+/* ── Non-Fiction Preview ── */
+function NFPreview() {
+  return (
+    <AppFrame>
+      <div style={{ display: "flex", minHeight: 260 }}>
+        <SidebarNav items={["Summary", "Style & Voice", "Life Interview", "Life Events", "Scrapbook", "Story Board"]} active={2} />
+        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: D.text }}>Life Interview</span>
+            <span style={{ fontSize: 7, fontWeight: 700, padding: "1px 6px", borderRadius: 99, background: "rgba(226,200,126,0.1)", color: "#e2c87e", border: "1px solid rgba(226,200,126,0.2)" }}>Phase 2: Deep Dive</span>
+          </div>
+          {[
+            { role: "ai", text: "Tell me about a moment that changed how you see yourself. What happened, and who was there?" },
+            { role: "user", text: "It was the summer of 1994, in my grandmother's garden. She told me I reminded her of my grandfather — someone I'd never met." },
+            { role: "ai", text: "That's a powerful connection across generations. What did it feel like to hear that? And what did you know about your grandfather at that point?" },
+          ].map((msg, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: msg.role === "user" ? "flex-end" : "flex-start", flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: msg.role === "ai" ? "rgba(226,200,126,0.1)" : D.accentDim, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: msg.role === "ai" ? "#e2c87e" : D.accent }}>{msg.role === "ai" ? "AI" : "Y"}</span>
+              </div>
+              <div style={{
+                maxWidth: "80%", padding: "6px 9px", borderRadius: 8, fontSize: 8, lineHeight: 1.5,
+                background: msg.role === "user" ? D.accentDim : D.surfaceAlt,
+                color: D.text, border: `1px solid ${msg.role === "user" ? D.accentBorder : D.borderLight}`,
+              }}>{msg.text}</div>
+            </div>
+          ))}
+          <div style={{ borderTop: `1px solid ${D.borderLight}`, paddingTop: 6, marginTop: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+            <div style={{ flex: 1, height: 26, borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", padding: "0 8px" }}>
+              <span style={{ fontSize: 8, color: D.textDim }}>Share a memory or answer the question...</span>
+            </div>
+            <MiniBtn primary>Send</MiniBtn>
+          </div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
+
+/* ── Hero App Preview ── */
+function HeroAppPreview() {
+  return (
+    <AppFrame>
+      <div style={{ display: "flex", minHeight: 300 }}>
+        {/* Sidebar */}
+        <div style={{ width: 130, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: D.accent, marginBottom: 6, padding: "0 4px", letterSpacing: "-0.02em" }}>Blocwrite</div>
+          <div style={{ fontSize: 7, fontWeight: 700, color: D.textDim, textTransform: "uppercase", letterSpacing: "0.1em", padding: "4px 4px 2px", marginTop: 4 }}>Manuscript</div>
+          {["1. The Beginning", "2. First Steps", "3. The Crossing", "4. Revelations", "5. The Storm", "6. Resolution"].map((ch, i) => (
+            <div key={ch} style={{ fontSize: 8, padding: "4px 6px", borderRadius: 6, color: i === 0 ? D.accent : D.textDim, background: i === 0 ? D.accentDim : "transparent", fontWeight: i === 0 ? 650 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ch}</div>
+          ))}
+          <div style={{ marginTop: "auto", fontSize: 7, color: D.textDim, padding: "6px 4px 0", borderTop: `1px solid ${D.borderLight}` }}>Novel overview</div>
+        </div>
+        {/* Main area */}
+        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Topbar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: D.text }}>The Last Lighthouse</span>
+              <span style={{ fontSize: 8, color: D.textDim }}>•</span>
+              <span style={{ fontSize: 9, color: D.textMuted }}>Overview</span>
+            </div>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <Pill active>42,380 words</Pill>
+              <MiniBtn>The Editor</MiniBtn>
+            </div>
+          </div>
+          {/* Cover + title */}
+          <div style={{ display: "flex", gap: 14 }}>
+            <div style={{ width: 64, height: 90, borderRadius: 8, background: `linear-gradient(145deg, rgba(124,92,252,0.12), ${D.surfaceAlt})`, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 750, color: D.text, letterSpacing: "-0.02em" }}>The Last Lighthouse</div>
+              <div style={{ fontSize: 9, color: D.textMuted, marginTop: 2 }}>by Michael Cromack</div>
+              <div style={{ fontSize: 8, color: D.textDim, marginTop: 6, lineHeight: 1.5 }}>A haunting tale of isolation and redemption set on the remote coast of Northern Scotland...</div>
+            </div>
+          </div>
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+            {[["Words", "42,380"], ["Chapters", "18"], ["Avg/ch", "2,354"], ["Pages", "~168"]].map(([l, v]) => (
+              <div key={l} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 750, color: D.text }}>{v}</div>
+                <div style={{ fontSize: 7, color: D.textDim, marginTop: 1 }}>{l}</div>
+              </div>
+            ))}
+          </div>
+          {/* Canon strip */}
+          <div style={{ padding: "8px 10px", borderRadius: 10, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <span style={{ fontSize: 9, fontWeight: 650, color: D.text }}>Canon</span>
+              <span style={{ fontSize: 8, color: D.textDim }}>5 characters • 4 locations • 6 lore</span>
+            </div>
+            <MiniBtn primary>Open Canon</MiniBtn>
+          </div>
+        </div>
+      </div>
+    </AppFrame>
   );
 }
 
 function ShowcaseSection() {
-  const SHOWCASES = [
+  const SHOWCASES: { pre: string; title: string; desc: string; details: string[]; color: string; preview: React.ReactNode }[] = [
     {
       pre: "PLOT SPINE",
       title: "Map your entire story before you write a word.",
       desc: "Pick a narrative arc \u2014 Hero\u2019s Journey, Three-Act, Save the Cat \u2014 and the AI builds story beats across all three acts, weaves in subplots, and tracks character arcs. Every chapter knows exactly where it sits in the bigger picture. No more \u2018writing into the dark\u2019.",
       details: ["Genre-aware arc picker", "Beats, subplots & character arcs", "Auto-links to your chapter plan", "Story Enhancer deepens emotional layers"],
       color: "#7c5cfc",
-      img: "/screenshots/plan.png?v=4",
+      preview: <PlotSpinePreview />,
     },
     {
       pre: "THE CANON",
@@ -278,7 +552,7 @@ function ShowcaseSection() {
       desc: "Build out characters with backstories, speech patterns, and secrets. Drop in locations with atmosphere and sensory detail. Set voice rules and lore. Every single AI generation reads your Canon first \u2014 so the prose never contradicts your world or forgets who your characters are.",
       details: ["Deep character profiles & voice", "Locations with sensory detail", "Lore, rules & worldbuilding", "AI-powered synopsis generation"],
       color: "#e2c87e",
-      img: "/screenshots/canon.png?v=4",
+      preview: <CanonPreview />,
     },
     {
       pre: "SCENE-BY-SCENE DRAFTING",
@@ -286,7 +560,7 @@ function ShowcaseSection() {
       desc: "Chapters split into focused scene blocs, each with its own synopsis, word target, and detailed instructions \u2014 opening lines, emotional arcs, sensory palettes, dialogue cues, tension levels. The AI doesn\u2019t guess. It follows your blueprint and writes prose that actually sounds human.",
       details: ["Writer\u2019s blueprint per scene", "Emotional arc & tension tracking", "Sensory palette guidance", "Anti-AI prose rules baked in"],
       color: "#6246ea",
-      img: "/screenshots/blocs.png?v=4",
+      preview: <BlocsPreview />,
     },
   ];
 
@@ -313,17 +587,15 @@ function ShowcaseSection() {
                 <h3 style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, margin: "14px 0 16px", color: C.text }}>{s.title}</h3>
                 <p style={{ fontSize: 16, lineHeight: 1.7, color: C.textSoft, margin: "0 0 28px" }}>{s.desc}</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {s.details.map((d) => (
-                    <div key={d} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {s.details.map((dd) => (
+                    <div key={dd} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: C.textSoft }}>{d}</span>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: C.textSoft }}>{dd}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div>
-                <ScreenFrame src={s.img} alt={s.pre} />
-              </div>
+              <div>{s.preview}</div>
             </div>
           ))}
         </div>
@@ -396,9 +668,7 @@ function NonFictionSection() {
 
         <div className="bw-feature-row" style={{ marginBottom: 64 }}>
           <div>
-            <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-              <img src="/screenshots/nonfiction.png?v=4" alt="Non-Fiction mode" style={{ width: "100%", height: "auto", display: "block" }} />
-            </div>
+            <NFPreview />
           </div>
           <div>
             <div className="bw-nf-grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
