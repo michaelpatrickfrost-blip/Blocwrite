@@ -251,13 +251,14 @@ function TrustBar() {
   );
 }
 
-/* ── Shared mini-preview primitives ── */
+/* ── Shared mini-preview primitives (matches actual app exactly) ── */
 const D = {
   bg: "#0c0c1d", sidebar: "#0a0a18", surface: "#14142e", surfaceAlt: "#1a1a3a",
-  border: "rgba(255,255,255,0.06)", borderLight: "rgba(255,255,255,0.04)",
-  accent: "#b8a4ff", accentDim: "rgba(124,92,252,0.06)", accentBorder: "rgba(124,92,252,0.14)",
+  border: "rgba(255,255,255,0.08)", borderLight: "rgba(255,255,255,0.04)",
+  accent: "#b8a4ff", accentMuted: "rgba(124,92,252,0.06)", accentBorder: "rgba(124,92,252,0.14)",
   grad: "linear-gradient(135deg, #7c5cfc 0%, #b8a4ff 100%)",
   text: "#e8e8f0", textMuted: "#9494a8", textDim: "#6a6a82",
+  sidebarText: "#7a7a96", sidebarTextActive: "#e8e8f0",
 };
 const Bar = ({ w, c, h = 4 }: { w: string; c?: string; h?: number }) => (
   <div style={{ height: h, borderRadius: h, background: "rgba(255,255,255,0.04)", width: "100%", overflow: "hidden" }}>
@@ -265,272 +266,288 @@ const Bar = ({ w, c, h = 4 }: { w: string; c?: string; h?: number }) => (
   </div>
 );
 const Pill = ({ children, active }: { children: string; active?: boolean }) => (
-  <span style={{ fontSize: 8, fontWeight: 600, padding: "2px 7px", borderRadius: 99, background: active ? D.accentDim : "transparent", border: `1px solid ${active ? D.accentBorder : D.border}`, color: active ? D.accent : D.textDim, whiteSpace: "nowrap" }}>{children}</span>
+  <span style={{ fontSize: 8, fontWeight: 600, padding: "2px 7px", borderRadius: 99, background: active ? D.accentMuted : "transparent", border: `1px solid ${active ? D.accentBorder : D.border}`, color: active ? D.accent : D.textDim, whiteSpace: "nowrap" }}>{children}</span>
 );
-const Swatch = ({ c }: { c: string }) => <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: c, flexShrink: 0 }} />;
+const Dot = ({ c }: { c: string }) => <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />;
 const MiniBtn = ({ children, primary }: { children: string; primary?: boolean }) => (
-  <span style={{ fontSize: 8, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: primary ? D.grad : D.surfaceAlt, color: primary ? "#fff" : D.textMuted, border: primary ? "none" : `1px solid ${D.border}`, whiteSpace: "nowrap" }}>{children}</span>
+  <span style={{ fontSize: 8, fontWeight: 600, padding: "4px 10px", borderRadius: 10, background: primary ? D.grad : D.surface, color: primary ? "#fff" : D.textMuted, border: primary ? "none" : `1px solid ${D.border}`, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}>{children}</span>
 );
-const AppFrame = ({ children }: { children: React.ReactNode }) => (
-  <div style={{ borderRadius: 14, overflow: "hidden", background: D.surface, border: `1px solid ${D.border}`, boxShadow: "0 20px 60px rgba(12,12,29,0.18), 0 4px 16px rgba(12,12,29,0.06)" }}>
+const AppWindow = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ borderRadius: 18, overflow: "hidden", background: D.surface, border: `1px solid ${D.border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04)" }}>
     {children}
   </div>
 );
-const SidebarNav = ({ items, active }: { items: string[]; active: number }) => (
-  <div style={{ width: 120, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "10px 6px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+const StudioSidebar = ({ chapters, activeIdx, showLogo }: { chapters: string[]; activeIdx: number; showLogo?: boolean }) => (
+  <div style={{ width: showLogo ? 150 : 130, background: D.sidebar, borderRight: `1px solid ${D.border}`, padding: "10px 8px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+    {showLogo && <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 14, width: "auto", opacity: 0.8, marginBottom: 10, padding: "0 4px" }} />}
+    <div style={{ fontSize: 8, padding: "3px 6px", borderRadius: 6, color: D.sidebarText, marginBottom: 6 }}>← Back to novels</div>
+    <div style={{ fontSize: 7.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: D.textDim, padding: "6px 6px 4px", marginBottom: 2 }}>Manuscript</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 1, flex: 1 }}>
+      {chapters.map((ch, i) => (
+        <div key={ch} style={{ fontSize: 9, fontWeight: i === activeIdx ? 600 : 500, padding: "5px 8px", borderRadius: 10, color: i === activeIdx ? D.accent : D.sidebarText, background: i === activeIdx ? D.accentMuted : "transparent", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.3 }}>{ch}</div>
+      ))}
+      <div style={{ fontSize: 9, padding: "5px 8px", color: D.sidebarText, marginTop: 2 }}>+ New chapter</div>
+    </div>
+    <div style={{ fontSize: 7, color: D.textDim, padding: "6px 6px 2px", borderTop: `1px solid ${D.borderLight}`, marginTop: 6 }}>{activeIdx >= 0 ? "Editing chapter" : "Novel overview"}</div>
+  </div>
+);
+const CanonNav = ({ items, active }: { items: string[]; active: number }) => (
+  <div style={{ width: 120, background: D.surfaceAlt, borderRight: `1px solid ${D.borderLight}`, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
     {items.map((label, i) => (
-      <div key={label} style={{ fontSize: 9, fontWeight: i === active ? 650 : 500, padding: "5px 8px", borderRadius: 8, color: i === active ? D.accent : D.textDim, background: i === active ? D.accentDim : "transparent", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+      <div key={label} style={{ fontSize: 9, fontWeight: i === active ? 650 : 500, padding: "6px 10px", borderRadius: 10, color: i === active ? D.accent : D.textMuted, background: i === active ? D.accentMuted : "transparent", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
     ))}
   </div>
 );
 
-/* ── Plot Spine Preview ── */
+/* ── Plot Spine Preview — matches Canon modal > Plot Spine tab ── */
 function PlotSpinePreview() {
   return (
-    <AppFrame>
-      <div style={{ display: "flex", minHeight: 280 }}>
-        <SidebarNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={5} />
-        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 12, borderBottom: `1px solid ${D.borderLight}`, paddingBottom: 8 }}>
+    <AppWindow>
+      {/* Modal header like the real Canon modal */}
+      <div style={{ padding: "10px 14px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: D.accent }}>Novel Overview</span>
+          <span style={{ fontSize: 11, fontWeight: 750, color: D.text }}>Canon</span>
+        </div>
+        <span style={{ width: 22, height: 22, borderRadius: 8, background: D.surface, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: D.textDim }}>×</span>
+      </div>
+      <div style={{ display: "flex", minHeight: 260 }}>
+        <CanonNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={5} />
+        <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Tab bar */}
+          <div style={{ display: "flex", gap: 14, borderBottom: `1px solid ${D.borderLight}`, paddingBottom: 6 }}>
             {["Overview", "Beats (12)", "Subplots (3)", "Arcs (4)"].map((t, i) => (
-              <span key={t} style={{ fontSize: 9, fontWeight: i === 0 ? 700 : 500, color: i === 0 ? D.accent : D.textDim, borderBottom: i === 0 ? `2px solid ${D.accent}` : "2px solid transparent", paddingBottom: 4 }}>{t}</span>
+              <span key={t} style={{ fontSize: 9, fontWeight: i === 1 ? 700 : 500, color: i === 1 ? D.accent : D.textDim, borderBottom: i === 1 ? `2px solid ${D.accent}` : "2px solid transparent", paddingBottom: 4 }}>{t}</span>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 12, border: `3px solid #22c55e`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 18, fontWeight: 800, color: "#22c55e" }}>87</span>
-            </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, justifyContent: "center" }}>
-              <span style={{ fontSize: 9, fontWeight: 600, color: D.textMuted }}>Spine Completeness</span>
-              <Bar w="87%" c="#22c55e" h={5} />
-              <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-                <span style={{ fontSize: 8, color: D.textDim }}>Act 1: 4 beats</span>
-                <span style={{ fontSize: 8, color: D.textDim }}>Act 2: 5 beats</span>
-                <span style={{ fontSize: 8, color: D.textDim }}>Act 3: 3 beats</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
-            <span style={{ fontSize: 8, fontWeight: 700, color: D.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Story Beats</span>
-            {[
-              { act: 1, title: "The Inciting Incident", tension: 2 },
-              { act: 1, title: "The First Threshold", tension: 3 },
-              { act: 2, title: "Rising Complications", tension: 4 },
-              { act: 2, title: "The Midpoint Reversal", tension: 5 },
-            ].map((b) => (
-              <div key={b.title} style={{ padding: "5px 8px", borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 7, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: D.accentDim, color: D.accent }}>ACT {b.act}</span>
-                <span style={{ fontSize: 9, fontWeight: 600, color: D.text, flex: 1 }}>{b.title}</span>
-                <div style={{ display: "flex", gap: 2 }}>
-                  {[1,2,3,4,5].map(n => <Swatch key={n} c={n <= b.tension ? "#f59e0b" : "rgba(255,255,255,0.08)"} />)}
+          {/* Beats list */}
+          {[
+            { act: 1, title: "The Ordinary World", desc: "Eleanor tends the lighthouse alone. Daily routine, isolation.", tension: 1 },
+            { act: 1, title: "The Inciting Incident", desc: "A stranger washes ashore during a storm.", tension: 3 },
+            { act: 2, title: "Rising Complications", desc: "Marcus refuses to explain who he is. Tension builds.", tension: 4 },
+            { act: 2, title: "The Midpoint Reversal", desc: "Eleanor discovers Marcus is running from the same people.", tension: 5 },
+            { act: 3, title: "The Climax", desc: "They must face the threat together or lose everything.", tension: 5 },
+          ].map((b) => (
+            <div key={b.title} style={{ padding: "7px 10px", borderRadius: 10, background: D.surface, border: `1px solid ${D.borderLight}`, display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 7, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: D.accentMuted, color: D.accent, border: `1px solid ${D.accentBorder}` }}>ACT {b.act}</span>
+                <span style={{ fontSize: 9.5, fontWeight: 600, color: D.text, flex: 1 }}>{b.title}</span>
+                <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                  {[1,2,3,4,5].map(n => <Dot key={n} c={n <= b.tension ? "#f59e0b" : "rgba(255,255,255,0.06)"} />)}
                 </div>
               </div>
-            ))}
-          </div>
+              <div style={{ fontSize: 8, color: D.textDim, lineHeight: 1.4, paddingLeft: 1 }}>{b.desc}</div>
+            </div>
+          ))}
         </div>
       </div>
-    </AppFrame>
+    </AppWindow>
   );
 }
 
-/* ── Canon Preview ── */
+/* ── Canon Preview — matches Canon modal > Characters ── */
 function CanonPreview() {
   return (
-    <AppFrame>
-      <div style={{ display: "flex", minHeight: 280 }}>
-        <SidebarNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={2} />
-        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+    <AppWindow>
+      <div style={{ padding: "10px 14px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: D.accent }}>Novel Overview</span>
+          <span style={{ fontSize: 11, fontWeight: 750, color: D.text }}>Canon</span>
+        </div>
+        <span style={{ width: 22, height: 22, borderRadius: 8, background: D.surface, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: D.textDim }}>×</span>
+      </div>
+      <div style={{ display: "flex", minHeight: 260 }}>
+        <CanonNav items={["Summary", "Style & Voice", "Characters", "Locations", "Worldbuilding", "Plot Spine", "Bolt-Ons"]} active={2} />
+        <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: D.text }}>Characters</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: D.text }}>Characters</div>
+              <div style={{ fontSize: 8, color: D.textDim, marginTop: 2 }}>Define who lives in your story. The AI reads these before every generation.</div>
+            </div>
             <MiniBtn primary>+ Add character</MiniBtn>
           </div>
           {[
-            { name: "Eleanor Voss", role: "Protagonist", col: "#7c5cfc" },
-            { name: "Marcus Reid", role: "Antagonist", col: "#ff6b6b" },
-            { name: "Dr. Sarah Chen", role: "Mentor", col: "#e2c87e" },
+            { name: "Eleanor Voss", role: "Protagonist — lighthouse keeper, stubborn, haunted by loss", col: "#7c5cfc" },
+            { name: "Marcus Reid", role: "Antagonist — mysterious stranger, dangerous past, charming", col: "#ff6b6b" },
+            { name: "Dr. Sarah Chen", role: "Supporting — Eleanor's only friend, marine biologist", col: "#e2c87e" },
           ].map((ch) => (
-            <div key={ch.name} style={{ padding: "8px 10px", borderRadius: 10, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${ch.col}18`, border: `1px solid ${ch.col}33`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: ch.col }}>{ch.name[0]}</span>
+            <div key={ch.name} style={{ padding: "10px 12px", borderRadius: 12, background: D.surface, border: `1px solid ${D.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: `${ch.col}12`, border: `1px solid ${ch.col}28`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: ch.col }}>{ch.name[0]}</span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 650, color: D.text }}>{ch.name}</div>
-                <div style={{ fontSize: 8, color: D.textDim, marginTop: 1 }}>{ch.role}</div>
-                <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
-                  {["Backstory", "Voice", "Secrets"].map(tag => (
-                    <span key={tag} style={{ fontSize: 7, padding: "1px 5px", borderRadius: 4, background: D.accentDim, color: D.accent, border: `1px solid ${D.accentBorder}` }}>{tag}</span>
+                <div style={{ fontSize: 10.5, fontWeight: 650, color: D.text }}>{ch.name}</div>
+                <div style={{ fontSize: 8, color: D.textDim, marginTop: 2, lineHeight: 1.4 }}>{ch.role}</div>
+                <div style={{ display: "flex", gap: 3, marginTop: 5, flexWrap: "wrap" }}>
+                  {["Backstory", "Voice", "Secrets", "Relationships"].map(tag => (
+                    <span key={tag} style={{ fontSize: 7, padding: "2px 6px", borderRadius: 6, background: D.accentMuted, color: D.accent, border: `1px solid ${D.accentBorder}` }}>{tag}</span>
                   ))}
                 </div>
               </div>
             </div>
           ))}
-          <div style={{ fontSize: 8, color: D.textDim, textAlign: "center", marginTop: 2 }}>3 characters • 4 locations • 6 lore entries</div>
         </div>
       </div>
-    </AppFrame>
+    </AppWindow>
   );
 }
 
-/* ── Blocs Preview ── */
+/* ── Blocs Preview — matches chapter editor with scene blocks ── */
 function BlocsPreview() {
   return (
-    <AppFrame>
-      <div style={{ display: "flex", minHeight: 280 }}>
-        {/* Mini sidebar with chapter numbers */}
-        <div style={{ width: 44, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "10px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-          {[1,2,3,4,5,6].map(n => (
-            <div key={n} style={{ width: 26, height: 26, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: n === 3 ? 700 : 500, color: n === 3 ? D.accent : D.textDim, background: n === 3 ? D.accentDim : "transparent" }}>{n}</div>
-          ))}
-        </div>
-        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 14, fontWeight: 750, color: D.text, letterSpacing: "-0.02em" }}>Chapter 3: The Crossing</span>
+    <AppWindow>
+      <div style={{ display: "flex", minHeight: 300 }}>
+        <StudioSidebar chapters={["The Beginning", "First Steps", "The Crossing", "Revelations", "The Storm", "Resolution"]} activeIdx={2} showLogo />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          {/* Topbar */}
+          <div style={{ padding: "8px 14px", borderBottom: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: D.text }}>The Last Lighthouse</span>
+              <Dot c={D.textDim} />
+              <span style={{ fontSize: 9, color: D.textMuted }}>Chapter 3</span>
+            </div>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <Pill active>2,340 words</Pill>
+              <MiniBtn>The Editor</MiniBtn>
+            </div>
           </div>
-          {/* Scene blocks */}
-          {[
-            { num: 1, synopsis: "Eleanor arrives at the abandoned station. Rain hammers the platform.", words: "800", tension: 3 },
-            { num: 2, synopsis: "A confrontation with Marcus under the bridge. Dialogue-heavy, rising tension.", words: "600", tension: 4 },
-          ].map(sc => (
-            <div key={sc.num} style={{ borderRadius: 12, border: `1px solid ${D.border}`, background: D.surface, overflow: "hidden" }}>
-              <div style={{ padding: "6px 10px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: D.textMuted }}>Scene {sc.num}</span>
-                <div style={{ display: "flex", gap: 2 }}>
-                  {[1,2,3,4,5].map(n => <Swatch key={n} c={n <= sc.tension ? "#f59e0b" : "rgba(255,255,255,0.08)"} />)}
+          {/* Editor area */}
+          <div style={{ flex: 1, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, overflow: "hidden" }}>
+            <div style={{ fontSize: 16, fontWeight: 750, color: D.text, letterSpacing: "-0.03em" }}>The Crossing</div>
+            <div style={{ fontSize: 8, color: D.textDim, padding: "4px 8px", background: D.surfaceAlt, borderRadius: 6, border: `1px solid ${D.borderLight}` }}>Eleanor confronts Marcus on the bridge. A storm is closing in.</div>
+            {/* Scene blocks */}
+            {[
+              { num: 1, synopsis: "Eleanor arrives at the abandoned station. Rain hammers the platform. She waits.", words: "800", tension: 3, hasBp: true },
+              { num: 2, synopsis: "A confrontation with Marcus under the bridge. Dialogue-heavy, rising tension.", words: "600", tension: 4, hasBp: false },
+            ].map(sc => (
+              <div key={sc.num} style={{ borderRadius: 12, border: `1px solid ${D.border}`, background: D.surface, overflow: "hidden" }}>
+                <div style={{ padding: "5px 10px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 7.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: D.textMuted }}>Scene {sc.num}</span>
+                  <div style={{ display: "flex", gap: 2 }}>{[1,2,3,4,5].map(n => <Dot key={n} c={n <= sc.tension ? "#f59e0b" : "rgba(255,255,255,0.06)"} />)}</div>
                 </div>
-              </div>
-              <div style={{ padding: "8px 10px" }}>
-                <div style={{ fontSize: 9, color: D.textMuted, lineHeight: 1.5, marginBottom: 8 }}>{sc.synopsis}</div>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  {["Best Fit", "400", "600", "800", "1000"].map((w) => (
-                    <Pill key={w} active={w === sc.words}>{w}</Pill>
-                  ))}
-                  <span style={{ marginLeft: "auto" }}><MiniBtn>Blueprint ▾</MiniBtn></span>
-                </div>
-              </div>
-              {sc.num === 1 && (
-                <div style={{ margin: "0 10px 8px", padding: "6px 8px", borderRadius: 8, background: "rgba(124,92,252,0.03)", border: `1px solid rgba(124,92,252,0.08)` }}>
-                  <div style={{ fontSize: 7, fontWeight: 700, color: D.accent, textTransform: "uppercase", marginBottom: 4, letterSpacing: "0.06em" }}>Blueprint</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 12px" }}>
-                    {[
-                      ["Opening", "Rain on empty tracks..."],
-                      ["Emotion", "Isolation → cautious hope"],
-                      ["Senses", "Diesel, wet concrete, echo"],
-                      ["Closing", "A light flickers on..."],
-                    ].map(([label, val]) => (
-                      <div key={label} style={{ fontSize: 7, color: D.textDim }}>
-                        <span style={{ color: D.textMuted, fontWeight: 600 }}>{label}: </span>{val}
-                      </div>
-                    ))}
+                <div style={{ padding: "7px 10px" }}>
+                  <div style={{ fontSize: 9, color: D.textMuted, lineHeight: 1.5, marginBottom: 6 }}>{sc.synopsis}</div>
+                  <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                    {["Best Fit", "400", "600", "800", "1000"].map((w) => <Pill key={w} active={w === sc.words}>{w}</Pill>)}
+                    <span style={{ marginLeft: "auto" }}><MiniBtn primary>✦ Generate</MiniBtn></span>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
-            <MiniBtn primary>✦ Generate prose</MiniBtn>
+                {sc.hasBp && (
+                  <div style={{ margin: "0 10px 7px", padding: "6px 8px", borderRadius: 8, background: "rgba(124,92,252,0.03)", border: "1px solid rgba(124,92,252,0.08)" }}>
+                    <div style={{ fontSize: 7, fontWeight: 700, color: D.accent, textTransform: "uppercase", marginBottom: 3, letterSpacing: "0.06em" }}>Blueprint</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px" }}>
+                      {[["Opening", "Rain on empty tracks..."], ["Emotion", "Isolation → cautious hope"], ["Senses", "Diesel, wet concrete, echo"], ["Closing", "A light flickers on..."]].map(([l, v]) => (
+                        <div key={l} style={{ fontSize: 7, color: D.textDim }}><span style={{ color: D.textMuted, fontWeight: 600 }}>{l}: </span>{v}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
-    </AppFrame>
+    </AppWindow>
   );
 }
 
-/* ── Non-Fiction Preview ── */
+/* ── Non-Fiction Preview — matches Canon modal > Life Interview ── */
 function NFPreview() {
   return (
-    <AppFrame>
+    <AppWindow>
+      <div style={{ padding: "10px 14px", background: D.surfaceAlt, borderBottom: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#e2c87e" }}>Biography</span>
+          <span style={{ fontSize: 11, fontWeight: 750, color: D.text }}>Canon</span>
+        </div>
+        <span style={{ width: 22, height: 22, borderRadius: 8, background: D.surface, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: D.textDim }}>×</span>
+      </div>
       <div style={{ display: "flex", minHeight: 260 }}>
-        <SidebarNav items={["Summary", "Style & Voice", "Life Interview", "Life Events", "Scrapbook", "Story Board"]} active={2} />
-        <div style={{ flex: 1, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <CanonNav items={["Summary", "Style & Voice", "Life Interview", "Life Events", "Scrapbook", "Story Board"]} active={2} />
+        <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: D.text }}>Life Interview</span>
-            <span style={{ fontSize: 7, fontWeight: 700, padding: "1px 6px", borderRadius: 99, background: "rgba(226,200,126,0.1)", color: "#e2c87e", border: "1px solid rgba(226,200,126,0.2)" }}>Phase 2: Deep Dive</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: D.text }}>Life Interview</span>
+            <span style={{ fontSize: 7, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "rgba(226,200,126,0.1)", color: "#e2c87e", border: "1px solid rgba(226,200,126,0.2)" }}>Phase 2: Deep Dive</span>
           </div>
           {[
             { role: "ai", text: "Tell me about a moment that changed how you see yourself. What happened, and who was there?" },
-            { role: "user", text: "It was the summer of 1994, in my grandmother's garden. She told me I reminded her of my grandfather — someone I'd never met." },
-            { role: "ai", text: "That's a powerful connection across generations. What did it feel like to hear that? And what did you know about your grandfather at that point?" },
+            { role: "user", text: "It was the summer of 1994, in my grandmother\u2019s garden. She told me I reminded her of my grandfather \u2014 someone I\u2019d never met." },
+            { role: "ai", text: "That\u2019s a powerful connection across generations. What did it feel like to hear that? And what did you know about your grandfather at that point?" },
           ].map((msg, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: msg.role === "user" ? "flex-end" : "flex-start", flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: msg.role === "ai" ? "rgba(226,200,126,0.1)" : D.accentDim, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: msg.role === "ai" ? "#e2c87e" : D.accent }}>{msg.role === "ai" ? "AI" : "Y"}</span>
+            <div key={i} style={{ display: "flex", gap: 8, flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
+              <div style={{ width: 22, height: 22, borderRadius: 8, background: msg.role === "ai" ? "rgba(226,200,126,0.08)" : D.accentMuted, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: msg.role === "ai" ? "#e2c87e" : D.accent }}>{msg.role === "ai" ? "AI" : "Y"}</span>
               </div>
-              <div style={{
-                maxWidth: "80%", padding: "6px 9px", borderRadius: 8, fontSize: 8, lineHeight: 1.5,
-                background: msg.role === "user" ? D.accentDim : D.surfaceAlt,
-                color: D.text, border: `1px solid ${msg.role === "user" ? D.accentBorder : D.borderLight}`,
-              }}>{msg.text}</div>
+              <div style={{ maxWidth: "78%", padding: "7px 10px", borderRadius: 10, fontSize: 8.5, lineHeight: 1.5, background: msg.role === "user" ? D.accentMuted : D.surface, color: D.text, border: `1px solid ${msg.role === "user" ? D.accentBorder : D.borderLight}` }}>{msg.text}</div>
             </div>
           ))}
           <div style={{ borderTop: `1px solid ${D.borderLight}`, paddingTop: 6, marginTop: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-            <div style={{ flex: 1, height: 26, borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", padding: "0 8px" }}>
+            <div style={{ flex: 1, height: 28, borderRadius: 10, background: D.surface, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", padding: "0 10px" }}>
               <span style={{ fontSize: 8, color: D.textDim }}>Share a memory or answer the question...</span>
             </div>
             <MiniBtn primary>Send</MiniBtn>
           </div>
         </div>
       </div>
-    </AppFrame>
+    </AppWindow>
   );
 }
 
-/* ── Hero App Preview ── */
+/* ── Hero App Preview — matches the full studio overview ── */
 function HeroAppPreview() {
   return (
-    <AppFrame>
-      <div style={{ display: "flex", minHeight: 300 }}>
-        {/* Sidebar */}
-        <div style={{ width: 130, background: D.sidebar, borderRight: `1px solid ${D.borderLight}`, padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: D.accent, marginBottom: 6, padding: "0 4px", letterSpacing: "-0.02em" }}>Blocwrite</div>
-          <div style={{ fontSize: 7, fontWeight: 700, color: D.textDim, textTransform: "uppercase", letterSpacing: "0.1em", padding: "4px 4px 2px", marginTop: 4 }}>Manuscript</div>
-          {["1. The Beginning", "2. First Steps", "3. The Crossing", "4. Revelations", "5. The Storm", "6. Resolution"].map((ch, i) => (
-            <div key={ch} style={{ fontSize: 8, padding: "4px 6px", borderRadius: 6, color: i === 0 ? D.accent : D.textDim, background: i === 0 ? D.accentDim : "transparent", fontWeight: i === 0 ? 650 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ch}</div>
-          ))}
-          <div style={{ marginTop: "auto", fontSize: 7, color: D.textDim, padding: "6px 4px 0", borderTop: `1px solid ${D.borderLight}` }}>Novel overview</div>
+    <div style={{ display: "flex", minHeight: 320, background: D.surface }}>
+      <StudioSidebar chapters={["The Beginning", "First Steps", "The Crossing", "Revelations", "The Storm", "Resolution"]} activeIdx={-1} showLogo />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        {/* Topbar */}
+        <div style={{ padding: "8px 16px", borderBottom: `1px solid ${D.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: D.text }}>The Last Lighthouse</span>
+            <Dot c={D.textDim} />
+            <span style={{ fontSize: 9, color: D.textMuted }}>Overview</span>
+          </div>
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <Pill active>42,380 words</Pill>
+            <MiniBtn>The Editor</MiniBtn>
+          </div>
         </div>
-        {/* Main area */}
-        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* Topbar */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: D.text }}>The Last Lighthouse</span>
-              <span style={{ fontSize: 8, color: D.textDim }}>•</span>
-              <span style={{ fontSize: 9, color: D.textMuted }}>Overview</span>
-            </div>
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <Pill active>42,380 words</Pill>
-              <MiniBtn>The Editor</MiniBtn>
-            </div>
-          </div>
-          {/* Cover + title */}
-          <div style={{ display: "flex", gap: 14 }}>
-            <div style={{ width: 64, height: 90, borderRadius: 8, background: `linear-gradient(145deg, rgba(124,92,252,0.12), ${D.surfaceAlt})`, flexShrink: 0 }} />
+        {/* Overview area */}
+        <div style={{ flex: 1, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Cover + title row */}
+          <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ width: 70, height: 100, borderRadius: 10, background: `linear-gradient(145deg, rgba(124,92,252,0.12), ${D.surfaceAlt})`, border: `1px solid ${D.borderLight}`, flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 750, color: D.text, letterSpacing: "-0.02em" }}>The Last Lighthouse</div>
-              <div style={{ fontSize: 9, color: D.textMuted, marginTop: 2 }}>by Michael Cromack</div>
-              <div style={{ fontSize: 8, color: D.textDim, marginTop: 6, lineHeight: 1.5 }}>A haunting tale of isolation and redemption set on the remote coast of Northern Scotland...</div>
+              <div style={{ fontSize: 18, fontWeight: 750, color: D.text, letterSpacing: "-0.03em" }}>The Last Lighthouse</div>
+              <div style={{ fontSize: 9, color: D.textMuted, marginTop: 3 }}>by Michael Cromack</div>
+              <div style={{ fontSize: 8.5, color: D.textDim, marginTop: 6, lineHeight: 1.5, padding: "5px 8px", borderRadius: 8, border: `1px solid ${D.borderLight}`, background: D.surface }}>A haunting tale of isolation and redemption set on the remote coast of Northern Scotland. When a stranger arrives during a storm, Eleanor must decide whether to trust again.</div>
             </div>
           </div>
-          {/* Stats row */}
-          <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+          {/* Stats */}
+          <div style={{ display: "flex", gap: 6 }}>
             {[["Words", "42,380"], ["Chapters", "18"], ["Avg/ch", "2,354"], ["Pages", "~168"]].map(([l, v]) => (
-              <div key={l} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, textAlign: "center" }}>
-                <div style={{ fontSize: 12, fontWeight: 750, color: D.text }}>{v}</div>
-                <div style={{ fontSize: 7, color: D.textDim, marginTop: 1 }}>{l}</div>
+              <div key={l} style={{ flex: 1, padding: "7px 8px", borderRadius: 10, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, textAlign: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 750, color: D.text }}>{v}</div>
+                <div style={{ fontSize: 7, color: D.textDim, marginTop: 2 }}>{l}</div>
               </div>
             ))}
           </div>
-          {/* Canon strip */}
-          <div style={{ padding: "8px 10px", borderRadius: 10, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <span style={{ fontSize: 9, fontWeight: 650, color: D.text }}>Canon</span>
-              <span style={{ fontSize: 8, color: D.textDim }}>5 characters • 4 locations • 6 lore</span>
+          {/* Canon card */}
+          <div style={{ padding: "10px 12px", borderRadius: 12, background: D.surfaceAlt, border: `1px solid ${D.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 650, color: D.text }}>Canon</div>
+              <div style={{ fontSize: 8, color: D.textDim, marginTop: 2 }}>5 characters • 4 locations • 6 lore entries</div>
             </div>
             <MiniBtn primary>Open Canon</MiniBtn>
           </div>
+          {/* Word goal */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 8, color: D.textDim, flexShrink: 0 }}>Word goal</span>
+            <Bar w="53%" h={5} />
+            <span style={{ fontSize: 8, color: D.accent, fontWeight: 600, flexShrink: 0 }}>42,380 / 80,000</span>
+          </div>
         </div>
       </div>
-    </AppFrame>
+    </div>
   );
 }
 
