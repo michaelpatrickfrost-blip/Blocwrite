@@ -296,7 +296,7 @@ export function ProfilePopup({
     setModelsError(null);
     try {
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 45000);
 
       const res = await fetch("/api/openrouter/models", {
         method: "GET",

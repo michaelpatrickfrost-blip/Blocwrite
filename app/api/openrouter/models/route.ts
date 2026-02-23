@@ -30,7 +30,7 @@ const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   lmstudio: "http://127.0.0.1:1234/v1",
   huggingface: "https://router.huggingface.co/v1",
 };
-const MODELS_TIMEOUT_MS = 15000;
+const MODELS_TIMEOUT_MS = 40000;
 
 function providerLabel(provider: ProviderId) {
   return provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : "LM Studio";
