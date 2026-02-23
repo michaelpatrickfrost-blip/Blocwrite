@@ -203,10 +203,8 @@ function Hero() {
           </a>
         </div>
 
-        {/* App preview — actual screenshot */}
-        <div className="bw-hero-mockup-wrap" style={{ marginTop: 72, position: "relative", maxWidth: 900, margin: "72px auto 0" }}>
-          <HeroAppPreview />
-        </div>
+        {/* spacer after hero text */}
+        <div style={{ height: 40 }} />
       </div>
     </section>
   );
@@ -262,13 +260,6 @@ function NFPreview() {
   return <ScreenshotPreview src="/previews/non-fiction.png" alt="Blocwrite Non-Fiction — Life Events for biography and memoir" />;
 }
 
-function HeroAppPreview() {
-  return (
-    <div style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 20px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)", maxWidth: 900 }}>
-      <img src="/previews/studio-overview.png" alt="Blocwrite Studio — novel overview with Canon and Dashboard" style={{ width: "100%", height: "auto", display: "block" }} />
-    </div>
-  );
-}
 
 function ShowcaseSection() {
   const SHOWCASES: { pre: string; title: string; desc: string; details: string[]; color: string; preview: React.ReactNode }[] = [
