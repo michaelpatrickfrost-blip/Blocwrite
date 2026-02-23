@@ -1268,6 +1268,9 @@ function NovelWorkspacePage() {
   const [spineSuggestedChars, setSpineSuggestedChars] = useState<Array<{ name: string; role: string; logline: string }> | null>(null);
   const [spineArcChoice, setSpineArcChoice] = useState<string | null>(null);
   const [spineShowArcPicker, setSpineShowArcPicker] = useState(false);
+  const [spineArcPickerAnalyzing, setSpineArcPickerAnalyzing] = useState(false);
+  const [spineArcAiRankedIds, setSpineArcAiRankedIds] = useState<string[] | null>(null);
+  const [spineArcAiRationale, setSpineArcAiRationale] = useState<string | null>(null);
   const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
   const [sessionElapsed, setSessionElapsed] = useState(0);
 
@@ -15732,6 +15735,18 @@ function NovelWorkspacePage() {
                         if (b.genreScore !== a.genreScore) return b.genreScore - a.genreScore;
                         return a.name.localeCompare(b.name);
                       });
+                      const displayedArcOptions = (() => {
+                        if (!spineArcAiRankedIds || spineArcAiRankedIds.length === 0) return STORY_ARC_OPTIONS;
+                        const rank = new Map(spineArcAiRankedIds.map((id, idx) => [id, idx]));
+                        return [...STORY_ARC_OPTIONS].sort((a, b) => {
+                          const ar = rank.has(a.id) ? (rank.get(a.id) as number) : 999;
+                          const br = rank.has(b.id) ? (rank.get(b.id) as number) : 999;
+                          if (ar !== br) return ar - br;
+                          if (b.genreScore !== a.genreScore) return b.genreScore - a.genreScore;
+                          return a.name.localeCompare(b.name);
+                        });
+                      })();
+                      const aiTopArcId = spineArcAiRankedIds?.[0] ?? null;
                       const topMatchCount = STORY_ARC_OPTIONS[0]?.genreScore ?? 0;
 
                       return (
@@ -15747,10 +15762,39 @@ function NovelWorkspacePage() {
                                   type="button"
                                   className="btn btn-primary"
                                   disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())}
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const top = STORY_ARC_OPTIONS[0];
                                     setSpineArcChoice(top && top.genreScore > 0 ? top.id : null);
+                                    setSpineArcAiRationale(null);
+                                    setSpineArcAiRankedIds(null);
                                     setSpineShowArcPicker(true);
+                                    setSpineArcPickerAnalyzing(true);
+                                    try {
+                                      const optionsList = STORY_ARC_OPTIONS.map((arc) => `${arc.id}: ${arc.name} [genres: ${arc.genres.join(", ")}] — ${arc.hint.slice(0, 120)}`).join("\n");
+                                      const aiPickPrompt = [
+                                        "Pick the best story arc preset for this novel's genre and premise.",
+                                        `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
+                                        `Synopsis: ${(novel.storyBible.summary?.synopsisShort || "").slice(0, 900)}`,
+                                        "",
+                                        "Available arc presets (pick from these IDs only):",
+                                        optionsList,
+                                        "",
+                                        'Return JSON: { "recommendedArcId": "one-id", "rankedArcIds": ["id1","id2","id3"], "rationale": "1 short sentence" }',
+                                        "Use only IDs listed above.",
+                                      ].join("\n");
+                                      const aiPick = await requestOpenRouterJson<{ recommendedArcId?: string; rankedArcIds?: string[]; rationale?: string }>(
+                                        aiPickPrompt,
+                                        600,
+                                        { timeoutMs: 90000, systemMessage: "Story structure strategist. Pick genre-appropriate arc presets. Return valid JSON only." },
+                                      );
+                                      const validIds = new Set(STORY_ARC_OPTIONS.map((arc) => arc.id));
+                                      const ranked = (aiPick?.rankedArcIds ?? []).filter((id) => validIds.has(id));
+                                      const recId = aiPick?.recommendedArcId && validIds.has(aiPick.recommendedArcId) ? aiPick.recommendedArcId : ranked[0];
+                                      if (ranked.length > 0) setSpineArcAiRankedIds(ranked);
+                                      if (recId) setSpineArcChoice(recId);
+                                      if (aiPick?.rationale?.trim()) setSpineArcAiRationale(aiPick.rationale.trim().slice(0, 180));
+                                    } catch { /* fallback to weighted static ranking */ }
+                                    finally { setSpineArcPickerAnalyzing(false); }
                                   }}
                                 >
                                   ✦ Build Full Spine
@@ -15896,10 +15940,21 @@ function NovelWorkspacePage() {
                             <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
                               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
                               <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick a narrative shape for your story, or describe your own. This guides how the AI builds your beats, subplots, and characters.</p>
+                              {spineArcPickerAnalyzing && (
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>
+                                  Analysing genre + synopsis to rank arc presets...
+                                </p>
+                              )}
+                              {spineArcAiRationale && (
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>
+                                  AI arc pick: {spineArcAiRationale}
+                                </p>
+                              )}
                               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                                {STORY_ARC_OPTIONS.map(arc => {
+                                {displayedArcOptions.map(arc => {
                                   const genreMatch = arc.genreScore;
-                                  const isRecommended = genreMatch > 0 && genreMatch >= topMatchCount;
+                                  const isAiTop = aiTopArcId === arc.id;
+                                  const isRecommended = isAiTop || (genreMatch > 0 && genreMatch >= topMatchCount);
                                   return (
                                   <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
                                     style={{
@@ -15910,7 +15965,11 @@ function NovelWorkspacePage() {
                                     }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                       <span style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</span>
-                                      {isRecommended && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>}
+                                      {isAiTop
+                                        ? <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.18)", color: "var(--pw-accent)", textTransform: "uppercase" }}>AI Pick</span>
+                                        : isRecommended
+                                          ? <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>
+                                          : null}
                                     </div>
                                     <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{arc.hint}</div>
                                   </button>);
@@ -16272,7 +16331,7 @@ function NovelWorkspacePage() {
                                   }
                                   setSpineBusy(false); setSpineProgress("");
                                 }}>Build Spine</button>
-                                <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); }}>Cancel</button>
+                                <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); setSpineArcPickerAnalyzing(false); setSpineArcAiRankedIds(null); setSpineArcAiRationale(null); }}>Cancel</button>
                               </div>
                               <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>Builds your story in 3 phases — beats, subplots, and character arcs. Takes 30-60 seconds. Each phase saves automatically, so if anything fails your progress is kept.</p>
                             </div>
