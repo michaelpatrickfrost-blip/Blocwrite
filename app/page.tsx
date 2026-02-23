@@ -235,301 +235,239 @@ function TrustBar() {
   );
 }
 
-/* ── Premium static UI illustrations ── */
-const P = { bg: "#0e0e24", card: "#161636", card2: "#1c1c42", border: "rgba(124,92,252,0.12)", glow: "rgba(124,92,252,0.06)", text: "#e8e6f4", dim: "#68678a", muted: "#4a4970", accent: "#7c5cfc", gold: "#e2c87e", green: "#34d399", red: "#ef4444", orange: "#fb923c", cyan: "#22d3ee" };
-
-function Shell({ accent, children }: { accent: string; children: React.ReactNode }) {
-  return (
-    <div style={{ background: P.bg, borderRadius: 20, overflow: "hidden", maxWidth: 480, width: "100%", border: `1px solid ${P.border}`, boxShadow: `0 24px 64px rgba(0,0,0,0.5), 0 0 80px ${accent}11, inset 0 1px 0 rgba(255,255,255,0.04)` }}>
-      {children}
-    </div>
-  );
-}
+/* ── Conceptual feature illustrations ── */
 
 function PlotSpinePreview() {
-  const beats = [
-    { act: "I", label: "The Ordinary World", detail: "Elena teaches at the university. Routine. Safe.", ch: "1–2", color: P.cyan },
-    { act: "I", label: "Inciting Incident", detail: "A letter arrives from her missing father.", ch: "3", color: P.cyan },
-    { act: "II", label: "Rising Complications", detail: "She traces the letter to a coastal town. Allies and enemies emerge.", ch: "4–8", color: P.gold },
-    { act: "II", label: "Midpoint Reversal", detail: "Her father is alive — but doesn't want to be found.", ch: "9", color: P.gold },
-    { act: "II", label: "Crisis Point", detail: "Betrayal. The ally she trusted is working against her.", ch: "10–12", color: P.orange },
-    { act: "III", label: "Climax", detail: "Confrontation at the lighthouse. Everything comes to light.", ch: "13–14", color: P.red },
-    { act: "III", label: "Resolution", detail: "Elena chooses her own truth. A new beginning.", ch: "15", color: P.green },
-  ];
   return (
-    <Shell accent={P.accent}>
-      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.accent, boxShadow: `0 0 8px ${P.accent}` }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: P.text, letterSpacing: "0.04em" }}>Plot Spine</span>
-        </div>
-        <span style={{ fontSize: 10, color: P.accent, background: `${P.accent}14`, padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>Three-Act Structure</span>
-      </div>
-      {/* Tension curve */}
-      <div style={{ padding: "14px 22px 6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>TENSION</span>
-          <div style={{ display: "flex", gap: 12 }}>
-            {["Act I", "Act II", "Act III"].map((a, i) => (
-              <span key={a} style={{ fontSize: 9, fontWeight: 600, color: [P.cyan, P.gold, P.red][i], letterSpacing: "0.06em" }}>{a}</span>
+    <div style={{ maxWidth: 440, width: "100%", position: "relative", padding: "30px 0" }}>
+      {/* Main arc SVG */}
+      <svg viewBox="0 0 400 200" style={{ width: "100%", height: "auto", display: "block" }}>
+        <defs>
+          <linearGradient id="spineGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.6"/>
+            <stop offset="40%" stopColor="#7c5cfc" stopOpacity="0.8"/>
+            <stop offset="70%" stopColor="#e2c87e" stopOpacity="0.8"/>
+            <stop offset="100%" stopColor="#34d399" stopOpacity="0.6"/>
+          </linearGradient>
+          <linearGradient id="spineFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7c5cfc" stopOpacity="0.12"/>
+            <stop offset="100%" stopColor="#7c5cfc" stopOpacity="0"/>
+          </linearGradient>
+          <filter id="glow1"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        {/* Fill under curve */}
+        <path d="M20,160 C60,150 100,120 150,90 C190,65 210,40 240,25 C270,12 290,18 310,30 C340,48 360,100 380,140 L380,180 L20,180Z" fill="url(#spineFill)" />
+        {/* Main curve */}
+        <path d="M20,160 C60,150 100,120 150,90 C190,65 210,40 240,25 C270,12 290,18 310,30 C340,48 360,100 380,140" fill="none" stroke="url(#spineGrad)" strokeWidth="3" strokeLinecap="round" />
+        {/* Act dividers */}
+        <line x1="133" y1="20" x2="133" y2="180" stroke="#7c5cfc" strokeWidth="1" strokeDasharray="4 4" opacity="0.2" />
+        <line x1="280" y1="20" x2="280" y2="180" stroke="#7c5cfc" strokeWidth="1" strokeDasharray="4 4" opacity="0.2" />
+        {/* Act labels */}
+        <text x="76" y="16" fill="#22d3ee" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="system-ui" letterSpacing="0.1em">ACT I</text>
+        <text x="206" y="16" fill="#e2c87e" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="system-ui" letterSpacing="0.1em">ACT II</text>
+        <text x="340" y="16" fill="#ef4444" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="system-ui" letterSpacing="0.1em">ACT III</text>
+        {/* Beat nodes with labels */}
+        {[
+          { cx: 50, cy: 155, label: "Setup", c: "#22d3ee" },
+          { cx: 120, cy: 105, label: "Inciting\nIncident", c: "#22d3ee" },
+          { cx: 180, cy: 68, label: "Rising\nAction", c: "#7c5cfc" },
+          { cx: 240, cy: 25, label: "Midpoint", c: "#e2c87e" },
+          { cx: 310, cy: 30, label: "Crisis", c: "#fb923c" },
+          { cx: 350, cy: 75, label: "Climax", c: "#ef4444" },
+          { cx: 380, cy: 140, label: "Resolution", c: "#34d399" },
+        ].map((b, i) => (
+          <g key={i}>
+            <circle cx={b.cx} cy={b.cy} r="7" fill={b.c} opacity="0.15" />
+            <circle cx={b.cx} cy={b.cy} r="4" fill={b.c} filter="url(#glow1)" />
+            {b.label.split("\n").map((line, li) => (
+              <text key={li} x={b.cx} y={b.cy + 16 + li * 11} fill="#b0aed0" fontSize="8" textAnchor="middle" fontFamily="system-ui" fontWeight="500">{line}</text>
             ))}
+          </g>
+        ))}
+        {/* Connecting subplot lines */}
+        <path d="M120,105 Q160,130 180,125 Q220,115 260,110" fill="none" stroke="#e2c87e" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.35" />
+        <path d="M180,68 Q240,80 310,85" fill="none" stroke="#fb923c" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.3" />
+      </svg>
+      {/* Floating cards */}
+      <div style={{ position: "absolute", top: 10, right: 0, background: "#161636", borderRadius: 12, padding: "10px 14px", border: "1px solid rgba(124,92,252,0.15)", boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: "#7c5cfc", letterSpacing: "0.1em", marginBottom: 6 }}>SUBPLOTS</div>
+        {["Romance arc", "Hidden identity", "Ticking clock"].map((s, i) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+            <div style={{ width: 5, height: 5, borderRadius: "50%", background: ["#e2c87e", "#fb923c", "#ef4444"][i] }} />
+            <span style={{ fontSize: 10, color: "#a09ec0" }}>{s}</span>
           </div>
-        </div>
-        <svg viewBox="0 0 420 70" style={{ width: "100%", height: 52, display: "block" }}>
-          <defs>
-            <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={P.accent} stopOpacity="0.25"/><stop offset="100%" stopColor={P.accent} stopOpacity="0"/></linearGradient>
-          </defs>
-          <path d="M0,60 C30,58 60,55 100,48 C140,40 160,32 200,20 C220,14 240,8 260,6 C280,10 300,16 330,12 C350,10 370,30 400,52 L420,60 L420,70 L0,70Z" fill="url(#tg)" />
-          <path d="M0,60 C30,58 60,55 100,48 C140,40 160,32 200,20 C220,14 240,8 260,6 C280,10 300,16 330,12 C350,10 370,30 400,52" fill="none" stroke={P.accent} strokeWidth="2" strokeLinecap="round" />
-          {/* Beat dots on curve */}
-          {[[42,52],[100,48],[200,20],[260,6],[330,12],[370,25],[405,50]].map(([cx,cy],i) => (
-            <circle key={i} cx={cx} cy={cy} r="4" fill={beats[i].color} stroke={P.bg} strokeWidth="2" />
-          ))}
-        </svg>
+        ))}
       </div>
-      {/* Beats list */}
-      <div style={{ padding: "4px 22px 18px" }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>STORY BEATS</span>
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 0 }}>
-          {beats.map((b, i) => (
-            <div key={i} style={{ display: "flex", gap: 0, borderLeft: `2px solid ${b.color}`, marginLeft: 4, padding: "6px 0 6px 12px" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: b.color }}>ACT {b.act}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>{b.label}</span>
-                  <span style={{ fontSize: 9, color: P.muted, marginLeft: "auto", flexShrink: 0 }}>Ch {b.ch}</span>
-                </div>
-                <span style={{ fontSize: 10, color: P.dim, lineHeight: 1.5, marginTop: 2, display: "block" }}>{b.detail}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div style={{ position: "absolute", bottom: 8, left: 0, background: "#161636", borderRadius: 12, padding: "10px 14px", border: "1px solid rgba(124,92,252,0.15)", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", display: "flex", alignItems: "center", gap: 8 }}>
+        {[{ i: "E", c: "#7c5cfc" }, { i: "J", c: "#e2c87e" }, { i: "D", c: "#ef4444" }].map((ch, ci) => (
+          <div key={ci} style={{ width: 24, height: 24, borderRadius: "50%", background: `linear-gradient(135deg, ${ch.c}, ${ch.c}55)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>{ch.i}</div>
+        ))}
+        <span style={{ fontSize: 10, color: "#a09ec0" }}>3 arcs tracked</span>
       </div>
-      {/* Subplot + Character strip */}
-      <div style={{ padding: "10px 22px 16px", borderTop: `1px solid ${P.border}`, display: "flex", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.1em" }}>SUBPLOTS</span>
-          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-            {["Elena & Jack — trust arc", "The missing letters", "University cover-up"].map((s, i) => (
-              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: [P.accent, P.gold, P.orange][i] }} />
-                <span style={{ fontSize: 10, color: P.dim }}>{s}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.1em" }}>CHARACTERS</span>
-          <div style={{ marginTop: 6, display: "flex", gap: -4 }}>
-            {[{ i: "E", c: P.accent }, { i: "J", c: P.gold }, { i: "D", c: P.red }, { i: "S", c: P.green }].map((ch, ci) => (
-              <div key={ci} style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${ch.c}, ${ch.c}66)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", marginLeft: ci > 0 ? -4 : 0, border: `2px solid ${P.bg}`, position: "relative", zIndex: 4 - ci }}>
-                {ch.i}
-              </div>
-            ))}
-            <span style={{ fontSize: 10, color: P.dim, marginLeft: 8, alignSelf: "center" }}>4 tracked</span>
-          </div>
-        </div>
-      </div>
-    </Shell>
+    </div>
   );
 }
 
 function CanonPreview() {
   return (
-    <Shell accent={P.gold}>
-      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.gold, boxShadow: `0 0 8px ${P.gold}` }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: P.text, letterSpacing: "0.04em" }}>Canon</span>
-        </div>
-        <div style={{ display: "flex", gap: 2 }}>
-          {["Characters", "Locations", "Lore", "Voice"].map((t, i) => (
-            <span key={t} style={{ fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 14, color: i === 0 ? "#fff" : P.muted, background: i === 0 ? `${P.accent}30` : "transparent" }}>{t}</span>
-          ))}
+    <div style={{ maxWidth: 440, width: "100%", position: "relative", padding: "20px 0" }}>
+      {/* Central character node */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 20, position: "relative" }}>
+        <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg, #7c5cfc, #7c5cfc44)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", boxShadow: "0 0 40px rgba(124,92,252,0.2)", border: "2px solid rgba(124,92,252,0.3)" }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>E</span>
+          <span style={{ fontSize: 7, color: "#c4bef0", fontWeight: 600 }}>PROTAGONIST</span>
         </div>
       </div>
-      {/* Character cards */}
-      <div style={{ padding: "14px 22px 0" }}>
+      {/* Radiating connections */}
+      <svg viewBox="0 0 400 100" style={{ width: "100%", height: 60, display: "block", marginBottom: 10 }}>
+        <defs><filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+        {/* Connection lines from center to satellites */}
+        <line x1="200" y1="0" x2="60" y2="50" stroke="#e2c87e" strokeWidth="1.5" opacity="0.3" />
+        <line x1="200" y1="0" x2="160" y2="70" stroke="#34d399" strokeWidth="1.5" opacity="0.3" />
+        <line x1="200" y1="0" x2="340" y2="50" stroke="#ef4444" strokeWidth="1.5" opacity="0.3" />
+        <line x1="200" y1="0" x2="260" y2="75" stroke="#fb923c" strokeWidth="1.5" opacity="0.3" />
+        {/* Satellite nodes */}
         {[
-          { name: "Elena Voss", role: "Protagonist", desc: "University lecturer, sharp-witted, carries guilt over her father's disappearance. Speaks in clipped, precise sentences.", traits: ["Resourceful", "Guarded", "Determined"], color: P.accent },
-          { name: "Jack Mercer", role: "Ally", desc: "Ex-journalist with a dry sense of humour. Knows the coastal town's secrets. Drinks too much coffee.", traits: ["Loyal", "Perceptive", "Reckless"], color: P.gold },
-          { name: "Dr Amara Singh", role: "Antagonist", desc: "Elena's department head. Polished exterior hiding ruthless ambition. Never raises her voice.", traits: ["Brilliant", "Calculating", "Patient"], color: P.red },
-        ].map((c, i) => (
-          <div key={c.name} style={{ padding: "14px 16px", marginBottom: 10, borderRadius: 14, background: P.card, border: `1px solid ${P.border}`, position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, width: 3, height: "100%", background: c.color, borderRadius: "0 2px 2px 0" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg, ${c.color}40, ${c.color}10)`, border: `1px solid ${c.color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: c.color, flexShrink: 0 }}>
-                {c.name[0]}
-              </div>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>{c.name}</span>
-                  <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 8, background: `${c.color}18`, color: c.color }}>{c.role}</span>
-                </div>
-              </div>
-            </div>
-            <p style={{ fontSize: 10, color: P.dim, lineHeight: 1.6, margin: "0 0 8px" }}>{c.desc}</p>
-            <div style={{ display: "flex", gap: 5 }}>
-              {c.traits.map(t => (
-                <span key={t} style={{ fontSize: 9, color: P.muted, padding: "3px 8px", borderRadius: 6, background: P.card2 }}>{t}</span>
-              ))}
-            </div>
+          { x: 60, y: 50, l: "Jack", c: "#e2c87e" },
+          { x: 160, y: 70, l: "Clara", c: "#34d399" },
+          { x: 260, y: 75, l: "Tom", c: "#fb923c" },
+          { x: 340, y: 50, l: "Singh", c: "#ef4444" },
+        ].map((n, i) => (
+          <g key={i}>
+            <circle cx={n.x} cy={n.y} r="14" fill={n.c} opacity="0.12" />
+            <circle cx={n.x} cy={n.y} r="8" fill={n.c} filter="url(#glow2)" opacity="0.9" />
+            <text x={n.x} y={n.y + 24} fill="#a09ec0" fontSize="9" textAnchor="middle" fontFamily="system-ui" fontWeight="600">{n.l}</text>
+          </g>
+        ))}
+      </svg>
+      {/* Floating detail cards */}
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        {[
+          { title: "Characters", count: "5", desc: "Backstories, secrets, voice", color: "#7c5cfc" },
+          { title: "Locations", count: "16", desc: "Atmosphere & sensory detail", color: "#e2c87e" },
+          { title: "Lore", count: "7", desc: "Rules, history, worldbuilding", color: "#34d399" },
+        ].map(c => (
+          <div key={c.title} style={{ background: "#161636", borderRadius: 14, padding: "14px 18px", border: "1px solid rgba(124,92,252,0.12)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)", textAlign: "center", minWidth: 110 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: c.color }}>{c.count}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8e6f4", marginTop: 2 }}>{c.title}</div>
+            <div style={{ fontSize: 9, color: "#68678a", marginTop: 4 }}>{c.desc}</div>
           </div>
         ))}
       </div>
-      {/* Stats bar */}
-      <div style={{ padding: "12px 22px 16px", borderTop: `1px solid ${P.border}`, display: "flex", justifyContent: "space-between" }}>
-        {[{ n: "5", l: "Characters", c: P.accent }, { n: "16", l: "Locations", c: P.gold }, { n: "7", l: "Lore entries", c: P.green }, { n: "3", l: "Bolt-Ons", c: P.orange }].map(s => (
-          <div key={s.l} style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.n}</div>
-            <div style={{ fontSize: 9, color: P.muted, fontWeight: 600, letterSpacing: "0.04em" }}>{s.l}</div>
-          </div>
+      {/* Voice strip */}
+      <div style={{ marginTop: 16, display: "flex", justifyContent: "center", gap: 8 }}>
+        {["Gritty noir", "Close 3rd POV", "Past tense"].map(v => (
+          <span key={v} style={{ fontSize: 10, color: "#a09ec0", padding: "5px 12px", borderRadius: 20, background: "rgba(124,92,252,0.08)", border: "1px solid rgba(124,92,252,0.12)" }}>{v}</span>
         ))}
       </div>
-    </Shell>
+    </div>
   );
 }
 
 function BlocsPreview() {
   return (
-    <Shell accent="#6246ea">
-      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6246ea", boxShadow: "0 0 8px #6246ea" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>Scene Blocs</span>
-          <span style={{ fontSize: 10, color: P.muted }}>Ch. 5 — The Lighthouse</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, color: P.dim }}>Blocs</span>
-          <div style={{ width: 28, height: 14, borderRadius: 7, background: P.accent }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#fff", margin: "2px 2px 2px auto" }} />
+    <div style={{ maxWidth: 440, width: "100%", position: "relative", padding: "20px 0" }}>
+      {/* Stacked page cards showing the flow */}
+      <div style={{ position: "relative", height: 300 }}>
+        {/* Background page (planned) */}
+        <div style={{ position: "absolute", top: 0, right: 10, width: "65%", background: "#161636", borderRadius: 16, padding: "20px 22px", border: "1px dashed rgba(124,92,252,0.15)", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", transform: "rotate(2deg)" }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#4a4970", letterSpacing: "0.1em", marginBottom: 8 }}>SCENE 3 — PLANNED</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {[85, 70, 50].map((w, i) => (
+              <div key={i} style={{ width: `${w}%`, height: 6, borderRadius: 3, background: "rgba(124,92,252,0.06)" }} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+            {["Tension: 8", "POV: Close 3rd", "Sensory"].map(t => (
+              <span key={t} style={{ fontSize: 8, color: "#4a4970", padding: "2px 7px", borderRadius: 8, background: "rgba(124,92,252,0.06)" }}>{t}</span>
+            ))}
           </div>
         </div>
-      </div>
 
-      {/* Scene 1 — Complete */}
-      <div style={{ margin: "14px 22px 0", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px solid ${P.border}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: P.green, letterSpacing: "0.08em" }}>SCENE 1</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>Arrival at the Coast</span>
+        {/* Middle page (being written) */}
+        <div style={{ position: "absolute", top: 50, left: 20, width: "70%", background: "#1a1a3d", borderRadius: 16, padding: "20px 22px", border: "1px solid rgba(124,92,252,0.2)", boxShadow: "0 8px 28px rgba(0,0,0,0.3), 0 0 30px rgba(124,92,252,0.04)", transform: "rotate(-1deg)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#7c5cfc", letterSpacing: "0.1em" }}>SCENE 2 — GENERATING</span>
+            <span style={{ fontSize: 9, color: "#7c5cfc", background: "rgba(124,92,252,0.12)", padding: "3px 10px", borderRadius: 10 }}>634 / 1,200</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={P.green} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span style={{ fontSize: 9, color: P.green, fontWeight: 600 }}>1,247 words</span>
+          <div style={{ fontSize: 12, color: "#c8c6e0", lineHeight: 1.8, fontFamily: "Georgia, serif", fontStyle: "italic" }}>
+            The door hadn&apos;t been opened in years. She ran her fingers along the frame, feeling where the paint had cracked and
+            <span style={{ color: "#7c5cfc" }}> peeled away like dead skin</span>.
+            Inside, dust lay like snow...
+          </div>
+          <div style={{ width: "53%", height: 3, borderRadius: 2, background: "rgba(124,92,252,0.1)", marginTop: 12 }}>
+            <div style={{ width: "53%", height: "100%", borderRadius: 2, background: "linear-gradient(90deg, #7c5cfc, #7c5cfc88)" }} />
           </div>
         </div>
-        <p style={{ fontSize: 11, color: P.dim, lineHeight: 1.65, margin: 0 }}>
-          Elena steps off the train into salt air and silence. The town is smaller than she remembers. She checks into the inn, unpacks her father&apos;s last letter, and reads it again for the hundredth time.
-        </p>
-      </div>
 
-      {/* Scene 2 — AI generating */}
-      <div style={{ margin: "10px 22px 0", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px solid ${P.accent}40`, position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${P.accent}, transparent)` }} />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: P.accent, letterSpacing: "0.08em" }}>SCENE 2</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: P.text }}>The Locked Room</span>
-          </div>
-          <span style={{ fontSize: 9, fontWeight: 600, color: P.accent, background: `${P.accent}14`, padding: "3px 10px", borderRadius: 10 }}>AI generating...</span>
-        </div>
-        <div style={{ fontSize: 11, color: P.text, lineHeight: 1.7, margin: "0 0 6px", borderLeft: `2px solid ${P.accent}40`, paddingLeft: 10 }}>
-          The door hadn&apos;t been opened in years. Elena ran her fingers along the frame, feeling where the paint had cracked and peeled. Inside, dust lay like snow on every surface. A desk by the window. A chair pushed back as if someone had just stood up.
-        </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-          {[{ l: "Target", v: "1,200" }, { l: "Written", v: "634" }, { l: "Tone", v: "Suspense" }].map(x => (
-            <div key={x.l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontSize: 9, color: P.muted }}>{x.l}</span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: P.text }}>{x.v}</span>
+        {/* Front page (complete) */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, width: "68%", background: "#1e1e44", borderRadius: 16, padding: "20px 22px", border: "1px solid rgba(52,211,153,0.15)", boxShadow: "0 12px 36px rgba(0,0,0,0.35)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#34d399", letterSpacing: "0.1em" }}>SCENE 1 — COMPLETE</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style={{ fontSize: 9, color: "#34d399" }}>1,247 words</span>
             </div>
-          ))}
+          </div>
+          <div style={{ fontSize: 12, color: "#d0cee8", lineHeight: 1.8, fontFamily: "Georgia, serif" }}>
+            She stepped off the train into salt air and silence. The town was smaller than she remembered, smaller than the version her father had built in stories.
+          </div>
         </div>
       </div>
 
-      {/* Scene 3 — Blueprint */}
-      <div style={{ margin: "10px 22px 14px", padding: "14px 16px", borderRadius: 14, background: P.card, border: `1px dashed ${P.border}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.08em" }}>SCENE 3</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: P.dim }}>What the Tide Brought In</span>
-          </div>
-          <span style={{ fontSize: 9, color: P.muted }}>Planned</span>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {["Opening: Elena walks the shoreline at dawn", "Tension: 7/10", "POV: Close third", "Sensory: salt, wet sand, grey light"].map(t => (
-            <span key={t} style={{ fontSize: 9, color: P.muted, padding: "3px 8px", borderRadius: 6, background: P.card2, border: `1px solid ${P.border}` }}>{t}</span>
-          ))}
-        </div>
+      {/* Blueprint arrow */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 16 }}>
+        <span style={{ fontSize: 10, color: "#68678a", fontWeight: 600 }}>Blueprint</span>
+        <svg width="20" height="12" viewBox="0 0 20 12"><path d="M0,6 L14,6 M10,2 L14,6 L10,10" fill="none" stroke="#7c5cfc" strokeWidth="1.5" opacity="0.5" /></svg>
+        <span style={{ fontSize: 10, color: "#68678a", fontWeight: 600 }}>AI Prose</span>
+        <svg width="20" height="12" viewBox="0 0 20 12"><path d="M0,6 L14,6 M10,2 L14,6 L10,10" fill="none" stroke="#34d399" strokeWidth="1.5" opacity="0.5" /></svg>
+        <span style={{ fontSize: 10, color: "#68678a", fontWeight: 600 }}>Finished Scene</span>
       </div>
-    </Shell>
+    </div>
   );
 }
 
 function NFPreview() {
   return (
-    <Shell accent={P.orange}>
-      <div style={{ padding: "18px 22px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${P.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: P.orange, boxShadow: `0 0 8px ${P.orange}` }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: P.text }}>Non-Fiction</span>
-        </div>
-        <span style={{ fontSize: 10, fontWeight: 600, color: P.orange, background: `${P.orange}14`, padding: "4px 12px", borderRadius: 20 }}>Biography</span>
-      </div>
+    <div style={{ maxWidth: 440, width: "100%", position: "relative", padding: "20px 0" }}>
+      {/* Central timeline line */}
+      <div style={{ position: "relative", paddingLeft: 50 }}>
+        <div style={{ position: "absolute", left: 36, top: 0, bottom: 0, width: 2, background: "linear-gradient(to bottom, #fb923c33, #e2c87e55, #34d39966, #7c5cfc33)" }} />
 
-      {/* Life Interview */}
-      <div style={{ padding: "14px 22px", borderBottom: `1px solid ${P.border}` }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>LIFE INTERVIEW — PHASE 2 OF 4</span>
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ width: 24, height: 24, borderRadius: 8, background: `${P.accent}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={P.accent} strokeWidth="2"><path d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-            </div>
-            <div style={{ fontSize: 11, color: P.accent, fontWeight: 600, lineHeight: 1.5 }}>Tell me about a person who shaped who you became. What did they teach you without meaning to?</div>
-          </div>
-          <div style={{ marginLeft: 34, fontSize: 11, color: P.text, lineHeight: 1.6, padding: "8px 12px", background: P.card, borderRadius: 10, border: `1px solid ${P.border}` }}>
-            My grandmother. She never said much but she&apos;d sit with me while I read. That silence taught me patience. She&apos;d been through the war but never talked about it...
-          </div>
-          <div style={{ marginLeft: 34, display: "flex", gap: 6 }}>
-            <span style={{ fontSize: 9, color: P.green, background: `${P.green}14`, padding: "2px 8px", borderRadius: 8 }}>Auto-extracted to Canon</span>
-            <span style={{ fontSize: 9, color: P.muted, background: P.card2, padding: "2px 8px", borderRadius: 8 }}>Grandmother — new character</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Timeline */}
-      <div style={{ padding: "14px 22px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: P.muted, letterSpacing: "0.12em" }}>EMOTIONAL TIMELINE</span>
-          <span style={{ fontSize: 9, color: P.muted }}>12 events mapped</span>
-        </div>
-        {/* Timeline bar */}
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, marginBottom: 10 }}>
-          {[6,4,8,3,7,9,2,5,8,10,6,7].map((h, i) => (
-            <div key={i} style={{ flex: 1, height: `${h * 10}%`, borderRadius: "3px 3px 0 0", background: h >= 8 ? P.gold : h <= 3 ? P.red : `${P.accent}40` }} />
-          ))}
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 9, color: P.muted }}>1952</span>
-          <span style={{ fontSize: 9, color: P.muted }}>1970</span>
-          <span style={{ fontSize: 9, color: P.muted }}>1988</span>
-          <span style={{ fontSize: 9, color: P.muted }}>2006</span>
-          <span style={{ fontSize: 9, color: P.muted }}>2024</span>
-        </div>
-        {/* Key moments */}
+        {/* Timeline events */}
         {[
-          { y: "1967", t: "The war letter arrives", e: "Grief", c: P.red },
-          { y: "1985", t: "First day at the newspaper", e: "Hope", c: P.gold },
-          { y: "2003", t: "The book deal", e: "Joy", c: P.green },
-        ].map(ev => (
-          <div key={ev.y} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: ev.c, width: 30, flexShrink: 0 }}>{ev.y}</span>
-            <span style={{ fontSize: 11, color: P.text, flex: 1 }}>{ev.t}</span>
-            <span style={{ fontSize: 9, color: ev.c, background: `${ev.c}14`, padding: "2px 8px", borderRadius: 8 }}>{ev.e}</span>
+          { year: "1962", title: "Born in Sheffield", sub: "Early memories, the house on Elm Street", emotion: "Nostalgia", emotionColor: "#e2c87e", dot: "#e2c87e" },
+          { year: "1985", title: "First day at the newspaper", sub: "Excitement, impostor syndrome, the smell of ink", emotion: "Hope", emotionColor: "#34d399", dot: "#34d399" },
+          { year: "1998", title: "The letter arrives", sub: "Everything changes. Family secrets surface.", emotion: "Grief", emotionColor: "#ef4444", dot: "#ef4444" },
+          { year: "2012", title: "The book deal", sub: "Turning pain into purpose. A new chapter.", emotion: "Joy", emotionColor: "#22d3ee", dot: "#22d3ee" },
+        ].map((e, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", marginBottom: 24, position: "relative" }}>
+            <div style={{ position: "absolute", left: -22, top: 4, width: 14, height: 14, borderRadius: "50%", background: e.dot, boxShadow: `0 0 12px ${e.dot}44`, border: "3px solid #0e0e24" }} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: e.dot, width: 40, flexShrink: 0, paddingTop: 2 }}>{e.year}</span>
+            <div style={{ background: "#161636", borderRadius: 14, padding: "12px 16px", border: "1px solid rgba(124,92,252,0.1)", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", flex: 1, marginLeft: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#e8e6f4" }}>{e.title}</span>
+                <span style={{ fontSize: 9, color: e.emotionColor, background: `${e.emotionColor}14`, padding: "2px 10px", borderRadius: 10, fontWeight: 600 }}>{e.emotion}</span>
+              </div>
+              <span style={{ fontSize: 10, color: "#68678a", marginTop: 4, display: "block", lineHeight: 1.5 }}>{e.sub}</span>
+            </div>
           </div>
         ))}
       </div>
-    </Shell>
+
+      {/* Interview bubble floating */}
+      <div style={{ position: "absolute", top: 10, right: 0, background: "#1a1a3d", borderRadius: 14, padding: "12px 16px", border: "1px solid rgba(251,146,60,0.15)", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", maxWidth: 180 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: "#fb923c", letterSpacing: "0.08em", marginBottom: 5 }}>LIFE INTERVIEW</div>
+        <div style={{ fontSize: 10, color: "#a09ec0", lineHeight: 1.5 }}>
+          &ldquo;What did your grandmother teach you without meaning to?&rdquo;
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fb923c" }} />
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fb923c", opacity: 0.5 }} />
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fb923c", opacity: 0.25 }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
