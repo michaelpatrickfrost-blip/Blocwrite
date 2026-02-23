@@ -299,6 +299,41 @@ function genreArcExamples(genres: string[]): string {
   return examples.slice(0, 8).join(", ");
 }
 
+function scoreArcPresetByGenres(userGenres: string[], arcGenres: string[]): number {
+  const aliases: Record<string, string[]> = {
+    thriller: ["suspense", "psychological", "crime", "mystery", "noir", "spy", "espionage"],
+    suspense: ["thriller", "mystery", "crime"],
+    mystery: ["detective", "crime", "thriller", "suspense", "noir"],
+    crime: ["thriller", "mystery", "noir", "detective"],
+    horror: ["gothic", "dark", "paranormal", "psychological"],
+    fantasy: ["epic", "adventure", "ya", "young adult"],
+    "sci-fi": ["science fiction", "science", "dystopian", "cyberpunk"],
+    romance: ["rom-com", "contemporary", "drama"],
+    "rom-com": ["romance", "comedy", "contemporary"],
+    ya: ["young adult"],
+    "young adult": ["ya"],
+  };
+  const tokens = userGenres
+    .flatMap((g) => g.toLowerCase().split(/[^a-z0-9]+/g))
+    .filter(Boolean);
+  const expanded = new Set<string>(tokens);
+  for (const t of [...tokens]) {
+    for (const a of aliases[t] ?? []) expanded.add(a);
+  }
+
+  let score = 0;
+  for (const g of arcGenres) {
+    const lower = g.toLowerCase();
+    if (expanded.has(lower)) score += 3;
+    else if ([...expanded].some((ug) => ug.includes(lower) || lower.includes(ug))) score += 1;
+  }
+  return score;
+}
+
+function normalizeCharacterNameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 /* ─── Writing Packs Marketplace ─── */
 type WritingPackBolton = {
   title: string;
@@ -3385,32 +3420,120 @@ function NovelWorkspacePage() {
     return contextParts;
   }
 
+  function getPlotSpineBeatAssignment(totalChapters: number): {
+    spine: PlotSpine;
+    chapterBeatMap: string[][];
+    updatedBeats: StoryBeat[];
+  } | null {
+    const spine = novel?.storyBible.plotSpine;
+    if (!spine || spine.beats.length === 0 || totalChapters <= 0) return null;
+    const updatedBeats = [...spine.beats];
+    const chapterBeatMap: string[][] = Array.from({ length: totalChapters }, () => []);
+    const pushBeatToChapter = (chapterIdx: number, beatId: string) => {
+      const safeIdx = Math.min(Math.max(chapterIdx, 0), totalChapters - 1);
+      const arr = chapterBeatMap[safeIdx];
+      if (!arr.includes(beatId)) arr.push(beatId);
+    };
+
+    // Keep explicit user assignments exactly.
+    for (const beat of updatedBeats) {
+      if (beat.chapterHint >= 0 && beat.chapterHint < totalChapters) {
+        pushBeatToChapter(beat.chapterHint, beat.id);
+      }
+    }
+
+    const unassignedBeats = updatedBeats.filter((b) => b.chapterHint < 0 || b.chapterHint >= totalChapters);
+    if (unassignedBeats.length === 0) {
+      return { spine, chapterBeatMap, updatedBeats };
+    }
+
+    // Act-aware chapter windows (roughly 25/50/25), adjusted for small chapter counts.
+    let act1Count = Math.max(1, Math.round(totalChapters * 0.25));
+    let act3Count = Math.max(1, Math.round(totalChapters * 0.25));
+    let act2Count = totalChapters - act1Count - act3Count;
+    if (act2Count < 1) {
+      if (act1Count > act3Count && act1Count > 1) act1Count -= 1;
+      else if (act3Count > 1) act3Count -= 1;
+      act2Count = Math.max(1, totalChapters - act1Count - act3Count);
+    }
+    const actRanges: Record<1 | 2 | 3, [number, number]> = {
+      1: [0, Math.max(0, act1Count - 1)],
+      2: [act1Count, Math.max(act1Count, act1Count + act2Count - 1)],
+      3: [Math.min(totalChapters - 1, act1Count + act2Count), totalChapters - 1],
+    };
+    const getRangeForAct = (act: number): [number, number] => {
+      if (act === 1 || act === 2 || act === 3) return actRanges[act];
+      return actRanges[2];
+    };
+
+    // Distribute unassigned beats by their act across the corresponding chapter window.
+    const grouped = new Map<number, StoryBeat[]>();
+    for (const beat of unassignedBeats) {
+      const key = beat.act;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(beat);
+    }
+    for (const beats of grouped.values()) {
+      beats.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+
+    for (const [actKey, beats] of grouped.entries()) {
+      const [start, end] = getRangeForAct(actKey);
+      const window = Math.max(1, end - start + 1);
+      const count = beats.length;
+      for (let i = 0; i < count; i++) {
+        const beat = beats[i];
+        const slot = Math.min(window - 1, Math.floor((i * window) / Math.max(1, count)));
+        const chapterIdx = start + slot;
+        pushBeatToChapter(chapterIdx, beat.id);
+        const bIdx = updatedBeats.findIndex((b) => b.id === beat.id);
+        if (bIdx >= 0) updatedBeats[bIdx] = { ...updatedBeats[bIdx], chapterHint: chapterIdx };
+      }
+    }
+
+    return { spine, chapterBeatMap, updatedBeats };
+  }
+
+  function getPlotSpineChapterData(chapterIndex: number, totalChapters: number) {
+    const assignment = getPlotSpineBeatAssignment(totalChapters);
+    if (!assignment) return null;
+    const { spine, chapterBeatMap } = assignment;
+    const chars = novel?.storyBible.characters ?? [];
+    const beatIdSet = new Set(chapterBeatMap[chapterIndex] ?? []);
+    const beatsForChapter = spine.beats.filter((b) => beatIdSet.has(b.id));
+    if (beatsForChapter.length === 0) return null;
+    const chapterBeatIds = new Set(beatsForChapter.map((b) => b.id));
+    const allPriorBeatIds = new Set<string>();
+    for (let ci = 0; ci <= chapterIndex; ci++) {
+      for (const bid of chapterBeatMap[ci] ?? []) allPriorBeatIds.add(bid);
+    }
+    const activeSubplots = spine.subplots.filter((sp) => sp.linkedBeatIds.some((id) => allPriorBeatIds.has(id)));
+    const chapterSubplots = activeSubplots.filter((sp) => sp.linkedBeatIds.some((id) => chapterBeatIds.has(id)));
+    const activeArcs = spine.characterArcs
+      .filter((a) => {
+        const charInChapter = beatsForChapter.some((b) => b.characterIds.includes(a.characterId));
+        const hasTurningPoint = a.turningPointBeatIds.some((id) => chapterBeatIds.has(id));
+        return charInChapter || hasTurningPoint;
+      })
+      .map((arc) => ({
+        ...arc,
+        characterName: chars.find((c) => c.id === arc.characterId)?.name || "",
+        hasTurningPoint: arc.turningPointBeatIds.some((id) => chapterBeatIds.has(id)),
+      }));
+    return { beatsForChapter, activeSubplots, chapterSubplots, activeArcs };
+  }
+
   function buildPlotSpineChapterContext(chapterIndex: number, totalChapters: number): string {
     const spine = novel?.storyBible.plotSpine;
     if (!spine || spine.beats.length === 0) return "";
-    const beats = spine.beats;
-    const subplots = spine.subplots;
-    const arcs = spine.characterArcs;
+    const chapterData = getPlotSpineChapterData(chapterIndex, totalChapters);
+    if (!chapterData) return "";
+    const { beatsForChapter, activeSubplots, chapterSubplots, activeArcs } = chapterData;
     const chars = novel?.storyBible.characters ?? [];
 
-    // Map beats to chapters: use chapterHint if set, otherwise distribute by act
-    const beatsForChapter: StoryBeat[] = [];
-    const assignedBeats = beats.filter(b => b.chapterHint >= 0);
-    const unassignedBeats = beats.filter(b => b.chapterHint < 0);
-
-    for (const b of assignedBeats) {
-      if (b.chapterHint === chapterIndex) beatsForChapter.push(b);
-    }
-    if (unassignedBeats.length > 0 && totalChapters > 0) {
-      const perChapter = Math.ceil(unassignedBeats.length / totalChapters);
-      const start = chapterIndex * perChapter;
-      const end = Math.min(start + perChapter, unassignedBeats.length);
-      for (let i = start; i < end; i++) beatsForChapter.push(unassignedBeats[i]);
-    }
-
-    if (beatsForChapter.length === 0) return "";
-
     const parts: string[] = ["=== PLOT SPINE — THIS IS YOUR PRIMARY GUIDE ===", ""];
+    parts.push(`CHAPTER LINK REQUIREMENTS: this chapter must explicitly include these beat titles: ${beatsForChapter.map((b) => `"${b.title}"`).join(", ")}.`);
+    parts.push("");
     parts.push("YOUR BEATS FOR THIS CHAPTER (you MUST cover all of these):");
     for (const b of beatsForChapter) {
       const charNames = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
@@ -3422,44 +3545,28 @@ function NovelWorkspacePage() {
       parts.push("");
     }
 
-    // Active subplots at this chapter position
-    const chapterBeatIds = new Set(beatsForChapter.map(b => b.id));
-    const allPriorBeatIds = new Set<string>();
-    for (let ci = 0; ci <= chapterIndex; ci++) {
-      for (const b of assignedBeats) { if (b.chapterHint === ci) allPriorBeatIds.add(b.id); }
-      if (unassignedBeats.length > 0 && totalChapters > 0) {
-        const pc = Math.ceil(unassignedBeats.length / totalChapters);
-        const s = ci * pc; const e = Math.min(s + pc, unassignedBeats.length);
-        for (let i = s; i < e; i++) allPriorBeatIds.add(unassignedBeats[i].id);
-      }
-    }
-    const activeSubplots = subplots.filter(sp => sp.linkedBeatIds.some(id => allPriorBeatIds.has(id)));
     if (activeSubplots.length > 0) {
       parts.push("ACTIVE SUBPLOTS AT THIS POINT:");
-      for (const sp of activeSubplots) {
-        const touchesThisChapter = sp.linkedBeatIds.some(id => chapterBeatIds.has(id));
+      for (const sp of activeSubplots.slice(0, 8)) {
+        const touchesThisChapter = chapterSubplots.some((csp) => csp.id === sp.id);
         parts.push(`  "${sp.title}" — STATUS: ${sp.status}${touchesThisChapter ? " (active in THIS chapter)" : ""}`);
         parts.push(`    ${sp.description.slice(0, 200)}`);
       }
+      if (activeSubplots.length > 8) parts.push(`  ... ${activeSubplots.length - 8} additional subplot thread(s) omitted for context budget.`);
       parts.push("");
     }
 
-    // Character arc states
-    const activeArcs = arcs.filter(a => {
-      const charInChapter = beatsForChapter.some(b => b.characterIds.includes(a.characterId));
-      const hasTurningPoint = a.turningPointBeatIds.some(id => chapterBeatIds.has(id));
-      return charInChapter || hasTurningPoint;
-    });
     if (activeArcs.length > 0) {
       parts.push("CHARACTER ARC STATES FOR THIS CHAPTER:");
-      for (const arc of activeArcs) {
-        const charName = chars.find(c => c.id === arc.characterId)?.name || "?";
-        const hasTurningPoint = arc.turningPointBeatIds.some(id => chapterBeatIds.has(id));
+      for (const arc of activeArcs.slice(0, 8)) {
+        const charName = arc.characterName || chars.find(c => c.id === arc.characterId)?.name || "?";
+        const hasTurningPoint = arc.hasTurningPoint;
         parts.push(`  ${charName}: "${arc.startState}" → "${arc.endState}" (${arc.arcType})`);
         if (hasTurningPoint) {
           parts.push(`    ★ TURNING POINT IN THIS CHAPTER — show this shift happening as a pivotal moment.`);
         }
       }
+      if (activeArcs.length > 8) parts.push(`  ... ${activeArcs.length - 8} additional arc state(s) omitted for context budget.`);
       parts.push("");
     }
 
@@ -3467,6 +3574,7 @@ function NovelWorkspacePage() {
     parts.push("");
     parts.push("CRITICAL RULES:");
     parts.push("- The beats above are the BACKBONE of this chapter. Every beat must be covered.");
+    parts.push("- Explicitly mention each assigned beat title in your blueprint so chapter-to-spine linkage is unambiguous.");
     parts.push("- Add connective tissue BETWEEN beats: transitions, emotional reactions, small moments of reflection, sensory detail.");
     parts.push("- Advance each active subplot — show its status changing.");
     parts.push("- If a character arc turning point falls in this chapter, make it a PIVOTAL moment.");
@@ -5364,6 +5472,22 @@ function NovelWorkspacePage() {
     return { timeoutMultiplier: 1.25, minTotalMs: 180000, attemptWeights: [0.58, 0.25, 0.17] as const };
   }
 
+  function getStructuredOutputProfile(modelId: string, provider: AssistantProviderId) {
+    const model = (modelId || "").toLowerCase();
+    const likelySmallPattern = /(mini|flash|haiku|small|7b|8b|instruct|qwen2\.5|mistral.*small|phi-|gemma-2|llama-3\.[12]-8b|deepseek-r1:free|free)/i;
+    const likelyLargePattern = /(gpt-4\.1|gpt-5|claude.*sonnet|claude.*opus|gemini-2\.5-pro|o3|o1|r1)/i;
+    const smallModel = provider === "lmstudio" || likelySmallPattern.test(model);
+    const highDetail = likelyLargePattern.test(model) && !smallModel;
+    return {
+      smallModel,
+      highDetail,
+      beatStructureSentences: smallModel ? "2-3 concise sentences" : "4-6 detailed sentences",
+      beatFinalSentences: highDetail ? "5-7 detailed sentences" : "4-6 detailed sentences",
+      baseTemp: smallModel ? 0.4 : 0.7,
+      maxTokensScale: smallModel ? 0.78 : 1,
+    } as const;
+  }
+
   async function requestOpenRouterText(prompt: string, maxTokens = 700, timeoutMs = 180000, systemMessage?: string, jsonMode = false, temperature?: number) {
     // Ensure we have a live abort controller (create if null/cancelled)
     if (!aiAbortRef.current || aiAbortRef.current.signal.aborted) {
@@ -6853,6 +6977,7 @@ function NovelWorkspacePage() {
     try {
       const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
       const spineActive = !isNF && hasPlotSpine();
+      const planOutputProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
       const systemMsg = spineActive
         ? "You are a PLOT outliner and story architect. The user has built a detailed Plot Spine with story beats, subplots, and character arcs. Your job is to expand each chapter's assigned beats into a rich, detailed chapter blueprint. Follow the spine precisely — it is the user's vision for their story. Add emotional depth, scene transitions, and character dynamics between the beats, but never contradict or skip a beat. Track subplot progression and character arc evolution across chapters. Return only valid JSON."
         : "You are a PLOT outliner and story architect, not a prose writer. Write DETAILED chapter blueprints describing what HAPPENS — actions, character reactions, emotional dynamics, consequences, and changes. Each chapter blueprint should read like a screenwriter's expanded beat sheet: opening beat, middle development, and closing beat. Include motivations, interpersonal dynamics, and cause-and-effect chains. Never write prose scenes or dialogue. Every chapter must cover NEW ground — never repeat the same scene type or emotional beat from a previous chapter. Respect all Canon. Return only valid JSON.";
@@ -7180,6 +7305,8 @@ function NovelWorkspacePage() {
       const usedLocations: string[] = [];
       const fullChapterList = allTitles.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n");
       const genreGuidance = getGenreGuidance();
+      const detailedRangeSpine = planOutputProfile.highDetail ? "18-30" : planOutputProfile.smallModel ? "12-18" : "15-25";
+      const detailedRangeRegular = planOutputProfile.highDetail ? "15-24" : planOutputProfile.smallModel ? "10-16" : "12-20";
 
       const synopsisFormatGuide = [
         "FORMAT: Write a FULL CHAPTER BLUEPRINT — not prose, not a summary, but a dense beat-by-beat roadmap that an AI prose writer will follow exactly. Every detail you include here becomes a scene. Every detail you leave out becomes a gap the prose writer must invent. MORE DETAIL = BETTER PROSE.",
@@ -7200,6 +7327,7 @@ function NovelWorkspacePage() {
 
         const chapterTitle = allTitles[index];
         const structuralBeat = getStructuralBeat(index, allTitles.length);
+        const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
 
         const storySoFar = generatedSynopses.length > 0
           ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 1000)}`).join("\n\n")
@@ -7277,8 +7405,8 @@ function NovelWorkspacePage() {
           genreGuidance,
           "",
           spineActive
-            ? `- Write 15-25 sentences of DETAILED CHAPTER BLUEPRINT. This is the primary instruction set for AI prose generation — the MORE detail you provide, the BETTER the prose will be. Cover every beat from the Plot Spine above and expand each with:`
-            : "- Write 12-20 sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail you provide here, the better the final prose will be.",
+            ? `- Write ${detailedRangeSpine} sentences of DETAILED CHAPTER BLUEPRINT. This is the primary instruction set for AI prose generation — the MORE detail you provide, the BETTER the prose will be. Cover every beat from the Plot Spine above and expand each with:`
+            : `- Write ${detailedRangeRegular} sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail you provide here, the better the final prose will be.`,
           "- OPENING: How does the chapter begin? What's the first image, action, or line of dialogue? Where is the POV character and what are they doing/feeling?",
           "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment, describe: what triggers it, who's involved, what's said or done, how characters react emotionally and physically, and what shifts as a result.",
           "- DIALOGUE CUES: Note the key conversations that must happen — what's discussed, what's revealed, what subtext is running underneath.",
@@ -7313,8 +7441,11 @@ function NovelWorkspacePage() {
         let chapterLoreIds: string[] = [];
 
         try {
-          const chapterTokenLimit = spineActive ? 3500 : 2500;
-          const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 180000, systemMsg, false, 0.6);
+          const chapterTokenLimit = spineActive
+            ? (planOutputProfile.highDetail ? 4300 : planOutputProfile.smallModel ? 2600 : 3500)
+            : (planOutputProfile.highDetail ? 3200 : planOutputProfile.smallModel ? 2000 : 2500);
+          const chapterTemp = planOutputProfile.smallModel ? 0.5 : planOutputProfile.highDetail ? 0.65 : 0.6;
+          const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 180000, systemMsg, false, chapterTemp);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
@@ -7349,6 +7480,40 @@ function NovelWorkspacePage() {
             parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
           }
         } catch { /* AI call failed — will show placeholder */ }
+
+        if (spineActive && synopsis && chapterSpineData) {
+          const synopsisLower = synopsis.toLowerCase();
+          const requiredBeatTitles = chapterSpineData.beatsForChapter.map((b) => b.title).filter(Boolean);
+          const requiredSubplotTitles = chapterSpineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
+          const requiredArcNames = chapterSpineData.activeArcs.map((a) => a.characterName).filter(Boolean);
+
+          const missingBeats = requiredBeatTitles.filter((t) => !synopsisLower.includes(t.toLowerCase()));
+          const missingSubplots = requiredSubplotTitles.filter((t) => !synopsisLower.includes(t.toLowerCase()));
+          const missingArcNames = requiredArcNames.filter((n) => !synopsisLower.includes(n.toLowerCase()));
+
+          if (missingBeats.length > 0 || missingSubplots.length > 0 || missingArcNames.length > 0) {
+            try {
+              const repairPrompt = [
+                `Revise this chapter blueprint so it fully aligns with the Plot Spine for Chapter ${index + 1}.`,
+                "",
+                `Current synopsis:\n${synopsis}`,
+                "",
+                missingBeats.length > 0 ? `MISSING REQUIRED BEAT TITLES (must be explicitly mentioned): ${missingBeats.map((t) => `"${t}"`).join(", ")}` : "",
+                missingSubplots.length > 0 ? `MISSING REQUIRED SUBPLOT TITLES: ${missingSubplots.map((t) => `"${t}"`).join(", ")}` : "",
+                missingArcNames.length > 0 ? `MISSING ARC CHARACTERS: ${missingArcNames.map((n) => `"${n}"`).join(", ")}` : "",
+                "",
+                "Keep the same chapter direction and continuity, but add the missing spine-linked elements clearly.",
+                "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+              ].filter(Boolean).join("\n");
+              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(repairPrompt, 2200, {
+                timeoutMs: 180000,
+                systemMessage: "Story architect. Repair chapter synopsis to match Plot Spine linkage exactly. Return valid JSON only.",
+              });
+              const repairedSynopsis = (repaired?.synopsis ?? "").trim();
+              if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+            } catch { /* keep original synopsis if repair fails */ }
+          }
+        }
 
         if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
         generatedSynopses.push(synopsis);
@@ -7398,58 +7563,38 @@ function NovelWorkspacePage() {
 
       /* ── Phase 3: Auto-assign beat IDs & subplot IDs to chapters ── */
       if (spineActive) {
-        const spine = novel!.storyBible.plotSpine!;
         const totalCh = allTitles.length;
-        const assignedBeats = spine.beats.filter(b => b.chapterHint >= 0);
-        const unassignedBeats = spine.beats.filter(b => b.chapterHint < 0);
-        const perChapter = totalCh > 0 ? Math.ceil(unassignedBeats.length / totalCh) : 0;
+        const assignment = getPlotSpineBeatAssignment(totalCh);
+        if (assignment) {
+          const { spine, chapterBeatMap, updatedBeats } = assignment;
 
-        const chapterBeatMap: string[][] = [];
-        const updatedBeats = [...spine.beats];
-
-        for (let ci = 0; ci < totalCh; ci++) {
-          const ids: string[] = [];
-          for (const b of assignedBeats) {
-            if (b.chapterHint === ci) ids.push(b.id);
+          const chapterSubplotMap: string[][] = [];
+          for (let ci = 0; ci < totalCh; ci++) {
+            const chBeatSet = new Set(chapterBeatMap[ci]);
+            const spIds = spine.subplots
+              .filter(sp => sp.linkedBeatIds.some(bid => chBeatSet.has(bid)))
+              .map(sp => sp.id);
+            chapterSubplotMap.push(spIds);
           }
-          if (perChapter > 0) {
-            const start = ci * perChapter;
-            const end = Math.min(start + perChapter, unassignedBeats.length);
-            for (let i = start; i < end; i++) {
-              ids.push(unassignedBeats[i].id);
-              const bIdx = updatedBeats.findIndex(b => b.id === unassignedBeats[i].id);
-              if (bIdx >= 0) updatedBeats[bIdx] = { ...updatedBeats[bIdx], chapterHint: ci };
-            }
-          }
-          chapterBeatMap.push(ids);
-        }
 
-        const chapterSubplotMap: string[][] = [];
-        for (let ci = 0; ci < totalCh; ci++) {
-          const chBeatSet = new Set(chapterBeatMap[ci]);
-          const spIds = spine.subplots
-            .filter(sp => sp.linkedBeatIds.some(bid => chBeatSet.has(bid)))
-            .map(sp => sp.id);
-          chapterSubplotMap.push(spIds);
+          mutateNovel((current) => {
+            const plan = current.storyBible.bookPlan;
+            if (!plan) return current;
+            const updatedPlanChapters = plan.chapters.map((ch, ci) => ({
+              ...ch,
+              beatIds: chapterBeatMap[ci] ?? [],
+              subplotIds: chapterSubplotMap[ci] ?? [],
+            }));
+            return {
+              ...current,
+              storyBible: {
+                ...current.storyBible,
+                plotSpine: { ...spine, beats: updatedBeats },
+                bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+              },
+            };
+          });
         }
-
-        mutateNovel((current) => {
-          const plan = current.storyBible.bookPlan;
-          if (!plan) return current;
-          const updatedPlanChapters = plan.chapters.map((ch, ci) => ({
-            ...ch,
-            beatIds: chapterBeatMap[ci] ?? [],
-            subplotIds: chapterSubplotMap[ci] ?? [],
-          }));
-          return {
-            ...current,
-            storyBible: {
-              ...current.storyBible,
-              plotSpine: { ...spine, beats: updatedBeats },
-              bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
-            },
-          };
-        });
       }
 
       planNewCharIds = mergedCharacters
@@ -15526,12 +15671,14 @@ function NovelWorkspacePage() {
                         { id: "descent", name: "Descent into Darkness", genres: ["horror", "thriller", "psychological", "dark", "gothic", "noir", "crime"], hint: "A character spirals deeper into obsession, madness, or moral corruption. Each choice takes them further from who they were. The reader watches, gripped, hoping they'll turn back — knowing they won't." },
                       ];
                       const userGenres = (novel.storyBible.summary?.genre ?? []).map(g => g.toLowerCase());
-                      const STORY_ARC_OPTIONS = [...ALL_ARC_OPTIONS].sort((a, b) => {
-                        const aMatch = a.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
-                        const bMatch = b.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
-                        return bMatch - aMatch;
+                      const STORY_ARC_OPTIONS = ALL_ARC_OPTIONS.map((arc) => ({
+                        ...arc,
+                        genreScore: scoreArcPresetByGenres(userGenres, arc.genres),
+                      })).sort((a, b) => {
+                        if (b.genreScore !== a.genreScore) return b.genreScore - a.genreScore;
+                        return a.name.localeCompare(b.name);
                       });
-                      const topMatchCount = STORY_ARC_OPTIONS[0] ? STORY_ARC_OPTIONS[0].genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length : 0;
+                      const topMatchCount = STORY_ARC_OPTIONS[0]?.genreScore ?? 0;
 
                       return (
                         <div>
@@ -15539,7 +15686,16 @@ function NovelWorkspacePage() {
                           {!aiOff && (
                             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
                               {beats.length === 0 ? (
-                                <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={() => setSpineShowArcPicker(true)}>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary"
+                                  disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())}
+                                  onClick={() => {
+                                    const top = STORY_ARC_OPTIONS[0];
+                                    setSpineArcChoice(top && top.genreScore > 0 ? top.id : null);
+                                    setSpineShowArcPicker(true);
+                                  }}
+                                >
                                   ✦ Build Full Spine
                                 </button>
                               ) : (
@@ -15685,7 +15841,7 @@ function NovelWorkspacePage() {
                               <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick a narrative shape for your story, or describe your own. This guides how the AI builds your beats, subplots, and characters.</p>
                               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
                                 {STORY_ARC_OPTIONS.map(arc => {
-                                  const genreMatch = arc.genres.filter(g => userGenres.some(ug => ug.includes(g) || g.includes(ug))).length;
+                                  const genreMatch = arc.genreScore;
                                   const isRecommended = genreMatch > 0 && genreMatch >= topMatchCount;
                                   return (
                                   <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
@@ -15750,11 +15906,14 @@ function NovelWorkspacePage() {
                                     return null;
                                   }
 
+                                  const structuredProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
+
                                   async function smallCall(prompt: string, tokens: number, sys: string): Promise<string> {
                                     for (let a = 0; a < 3; a++) {
                                       try {
-                                        const useJsonMode = a >= 1;
-                                        const r = await requestOpenRouterText(prompt, tokens, 120000, sys, useJsonMode, 0.7);
+                                        const useJsonMode = a >= 1 && !structuredProfile.smallModel;
+                                        const scaledTokens = Math.max(450, Math.round(tokens * structuredProfile.maxTokensScale));
+                                        const r = await requestOpenRouterText(prompt, scaledTokens, 120000, sys, useJsonMode, structuredProfile.baseTemp);
                                         if (r && r.trim().length > 5) return r;
                                       } catch { /* retry */ }
                                     }
@@ -15766,6 +15925,11 @@ function NovelWorkspacePage() {
                                   let allBeats: StoryBeat[] = [];
                                   const allCharNames = new Set<string>();
                                   let failed = false;
+                                  const fallbackArcType = genreArcExamples(userGenres).split(",")[0]?.trim() || "transformation";
+                                  const ensureText = (value: string | undefined | null, fallback: string) => {
+                                    const v = (value ?? "").trim();
+                                    return v.length > 0 ? v : fallback;
+                                  };
 
                                   // Helper: find all Canon character IDs mentioned in text (by name, first name, or last name)
                                   function findCharIdsInText(text: string, extraNames?: string[]): string[] {
@@ -15819,7 +15983,7 @@ function NovelWorkspacePage() {
                                       charCtx ? `\nCanon characters (USE THESE EXACT NAMES in characterNames):\n  ${charCtx}` : "",
                                       locCtx ? `\nLocations: ${locCtx}` : "",
                                       prevBeats,
-                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "3-4 detailed sentences — who does what, why, and what changes", "tension": 1-5, "locationHint": "place name", "characterNames": ["Exact Name", "Exact Name"] }] }`,
+                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "${structuredProfile.beatStructureSentences} — who does what, why, and what changes", "tension": 1-5, "locationHint": "place name", "characterNames": ["Exact Name", "Exact Name"] }] }`,
                                       "",
                                       "CRITICAL:",
                                       `- characterNames MUST use the EXACT names from the Canon list above (e.g. "${existingChars[0]?.name || "Elena Voss"}", not "Elena" or "the protagonist").`,
@@ -15832,12 +15996,12 @@ function NovelWorkspacePage() {
                                     const parsed = extractJson<{ beats?: RawBeat[] }>(raw);
                                     const rawBeats = parsed?.beats ?? [];
 
-                                    if (rawBeats.length === 0 && cfg.act === 1) {
-                                      setSpineProgress("First attempt didn't return beats — retrying with simpler prompt...");
+                                    if (rawBeats.length === 0) {
+                                      setSpineProgress(`${cfg.label} was too complex for this model — retrying with a simpler JSON prompt...`);
                                       const fallbackPrompt = [
-                                        `Generate 4 story beats for Act 1 of a ${genre} novel.`,
+                                        `Generate 3-4 story beats for Act ${cfg.act} of a ${genre} novel.`,
                                         `Synopsis: ${synopsis.slice(0, 400)}`,
-                                        `Return JSON: { "beats": [{ "title": "string", "description": "string", "tension": 2, "characterNames": ["${existingChars[0]?.name || "Character"}"] }] }`,
+                                        `Return JSON: { "beats": [{ "title": "string", "description": "string", "tension": ${cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5}, "characterNames": ["${existingChars[0]?.name || "Character"}"] }] }`,
                                         `Return ONLY the JSON object. No explanation.`,
                                       ].join("\n");
                                       const fallbackRaw = await smallCall(fallbackPrompt, 1200, "Return only valid JSON.");
@@ -15849,13 +16013,13 @@ function NovelWorkspacePage() {
                                           (b.characterNames ?? []).forEach(n => allCharNames.add(n));
                                           return {
                                             id: `beat-${Date.now().toString(36)}-${offset2 + i}`,
-                                            title: b.title || `Beat ${offset2 + i + 1}`,
-                                            description: b.description || "",
-                                            act: 1 as const,
+                                            title: ensureText(b.title, `Beat ${offset2 + i + 1}`),
+                                            description: ensureText(b.description, `Key turning point that raises pressure in this ${genre} story.`),
+                                            act: cfg.act,
                                             chapterHint: -1,
                                             characterIds: findCharIdsInText(`${b.title} ${b.description} ${(b.characterNames ?? []).join(" ")}`, b.characterNames),
                                             locationHint: b.locationHint || "",
-                                            tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 2) as 1|2|3|4|5,
+                                            tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : (cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5)) as 1|2|3|4|5,
                                             sortOrder: offset2 + i,
                                           };
                                         })];
@@ -15874,8 +16038,8 @@ function NovelWorkspacePage() {
                                       const charIds = findCharIdsInText(searchText, b.characterNames);
                                       return {
                                         id: `beat-${Date.now().toString(36)}-${offset + i}`,
-                                        title: b.title || `Beat ${offset + i + 1}`,
-                                        description: b.description || "",
+                                        title: ensureText(b.title, `Beat ${offset + i + 1}`),
+                                        description: ensureText(b.description, `A decisive event that moves the ${genre} conflict forward.`),
                                         act: cfg.act,
                                         chapterHint: -1,
                                         characterIds: charIds,
@@ -15895,6 +16059,40 @@ function NovelWorkspacePage() {
                                     return;
                                   }
 
+                                  // Auto detail pipeline:
+                                  // - small models: reliable structure pass, then enrich
+                                  // - strong models: still run an extra polish pass for maximum detail
+                                  if ((structuredProfile.smallModel || structuredProfile.highDetail) && allBeats.length > 0) {
+                                    setSpineProgress(structuredProfile.smallModel ? "Deepening beat detail..." : "Adding extra beat detail...");
+                                    try {
+                                      const beatTitles = allBeats.map((b, i) => `${i + 1}. "${b.title}" (Act ${b.act}, tension ${b.tension})`).join("\n");
+                                      const enrichPrompt = [
+                                        `Expand these ${allBeats.length} beats for a ${genre} novel into richer detail.`,
+                                        `Each description must be ${structuredProfile.beatFinalSentences}, concrete, and specific.`,
+                                        "Do not change beat titles, act placement, or tension scores.",
+                                        `\nBeats:\n${beatTitles}`,
+                                        `\nSynopsis: ${synopsis.slice(0, 700)}`,
+                                        `\n${arcDirective}`,
+                                        `\nReturn JSON: { "beats": [{ "title": "Exact Beat Title", "description": "expanded detailed description" }] }`,
+                                        "Use EXACT beat titles from the list above.",
+                                      ].join("\n");
+                                      const enrichRaw = await smallCall(enrichPrompt, 1600, sys);
+                                      const enrichParsed = extractJson<{ beats?: Array<{ title: string; description: string }> }>(enrichRaw);
+                                      const enrichedByTitle = new Map(
+                                        (enrichParsed?.beats ?? [])
+                                          .map((b) => [b.title?.toLowerCase().trim(), ensureText(b.description, "")] as const)
+                                          .filter(([t, d]) => !!t && d.length > 20),
+                                      );
+                                      if (enrichedByTitle.size > 0) {
+                                        allBeats = allBeats.map((b) => {
+                                          const enriched = enrichedByTitle.get(b.title.toLowerCase().trim());
+                                          return enriched ? { ...b, description: enriched } : b;
+                                        });
+                                        updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
+                                      }
+                                    } catch { /* keep structured beats if enrichment fails */ }
+                                  }
+
                                   // ═══ SUBPLOTS: single small call ═══
                                   let newSubplots: Subplot[] = [];
                                   setSpineProgress("Weaving subplots...");
@@ -15912,19 +16110,37 @@ function NovelWorkspacePage() {
                                     const spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
                                     newSubplots = (spParsed?.subplots ?? []).map((s, i) => {
                                       const searchText = `${s.title} ${s.description} ${(s.characterNames ?? []).join(" ")}`;
+                                      const linkedBeatIds = (s.linkedBeatTitles ?? []).map(t => {
+                                        const tl = t.toLowerCase();
+                                        return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
+                                      }).filter((x): x is string => !!x);
                                       return {
                                         id: `sp-${Date.now().toString(36)}-${i}`,
-                                        title: s.title || "", description: s.description || "",
+                                        title: ensureText(s.title, `Subplot ${i + 1}`),
+                                        description: ensureText(s.description, "A pressure thread that complicates the main conflict and intersects with key beats."),
                                         characterIds: findCharIdsInText(searchText, s.characterNames),
-                                        linkedBeatIds: (s.linkedBeatTitles ?? []).map(t => {
-                                          const tl = t.toLowerCase();
-                                          return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
-                                        }).filter((x): x is string => !!x),
+                                        linkedBeatIds: linkedBeatIds.length > 0 ? linkedBeatIds : (allBeats[0] ? [allBeats[0].id] : []),
                                         status: "setup" as const,
                                       };
                                     });
                                     updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
                                   } catch { /* beats still saved */ }
+
+                                  if (newSubplots.length === 0 && allBeats.length > 0) {
+                                    const first = allBeats[0];
+                                    const mid = allBeats[Math.floor(allBeats.length / 2)];
+                                    const last = allBeats[allBeats.length - 1];
+                                    newSubplots = [
+                                      {
+                                        id: `sp-fallback-${Date.now().toString(36)}-1`,
+                                        title: "Pressure Escalation Thread",
+                                        description: "Secondary pressures tighten around the protagonists, making each choice costlier and riskier.",
+                                        characterIds: [],
+                                        linkedBeatIds: [first?.id, mid?.id, last?.id].filter((x): x is string => !!x),
+                                        status: "setup",
+                                      },
+                                    ];
+                                  }
 
                                   // ═══ ARCS: one call per main Canon character for reliability ═══
                                   let newArcs: CharacterArc[] = [];
@@ -15949,16 +16165,37 @@ function NovelWorkspacePage() {
                                     newArcs = (arcParsed?.arcs ?? []).map((a, i) => {
                                       const charIds = findCharIdsInText(a.characterName, [a.characterName]);
                                       const charId = charIds[0] || "";
+                                      const safeTurningPoints = (a.turningPointBeatTitles ?? []).map(t => {
+                                        const tl = t.toLowerCase();
+                                        return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
+                                      }).filter((x): x is string => !!x);
                                       return {
                                         id: `arc-${Date.now().toString(36)}-${i}`,
-                                        characterId: charId, arcType: a.arcType || "", startState: a.startState || "", endState: a.endState || "",
-                                        turningPointBeatIds: (a.turningPointBeatTitles ?? []).map(t => {
-                                          const tl = t.toLowerCase();
-                                          return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
-                                        }).filter((x): x is string => !!x),
+                                        characterId: charId,
+                                        arcType: ensureText(a.arcType, fallbackArcType),
+                                        startState: ensureText(a.startState, "Starts reactive and constrained by old assumptions."),
+                                        endState: ensureText(a.endState, "Ends more decisive, changed by escalating pressure."),
+                                        turningPointBeatIds: safeTurningPoints.length > 0 && safeTurningPoints[0]
+                                          ? safeTurningPoints
+                                          : (allBeats[Math.floor(allBeats.length / 2)] ? [allBeats[Math.floor(allBeats.length / 2)].id] : []),
                                       };
                                     }).filter(a => a.characterId);
                                   } catch { /* beats + subplots still saved */ }
+
+                                  if (newArcs.length === 0) {
+                                    const fallbackChars = existingChars
+                                      .filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting")
+                                      .slice(0, 4);
+                                    const midpointBeatId = allBeats[Math.floor(allBeats.length / 2)]?.id;
+                                    newArcs = fallbackChars.map((c, i) => ({
+                                      id: `arc-fallback-${Date.now().toString(36)}-${i}`,
+                                      characterId: c.id,
+                                      arcType: fallbackArcType,
+                                      startState: "Starts constrained by fear, duty, or false certainty.",
+                                      endState: "Ends transformed by escalating pressure and hard-earned choices.",
+                                      turningPointBeatIds: midpointBeatId ? [midpointBeatId] : [],
+                                    }));
+                                  }
 
                                   setSpineProgress("Finalising spine...");
                                   updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
@@ -15997,37 +16234,73 @@ function NovelWorkspacePage() {
                                     <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "2px 0 0" }}>{c.logline.slice(0, 120)}</p>
                                   </div>
                                   <button type="button" className="btn" style={{ fontSize: 11, flexShrink: 0 }} onClick={() => {
-                                    const newChar: Character = {
-                                      id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                      name: c.name,
-                                      role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
-                                      logline: c.logline,
-                                    };
-                                    mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, newChar] } }));
+                                    mutateNovel((n) => {
+                                      const key = normalizeCharacterNameKey(c.name);
+                                      const exists = n.storyBible.characters.some((ch) => normalizeCharacterNameKey(ch.name) === key);
+                                      if (exists) return n;
+                                      const newChar: Character = {
+                                        id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                        name: c.name,
+                                        role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
+                                        logline: c.logline,
+                                      };
+                                      return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, newChar] } };
+                                    });
                                     setSpineSuggestedChars(prev => prev?.filter((_, idx) => idx !== i) ?? null);
                                   }}>+ Add to Canon</button>
                                 </div>
                               ))}
                               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                                 <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => {
-                                  const newChars: Character[] = spineSuggestedChars.map(c => ({
-                                    id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                    name: c.name,
-                                    role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
-                                    logline: c.logline,
-                                  }));
-                                  mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...newChars] } }));
+                                  mutateNovel((n) => {
+                                    const existing = new Set(n.storyBible.characters.map((ch) => normalizeCharacterNameKey(ch.name)));
+                                    const toAdd: Character[] = [];
+                                    for (const suggested of spineSuggestedChars) {
+                                      const key = normalizeCharacterNameKey(suggested.name);
+                                      if (existing.has(key)) continue;
+                                      existing.add(key);
+                                      toAdd.push({
+                                        id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                        name: suggested.name,
+                                        role: (["Supporting", "Minor"].includes(suggested.role) ? suggested.role : "Supporting") as Character["role"],
+                                        logline: suggested.logline,
+                                      });
+                                    }
+                                    if (toAdd.length === 0) return n;
+                                    return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...toAdd] } };
+                                  });
                                   setSpineSuggestedChars(null);
                                 }}>Add All to Canon</button>
                                 <button type="button" className="btn btn-primary" style={{ fontSize: 11 }} disabled={spineBusy} onClick={async () => {
-                                  if (spineBusy || !novel) return;
+                                  if (spineBusy || !novel || !spineSuggestedChars || spineSuggestedChars.length === 0) return;
                                   setSpineBusy(true);
                                   setSpineProgress("Building character profiles...");
                                   try {
+                                    const suggestedSnapshot = [...spineSuggestedChars];
+                                    // Always add suggested characters first (deduped) before profile generation.
+                                    mutateNovel((n) => {
+                                      const existing = new Set(n.storyBible.characters.map((ch) => normalizeCharacterNameKey(ch.name)));
+                                      const toAdd: Character[] = [];
+                                      for (const suggested of suggestedSnapshot) {
+                                        const key = normalizeCharacterNameKey(suggested.name);
+                                        if (existing.has(key)) continue;
+                                        existing.add(key);
+                                        toAdd.push({
+                                          id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                          name: suggested.name,
+                                          role: (["Supporting", "Minor"].includes(suggested.role) ? suggested.role : "Supporting") as Character["role"],
+                                          logline: suggested.logline,
+                                        });
+                                      }
+                                      if (toAdd.length === 0) return n;
+                                      return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...toAdd] } };
+                                    });
+                                    setSpineSuggestedChars(null);
+
                                     const synopsis = novel.storyBible.summary?.synopsisShort || "";
                                     const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
                                     const beatCtx = (novel.storyBible.plotSpine?.beats ?? []).map(b => `"${b.title}": ${b.description.slice(0, 60)}`).join("; ");
-                                    const charList = spineSuggestedChars.map(c => `${c.name} (${c.role}): ${c.logline.slice(0, 80)}`).join("\n");
+                                    const charList = suggestedSnapshot.map(c => `${c.name} (${c.role}): ${c.logline.slice(0, 80)}`).join("\n");
                                     const prompt = [
                                       `Build full character profiles for these characters in a ${genre} novel.`,
                                       `\nSynopsis: ${synopsis.slice(0, 500)}`,
@@ -16041,19 +16314,41 @@ function NovelWorkspacePage() {
                                     if (jsonMatch) {
                                       const parsed = JSON.parse(jsonMatch[0]) as { characters?: Array<{ name: string; role?: string; logline?: string; appearance?: string; personality?: string; goals?: string; fears?: string; backstory?: string }> };
                                       if (parsed.characters?.length) {
-                                        const newChars: Character[] = parsed.characters.map(c => ({
-                                          id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                          name: c.name || "Unknown",
-                                          role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
-                                          logline: c.logline || "",
-                                          appearance: c.appearance || "",
-                                          personality: c.personality || "",
-                                          goals: c.goals || "",
-                                          fears: c.fears || "",
-                                          backstory: c.backstory || "",
-                                        }));
-                                        mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...newChars] } }));
-                                        setSpineSuggestedChars(null);
+                                        mutateNovel((n) => {
+                                          const merged = [...n.storyBible.characters];
+                                          for (const c of parsed.characters ?? []) {
+                                            const safeName = (c.name || "").trim();
+                                            if (!safeName) continue;
+                                            const key = normalizeCharacterNameKey(safeName);
+                                            const idx = merged.findIndex((ch) => normalizeCharacterNameKey(ch.name) === key);
+                                            if (idx >= 0) {
+                                              const existing = merged[idx];
+                                              merged[idx] = {
+                                                ...existing,
+                                                role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : existing.role) as Character["role"],
+                                                logline: c.logline || existing.logline || "",
+                                                appearance: c.appearance || existing.appearance || "",
+                                                personality: c.personality || existing.personality || "",
+                                                goals: c.goals || existing.goals || "",
+                                                fears: c.fears || existing.fears || "",
+                                                backstory: c.backstory || existing.backstory || "",
+                                              };
+                                            } else {
+                                              merged.push({
+                                                id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+                                                name: safeName,
+                                                role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
+                                                logline: c.logline || "",
+                                                appearance: c.appearance || "",
+                                                personality: c.personality || "",
+                                                goals: c.goals || "",
+                                                fears: c.fears || "",
+                                                backstory: c.backstory || "",
+                                              });
+                                            }
+                                          }
+                                          return { ...n, storyBible: { ...n.storyBible, characters: merged } };
+                                        });
                                       }
                                     }
                                   } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
@@ -16211,55 +16506,70 @@ function NovelWorkspacePage() {
                                 </div>
                               </div>
                               {spineDoctorResult.summary && <p style={{ fontSize: 12, color: "var(--pw-text)", marginBottom: 10, lineHeight: 1.5, fontStyle: "italic" }}>{spineDoctorResult.summary}</p>}
-                              {!aiOff && spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length > 1 && (
-                                <button type="button" className="btn btn-primary" disabled={spineBusy} style={{ fontSize: 12, marginBottom: 10, width: "100%" }} onClick={async () => {
-                                  if (spineBusy || !novel) return;
-                                  const fixableIssues = spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning");
-                                  if (fixableIssues.length === 0) return;
-                                  setSpineBusy(true);
-                                  setSpineProgress(`Fixing all ${fixableIssues.length} issues...`);
-                                  try {
-                                    const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
-                                    const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [chars: " + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
-                                    const spCtx = (novel.storyBible.plotSpine?.subplots ?? []).map(s => `"${s.title}" (${s.status})`).join("; ");
-                                    const arcCtxStr = (novel.storyBible.plotSpine?.characterArcs ?? []).map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
-                                    const issueList = fixableIssues.map((i, idx) => `${idx + 1}. [${i.severity}/${i.area}] ${i.message} → Fix: ${i.suggestion}`).join("\n");
-                                    const charNames = storyCharacters.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
-                                    const fixAllPrompt = [
-                                      "Fix ALL of the following issues in the story spine. Apply every fix simultaneously without breaking anything.",
-                                      `\nISSUES TO FIX:\n${issueList}`,
-                                      `\nCanon Characters: ${charNames}`,
-                                      `\nCurrent beats:\n${beatCtx}`,
-                                      spCtx ? `Subplots: ${spCtx}` : "",
-                                      arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
-                                      `\nReturn JSON with the COMPLETE fixed beat list:`,
-                                      `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
-                                      "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Add new beats if needed. Weave missing characters into existing beats naturally.",
-                                      "Use character names from the Canon list. Every fix must be applied.",
-                                    ].filter(Boolean).join("\n");
-                                    const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in the spine simultaneously. Return only valid JSON.", false, 0.4);
-                                    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                                    if (jsonMatch) {
-                                      const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
-                                      if (parsed.beats?.length) {
-                                        const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
-                                          id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
-                                          title: b.title || "", description: b.description || "",
-                                          act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
-                                          chapterHint: currentBeats[bi]?.chapterHint ?? -1,
-                                          characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
-                                          locationHint: b.locationHint || "",
-                                          tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                          sortOrder: bi,
-                                        }));
-                                        updatePlotSpine({ beats: fixedBeats });
-                                        setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter(i => i.severity === "tip"), score: Math.min(100, prev.score + 25) } : null);
-                                      }
-                                    }
-                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
-                                }}>
-                                  {spineBusy ? spineProgress : `Fix All ${spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length} Issues`}
-                                </button>
+                              {!aiOff && (
+                                <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--pw-border-light)", background: "var(--pw-surface)" }}>
+                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>
+                                    {spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length > 0
+                                      ? "Apply all recommended structural fixes together, keep this report as guidance, or dismiss it."
+                                      : "No major issues found. Keep this report as guidance or dismiss it."}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                    <button type="button" className="btn btn-primary" disabled={spineBusy || spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length === 0} style={{ fontSize: 11 }} onClick={async () => {
+                                      if (spineBusy || !novel) return;
+                                      const fixableIssues = spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning");
+                                      if (fixableIssues.length === 0) return;
+                                      setSpineBusy(true);
+                                      setSpineProgress(`Fixing all ${fixableIssues.length} issues...`);
+                                      try {
+                                        const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
+                                        const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [chars: " + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
+                                        const spCtx = (novel.storyBible.plotSpine?.subplots ?? []).map(s => `"${s.title}" (${s.status})`).join("; ");
+                                        const arcCtxStr = (novel.storyBible.plotSpine?.characterArcs ?? []).map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
+                                        const issueList = fixableIssues.map((i, idx) => `${idx + 1}. [${i.severity}/${i.area}] ${i.message} → Fix: ${i.suggestion}`).join("\n");
+                                        const charNames = storyCharacters.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
+                                        const fixAllPrompt = [
+                                          "Fix ALL of the following issues in the story spine. Apply every fix simultaneously without breaking anything.",
+                                          `\nISSUES TO FIX:\n${issueList}`,
+                                          `\nCanon Characters: ${charNames}`,
+                                          `\nCurrent beats:\n${beatCtx}`,
+                                          spCtx ? `Subplots: ${spCtx}` : "",
+                                          arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
+                                          `\nReturn JSON with the COMPLETE fixed beat list:`,
+                                          `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                                          "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Add new beats if needed. Weave missing characters into existing beats naturally.",
+                                          "Use character names from the Canon list. Every fix must be applied.",
+                                        ].filter(Boolean).join("\n");
+                                        const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in the spine simultaneously. Return only valid JSON.", false, 0.4);
+                                        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                        if (jsonMatch) {
+                                          const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
+                                          if (parsed.beats?.length) {
+                                            const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
+                                              id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
+                                              title: b.title || "", description: b.description || "",
+                                              act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                              chapterHint: currentBeats[bi]?.chapterHint ?? -1,
+                                              characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                              locationHint: b.locationHint || "",
+                                              tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                              sortOrder: bi,
+                                            }));
+                                            updatePlotSpine({ beats: fixedBeats });
+                                            setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter(i => i.severity === "tip"), score: Math.min(100, prev.score + 25) } : null);
+                                          }
+                                        }
+                                      } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                    }}>
+                                      {spineBusy ? spineProgress : `Fix All ${spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length} Issues`}
+                                    </button>
+                                    <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => setSpineProgress("")}>
+                                      Keep Recommendations
+                                    </button>
+                                    <button type="button" className="btn" style={{ fontSize: 11, opacity: 0.8 }} onClick={() => setSpineDoctorResult(null)}>
+                                      Reject All
+                                    </button>
+                                  </div>
+                                </div>
                               )}
                               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                 {spineDoctorResult.issues.map((issue, i) => {
@@ -16272,54 +16582,6 @@ function NovelWorkspacePage() {
                                       </div>
                                       <div style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 500 }}>{issue.message}</div>
                                       <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{issue.suggestion}</div>
-                                      {!aiOff && (issue.severity === "critical" || issue.severity === "warning") && (
-                                        <button type="button" className="btn" disabled={spineBusy} style={{ fontSize: 10, marginTop: 6, padding: "3px 10px" }} onClick={async () => {
-                                          if (spineBusy) return;
-                                          setSpineBusy(true);
-                                          setSpineProgress(`Fixing: ${issue.message.slice(0, 40)}...`);
-                                          try {
-                                            const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
-                                            const currentSubplots = novel.storyBible.plotSpine?.subplots ?? [];
-                                            const currentArcs = novel.storyBible.plotSpine?.characterArcs ?? [];
-                                            const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [" + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
-                                            const spCtx = currentSubplots.map(s => `"${s.title}" (${s.status})`).join("; ");
-                                            const arcCtxStr = currentArcs.map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
-                                            const charNames = storyCharacters.map(c => `${c.name} (${c.role})`).join(", ");
-                                            const fixPrompt = [
-                                              "Fix this specific issue in the story spine WITHOUT breaking anything else.",
-                                              `\nISSUE: ${issue.message}`,
-                                              `SUGGESTED FIX: ${issue.suggestion}`,
-                                              `AREA: ${issue.area}`,
-                                              `\nCanon Characters: ${charNames}`,
-                                              `\nCurrent beats:\n${beatCtx}`,
-                                              spCtx ? `Subplots: ${spCtx}` : "",
-                                              arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
-                                              `\nApply the fix by returning the MODIFIED spine. Only change what's needed to fix THIS issue.`,
-                                              `Return JSON: { "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
-                                              "IMPORTANT: Return ALL beats, not just changed ones. Keep unchanged beats exactly as they were. Use Canon character names.",
-                                            ].filter(Boolean).join("\n");
-                                            const raw = await requestOpenRouterText(fixPrompt, 4000, 120000, "You are a story editor. Fix the specific issue without breaking the rest of the spine. Return only valid JSON.", false, 0.4);
-                                            const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                                            if (jsonMatch) {
-                                              const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
-                                              if (parsed.beats?.length) {
-                                                const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
-                                                  id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
-                                                  title: b.title || "", description: b.description || "",
-                                                  act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
-                                                  chapterHint: currentBeats[bi]?.chapterHint ?? -1,
-                                                  characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
-                                                  locationHint: b.locationHint || "",
-                                                  tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                                  sortOrder: bi,
-                                                }));
-                                                updatePlotSpine({ beats: fixedBeats });
-                                                setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter((_, idx) => idx !== i) } : null);
-                                              }
-                                            }
-                                          } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
-                                        }}>Fix This</button>
-                                      )}
                                     </div>
                                   );
                                 })}
