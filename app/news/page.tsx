@@ -82,44 +82,48 @@ export default function NewsPage() {
         }
       `}</style>
 
-      {/* ── Nav ── */}
+      {/* ── Nav (matches main site exactly) ── */}
       <nav style={{
-        position: "sticky", top: 0, zIndex: 100,
-        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-        background: "rgba(14,14,18,0.92)",
+        position: "sticky", top: 0, zIndex: 50,
+        background: "rgba(12,12,29,0.97)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 30, width: "auto" }} />
+        <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
             <div style={{ display: "flex", gap: 32 }} className="news-nav-links">
               {[
-                { label: "Home", href: "/" },
-                { label: "News", href: "/news" },
+                { label: "Features", href: "/#features" },
+                { label: "Non-Fiction", href: "/#nonfiction" },
                 { label: "Pricing", href: "/#pricing" },
-                { label: "Contact", href: "/contact" },
+                { label: "News", href: "/news" },
+                { label: "FAQ", href: "/#faq" },
               ].map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
-                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.6)", textDecoration: "none", transition: "color 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
-                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
+                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
+                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
                 >
                   {l.label}
                 </Link>
               ))}
             </div>
-            <Link href="/subscribe" style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              padding: "10px 24px", fontSize: 13, fontWeight: 600,
-              color: "#111114", background: "#7c5cfc", border: "none",
-              borderRadius: 12, textDecoration: "none",
-            }}>
-              Start Free Trial
-            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <Link href="/login" className="news-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>Log in</Link>
+              <Link href="/subscribe" style={{
+                display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
+                fontSize: 13, fontWeight: 600, borderRadius: 10,
+                background: "linear-gradient(135deg, #7c5cfc 0%, #6246ea 100%)", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(124,92,252,0.3)",
+                transition: "transform 0.15s, box-shadow 0.15s",
+              }}>
+                Start Free Trial
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
@@ -133,8 +137,8 @@ export default function NewsPage() {
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 99,
-            background: "rgba(200,230,48,0.1)", border: "1px solid rgba(200,230,48,0.2)",
-            fontSize: 13, fontWeight: 600, color: "#7c5cfc", marginBottom: 20,
+            background: "rgba(124,92,252,0.08)", border: "1px solid rgba(124,92,252,0.15)",
+            fontSize: 13, fontWeight: 600, color: "#b8a4ff", marginBottom: 20,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Blocwrite Blog
@@ -200,8 +204,8 @@ export default function NewsPage() {
                 <div style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "5px 12px", borderRadius: 99,
-                  background: "rgba(200,230,48,0.1)",
-                  fontSize: 12, fontWeight: 600, color: "#5c46c9",
+                  background: "rgba(124,92,252,0.08)",
+                  fontSize: 12, fontWeight: 600, color: "#b8a4ff",
                   textTransform: "uppercase", letterSpacing: "0.05em",
                   marginBottom: 16,
                 }}>

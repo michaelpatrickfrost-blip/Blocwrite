@@ -80,44 +80,48 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
         .post-body strong { font-weight: 700; color: #111; }
       `}</style>
 
-      {/* ── Nav ── */}
+      {/* ── Nav (matches main site exactly) ── */}
       <nav style={{
-        position: "sticky", top: 0, zIndex: 100,
-        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-        background: "rgba(14,14,18,0.92)",
+        position: "sticky", top: 0, zIndex: 50,
+        background: "rgba(12,12,29,0.97)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 30, width: "auto" }} />
+        <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
             <div style={{ display: "flex", gap: 32 }} className="post-nav-links">
               {[
-                { label: "Home", href: "/" },
-                { label: "News", href: "/news" },
+                { label: "Features", href: "/#features" },
+                { label: "Non-Fiction", href: "/#nonfiction" },
                 { label: "Pricing", href: "/#pricing" },
-                { label: "Contact", href: "/contact" },
+                { label: "News", href: "/news" },
+                { label: "FAQ", href: "/#faq" },
               ].map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
-                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.6)", textDecoration: "none", transition: "color 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
-                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
+                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
+                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
                 >
                   {l.label}
                 </Link>
               ))}
             </div>
-            <Link href="/subscribe" style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              padding: "10px 24px", fontSize: 13, fontWeight: 600,
-              color: C.text, background: C.accent, border: "none",
-              borderRadius: 12, textDecoration: "none",
-            }}>
-              Start Free Trial
-            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <Link href="/login" className="post-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>Log in</Link>
+              <Link href="/subscribe" style={{
+                display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
+                fontSize: 13, fontWeight: 600, borderRadius: 10,
+                background: "linear-gradient(135deg, #7c5cfc 0%, #6246ea 100%)", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(124,92,252,0.3)",
+                transition: "transform 0.15s, box-shadow 0.15s",
+              }}>
+                Start Free Trial
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
