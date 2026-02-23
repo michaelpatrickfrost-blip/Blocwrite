@@ -248,6 +248,57 @@ const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
 const PLAN_CHAPTER_MAX = 40;
 const BOLTON_LIBRARY_KEY = "pilotwriter.boltons.library.v1";
 
+function genreArcExamples(genres: string[]): string {
+  const gl = genres.map(g => g.toLowerCase());
+  const map: Record<string, string[]> = {
+    thriller: ["paranoid descent", "trust shattered", "hunter becomes hunted", "moral compromise", "obsessive pursuit", "reluctant hero forced into action", "corruption spiral", "survival against impossible odds"],
+    suspense: ["paranoid descent", "trust shattered", "hunter becomes hunted", "moral compromise", "obsessive pursuit", "reluctant hero forced into action"],
+    crime: ["moral compromise", "justice vs law", "obsessive pursuit", "corruption of ideals", "informant's double life", "detective's personal stake"],
+    noir: ["moral compromise", "descent into darkness", "doomed love", "corruption spiral", "betrayal from within"],
+    mystery: ["detective's obsession", "uncovering painful truth", "justice vs law", "personal stake in the case", "moral gray area", "trust betrayed"],
+    detective: ["detective's obsession", "uncovering painful truth", "justice vs law", "personal stake in the case"],
+    horror: ["descent into madness", "loss of innocence", "confronting inner demons", "survival at any cost", "isolation breakdown", "haunted by the past", "cursed knowledge"],
+    gothic: ["descent into madness", "haunted by the past", "forbidden knowledge", "isolation and obsession", "dark family legacy"],
+    dark: ["descent into darkness", "moral erosion", "loss of humanity", "power at terrible cost"],
+    psychological: ["losing grip on reality", "identity unraveling", "trust destroyed", "obsession consuming everything", "gaslighting survivor"],
+    fantasy: ["chosen one's burden", "power corruption", "exile to champion", "sacrifice for the greater good", "discovering true identity", "redemption quest"],
+    "sci-fi": ["humanity vs technology", "identity in a post-human world", "power corruption", "exile to champion", "sacrifice for the greater good"],
+    science: ["humanity vs technology", "identity in a post-human world", "power corruption", "exile to champion"],
+    adventure: ["reluctant hero", "proving oneself", "loyalty tested", "sacrifice for comrades", "discovering courage"],
+    romance: ["enemies to lovers", "healing through love", "second chance", "overcoming vulnerability", "choosing love over duty", "self-discovery through partnership"],
+    "rom-com": ["enemies to lovers", "loveable mess finds clarity", "choosing authenticity over image", "overcoming fear of intimacy"],
+    drama: ["disillusionment", "identity crisis", "moral awakening", "coming to terms with loss", "confronting privilege"],
+    literary: ["disillusionment", "existential crisis", "finding meaning in suffering", "generational reckoning", "moral complexity"],
+    historical: ["fighting the system", "survival and resilience", "duty vs conscience", "forbidden identity", "rise and fall"],
+    comedy: ["loveable fool to unlikely hero", "learning humility", "embracing authenticity", "misfit finds belonging"],
+    satire: ["social climber's comeuppance", "idealist meets reality", "conformist breaks free"],
+    ya: ["coming of age", "finding identity", "first heartbreak", "standing up to authority", "choosing own path", "overcoming self-doubt"],
+    "young adult": ["coming of age", "finding identity", "first heartbreak", "standing up to authority", "overcoming self-doubt"],
+    action: ["reluctant hero", "vengeance and its cost", "proving oneself", "loyalty under fire", "redemption through sacrifice"],
+    western: ["lone wolf finds purpose", "justice on the frontier", "redemption ride", "civilisation vs wilderness"],
+    epic: ["chosen one's burden", "sacrifice for the greater good", "fall and redemption", "power corruption"],
+    war: ["loss of innocence", "brotherhood under fire", "moral compromise in conflict", "survivor's guilt", "duty vs humanity"],
+    dystopian: ["awakening rebel", "sacrifice for freedom", "identity under oppression", "trust no one"],
+    spy: ["double life unraveling", "trust no one", "loyalty vs mission", "moral compromise", "handler becomes liability"],
+    espionage: ["double life unraveling", "trust no one", "loyalty vs mission", "moral compromise"],
+    paranormal: ["embracing the supernatural self", "cursed power", "forbidden love across worlds", "hunter becomes the hunted"],
+    urban: ["street survivor rises", "loyalty tested by power", "identity in two worlds", "corruption or conscience"],
+  };
+  const seen = new Set<string>();
+  const examples: string[] = [];
+  for (const g of gl) {
+    for (const [key, arcs] of Object.entries(map)) {
+      if (g.includes(key) || key.includes(g)) {
+        for (const a of arcs) { if (!seen.has(a)) { seen.add(a); examples.push(a); } }
+      }
+    }
+  }
+  if (examples.length === 0) {
+    return "redemption, fall from grace, moral compromise, coming of age, identity crisis";
+  }
+  return examples.slice(0, 8).join(", ");
+}
+
 /* ─── Writing Packs Marketplace ─── */
 type WritingPackBolton = {
   title: string;
@@ -15881,12 +15932,16 @@ function NovelWorkspacePage() {
                                   try {
                                     const mainCanonChars = existingChars.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting").slice(0, 6);
                                     const beatTitles = allBeats.map((b, i) => `${i+1}. "${b.title}" (Act ${b.act})`).join(", ");
+                                    const genreArcEx = genreArcExamples(userGenres);
                                     const arcPrompt = [
-                                      `Generate character arcs for these characters in a ${genre} novel:`,
+                                      `Generate character arcs for these characters in a ${genre} novel.`,
+                                      `The arcs MUST feel authentic to the ${genre} genre — no romance or comedy arcs unless this IS a romance or comedy.`,
                                       mainCanonChars.map(c => `- ${c.name} (${c.role})`).join("\n"),
                                       `\n${arcDirective}`,
                                       `\nBeats: ${beatTitles}`,
-                                      `\nReturn JSON: { "arcs": [{ "characterName": "Exact Name", "arcType": "e.g. redemption, fall, coming of age", "startState": "who they are at start", "endState": "who they become", "turningPointBeatTitles": ["Exact Beat Title"] }] }`,
+                                      `\nFor a ${genre} story, appropriate arc types include: ${genreArcEx}.`,
+                                      `Choose arc types that match the tone and stakes of this genre. Do NOT use generic arcs like "love story" or "comedy" unless the genre calls for it.`,
+                                      `\nReturn JSON: { "arcs": [{ "characterName": "Exact Name", "arcType": "genre-appropriate arc type", "startState": "who they are at start", "endState": "who they become", "turningPointBeatTitles": ["Exact Beat Title"] }] }`,
                                       `Use EXACT character names and EXACT beat titles from the lists above.`,
                                     ].join("\n");
                                     const arcRaw = await smallCall(arcPrompt, 1000, sys);
@@ -16688,6 +16743,9 @@ function NovelWorkspacePage() {
                       const arcs = novel.storyBible.plotSpine?.characterArcs ?? [];
                       const beats = novel.storyBible.plotSpine?.beats ?? [];
                       const storyCharacters = novel.storyBible.characters ?? [];
+                      const arcGenres = (novel.storyBible.summary?.genre ?? []).map(g => g.toLowerCase());
+                      const arcGenreLabel = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                      const arcGenreEx = genreArcExamples(arcGenres);
                       return (
                         <div>
                           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -16710,14 +16768,17 @@ function NovelWorkspacePage() {
                                     if (aiAbortRef.current?.signal.aborted) break;
                                     const charDetail = [char.name, char.role, char.logline, char.personality, char.goals, char.fears, char.backstory].filter(Boolean).join("; ").slice(0, 300);
                                     const prompt = [
-                                      `Suggest 3 different character arc options for ${char.name}:`,
+                                      `Suggest 3 different character arc options for ${char.name} in a ${arcGenreLabel} novel.`,
                                       `Character: ${charDetail}`,
+                                      `\nGenre: ${arcGenreLabel}`,
+                                      `For this genre, appropriate arc types include: ${arcGenreEx}.`,
+                                      `All 3 arcs MUST feel authentic to ${arcGenreLabel} — do NOT suggest romance or comedy arcs unless this IS a romance or comedy.`,
                                       `\nBeats:\n${beatCtx}`,
                                       existingArcs,
-                                      `\nReturn JSON: { "arcs": [{ "arcType": "e.g. redemption, fall from grace, coming of age", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatIndices": [3, 7, 12] }] }`,
-                                      "Each arc should be a distinct journey. turningPointBeatIndices are 0-based indices into the beat list where the character's arc shifts.",
+                                      `\nReturn JSON: { "arcs": [{ "arcType": "genre-appropriate arc type from the examples above", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatIndices": [3, 7, 12] }] }`,
+                                      "Each arc should be a distinct journey that fits the genre's tone and stakes. turningPointBeatIndices are 0-based indices into the beat list where the character's arc shifts.",
                                     ].join("\n");
-                                    const raw = await requestOpenRouterText(prompt, 1500, 120000, "You are a character arc specialist. Suggest compelling character journeys. Return only valid JSON.", false, 0.7);
+                                    const raw = await requestOpenRouterText(prompt, 1500, 120000, `You are a character arc specialist for ${arcGenreLabel} fiction. Suggest compelling, genre-appropriate character journeys. Return only valid JSON.`, false, 0.7);
                                     try {
                                       const cleanedArc = stripThinkingBlocks(raw).replace(/```json\s*/gi, "").replace(/```\s*/g, "");
                                       const jsonMatch = cleanedArc.match(/\{[\s\S]*\}/);
