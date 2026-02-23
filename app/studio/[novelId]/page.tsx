@@ -567,7 +567,7 @@ const WRITING_PACKS: WritingPack[] = [
     tagline: "Funny because it's true. Devastating because it's funny",
     genre: "Satire",
     icon: "M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    color: "#84cc16",
+    color: "#6246ea",
     boltons: [
       { title: "Deadpan Delivery", category: "voice-style", description: "The funniest horror is described without any indication that it's funny.", prompt: "Describe absurd, terrible, or hilarious situations in a completely neutral, matter-of-fact tone. The narrator doesn't seem to notice anything unusual. The contrast between the content and the delivery IS the comedy. Never signal that something is meant to be funny." },
       { title: "Escalating Absurdity", category: "plot-structure", description: "Start plausible. End somewhere impossible. Make every step between them feel logical.", prompt: "Begin with a reasonable situation and escalate it through perfectly logical steps into complete absurdity. Each individual step should make sense — it's only when the reader looks back at the full chain that they realise how far they've come from normal. Logic is the engine of absurdity." },
@@ -7990,7 +7990,7 @@ function NovelWorkspacePage() {
     }
   }
 
-  const THEME_COLORS = ["#a3e635", "#71717a", "#a1a1aa", "#52525b", "#6b7280", "#9ca3af", "#d4d4d8", "#737373"];
+  const THEME_COLORS = ["#b8a4ff", "#71717a", "#a1a1aa", "#52525b", "#6b7280", "#9ca3af", "#d4d4d8", "#737373"];
 
   async function runThematicScan() {
     if (!novel || !ensureStoryAiReady()) return;
@@ -9885,7 +9885,7 @@ function NovelWorkspacePage() {
   const STATUS_META: Record<KnowledgeEntry["status"], { label: string; color: string }> = {
     hidden: { label: "Hidden", color: "#71717a" },
     foreshadowed: { label: "Foreshadowed", color: "#a1a1aa" },
-    revealed: { label: "Revealed", color: "#a3e635" },
+    revealed: { label: "Revealed", color: "#b8a4ff" },
   };
 
   function addKnowledgeEntry() {
@@ -10965,7 +10965,7 @@ function NovelWorkspacePage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
               {grammarChecking ? "Checking..." : "Spellcheck"}
               {visibleMatches.length > 0 && !grammarChecking && (
-                <span style={{ background: "var(--pw-accent)", color: "#111", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{visibleMatches.length}</span>
+                <span style={{ background: "var(--pw-accent)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{visibleMatches.length}</span>
               )}
             </button>
             )}
@@ -11068,8 +11068,8 @@ function NovelWorkspacePage() {
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "10px 16px", borderRadius: 10, cursor: "pointer",
-                  background: "linear-gradient(135deg, rgba(163,230,53,0.08) 0%, rgba(163,230,53,0.03) 100%)",
-                  border: "1px solid rgba(163,230,53,0.18)",
+                  background: "linear-gradient(135deg, rgba(124,92,252,0.08) 0%, rgba(124,92,252,0.03) 100%)",
+                  border: "1px solid rgba(124,92,252,0.18)",
                   animation: "pulse 3s infinite",
                   transition: "all 0.2s ease",
                 }}
@@ -11102,15 +11102,15 @@ function NovelWorkspacePage() {
                     }
                   }).catch(() => {}).finally(() => setFeedbackLoading(false));
                 }}
-                onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(163,230,53,0.35)"; }}
-                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(163,230,53,0.18)"; }}
+                onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.35)"; }}
+                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.18)"; }}
               >
                 <div style={{
                   width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-                  background: "rgba(163,230,53,0.12)", border: "1px solid rgba(163,230,53,0.2)",
+                  background: "rgba(124,92,252,0.12)", border: "1px solid rgba(124,92,252,0.2)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                   </svg>
                 </div>
@@ -11258,15 +11258,15 @@ function NovelWorkspacePage() {
                           style={{
                             display: "flex", alignItems: "center", gap: 4,
                             padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                            background: chapterRewriteBusy ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" : "var(--pw-overlay-bg)",
+                            background: chapterRewriteBusy ? "rgba(var(--accent-rgb, 124,92,252), 0.08)" : "var(--pw-overlay-bg)",
                             border: "1px solid var(--pw-border)", cursor: chapterRewriteBusy ? "default" : "pointer",
-                            color: chapterRewriteBusy ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim)",
+                            color: chapterRewriteBusy ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-dim)",
                             transition: "all 0.12s",
                           }}
                           title="Rewrite entire chapter tone"
                         >
                           {chapterRewriteBusy ? (
-                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
+                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
                           ) : (
                             <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Tone</>
                           )}
@@ -11299,7 +11299,7 @@ function NovelWorkspacePage() {
                                     cursor: "pointer", color: "var(--pw-text-dim)", fontSize: 12, fontWeight: 600,
                                     textAlign: "left", transition: "all 0.1s",
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)"; e.currentTarget.style.color = "var(--pw-accent)"; }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.06)"; e.currentTarget.style.color = "var(--pw-accent)"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
                                 >
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
@@ -11368,7 +11368,7 @@ function NovelWorkspacePage() {
                           ))}
                           <div className="pw-bolton-dropdown-sep" />
                           <button type="button" className="pw-block-bolton-option" onClick={() => { closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
-                            <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
+                            <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-accent)" }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                             </span>
                             <span className="pw-block-bolton-option-text">
@@ -11460,8 +11460,8 @@ function NovelWorkspacePage() {
                                           setIgnoredMatchKeys((prev) => [...prev, key]);
                                         }} style={{
                                           fontSize: 11, padding: "1px 8px", borderRadius: 4,
-                                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
-                                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)",
+                                          background: "rgba(var(--accent-rgb, 124,92,252), 0.12)",
+                                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.3)",
                                           color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600,
                                         }}>{rep.value}</button>
                                       ))}
@@ -11551,7 +11551,7 @@ function NovelWorkspacePage() {
                               </div>
                               <textarea className="pw-block-synopsis" placeholder="Scene synopsis..." value={block.synopsis} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, synopsis: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} rows={2} />
                               {(block.openingLine || block.closingHook || block.emotionalArc || block.sensoryPalette || block.dialogueNotes || block.tension) && (
-                                <div style={{ padding: "6px 10px 8px", margin: "2px 0 4px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)", borderRadius: 6, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" }}>
+                                <div style={{ padding: "6px 10px 8px", margin: "2px 0 4px", background: "rgba(var(--accent-rgb, 124,92,252), 0.03)", borderRadius: 6, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.08)" }}>
                                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--pw-accent)", marginBottom: 4, opacity: 0.8 }}>Blueprint</div>
                                   <div style={{ display: "grid", gap: 3, fontSize: 11, lineHeight: 1.45, color: "var(--pw-text-dim)" }}>
                                     {block.openingLine && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Opening:</span>{block.openingLine}</div>}
@@ -11651,7 +11651,7 @@ function NovelWorkspacePage() {
                                             ))}
                                             <div className="pw-bolton-dropdown-sep" />
                                             <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
-                                              <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-accent)" }}>
+                                              <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-accent)" }}>
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                               </span>
                                               <span className="pw-block-bolton-option-text">
@@ -11686,13 +11686,13 @@ function NovelWorkspacePage() {
                                 onMouseLeave={(e) => { e.currentTarget.style.opacity = isBlockBusy || storyAiBusyAction ? "0.5" : "0.8"; }}
                               >
                                 {isBlockBusy ? (
-                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> {block.prose?.trim() ? "Regenerating..." : "Generating..."}</>
+                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,124,92,252),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> {block.prose?.trim() ? "Regenerating..." : "Generating..."}</>
                                 ) : block.prose?.trim() ? "✦ Regenerate prose" : "✦ Generate prose for this scene"}
                               </button>
                             )}
                             {isBlockBusy && block.prose?.trim() && (
                               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", fontSize: 12, color: "var(--pw-accent)", fontWeight: 600 }}>
-                                <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,163,230,53),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                                <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,124,92,252),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                                 Regenerating...
                               </div>
                             )}
@@ -12073,7 +12073,7 @@ function NovelWorkspacePage() {
                   {novel.healthScore ? (() => {
                     const hs = novel.healthScore;
                     const scoreColor = (v: number) =>
-                      v >= 8 ? "#22c55e" : v >= 6 ? "#a3e635" : v >= 4 ? "#f59e0b" : "#ef4444";
+                      v >= 8 ? "#22c55e" : v >= 6 ? "#b8a4ff" : v >= 4 ? "#f59e0b" : "#ef4444";
                     const scoreLabel = (v: number) =>
                       v >= 9 ? "Excellent" : v >= 7 ? "Good" : v >= 5 ? "Fair" : v >= 3 ? "Needs work" : "Weak";
                     const categories = [
@@ -12146,8 +12146,8 @@ function NovelWorkspacePage() {
                         {hs.tips.length > 0 && (
                           <div style={{
                             padding: "12px 14px", borderRadius: 8, marginTop: 2,
-                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)",
-                            border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                            background: "rgba(var(--accent-rgb, 124,92,252), 0.03)",
+                            border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.08)",
                           }}>
                             <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent)" }}>
                               Overall Tips
@@ -12441,17 +12441,17 @@ function NovelWorkspacePage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{
                         width: 32, height: 32, borderRadius: 8,
-                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                        background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                       </div>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{hasPlotSpine() ? "Story Enhancer" : "Arc Intelligence"}</span>
                         {novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
                           <span style={{
                             marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                            background: "rgba(163,230,53,0.12)", color: "#a3e635",
+                            background: "rgba(124,92,252,0.12)", color: "#b8a4ff",
                           }}>
                             Applied
                           </span>
@@ -12471,9 +12471,9 @@ function NovelWorkspacePage() {
                       title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc choices"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
-                        color: arcBusy ? "var(--pw-text-dim)" : "var(--pw-accent, #a3e635)",
-                        border: arcBusy ? "1px solid var(--pw-border)" : "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", cursor: arcBusy ? "default" : "pointer",
+                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                        color: arcBusy ? "var(--pw-text-dim)" : "var(--pw-accent, #b8a4ff)",
+                        border: arcBusy ? "1px solid var(--pw-border)" : "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", cursor: arcBusy ? "default" : "pointer",
                         display: "flex", alignItems: "center", gap: 6,
                       }}
                     >
@@ -12496,7 +12496,7 @@ function NovelWorkspacePage() {
                   {arcBusy && (
                     <div style={{ padding: "24px 18px", textAlign: "center" }}>
                       <div style={{
-                        width: 24, height: 24, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)",
+                        width: 24, height: 24, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)",
                         borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
                       }} />
                       <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>
@@ -12534,11 +12534,11 @@ function NovelWorkspacePage() {
                         {selectedIdx != null && (
                           <div style={{
                             padding: "10px 14px", borderRadius: 10, marginBottom: 14,
-                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.15)",
+                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.15)",
                             display: "flex", alignItems: "center", gap: 10,
                           }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                            <span style={{ fontSize: 12, color: "#a3e635", fontWeight: 600 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                            <span style={{ fontSize: 12, color: "#b8a4ff", fontWeight: 600 }}>
                               &ldquo;{choices[selectedIdx]?.name}&rdquo; applied — chapter synopses {hasPlotSpine() ? "enhanced" : "updated"}
                             </span>
                           </div>
@@ -12554,13 +12554,13 @@ function NovelWorkspacePage() {
                           {choices.map((choice, ci) => {
                             const isSelected = selectedIdx === ci;
                             const isApplying = arcApplyingChoice === ci;
-                            const scoreColor = choice.score >= 8 ? "#a3e635" : choice.score >= 6 ? "#f59e0b" : "#ef4444";
+                            const scoreColor = choice.score >= 8 ? "#b8a4ff" : choice.score >= 6 ? "#f59e0b" : "#ef4444";
                             const isExpanded = arcExpandedDimension === (`choice-${ci}`);
                             return (
                               <div key={ci} style={{
                                 borderRadius: 12, overflow: "hidden",
-                                border: isSelected ? "1px solid rgba(163,230,53,0.3)" : "1px solid var(--pw-border-light)",
-                                background: isSelected ? "rgba(163,230,53,0.04)" : "var(--pw-overlay-bg)",
+                                border: isSelected ? "1px solid rgba(124,92,252,0.3)" : "1px solid var(--pw-border-light)",
+                                background: isSelected ? "rgba(124,92,252,0.04)" : "var(--pw-overlay-bg)",
                                 transition: "all 0.2s",
                               }}>
                                 <div
@@ -12574,12 +12574,12 @@ function NovelWorkspacePage() {
                                           <span style={{
                                             fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em",
                                             padding: "2px 7px", borderRadius: 5,
-                                            background: "rgba(163,230,53,0.12)", color: "#a3e635",
+                                            background: "rgba(124,92,252,0.12)", color: "#b8a4ff",
                                           }}>Best</span>
                                         )}
                                         <span style={{ fontWeight: 700, fontSize: 14, color: "var(--pw-text)" }}>{choice.name}</span>
                                         {isSelected && (
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#a3e635" stroke="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#b8a4ff" stroke="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                                         )}
                                       </div>
                                       <div style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5 }}>{choice.description}</div>
@@ -12623,9 +12623,9 @@ function NovelWorkspacePage() {
                                         onClick={(e) => { e.stopPropagation(); applyArcChoice(ci); }}
                                         style={{
                                           padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                                          background: isApplying ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
-                                          color: isApplying ? "#111" : "var(--pw-accent, #a3e635)",
-                                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                                          background: isApplying ? "var(--pw-accent, #b8a4ff)" : "rgba(var(--accent-rgb, 124,92,252), 0.1)",
+                                          color: isApplying ? "#111" : "var(--pw-accent, #b8a4ff)",
+                                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
                                           cursor: "pointer",
                                           transition: "all 0.15s",
                                         }}
@@ -12634,8 +12634,8 @@ function NovelWorkspacePage() {
                                       </button>
                                     )}
                                     {isSelected && (
-                                      <span style={{ fontSize: 11, fontWeight: 700, color: "#a3e635", display: "flex", alignItems: "center", gap: 4 }}>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a3e635" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: "#b8a4ff", display: "flex", alignItems: "center", gap: 4 }}>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                                         Applied
                                       </span>
                                     )}
@@ -12683,8 +12683,8 @@ function NovelWorkspacePage() {
                     onClick={() => void runArcAnalysis()}
                     style={{
                       padding: "8px 18px", fontSize: 12, fontWeight: 700, borderRadius: 10,
-                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
-                      color: "var(--pw-accent, #a3e635)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+                      background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                      color: "var(--pw-accent, #b8a4ff)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
                       cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8,
                     }}
                   >
@@ -13044,11 +13044,11 @@ function NovelWorkspacePage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: 8,
-                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
-                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                  background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                  border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                 </div>
                 <div className="pw-delete-modal-title" style={{ margin: 0 }}>Share for Feedback</div>
               </div>
@@ -13106,8 +13106,8 @@ function NovelWorkspacePage() {
                         style={{
                           padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                           border: shareExpiryDays === d ? "1.5px solid var(--pw-accent)" : "1px solid var(--pw-border)",
-                          background: shareExpiryDays === d ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)" : "transparent",
-                          color: shareExpiryDays === d ? "var(--pw-accent, #a3e635)" : "var(--pw-text-muted)",
+                          background: shareExpiryDays === d ? "rgba(var(--accent-rgb, 124,92,252), 0.08)" : "transparent",
+                          color: shareExpiryDays === d ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-muted)",
                           cursor: "pointer",
                         }}
                       >
@@ -13164,7 +13164,7 @@ function NovelWorkspacePage() {
                   background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
                 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                     Invite by email
                   </p>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -13194,7 +13194,7 @@ function NovelWorkspacePage() {
                     </button>
                   </div>
                   {shareResult.hasPassword && sharePassword.trim() && (
-                    <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #a3e635)", display: "flex", alignItems: "center", gap: 5 }}>
+                    <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #b8a4ff)", display: "flex", alignItems: "center", gap: 5 }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       Password will be included in the email
                     </p>
@@ -13397,10 +13397,10 @@ function NovelWorkspacePage() {
                         }}>
                           <div style={{
                             width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
-                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
-                            border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+                            background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
+                            border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            color: "var(--pw-accent, #a3e635)", fontSize: 14, fontWeight: 700,
+                            color: "var(--pw-accent, #b8a4ff)", fontSize: 14, fontWeight: 700,
                           }}>
                             {(fb.readerName || "A")[0].toUpperCase()}
                           </div>
@@ -13424,7 +13424,7 @@ function NovelWorkspacePage() {
                         return (
                           <span key={name} style={{
                             fontSize: 12, padding: "4px 12px", borderRadius: 8,
-                            background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
+                            background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
                             color: "var(--pw-text-muted)", fontWeight: 500,
                           }}>
                             {name} <span style={{ opacity: 0.7 }}>({count})</span>
@@ -13470,8 +13470,8 @@ function NovelWorkspacePage() {
             {!feedbackLoading && feedbackReviewMode && !feedbackReviewDone && (() => {
               const item = feedbackReviewQueue[feedbackReviewIdx];
               if (!item) return null;
-              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "var(--pw-accent, #a3e635)" : "var(--pw-text-muted)";
-              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)" : "rgba(255,255,255,0.03)";
+              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-muted)";
+              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "rgba(255,255,255,0.03)";
               const progress = ((feedbackReviewIdx) / feedbackReviewQueue.length) * 100;
 
               return (
@@ -13487,7 +13487,7 @@ function NovelWorkspacePage() {
                       </span>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #a3e635)", borderRadius: 4, transition: "width 0.3s ease" }} />
+                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #b8a4ff)", borderRadius: 4, transition: "width 0.3s ease" }} />
                     </div>
                   </div>
 
@@ -13539,18 +13539,18 @@ function NovelWorkspacePage() {
                     <div style={{ padding: "0 20px 6px" }}>
                       <div style={{
                         borderRadius: 12, padding: "14px 16px",
-                        border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
-                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.03)",
+                        border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
+                        background: "rgba(var(--accent-rgb, 124,92,252), 0.03)",
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                           </svg>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #a3e635)", letterSpacing: "0.02em" }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", letterSpacing: "0.02em" }}>
                             AI Recommendation
                           </span>
                           {fbAiRecommendationLoading && (
-                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                           )}
                         </div>
                         {fbAiRecommendationLoading && !fbAiRecommendation && (
@@ -13574,7 +13574,7 @@ function NovelWorkspacePage() {
                               )}
                               {rec && (
                                 <div>
-                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-accent, #a3e635)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Suggestion</p>
+                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Suggestion</p>
                                   <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{rec}</p>
                                 </div>
                               )}
@@ -13590,8 +13590,8 @@ function NovelWorkspacePage() {
                     <div style={{ padding: "0 20px 6px" }}>
                       <div style={{
                         borderRadius: 12,
-                        border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.12)",
-                        background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.02)",
+                        border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
+                        background: "rgba(var(--accent-rgb, 124,92,252), 0.02)",
                         overflow: "hidden",
                       }}>
                         {/* Header */}
@@ -13600,10 +13600,10 @@ function NovelWorkspacePage() {
                           borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
                           display: "flex", alignItems: "center", gap: 8,
                         }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                           </svg>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #a3e635)", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
                         </div>
                         {/* Side-by-side diff */}
                         <div style={{ display: "flex", gap: 0, fontSize: 13, lineHeight: 1.65 }}>
@@ -13626,7 +13626,7 @@ function NovelWorkspacePage() {
                           {/* After */}
                           <div style={{
                             flex: 1, padding: "12px 14px",
-                            background: "rgba(163,230,53,0.02)",
+                            background: "rgba(124,92,252,0.02)",
                           }}>
                             <div style={{
                               fontSize: 9, textTransform: "uppercase", opacity: 0.35,
@@ -13699,8 +13699,8 @@ function NovelWorkspacePage() {
                         className="btn"
                         style={{
                           flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
-                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
-                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", color: "var(--pw-accent, #a3e635)",
+                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                          background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", color: "var(--pw-accent, #b8a4ff)",
                           cursor: fbPreviewGenerating ? "wait" : "pointer", transition: "all 0.15s",
                           opacity: fbPreviewGenerating ? 0.6 : 1,
                         }}
@@ -13760,7 +13760,7 @@ function NovelWorkspacePage() {
                       >
                         {fbPreviewGenerating ? (
                           <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                             Regenerating...
                           </span>
                         ) : (
@@ -14152,8 +14152,8 @@ function NovelWorkspacePage() {
                     <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>The Editor</h2>
                     <span style={{
                       fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
-                      background: "var(--pw-accent-muted, rgba(163,230,53,0.1))",
-                      color: "var(--pw-accent, #a3e635)",
+                      background: "var(--pw-accent-muted, rgba(124,92,252,0.1))",
+                      color: "var(--pw-accent, #b8a4ff)",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                     }}>
                       Full Manuscript
@@ -14193,15 +14193,15 @@ function NovelWorkspacePage() {
                     }}
                     style={{
                       padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
-                      color: "var(--pw-accent)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                      background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
+                      color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
                       cursor: nccBusy ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5,
                       transition: "all 0.15s",
                       opacity: nccBusy ? 0.5 : 1,
                     }}
                   >
                     {nccBusy ? (
-                      <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
+                      <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
                     ) : editorFindings.length > 0 ? "Re-scan" : "Scan Manuscript"}
                   </button>
                 </div>
@@ -14236,7 +14236,7 @@ function NovelWorkspacePage() {
                 {/* Scanning */}
                 {nccBusy && (
                   <div style={{ textAlign: "center", padding: "48px 20px" }}>
-                    <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+                    <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
                     <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Reading your manuscript...</p>
                     {editorApplyProgress && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>{editorApplyProgress}</p>}
                   </div>
@@ -14244,7 +14244,7 @@ function NovelWorkspacePage() {
 
                 {/* Summary */}
                 {editorSummary && !nccBusy && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "rgba(var(--accent-rgb, 124,92,252), 0.04)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.1)", marginBottom: 12 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.4, flex: 1 }}>{editorSummary}</p>
                   </div>
@@ -14274,7 +14274,7 @@ function NovelWorkspacePage() {
                     {editorFindings.some((f) => f.status === "pending") && (
                       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                         <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "accepted" } : f))}
-                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb,163,230,53),0.08)", border: "1px solid rgba(var(--pw-accent-rgb,163,230,53),0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
+                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb,124,92,252),0.08)", border: "1px solid rgba(var(--pw-accent-rgb,124,92,252),0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
                           Accept all
                         </button>
                         <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "dismissed" } : f))}
@@ -14331,7 +14331,7 @@ function NovelWorkspacePage() {
                         </button>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-                          <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                          <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
                           <span style={{ fontSize: 12, fontWeight: 600 }}>Applying...</span>
                         </div>
                       )}
@@ -14341,7 +14341,7 @@ function NovelWorkspacePage() {
 
                 {/* Done */}
                 {editorApplyDone && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.05)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)", marginTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, background: "rgba(var(--accent-rgb, 124,92,252), 0.05)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)", marginTop: 8 }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-accent)" }}>{editorApplyCount} edit{editorApplyCount !== 1 ? "s" : ""} applied</div>
@@ -14745,7 +14745,7 @@ function NovelWorkspacePage() {
                                 }}>
                                   <div style={{
                                     width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                                    background: "rgba(var(--pw-accent-rgb,163,230,53),0.12)",
+                                    background: "rgba(var(--pw-accent-rgb,124,92,252),0.12)",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                     fontSize: 14, fontWeight: 800, color: "var(--pw-accent)",
                                   }}>
@@ -15578,13 +15578,13 @@ function NovelWorkspacePage() {
                               : prog.includes("arc") || prog.includes("character") ? 4
                               : prog.includes("final") ? 5 : 0;
                             return (
-                              <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" }}>
+                              <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)" }}>
                                 <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                                   {phases.map((p, i) => (
                                     <div key={p.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
                                       <div style={{
                                         width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
-                                        background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" : "var(--pw-surface)",
+                                        background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--accent-rgb, 124,92,252), 0.2)" : "var(--pw-surface)",
                                         border: i === activeIdx ? "2px solid var(--pw-accent)" : "1px solid var(--pw-border-light)",
                                         color: i < activeIdx ? "#000" : i === activeIdx ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                         fontWeight: 700,
@@ -15635,13 +15635,13 @@ function NovelWorkspacePage() {
                                   <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
                                     style={{
                                       textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                                      background: spineArcChoice === arc.id ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.12)" : isRecommended ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)" : "var(--pw-surface)",
-                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : isRecommended ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.3)" : "var(--pw-border-light)"}`,
+                                      background: spineArcChoice === arc.id ? "rgba(var(--accent-rgb, 124,92,252), 0.12)" : isRecommended ? "rgba(var(--accent-rgb, 124,92,252), 0.04)" : "var(--pw-surface)",
+                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : isRecommended ? "rgba(var(--accent-rgb, 124,92,252), 0.3)" : "var(--pw-border-light)"}`,
                                       transition: "all 0.15s",
                                     }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                       <span style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</span>
-                                      {isRecommended && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>}
+                                      {isRecommended && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>}
                                     </div>
                                     <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{arc.hint}</div>
                                   </button>);
@@ -15890,7 +15890,7 @@ function NovelWorkspacePage() {
 
                           {/* Suggested new characters */}
                           {spineSuggestedChars && spineSuggestedChars.length > 0 && (
-                            <div style={{ marginBottom: 16, padding: 14, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 14, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>New Characters Found</div>
                               <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>The spine introduced these characters. Add them to your Canon so the AI can reference their profiles during generation.</p>
                               {spineSuggestedChars.map((c, i) => (
@@ -16363,7 +16363,7 @@ function NovelWorkspacePage() {
 
                           {/* Variation picker */}
                           {spineVariations && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose a variation:</div>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 {spineVariations.map((v, vi) => (
@@ -16455,7 +16455,7 @@ function NovelWorkspacePage() {
                                                   updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, characterIds: ids } : b) });
                                                 }} style={{
                                                   fontSize: 11, padding: "2px 8px", borderRadius: 12,
-                                                  background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)",
+                                                  background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)",
                                                   border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                                   color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400,
                                                 }}>{c.name}</button>
@@ -16562,7 +16562,7 @@ function NovelWorkspacePage() {
                           </div>
 
                           {spineSubplotSuggestions && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Suggested subplots:</div>
                               {spineSubplotSuggestions.map((s) => (
                                 <div key={s.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--pw-border-light)" }}>
@@ -16617,7 +16617,7 @@ function NovelWorkspacePage() {
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {storyCharacters.map(c => {
                                               const active = sp.characterIds.includes(c.id);
-                                              return <button key={c.id} type="button" onClick={() => { const ids = active ? sp.characterIds.filter(x => x !== c.id) : [...sp.characterIds, c.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, characterIds: ids } : s) }); }} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{c.name}</button>;
+                                              return <button key={c.id} type="button" onClick={() => { const ids = active ? sp.characterIds.filter(x => x !== c.id) : [...sp.characterIds, c.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, characterIds: ids } : s) }); }} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{c.name}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -16626,7 +16626,7 @@ function NovelWorkspacePage() {
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {beats.map(b => {
                                               const active = sp.linkedBeatIds.includes(b.id);
-                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? sp.linkedBeatIds.filter(x => x !== b.id) : [...sp.linkedBeatIds, b.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, linkedBeatIds: ids } : s) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{b.title || "Untitled"}</button>;
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? sp.linkedBeatIds.filter(x => x !== b.id) : [...sp.linkedBeatIds, b.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, linkedBeatIds: ids } : s) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{b.title || "Untitled"}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -16706,7 +16706,7 @@ function NovelWorkspacePage() {
                           </div>
 
                           {spineArcSuggestions && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose an arc for each character:</div>
                               {spineArcSuggestions.map((group) => (
                                 <div key={group.characterId} style={{ marginBottom: 12 }}>
@@ -16774,7 +16774,7 @@ function NovelWorkspacePage() {
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {beats.map(b => {
                                               const active = arc.turningPointBeatIds.includes(b.id);
-                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? arc.turningPointBeatIds.filter(x => x !== b.id) : [...arc.turningPointBeatIds, b.id]; updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, turningPointBeatIds: ids } : a) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{active ? "★ " : ""}{b.title || "Untitled"}</button>;
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? arc.turningPointBeatIds.filter(x => x !== b.id) : [...arc.turningPointBeatIds, b.id]; updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, turningPointBeatIds: ids } : a) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{active ? "★ " : ""}{b.title || "Untitled"}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -16890,7 +16890,7 @@ function NovelWorkspacePage() {
                                       {/* Icon */}
                                       <div style={{
                                         width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                                        background: item.prompt ? "rgba(163,230,53,0.1)" : "var(--pw-overlay-bg)",
+                                        background: item.prompt ? "rgba(124,92,252,0.1)" : "var(--pw-overlay-bg)",
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                       }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill={item.prompt ? "var(--pw-accent)" : "none"} stroke={item.prompt ? "var(--pw-accent)" : "var(--pw-text-dim)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -18110,8 +18110,8 @@ function NovelWorkspacePage() {
                       return (
                         <div style={{
                           padding: "10px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 10,
-                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
-                          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
                         }}>
                           <span style={{ flex: 1, fontSize: 12, fontWeight: 550, color: "var(--pw-text)" }}>
                             You&apos;ve shared a lot — save to Canon so nothing gets lost?
@@ -18356,7 +18356,7 @@ function NovelWorkspacePage() {
                             const emotionKey = evt.emotion.toLowerCase().trim();
                             const val = emotionValues[emotionKey] ?? 0;
                             const pct = ((val + 5) / 10) * 100;
-                            const color = val > 2 ? "#22c55e" : val > 0 ? "#a3e635" : val === 0 ? "#94a3b8" : val > -3 ? "#f59e0b" : "#ef4444";
+                            const color = val > 2 ? "#22c55e" : val > 0 ? "#b8a4ff" : val === 0 ? "#94a3b8" : val > -3 ? "#f59e0b" : "#ef4444";
                             const isExpanded = nfData?.timelineExpandedId === evt.id;
                             items.push(
                               <div key={evt.id}>
@@ -18686,7 +18686,7 @@ function NovelWorkspacePage() {
                       </div>
 
                       {needsCheckpoint && !aiOff && (
-                        <div style={{ background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.15)", borderRadius: 8, padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--pw-text-dim)" }}>
+                        <div style={{ background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.15)", borderRadius: 8, padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--pw-text-dim)" }}>
                           Checkpoint reached ({userMsgCount} messages). Click &quot;Extract to Canon&quot; to pull key data into your story.
                         </div>
                       )}
@@ -18702,8 +18702,8 @@ function NovelWorkspacePage() {
                           <div key={i} style={{
                             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
                             maxWidth: "80%", padding: "10px 14px", borderRadius: 12, fontSize: 13, lineHeight: 1.6,
-                            background: msg.role === "user" ? "var(--pw-accent-light, rgba(163,230,53,0.08))" : "var(--pw-surface)",
-                            border: `1px solid ${msg.role === "user" ? "rgba(163,230,53,0.15)" : "var(--pw-border-light)"}`,
+                            background: msg.role === "user" ? "var(--pw-accent-light, rgba(124,92,252,0.08))" : "var(--pw-surface)",
+                            border: `1px solid ${msg.role === "user" ? "rgba(124,92,252,0.15)" : "var(--pw-border-light)"}`,
                             whiteSpace: "pre-wrap",
                           }}>
                             {msg.text}
@@ -18881,7 +18881,7 @@ function NovelWorkspacePage() {
                               {note.tags.length > 0 && (
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                   {note.tags.map((tag, i) => (
-                                    <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(163,230,53,0.08)", color: "var(--pw-accent)" }}>{tag}</span>
+                                    <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(124,92,252,0.08)", color: "var(--pw-accent)" }}>{tag}</span>
                                   ))}
                                 </div>
                               )}
@@ -19138,10 +19138,10 @@ function NovelWorkspacePage() {
             <div style={{ textAlign: "center", marginBottom: 16 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
-                background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               </div>
               <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
                 Step 1: Confirm Characters
@@ -19175,8 +19175,8 @@ function NovelWorkspacePage() {
                 >
                   <div style={{
                     width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                    border: entry.selected ? "2px solid var(--pw-accent, #a3e635)" : "2px solid var(--pw-border, #444)",
-                    background: entry.selected ? "var(--pw-accent, #a3e635)" : "transparent",
+                    border: entry.selected ? "2px solid var(--pw-accent, #b8a4ff)" : "2px solid var(--pw-border, #444)",
+                    background: entry.selected ? "var(--pw-accent, #b8a4ff)" : "transparent",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     transition: "all 0.15s",
                   }}>
@@ -19192,7 +19192,7 @@ function NovelWorkspacePage() {
                   </div>
                   <span style={{
                     fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, flexShrink: 0,
-                    background: entry.role === "Protagonist" ? "rgba(163,230,53,0.12)" : entry.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                    background: entry.role === "Protagonist" ? "rgba(124,92,252,0.12)" : entry.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
                     color: entry.role === "Protagonist" ? "var(--pw-accent)" : entry.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
                     textTransform: "uppercase", letterSpacing: "0.03em",
                   }}>{entry.role || "Supporting"}</span>
@@ -19229,10 +19229,10 @@ function NovelWorkspacePage() {
             <div style={{ textAlign: "center", marginBottom: 16 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
-                background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
               <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
                 Step 2: Generate Profiles?
@@ -19256,7 +19256,7 @@ function NovelWorkspacePage() {
                     <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{ch.name}</span>
                     <span style={{
                       fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
-                      background: ch.role === "Protagonist" ? "rgba(163,230,53,0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                      background: ch.role === "Protagonist" ? "rgba(124,92,252,0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
                       color: ch.role === "Protagonist" ? "var(--pw-accent)" : ch.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
                     }}>{ch.role || "Supporting"}</span>
                   </div>
@@ -19291,10 +19291,10 @@ function NovelWorkspacePage() {
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <div style={{
                 width: 48, height: 48, borderRadius: 14, margin: "0 auto 12px",
-                background: "rgba(var(--pw-accent-rgb,163,230,53),0.10)",
+                background: "rgba(var(--pw-accent-rgb,124,92,252),0.10)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#a3e635)" strokeWidth="2" strokeLinecap="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#b8a4ff)" strokeWidth="2" strokeLinecap="round">
                   <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
                 </svg>
               </div>
@@ -19310,11 +19310,11 @@ function NovelWorkspacePage() {
               <div style={{ textAlign: "center", padding: "20px 0" }}>
                 <div style={{
                   width: 40, height: 40, borderRadius: 12, margin: "0 auto 12px",
-                  background: "rgba(var(--pw-accent-rgb,163,230,53),0.10)",
+                  background: "rgba(var(--pw-accent-rgb,124,92,252),0.10)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   animation: "pulse 1.8s ease-in-out infinite",
                 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#a3e635)" strokeWidth="2" strokeLinecap="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#b8a4ff)" strokeWidth="2" strokeLinecap="round">
                     <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4m-3.93 7.07l-2.83-2.83M7.76 7.76L4.93 4.93"/>
                   </svg>
                 </div>
@@ -19358,7 +19358,7 @@ function NovelWorkspacePage() {
                     onClick={() => void addV2CharacterWithAi(newCharPopup.charId, newCharPopup.description)}
                     style={{
                       padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                      background: newCharPopup.description.trim() ? "var(--pw-accent, #a3e635)" : "rgba(var(--pw-accent-rgb,163,230,53),0.2)",
+                      background: newCharPopup.description.trim() ? "var(--pw-accent, #b8a4ff)" : "rgba(var(--pw-accent-rgb,124,92,252),0.2)",
                       border: "none", color: newCharPopup.description.trim() ? "#000" : "var(--pw-text-dim)",
                       cursor: newCharPopup.description.trim() ? "pointer" : "not-allowed",
                       transition: "all 0.15s",
@@ -19380,11 +19380,11 @@ function NovelWorkspacePage() {
             {/* Pulsing icon */}
             <div style={{
               width: 48, height: 48, borderRadius: 14, margin: "0 auto 14px",
-              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.10)",
+              background: "rgba(var(--accent-rgb, 124,92,252), 0.10)",
               display: "flex", alignItems: "center", justifyContent: "center",
               animation: "pulse 1.8s ease-in-out infinite",
             }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round">
                 <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
               </svg>
             </div>
@@ -19404,7 +19404,7 @@ function NovelWorkspacePage() {
             }}>
               <div style={{
                 height: "100%", borderRadius: 3,
-                background: "var(--pw-accent, #a3e635)",
+                background: "var(--pw-accent, #b8a4ff)",
                 width: `${Math.max(4, Math.round((profileGenProgress.done / profileGenProgress.total) * 100))}%`,
                 transition: "width 0.5s cubic-bezier(.4,0,.2,1)",
               }} />
@@ -19444,10 +19444,10 @@ function NovelWorkspacePage() {
           >
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+              background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
               </svg>
             </div>
@@ -19463,7 +19463,7 @@ function NovelWorkspacePage() {
               {["3 Arc Paths", "Scored & Ranked", "One-Click Apply"].map((pill) => (
                 <span key={pill} style={{
                   fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 8,
-                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                  background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.1)",
                 }}>
                   {pill}
                 </span>
@@ -19490,8 +19490,8 @@ function NovelWorkspacePage() {
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "var(--pw-accent, #a3e635)", color: "#111", border: "none",
-                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                  background: "var(--pw-accent, #b8a4ff)", color: "#fff", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.2)",
                 }}
               >
                 Generate Arc Paths
@@ -19525,10 +19525,10 @@ function NovelWorkspacePage() {
           >
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+              background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
                 <circle cx="9" cy="7" r="4"/>
                 <line x1="19" y1="8" x2="19" y2="14"/>
@@ -19551,9 +19551,9 @@ function NovelWorkspacePage() {
                   <div key={cid} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                      background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.1)",
+                      background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 11, fontWeight: 700, color: "var(--pw-accent, #a3e635)",
+                      fontSize: 11, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)",
                     }}>
                       {(ch.name || "?")[0]}
                     </div>
@@ -19591,8 +19591,8 @@ function NovelWorkspacePage() {
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "var(--pw-accent, #a3e635)", color: "#111", border: "none",
-                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--pw-accent-rgb, 163,230,53), 0.2)",
+                  background: "var(--pw-accent, #b8a4ff)", color: "#fff", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.2)",
                 }}
               >
                 Generate All Profiles
@@ -19858,7 +19858,7 @@ function NovelWorkspacePage() {
                   transition: "all 0.1s", whiteSpace: "nowrap",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)";
+                  e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.08)";
                   e.currentTarget.style.color = "var(--pw-accent)";
                 }}
                 onMouseLeave={(e) => {
@@ -19881,11 +19881,11 @@ function NovelWorkspacePage() {
           display: "flex", alignItems: "center", gap: 10,
           padding: "12px 20px", borderRadius: 12,
           background: "var(--pw-surface)",
-          border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
           <span style={{
-            width: 14, height: 14, border: "2px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.3)",
+            width: 14, height: 14, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.3)",
             borderTopColor: "var(--pw-accent)", borderRadius: "50%",
             animation: "spin 0.7s linear infinite", display: "inline-block",
           }} />
@@ -19929,8 +19929,8 @@ function NovelWorkspacePage() {
                 </div>
                 <div style={{
                   padding: "12px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.7,
-                  background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.04)",
-                  border: "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)",
+                  background: "rgba(var(--accent-rgb, 124,92,252), 0.04)",
+                  border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
                   color: "var(--pw-text, #e4e4e7)",
                 }}>
                   {rewritePreview.revised}
@@ -20025,7 +20025,7 @@ function NovelWorkspacePage() {
                 >
                   <div style={{
                     width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                    background: "rgba(163,230,53,0.08)",
+                    background: "rgba(124,92,252,0.08)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={opt.iconPath}/></svg>
@@ -20058,7 +20058,7 @@ function NovelWorkspacePage() {
                 {/* Avatar / icon */}
                 <div style={{
                   width: 36, height: 36, borderRadius: coAuthorMode ? 10 : 10, flexShrink: 0,
-                  background: coAuthorMode ? "rgba(var(--pw-accent-rgb,163,230,53),0.15)" : "rgba(163,230,53,0.12)",
+                  background: coAuthorMode ? "rgba(var(--pw-accent-rgb,124,92,252),0.15)" : "rgba(124,92,252,0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 15, fontWeight: 800, color: "var(--pw-accent)",
                 }}>
@@ -20078,11 +20078,11 @@ function NovelWorkspacePage() {
                   {charChatReviewing && (
                     <span style={{
                       padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                      background: "rgba(163,230,53,0.05)", color: "var(--pw-accent)",
-                      border: "1px solid rgba(163,230,53,0.2)",
+                      background: "rgba(124,92,252,0.05)", color: "var(--pw-accent)",
+                      border: "1px solid rgba(124,92,252,0.2)",
                       display: "flex", alignItems: "center", gap: 5,
                     }}>
-                      <span style={{ width: 10, height: 10, border: "1.5px solid rgba(163,230,53,0.3)", borderTopColor: "#a3e635", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...
+                      <span style={{ width: 10, height: 10, border: "1.5px solid rgba(124,92,252,0.3)", borderTopColor: "#b8a4ff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...
                     </span>
                   )}
                   <button type="button" onClick={() => closeChat()} style={{
@@ -20112,7 +20112,7 @@ function NovelWorkspacePage() {
                         <button key={q} type="button" onClick={() => setCharChatInput(q)}
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
-                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
+                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.12)",
                             color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
                           }}
                         >{q}</button>
@@ -20137,7 +20137,7 @@ function NovelWorkspacePage() {
                         <button key={q} type="button" onClick={() => setCharChatInput(q)}
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
-                            background: "rgba(163,230,53,0.06)", border: "1px solid rgba(163,230,53,0.12)",
+                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.12)",
                             color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
                           }}
                         >{q}</button>
@@ -20153,7 +20153,7 @@ function NovelWorkspacePage() {
                     {msg.role === "character" && (
                       <div style={{
                         width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                        background: coAuthorMode ? "rgba(var(--pw-accent-rgb,163,230,53),0.15)" : "rgba(163,230,53,0.1)",
+                        background: coAuthorMode ? "rgba(var(--pw-accent-rgb,124,92,252),0.15)" : "rgba(124,92,252,0.1)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 11, fontWeight: 800, color: "var(--pw-accent)",
                       }}>
@@ -20173,7 +20173,7 @@ function NovelWorkspacePage() {
                 ))}
                 {charChatLoading && (
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(163,230,53,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(124,92,252,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>
                       {coAuthorMode ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                       ) : charChatTarget ? charChatTarget.name.charAt(0).toUpperCase() : "?"}
@@ -20258,7 +20258,7 @@ function NovelWorkspacePage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                         <span style={{
                           fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
                           color: "var(--pw-text-muted)",
                           letterSpacing: "0.04em",
                         }}>{rec.type === "chapter_synopsis" ? "Chapter" : rec.type === "prose_edit" ? "Prose" : "Profile"}</span>
@@ -20274,7 +20274,7 @@ function NovelWorkspacePage() {
                           <div style={{ fontSize: 10, color: "#ef4444", marginBottom: 3, padding: "4px 8px", borderRadius: 6, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.1)", lineHeight: 1.4, textDecoration: "line-through" }}>
                             {rec.currentValue.slice(0, 200)}{rec.currentValue.length > 200 ? "…" : ""}
                           </div>
-                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(163,230,53,0.04)", border: "1px solid rgba(163,230,53,0.15)", lineHeight: 1.4, color: "var(--pw-text)" }}>
+                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(124,92,252,0.04)", border: "1px solid rgba(124,92,252,0.15)", lineHeight: 1.4, color: "var(--pw-text)" }}>
                             {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
                           </div>
                         </div>
@@ -20296,7 +20296,7 @@ function NovelWorkspacePage() {
                           <button type="button" onClick={() => applyCharChatRecommendation(rec.id)}
                             style={{
                               flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, borderRadius: 6,
-                              background: "rgba(163,230,53,0.1)", border: "1px solid rgba(163,230,53,0.2)",
+                              background: "rgba(124,92,252,0.1)", border: "1px solid rgba(124,92,252,0.2)",
                               color: "var(--pw-accent)", cursor: "pointer",
                             }}
                           >Accept</button>
@@ -20388,7 +20388,7 @@ function NovelWorkspacePage() {
                     <div key={pack.id} style={{
                       borderRadius: 14,
                       background: "var(--pw-overlay-bg)",
-                      border: `1px solid ${justInstalled ? "rgba(163,230,53,0.3)" : "var(--pw-overlay-bg-hover)"}`,
+                      border: `1px solid ${justInstalled ? "rgba(124,92,252,0.3)" : "var(--pw-overlay-bg-hover)"}`,
                       transition: "all 0.2s",
                       overflow: "hidden",
                     }}>
@@ -20405,17 +20405,17 @@ function NovelWorkspacePage() {
                       >
                         <div style={{
                           width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                          background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)",
+                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--pw-accent-rgb, 163,230,53), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
                             {allInstalled && (
-                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(163,230,53,0.12)", color: "var(--pw-accent)" }}>Installed</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(124,92,252,0.12)", color: "var(--pw-accent)" }}>Installed</span>
                             )}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>{pack.tagline}</div>
@@ -20465,14 +20465,14 @@ function NovelWorkspacePage() {
                                   style={{
                                     display: "flex", alignItems: "center", gap: 10,
                                     padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
-                                    background: isChecked ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.05)" : alreadyHas ? "rgba(163,230,53,0.03)" : "var(--pw-overlay-bg)",
-                                    border: isChecked ? "1px solid rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : alreadyHas ? "1px solid rgba(163,230,53,0.1)" : "1px solid var(--pw-border-light)",
+                                    background: isChecked ? "rgba(var(--accent-rgb, 124,92,252), 0.05)" : alreadyHas ? "rgba(124,92,252,0.03)" : "var(--pw-overlay-bg)",
+                                    border: isChecked ? "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)" : alreadyHas ? "1px solid rgba(124,92,252,0.1)" : "1px solid var(--pw-border-light)",
                                     transition: "all 0.12s",
                                   }}>
                                   <div style={{
                                     width: 16, height: 16, borderRadius: 4, flexShrink: 0,
                                     border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? "1.5px solid var(--pw-accent)" : "1.5px solid var(--pw-border)",
-                                    background: alreadyHas ? "rgba(163,230,53,0.15)" : isChecked ? "rgba(var(--pw-accent-rgb, 163,230,53), 0.15)" : "transparent",
+                                    background: alreadyHas ? "rgba(124,92,252,0.15)" : isChecked ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "transparent",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                   }}>
                                     {(alreadyHas || isChecked) && (
@@ -20497,7 +20497,7 @@ function NovelWorkspacePage() {
                             <div style={{ display: "flex", gap: 6 }}>
                               {hasSelection && (
                                 <button type="button" disabled={slotsLeft <= 0} onClick={() => installWritingPack(pack, packSelectedBoltons)}
-                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent, #a3e635)", color: "#111", transition: "all 0.15s" }}>
+                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent, #b8a4ff)", color: "#fff", transition: "all 0.15s" }}>
                                   Install Selected ({packSelected.length})
                                 </button>
                               )}
@@ -20505,7 +20505,7 @@ function NovelWorkspacePage() {
                                 style={{
                                   padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none",
                                   cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                  background: allInstalled ? "rgba(163,230,53,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : "var(--pw-accent, #a3e635)",
+                                  background: allInstalled ? "rgba(124,92,252,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : "var(--pw-accent, #b8a4ff)",
                                   color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
                                   opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1, transition: "all 0.15s",
                                 }}>
@@ -20681,7 +20681,7 @@ function NovelWorkspacePage() {
             }
           `}</style>
           <div style={{ padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--pw-text, #e4e4e7)", lineHeight: 1.5, flex: 1 }}>
               {adminAlert.message}
             </p>
@@ -20698,7 +20698,7 @@ function NovelWorkspacePage() {
             </button>
           </div>
           <div style={{
-            height: 2, background: "var(--pw-accent, #a3e635)", opacity: 0.6,
+            height: 2, background: "var(--pw-accent, #b8a4ff)", opacity: 0.6,
             width: `${adminAlertProgress}%`,
             transition: "width 0.1s linear",
             borderRadius: "0 0 0 12px",

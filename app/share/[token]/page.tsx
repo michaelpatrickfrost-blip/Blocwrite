@@ -49,8 +49,8 @@ const TYPE_META: Record<AnnotationType, { label: string; icon: string; dark: { c
   suggestion: {
     label: "Suggestion",
     icon: "lightbulb",
-    dark:  { color: "#a3e635", bg: "rgba(163,230,53,0.08)",  border: "rgba(163,230,53,0.15)",  highlight: "rgba(163,230,53,0.1)" },
-    light: { color: "#4d7c0f", bg: "rgba(77,124,15,0.06)",   border: "rgba(77,124,15,0.12)",   highlight: "rgba(77,124,15,0.08)" },
+    dark:  { color: "#b8a4ff", bg: "rgba(124,92,252,0.08)",  border: "rgba(124,92,252,0.15)",  highlight: "rgba(124,92,252,0.1)" },
+    light: { color: "#5538d4", bg: "rgba(98,70,234,0.06)",   border: "rgba(98,70,234,0.12)",   highlight: "rgba(98,70,234,0.08)" },
   },
   issue: {
     label: "Issue",
@@ -61,30 +61,30 @@ const TYPE_META: Record<AnnotationType, { label: string; icon: string; dark: { c
 };
 
 const DARK = {
-  bg: "#1e1c1c",
-  surface: "#252323",
-  surfaceAlt: "#1a1818",
-  border: "#333",
-  borderLight: "#2a2828",
-  text: "#f0f0f0",
-  textMuted: "#888",
-  textDim: "#666",
-  accent: "#a3e635",
-  accentMuted: "rgba(163,230,53,0.08)",
+  bg: "#0c0c1d",
+  surface: "#14142e",
+  surfaceAlt: "#0a0a18",
+  border: "#2a2a48",
+  borderLight: "#1e1e3a",
+  text: "#e8e8f0",
+  textMuted: "#9494a8",
+  textDim: "#6a6a82",
+  accent: "#b8a4ff",
+  accentMuted: "rgba(124,92,252,0.1)",
   prose: "#d1d5db",
-  selectionBg: "rgba(163,230,53,0.25)",
+  selectionBg: "rgba(124,92,252,0.25)",
   selectionText: "#fff",
-  headerBg: "rgba(30,28,28,0.88)",
+  headerBg: "rgba(12,12,29,0.88)",
   logo: "/blocwrite-logo-white.png",
   hoverBg: "rgba(255,255,255,0.06)",
   hoverBgSubtle: "rgba(255,255,255,0.03)",
   overlayBg: "rgba(0,0,0,0.5)",
-  popupBg: "#252323",
+  popupBg: "#14142e",
   popupShadow: "0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)",
   cardShadow: "0 20px 60px rgba(0,0,0,0.4)",
-  inputBg: "#1a1818",
-  noteSidebar: "#1f1d1d",
-  notesBorder: "#2a2828",
+  inputBg: "#0a0a18",
+  noteSidebar: "#10102a",
+  notesBorder: "#1e1e3a",
 };
 
 const LIGHT = {
@@ -96,10 +96,10 @@ const LIGHT = {
   text: "#1a1a1a",
   textMuted: "#6b6b6b",
   textDim: "#999",
-  accent: "#4d7c0f",
-  accentMuted: "rgba(77,124,15,0.06)",
+  accent: "#5538d4",
+  accentMuted: "rgba(98,70,234,0.06)",
   prose: "#374151",
-  selectionBg: "rgba(77,124,15,0.2)",
+  selectionBg: "rgba(98,70,234,0.2)",
   selectionText: "#000",
   headerBg: "rgba(248,248,246,0.92)",
   logo: "/blocwrite-logo-black.png",
@@ -639,7 +639,7 @@ export default function ShareReaderPage() {
     <div style={fullCenter}>
       <div style={{ position: "absolute", top: 20, right: 20 }}>{themeToggleBtn}</div>
       <img src={C.logo} alt="Blocwrite" style={{ height: 22, marginBottom: 24, opacity: 0.7 }} />
-      <div style={{ ...iconCircle, background: theme === "dark" ? "rgba(163,230,53,0.08)" : "rgba(77,124,15,0.06)", border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.12)"}` }}>
+      <div style={{ ...iconCircle, background: theme === "dark" ? "rgba(124,92,252,0.08)" : "rgba(98,70,234,0.06)", border: `1px solid ${theme === "dark" ? "rgba(124,92,252,0.15)" : "rgba(98,70,234,0.12)"}` }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <h2 style={titleStyle}>Feedback Submitted</h2>
@@ -682,7 +682,7 @@ export default function ShareReaderPage() {
         @keyframes shareSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shareSlideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes sharePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @keyframes shareGlow { 0% { box-shadow: 0 0 0 0 rgba(163,230,53,0.3); } 100% { box-shadow: 0 0 0 8px rgba(163,230,53,0); } }
+        @keyframes shareGlow { 0% { box-shadow: 0 0 0 0 rgba(124,92,252,0.3); } 100% { box-shadow: 0 0 0 8px rgba(124,92,252,0); } }
         @keyframes obOverlayIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes obCardIn { from { opacity: 0; transform: scale(0.96) translateY(12px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         @keyframes obStepIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
@@ -702,7 +702,7 @@ export default function ShareReaderPage() {
       }}>
         <div style={{
           height: "100%", width: `${readProgress}%`,
-          background: `linear-gradient(90deg, ${C.accent}, ${theme === "dark" ? "#d9f99d" : "#65a30d"})`,
+          background: `linear-gradient(90deg, ${C.accent}, ${theme === "dark" ? "#d4c8ff" : "#5538d4"})`,
           transition: "width 0.15s ease-out",
           borderRadius: "0 2px 2px 0",
         }} />
@@ -742,7 +742,7 @@ export default function ShareReaderPage() {
               <span style={{
                 fontSize: 11, color: C.accent, fontWeight: 600,
                 padding: "3px 10px", borderRadius: 8, background: C.accentMuted,
-                border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.12)" : "rgba(77,124,15,0.1)"}`,
+                border: `1px solid ${theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.1)"}`,
               }}>
                 {totalFeedbackCount} note{totalFeedbackCount !== 1 ? "s" : ""}
               </span>
@@ -786,7 +786,7 @@ export default function ShareReaderPage() {
 
       {/* ── Onboarding overlay — stepped walkthrough ── */}
       {showOnboarding && (() => {
-        const accentBorder = theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.12)";
+        const accentBorder = theme === "dark" ? "rgba(124,92,252,0.15)" : "rgba(98,70,234,0.12)";
         const demoLineBg = theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
         const demoLineLight = theme === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)";
 
@@ -895,7 +895,7 @@ export default function ShareReaderPage() {
                   background: C.accent, color: theme === "dark" ? "#111" : "#fff",
                   fontSize: 13, fontWeight: 700,
                   animation: `obDotPop 0.4s cubic-bezier(0.34,1.56,0.64,1) 0.8s both`,
-                  boxShadow: `0 4px 16px ${theme === "dark" ? "rgba(163,230,53,0.2)" : "rgba(77,124,15,0.15)"}`,
+                  boxShadow: `0 4px 16px ${theme === "dark" ? "rgba(124,92,252,0.2)" : "rgba(98,70,234,0.15)"}`,
                 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                   Submit Feedback
@@ -924,7 +924,7 @@ export default function ShareReaderPage() {
               {/* Header area */}
               <div style={{
                 padding: "32px 36px 20px", textAlign: "center",
-                background: `linear-gradient(180deg, ${theme === "dark" ? "rgba(163,230,53,0.03)" : "rgba(77,124,15,0.02)"} 0%, transparent 100%)`,
+                background: `linear-gradient(180deg, ${theme === "dark" ? "rgba(124,92,252,0.03)" : "rgba(98,70,234,0.02)"} 0%, transparent 100%)`,
               }}>
                 <img src={C.logo} alt="Blocwrite" style={{
                   height: 20, marginBottom: 16, opacity: 0.7,
@@ -1025,7 +1025,7 @@ export default function ShareReaderPage() {
                     background: C.accent, color: theme === "dark" ? "#111" : "#fff",
                     fontFamily: "inherit",
                     transition: "all 0.2s",
-                    boxShadow: `0 2px 12px ${theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.1)"}`,
+                    boxShadow: `0 2px 12px ${theme === "dark" ? "rgba(124,92,252,0.15)" : "rgba(98,70,234,0.1)"}`,
                   }}>
                     {onboardingStep === 2 ? "Start Reading" : "Next"}
                   </button>
@@ -1075,7 +1075,7 @@ export default function ShareReaderPage() {
                 <button key={ch.id} onClick={() => { setActiveChapterIdx(idx); window.scrollTo(0, 0); }} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 10,
-                  border: active ? `1px solid ${theme === "dark" ? "rgba(163,230,53,0.12)" : "rgba(77,124,15,0.08)"}` : "1px solid transparent",
+                  border: active ? `1px solid ${theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.08)"}` : "1px solid transparent",
                   cursor: "pointer", marginBottom: 3,
                   background: active ? C.accentMuted : "transparent",
                   color: active ? C.text : C.textMuted,
@@ -1089,7 +1089,7 @@ export default function ShareReaderPage() {
                     <span style={{
                       fontSize: 10, fontWeight: 700, width: 22, height: 22, borderRadius: 6, flexShrink: 0,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: active ? (theme === "dark" ? "rgba(163,230,53,0.15)" : "rgba(77,124,15,0.1)") : (theme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"),
+                      background: active ? (theme === "dark" ? "rgba(124,92,252,0.15)" : "rgba(98,70,234,0.1)") : (theme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"),
                       color: active ? C.accent : C.textDim,
                     }}>{idx + 1}</span>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1177,13 +1177,13 @@ export default function ShareReaderPage() {
                 <div style={{
                   marginBottom: 28, padding: "14px 18px", borderRadius: 12,
                   background: C.accentMuted,
-                  border: `1px solid ${theme === "dark" ? "rgba(163,230,53,0.1)" : "rgba(77,124,15,0.08)"}`,
+                  border: `1px solid ${theme === "dark" ? "rgba(124,92,252,0.1)" : "rgba(98,70,234,0.08)"}`,
                   display: "flex", alignItems: "center", gap: 12,
                   animation: "shareSlideIn 0.3s ease",
                 }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                    background: theme === "dark" ? "rgba(163,230,53,0.12)" : "rgba(77,124,15,0.08)",
+                    background: theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.08)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round">

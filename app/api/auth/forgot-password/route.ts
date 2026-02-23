@@ -78,11 +78,11 @@ export async function POST(request: Request) {
           text: `You requested a password reset.\n\nClick this link to set a new password (valid for 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
           html: `
             <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
-              <h2 style="font-size: 20px; font-weight: 700; color: #1e1c1c; margin-bottom: 16px;">Reset your password</h2>
+              <h2 style="font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 16px;">Reset your password</h2>
               <p style="font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 24px;">
                 You requested a password reset for your Blocwrite account. Click the button below to set a new password.
               </p>
-              <a href="${resetUrl}" style="display: inline-block; padding: 12px 28px; background: #1e1c1c; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+              <a href="${resetUrl}" style="display: inline-block; padding: 12px 28px; background: #7c5cfc; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
                 Reset Password
               </a>
               <p style="font-size: 12px; color: #999; margin-top: 28px; line-height: 1.5;">

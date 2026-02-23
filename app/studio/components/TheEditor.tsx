@@ -320,8 +320,8 @@ export function TheEditor({
               <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>The Editor</h2>
               <span style={{
                 fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
-                background: "var(--pw-accent-muted, rgba(163,230,53,0.1))",
-                color: "var(--pw-accent, #a3e635)",
+                background: "var(--pw-accent-muted, rgba(124,92,252,0.1))",
+                color: "var(--pw-accent, #b8a4ff)",
                 textTransform: "uppercase", letterSpacing: "0.06em",
               }}>
                 Chapter {chapterNumber}/{totalChapters}
@@ -378,9 +378,9 @@ export function TheEditor({
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "12px 16px",
                 fontSize: 13, fontWeight: activeTab === tab.id ? 650 : 500,
-                color: activeTab === tab.id ? "var(--pw-accent, #a3e635)" : "var(--pw-text-dim, #888)",
+                color: activeTab === tab.id ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-dim, #888)",
                 background: "none", border: "none", cursor: loading ? "default" : "pointer",
-                borderBottom: activeTab === tab.id ? "2px solid var(--pw-accent, #a3e635)" : "2px solid transparent",
+                borderBottom: activeTab === tab.id ? "2px solid var(--pw-accent, #b8a4ff)" : "2px solid transparent",
                 transition: "all 0.15s",
                 opacity: loading && activeTab !== tab.id ? 0.4 : 1,
               }}
@@ -466,7 +466,7 @@ export function TheEditor({
             <div style={{ textAlign: "center", padding: "32px 0" }}>
               <div style={{
                 width: 32, height: 32, border: "2px solid var(--pw-border, #333)",
-                borderTopColor: "var(--pw-accent, #a3e635)", borderRadius: "50%",
+                borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%",
                 animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
               }} />
               <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>{loadingPhase}</p>
@@ -508,7 +508,7 @@ export function TheEditor({
                       <div style={{ textAlign: "right", flexShrink: 0, fontSize: 12, opacity: 0.6 }}>
                         <div style={{ fontWeight: 600 }}>{totalChanges} edit{totalChanges !== 1 ? "s" : ""}</div>
                         {wordDelta !== 0 && (
-                          <div style={{ color: wordDelta < 0 ? "#f87171" : "#a3e635", fontSize: 11 }}>
+                          <div style={{ color: wordDelta < 0 ? "#f87171" : "#b8a4ff", fontSize: 11 }}>
                             {wordDelta > 0 ? "+" : ""}{wordDelta} words
                           </div>
                         )}
@@ -591,7 +591,7 @@ export function TheEditor({
                 <div style={{
                   textAlign: "center", padding: "32px 0", fontSize: 14, opacity: 0.5,
                 }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
                     <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   No consistency issues found. Chapter looks clean.
@@ -642,12 +642,12 @@ export function TheEditor({
                           style={{
                             borderRadius: 10,
                             border: change.accepted === true
-                              ? "1px solid rgba(163,230,53,0.35)"
+                              ? "1px solid rgba(124,92,252,0.35)"
                               : change.accepted === false
                               ? "1px solid rgba(239,68,68,0.2)"
                               : "1px solid var(--pw-border, #333)",
                             background: change.accepted === true
-                              ? "rgba(163,230,53,0.03)"
+                              ? "rgba(124,92,252,0.03)"
                               : change.accepted === false
                               ? "rgba(239,68,68,0.02)"
                               : "var(--pw-surface, #1a1a1a)",
@@ -685,9 +685,9 @@ export function TheEditor({
                                 style={{
                                   padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
                                   cursor: "pointer",
-                                  border: change.accepted === true ? "1px solid rgba(163,230,53,0.5)" : "1px solid var(--pw-border, #444)",
-                                  background: change.accepted === true ? "rgba(163,230,53,0.12)" : "transparent",
-                                  color: change.accepted === true ? "#a3e635" : "var(--pw-text-dim, #aaa)",
+                                  border: change.accepted === true ? "1px solid rgba(124,92,252,0.5)" : "1px solid var(--pw-border, #444)",
+                                  background: change.accepted === true ? "rgba(124,92,252,0.12)" : "transparent",
+                                  color: change.accepted === true ? "#b8a4ff" : "var(--pw-text-dim, #aaa)",
                                   transition: "all 0.12s",
                                 }}
                               >
@@ -719,11 +719,11 @@ export function TheEditor({
                                     key={si}
                                     style={{
                                       background: seg.type === "removed" ? "rgba(239,68,68,0.15)"
-                                        : seg.type === "added" ? "rgba(163,230,53,0.18)"
+                                        : seg.type === "added" ? "rgba(124,92,252,0.18)"
                                         : "transparent",
                                       textDecoration: seg.type === "removed" ? "line-through" : "none",
                                       color: seg.type === "removed" ? "#f87171"
-                                        : seg.type === "added" ? "#a3e635"
+                                        : seg.type === "added" ? "#b8a4ff"
                                         : "inherit",
                                       borderRadius: seg.type !== "same" ? 2 : undefined,
                                       padding: seg.type !== "same" ? "1px 0" : undefined,
@@ -746,7 +746,7 @@ export function TheEditor({
                 <div style={{
                   textAlign: "center", padding: "32px 0", fontSize: 14, opacity: 0.5,
                 }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #a3e635)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
                     <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   No changes needed. Chapter looks clean.

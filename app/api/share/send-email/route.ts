@@ -116,16 +116,16 @@ function buildEmailHtml(
 ): string {
   const passwordBlock = hasPassword && rawPassword
     ? `<tr><td style="padding-bottom: 28px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background: #111111; border: 1px solid rgba(163,230,53,0.12); border-radius: 14px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: #111111; border: 1px solid rgba(124,92,252,0.12); border-radius: 14px;">
           <tr><td style="padding: 18px 22px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td width="44" valign="top">
-                  <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(163,230,53,0.06); border: 1px solid rgba(163,230,53,0.12); text-align: center; line-height: 36px; font-size: 16px;">&#128274;</div>
+                  <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(124,92,252,0.06); border: 1px solid rgba(124,92,252,0.12); text-align: center; line-height: 36px; font-size: 16px;">&#128274;</div>
                 </td>
                 <td style="padding-left: 14px;">
                   <p style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #555; margin: 0 0 6px;">Your access password</p>
-                  <p style="font-size: 20px; font-weight: 800; color: #a3e635; margin: 0; letter-spacing: 0.06em; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;">${rawPassword}</p>
+                  <p style="font-size: 20px; font-weight: 800; color: #b8a4ff; margin: 0; letter-spacing: 0.06em; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;">${rawPassword}</p>
                   <p style="font-size: 11px; color: #444; margin: 8px 0 0;">Enter this when prompted to open the manuscript</p>
                 </td>
               </tr>
@@ -161,13 +161,13 @@ function buildEmailHtml(
         <!-- Main card -->
         <tr><td style="background: linear-gradient(180deg, #1c1a1a 0%, #151313 100%); border-radius: 24px; border: 1px solid #2a2828; overflow: hidden; box-shadow: 0 32px 100px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.02);">
           <!-- Premium accent bar -->
-          <div style="height: 3px; background: linear-gradient(90deg, transparent 0%, #65a30d 15%, #a3e635 35%, #d9f99d 50%, #a3e635 65%, #65a30d 85%, transparent 100%);"></div>
+          <div style="height: 3px; background: linear-gradient(90deg, transparent 0%, #5538d4 15%, #b8a4ff 35%, #d4c8ff 50%, #b8a4ff 65%, #5538d4 85%, transparent 100%);"></div>
 
           <table width="100%" cellpadding="0" cellspacing="0" style="padding: 48px 44px 44px;">
             <!-- Invitation badge -->
             <tr><td align="center" style="padding-bottom: 28px;">
-              <div style="display: inline-block; padding: 7px 20px; border-radius: 24px; background: rgba(163,230,53,0.05); border: 1px solid rgba(163,230,53,0.10);">
-                <p style="font-size: 10px; color: #a3e635; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 700; margin: 0;">Manuscript Review Invitation</p>
+              <div style="display: inline-block; padding: 7px 20px; border-radius: 24px; background: rgba(124,92,252,0.05); border: 1px solid rgba(124,92,252,0.10);">
+                <p style="font-size: 10px; color: #b8a4ff; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 700; margin: 0;">Manuscript Review Invitation</p>
               </div>
             </td></tr>
 
@@ -194,7 +194,7 @@ function buildEmailHtml(
 
             <!-- CTA Button -->
             <tr><td align="center" style="padding-bottom: 32px;">
-              <a href="${shareUrl}" style="display: inline-block; padding: 17px 56px; background: linear-gradient(135deg, #a3e635, #84cc16); color: #0a0a0a; border-radius: 14px; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: -0.01em; box-shadow: 0 6px 28px rgba(163,230,53,0.3), 0 2px 8px rgba(163,230,53,0.15);">
+              <a href="${shareUrl}" style="display: inline-block; padding: 17px 56px; background: linear-gradient(135deg, #b8a4ff, #6246ea); color: #ffffff; border-radius: 14px; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: -0.01em; box-shadow: 0 6px 28px rgba(124,92,252,0.3), 0 2px 8px rgba(124,92,252,0.15);">
                 Open Manuscript &rarr;
               </a>
             </td></tr>
@@ -213,7 +213,7 @@ function buildEmailHtml(
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td width="36" valign="top" style="padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(163,230,53,0.06); border: 1px solid rgba(163,230,53,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #a3e635; font-weight: 700;">1</div>
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(124,92,252,0.06); border: 1px solid rgba(124,92,252,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #b8a4ff; font-weight: 700;">1</div>
                   </td>
                   <td style="padding-bottom: 16px;">
                     <p style="font-size: 14px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #ccc;">Read</strong> &mdash; go through the manuscript at your own pace</p>
@@ -221,7 +221,7 @@ function buildEmailHtml(
                 </tr>
                 <tr>
                   <td width="36" valign="top" style="padding-right: 14px; padding-bottom: 16px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(163,230,53,0.06); border: 1px solid rgba(163,230,53,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #a3e635; font-weight: 700;">2</div>
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(124,92,252,0.06); border: 1px solid rgba(124,92,252,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #b8a4ff; font-weight: 700;">2</div>
                   </td>
                   <td style="padding-bottom: 16px;">
                     <p style="font-size: 14px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #ccc;">Annotate</strong> &mdash; highlight any text to leave comments or suggestions</p>
@@ -229,7 +229,7 @@ function buildEmailHtml(
                 </tr>
                 <tr>
                   <td width="36" valign="top" style="padding-right: 14px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(163,230,53,0.06); border: 1px solid rgba(163,230,53,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #a3e635; font-weight: 700;">3</div>
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background: rgba(124,92,252,0.06); border: 1px solid rgba(124,92,252,0.12); text-align: center; line-height: 28px; font-size: 12px; color: #b8a4ff; font-weight: 700;">3</div>
                   </td>
                   <td>
                     <p style="font-size: 14px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #ccc;">Submit</strong> &mdash; send your notes back to the author instantly</p>

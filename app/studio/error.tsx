@@ -88,8 +88,8 @@ export default function StudioError({
               fontSize: 14,
               fontWeight: 700,
               borderRadius: 10,
-              background: "#a3e635",
-              color: "#111",
+              background: "#7c5cfc",
+              color: "#fff",
               border: "none",
               cursor: "pointer",
             }}

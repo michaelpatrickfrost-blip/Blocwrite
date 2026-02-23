@@ -77,11 +77,11 @@ async function sendShareEmail(
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td width="36" valign="top">
-                  <div style="width: 28px; height: 28px; border-radius: 8px; background: rgba(163,230,53,0.08); border: 1px solid rgba(163,230,53,0.15); text-align: center; line-height: 28px; font-size: 14px;">&#128274;</div>
+                  <div style="width: 28px; height: 28px; border-radius: 8px; background: rgba(124,92,252,0.08); border: 1px solid rgba(124,92,252,0.15); text-align: center; line-height: 28px; font-size: 14px;">&#128274;</div>
                 </td>
                 <td style="padding-left: 12px;">
                   <p style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #666; margin: 0 0 6px;">Your access password</p>
-                  <p style="font-size: 18px; font-weight: 700; color: #a3e635; margin: 0; letter-spacing: 0.05em; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;">${rawPassword}</p>
+                  <p style="font-size: 18px; font-weight: 700; color: #b8a4ff; margin: 0; letter-spacing: 0.05em; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;">${rawPassword}</p>
                   <p style="font-size: 11px; color: #555; margin: 6px 0 0;">Enter this when prompted to access the manuscript</p>
                 </td>
               </tr>
@@ -117,13 +117,13 @@ async function sendShareEmail(
         <!-- Main card -->
         <tr><td style="background: #1a1818; border-radius: 20px; border: 1px solid #2a2828; overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.4);">
           <!-- Premium accent bar -->
-          <div style="height: 4px; background: linear-gradient(90deg, #84cc16, #a3e635, #d9f99d, #a3e635, #84cc16);"></div>
+          <div style="height: 4px; background: linear-gradient(90deg, #6246ea, #b8a4ff, #d4c8ff, #b8a4ff, #6246ea);"></div>
 
           <table width="100%" cellpadding="0" cellspacing="0" style="padding: 44px 40px 40px;">
             <!-- Invitation badge -->
             <tr><td align="center" style="padding-bottom: 24px;">
-              <div style="display: inline-block; padding: 6px 18px; border-radius: 20px; background: rgba(163,230,53,0.06); border: 1px solid rgba(163,230,53,0.12);">
-                <p style="font-size: 10px; color: #a3e635; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; margin: 0;">Manuscript Review Invitation</p>
+              <div style="display: inline-block; padding: 6px 18px; border-radius: 20px; background: rgba(124,92,252,0.06); border: 1px solid rgba(124,92,252,0.12);">
+                <p style="font-size: 10px; color: #b8a4ff; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; margin: 0;">Manuscript Review Invitation</p>
               </div>
             </td></tr>
 
@@ -143,7 +143,7 @@ async function sendShareEmail(
 
             <!-- CTA Button -->
             <tr><td align="center" style="padding-bottom: 28px;">
-              <a href="${shareUrl}" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, #a3e635, #84cc16); color: #0a0a0a; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 15px; letter-spacing: -0.01em; box-shadow: 0 4px 20px rgba(163,230,53,0.25);">
+              <a href="${shareUrl}" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, #b8a4ff, #6246ea); color: #ffffff; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 15px; letter-spacing: -0.01em; box-shadow: 0 4px 20px rgba(124,92,252,0.25);">
                 Open Manuscript &rarr;
               </a>
             </td></tr>
@@ -162,7 +162,7 @@ async function sendShareEmail(
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td width="32" valign="top" style="padding-right: 12px; padding-bottom: 12px;">
-                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(163,230,53,0.08); border: 1px solid rgba(163,230,53,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #a3e635; font-weight: 700;">1</div>
+                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(124,92,252,0.08); border: 1px solid rgba(124,92,252,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #b8a4ff; font-weight: 700;">1</div>
                   </td>
                   <td style="padding-bottom: 12px;">
                     <p style="font-size: 13px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #bbb;">Read</strong> &mdash; go through the manuscript at your own pace</p>
@@ -170,7 +170,7 @@ async function sendShareEmail(
                 </tr>
                 <tr>
                   <td width="32" valign="top" style="padding-right: 12px; padding-bottom: 12px;">
-                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(163,230,53,0.08); border: 1px solid rgba(163,230,53,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #a3e635; font-weight: 700;">2</div>
+                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(124,92,252,0.08); border: 1px solid rgba(124,92,252,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #b8a4ff; font-weight: 700;">2</div>
                   </td>
                   <td style="padding-bottom: 12px;">
                     <p style="font-size: 13px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #bbb;">Annotate</strong> &mdash; highlight text to leave comments, suggestions, or flag issues</p>
@@ -178,7 +178,7 @@ async function sendShareEmail(
                 </tr>
                 <tr>
                   <td width="32" valign="top" style="padding-right: 12px;">
-                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(163,230,53,0.08); border: 1px solid rgba(163,230,53,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #a3e635; font-weight: 700;">3</div>
+                    <div style="width: 24px; height: 24px; border-radius: 50%; background: rgba(124,92,252,0.08); border: 1px solid rgba(124,92,252,0.15); text-align: center; line-height: 24px; font-size: 11px; color: #b8a4ff; font-weight: 700;">3</div>
                   </td>
                   <td>
                     <p style="font-size: 13px; color: #999; margin: 0; line-height: 1.5;"><strong style="color: #bbb;">Submit</strong> &mdash; send your notes back to the author instantly</p>

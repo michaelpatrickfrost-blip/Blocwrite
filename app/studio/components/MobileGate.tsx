@@ -155,7 +155,7 @@ function MobileAccountPanel() {
         <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, marginBottom: 20 }} />
 
         {/* Monitor icon */}
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(163,230,53,0.6)"
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(124,92,252,0.6)"
           strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
           style={{ display: "block", margin: "0 auto 16px" }}>
           <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -278,7 +278,7 @@ function MobileAccountPanel() {
           ) : (
             <div>
               <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>No active subscription.</p>
-              <a href="/subscribe" style={{ ...btn, display: "inline-block", textDecoration: "none", background: "rgba(163,230,53,0.12)", color: "#a3e635", border: "1px solid rgba(163,230,53,0.2)" }}>
+              <a href="/subscribe" style={{ ...btn, display: "inline-block", textDecoration: "none", background: "rgba(124,92,252,0.12)", color: "#b8a4ff", border: "1px solid rgba(124,92,252,0.2)" }}>
                 Subscribe
               </a>
             </div>

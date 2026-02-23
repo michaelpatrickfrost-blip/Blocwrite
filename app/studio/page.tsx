@@ -471,10 +471,10 @@ function StudioHomePage() {
                             position: "absolute", bottom: 6, right: 6,
                             width: 26, height: 26, borderRadius: "50%",
                             background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
-                            border: `2px solid ${novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#a3e635" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444"}`,
+                            border: `2px solid ${novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#b8a4ff" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444"}`,
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 10, fontWeight: 800,
-                            color: novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#a3e635" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444",
+                            color: novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#b8a4ff" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444",
                           }}
                         >
                           {novel.healthScore.overall}
@@ -485,7 +485,7 @@ function StudioHomePage() {
                     <div className="pw-novel-card-label">
                       <span className="pw-novel-card-label-text">{novel.title}</span>
                       {novel.novelType === "nonfiction" && (
-                        <span style={{ display: "inline-block", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "rgba(var(--pw-accent-rgb,163,230,53),0.15)", color: "var(--pw-accent)", marginLeft: 4, verticalAlign: "middle", letterSpacing: "0.03em" }}>NF</span>
+                        <span style={{ display: "inline-block", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "rgba(var(--pw-accent-rgb,124,92,252),0.15)", color: "var(--pw-accent)", marginLeft: 4, verticalAlign: "middle", letterSpacing: "0.03em" }}>NF</span>
                       )}
                     </div>
 
@@ -581,7 +581,7 @@ function StudioHomePage() {
                         {hoveredNovel.healthScore && (() => {
                           const hs = hoveredNovel.healthScore;
                           const scoreColor = (v: number) =>
-                            v >= 8 ? "#22c55e" : v >= 6 ? "#a3e635" : v >= 4 ? "#f59e0b" : "#ef4444";
+                            v >= 8 ? "#22c55e" : v >= 6 ? "#b8a4ff" : v >= 4 ? "#f59e0b" : "#ef4444";
                           return (
                             <div className="pw-novel-detail-stat pw-novel-detail-stat-wide" style={{ marginTop: 4 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
