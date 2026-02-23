@@ -5628,7 +5628,8 @@ function NovelWorkspacePage() {
     if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
     const remainingMs = totalBudgetMs - (Date.now() - startMs);
     if (remainingMs < 18000) {
-      throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
+      const mName2 = openRouterModel || "Your AI model";
+      throw new Error(`${mName2} couldn't return valid JSON. Try a different model — GPT-4o, Claude, or Gemini Pro work best.`);
     }
 
     // Retry with strict prompt while preserving more context for accuracy.
@@ -5670,7 +5671,8 @@ function NovelWorkspacePage() {
       }
     }
 
-    throw new Error("Assistant response was not valid JSON. Try a different model or run again.");
+    const mName = openRouterModel || "Your AI model";
+    throw new Error(`${mName} couldn't return valid JSON. Try a different model — GPT-4o, Claude, or Gemini Pro work best for structured output.`);
   }
 
   function mapChapterHintToId(chapterHint: string) {
@@ -16526,8 +16528,9 @@ function NovelWorkspacePage() {
                                                 "- How this connects to the previous and next beat",
                                                 "\nReturn JSON: { \"description\": \"enriched description\" }",
                                               ].filter(Boolean).join("\n");
-                                              const raw = await requestOpenRouterText(prompt, 800, 60000, "You are a story detail specialist. Enrich story beats with emotional depth. Return only valid JSON.", false, 0.6);
-                                              const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                              const raw = await requestOpenRouterText(prompt, 800, 120000, "You are a story detail specialist. Enrich story beats with emotional depth. Return only valid JSON.", false, 0.6);
+                                              const cleaned = stripThinkingBlocks(raw).replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+                                              const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
                                               if (jsonMatch) {
                                                 const parsed = JSON.parse(jsonMatch[0]) as { description: string };
                                                 if (parsed.description) updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, description: parsed.description } : b) });
@@ -16714,9 +16717,10 @@ function NovelWorkspacePage() {
                                       `\nReturn JSON: { "arcs": [{ "arcType": "e.g. redemption, fall from grace, coming of age", "startState": "who they are at the start", "endState": "who they become", "turningPointBeatIndices": [3, 7, 12] }] }`,
                                       "Each arc should be a distinct journey. turningPointBeatIndices are 0-based indices into the beat list where the character's arc shifts.",
                                     ].join("\n");
-                                    const raw = await requestOpenRouterText(prompt, 1500, 60000, "You are a character arc specialist. Suggest compelling character journeys. Return only valid JSON.", false, 0.7);
+                                    const raw = await requestOpenRouterText(prompt, 1500, 120000, "You are a character arc specialist. Suggest compelling character journeys. Return only valid JSON.", false, 0.7);
                                     try {
-                                      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                      const cleanedArc = stripThinkingBlocks(raw).replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+                                      const jsonMatch = cleanedArc.match(/\{[\s\S]*\}/);
                                       if (jsonMatch) {
                                         const parsed = JSON.parse(jsonMatch[0]) as { arcs: Array<{ arcType: string; startState: string; endState: string; turningPointBeatIndices?: number[] }> };
                                         if (parsed.arcs?.length) {
