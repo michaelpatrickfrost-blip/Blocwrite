@@ -1365,133 +1365,6 @@ function NovelWorkspacePage() {
   const [arcApplyingChoice, setArcApplyingChoice] = useState<number | null>(null);
   const [profileOfferPopup, setProfileOfferPopup] = useState<{ characterIds: string[]; source: string } | null>(null);
 
-  // ── Tutorial walkthrough ──
-  type TutorialStep = { target: string; title: string; desc: string; onEnter?: () => void; onLeave?: () => void };
-  // Helper to close all modals/popups
-  const tutCloseAll = () => { setShowStoryBibleModal(false); setShowPlanModal(false); setShowExportModal(false); setShowShareModal(false); setShowEditorModal(false); setProfileOpen(false); setProfileInitialTab(undefined); };
-  const TUTORIAL_STEPS: TutorialStep[] = [
-    // 1. Connect AI — open Settings on AI tab
-    {
-      target: "settings-ai", title: "Step 1 — Connect Your AI",
-      desc: "This is where it all starts. Choose your AI provider — OpenRouter, Hugging Face, Infermatic, or LM Studio for free local AI. Paste your API key, pick a model, and set your language. Once connected, every AI feature in Blocwrite runs through your chosen model.",
-      onEnter: () => { setProfileInitialTab("ai"); setProfileOpen(true); },
-      onLeave: () => { setProfileOpen(false); setProfileInitialTab(undefined); },
-    },
-    // 2. Canon — open Canon modal, show the whole thing
-    {
-      target: "canon-modal", title: "Step 2 — The Canon",
-      desc: "Welcome to your story\u2019s single source of truth. The Canon holds everything the AI needs to know about your novel. Let\u2019s walk through each section\u2026",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("summary"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 3. Canon — Style & Voice tab
-    {
-      target: "canon-styleVoice", title: "Step 3 — Canon: Style & Voice",
-      desc: "Set the overall tone and writing style for your novel. Define voice directives like \u2018first person, present tense\u2019 or \u2018literary fiction with short sentences\u2019. The AI follows these rules in every generation so your manuscript stays consistent.",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("styleVoice"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 4. Canon — Characters tab
-    {
-      target: "canon-characters", title: "Step 4 — Canon: Characters",
-      desc: "Build detailed character profiles: name, personality, speech patterns, backstory, goals, and relationships. The AI uses these profiles when writing dialogue, internal monologue, and character interactions — so every character sounds like themselves.",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("characters"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 5. Canon — Locations tab
-    {
-      target: "canon-locations", title: "Step 5 — Canon: Locations",
-      desc: "Define your story\u2019s locations with descriptions, atmosphere, and sensory details. When the AI writes a scene set in a location, it draws from these details to create vivid, consistent settings without you having to repeat yourself.",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("locations"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 6. Canon — Worldbuilding tab
-    {
-      target: "canon-worldbuilding", title: "Step 6 — Canon: Worldbuilding",
-      desc: "Add world-building notes relevant to your genre — rules, systems, procedures, social dynamics, or anything that keeps your story consistent. For a thriller, that might be police procedure; for fantasy, magic systems. The AI tailors entries to your genre automatically.",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("worldbuilding"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 7. Canon — Bolt-Ons tab
-    {
-      target: "canon-boltons", title: "Step 7 — Canon: Bolt-Ons",
-      desc: "Bolt-Ons are targeted writing instructions that shape how the AI writes. Add instructions like \u2018keep it gritty\u2019, \u2018more dialogue\u2019, or \u2018slow-burn romance\u2019. Browse the Writing Packs marketplace for pre-built sets, or create your own. These apply globally — for per-chapter instructions, use Blocs inside each chapter.",
-      onEnter: () => { setShowStoryBibleModal(true); setBibleSection("boltons"); },
-      onLeave: () => setShowStoryBibleModal(false),
-    },
-    // 8. The Plan — open Plan modal
-    {
-      target: "plan-modal", title: "Step 8 — The Plan",
-      desc: "Your chapter planner. Write or paste your synopsis, hit AI Generate, and the AI builds a full structured outline: chapter titles, detailed synopses, character assignments, and location mapping — all pulled from your Canon. Rearrange, add, or remove chapters, then sync to your manuscript. Arc Intelligence appears below once you have 3+ chapters planned.",
-      onEnter: () => { tutCloseAll(); setShowPlanModal(true); },
-      onLeave: () => setShowPlanModal(false),
-    },
-    // 9. Arc Intelligence — inside the Plan modal
-    {
-      target: "plan-modal", title: "Step 9 — Arc Intelligence",
-      desc: "After generating your plan, Arc Intelligence appears here and analyses your chapter outlines. It presents three scored story directions — each with a name, description, rationale, and a score out of 10. Pick one and it reshapes all your chapter synopses to match that arc. Note: this only works before you\u2019ve written prose, so run it early.",
-      onEnter: () => { tutCloseAll(); setShowPlanModal(true); },
-      onLeave: () => setShowPlanModal(false),
-    },
-    // 10. Chapters & Blocs — sidebar
-    {
-      target: "sidebar", title: "Step 10 — Chapters & Blocs",
-      desc: "Every chapter appears in this sidebar. Click any chapter to start writing, or hit \u2018+ New chapter\u2019 at the bottom. The sidebar auto-collapses while you write — hover to bring it back. Inside each chapter you\u2019ll find Blocs: per-chapter Bolt-On instructions that apply only to that section.",
-      onEnter: tutCloseAll,
-    },
-    // 11. Editor in chapter
-    {
-      target: "editor", title: "Step 11 — The Editor (In-Chapter)",
-      desc: "Inside any chapter, click \u2018The Editor\u2019 to run 11 real-time continuity checks: Canon Traits, Character Presence, Timeline, Emotional Arc, Voice Drift, Spatial Logic, and more. Each issue shows severity, a clear explanation, and the exact location in your text.",
-      onEnter: tutCloseAll,
-    },
-    // 12. Editor from overview
-    {
-      target: "editor", title: "Step 12 — The Editor (Manuscript)",
-      desc: "From the Overview (no chapter selected), The Editor switches to manuscript mode. It scans your entire novel and suggests sentence-level rewrites — current text vs. proposed improvement side by side. Accept or dismiss each change individually. Your final polish tool.",
-      onEnter: tutCloseAll,
-    },
-    // 13. Manuscript Health
-    {
-      target: "health", title: "Step 13 — Manuscript Health",
-      desc: "In the Overview, scroll to find Manuscript Health. The AI scores your novel on pacing, dialogue quality, clarity, and engagement — each out of 10. Per-chapter breakdowns tell you exactly which chapters need work and what to improve. A publishing readiness report.",
-      onEnter: tutCloseAll,
-    },
-    // 14. Share
-    {
-      target: "share", title: "Step 14 — Share",
-      desc: "Click the share icon to send your work to beta readers. Generate a password-protected, time-limited link — readers open it in a branded reading view with light and dark mode. They can highlight passages and leave annotations. Feedback arrives instantly in your review dashboard.",
-      onEnter: tutCloseAll,
-    },
-    // 15. Export
-    {
-      target: "export", title: "Step 15 — Export",
-      desc: "Click the export icon to download your manuscript as a professionally formatted EPUB or DOCX. Choose which chapters to include — Blocwrite generates clean, chaptered prose ready for publishers or self-publishing.",
-      onEnter: tutCloseAll,
-    },
-    // 16. Chat & Co-Author
-    {
-      target: "chat", title: "Step 16 — Chat & Co-Author",
-      desc: "This floating button opens your AI conversation panel. Interview characters from your Canon — they respond in their own voice. Story Insights then recommends profile updates. Switch to Co-Author mode for a writing partner who knows every chapter and character.",
-      onEnter: tutCloseAll,
-    },
-    // 17. Settings
-    {
-      target: "settings", title: "Step 17 — Settings",
-      desc: "Your settings hub. Manage your AI provider, model, language, context budget, subscription, password, and restart this tutorial anytime from the General tab.",
-      onEnter: tutCloseAll,
-    },
-    // 18. Theme
-    {
-      target: "theme", title: "Step 18 — Dark & Light Mode",
-      desc: "Switch between dark and light themes with one click. Your preference saves automatically and syncs across devices. The entire studio adapts instantly. You\u2019re all set — happy writing!",
-      onEnter: tutCloseAll,
-    },
-  ];
-  const [tutorialActive, setTutorialActive] = useState(false);
-  const [tutorialStep, setTutorialStep] = useState(0);
-  const [tutorialRect, setTutorialRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  const tutorialPrevStep = useRef<number>(-1);
 
   // ── Admin push alerts ──
   const [adminAlert, setAdminAlert] = useState<{ id: string; message: string } | null>(null);
@@ -2002,72 +1875,6 @@ function NovelWorkspacePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Tutorial: auto-trigger on first visit ──
-  function startTutorial() {
-    setActiveChapterId(null);
-    setTutorialStep(0);
-    setTutorialActive(true);
-  }
-  function completeTutorial() {
-    const prev = tutorialPrevStep.current;
-    if (prev >= 0 && TUTORIAL_STEPS[prev]?.onLeave) TUTORIAL_STEPS[prev].onLeave!();
-    tutCloseAll();
-    setTutorialActive(false);
-    setTutorialStep(0);
-    try {
-      window.localStorage.setItem("pilotwriter.tutorial.complete", "1");
-      void saveSettingsToServer(gatherSettings());
-    } catch { /* ignore */ }
-  }
-  useEffect(() => {
-    if (!novelSyncDone || !novel) return;
-    try {
-      if (!window.localStorage.getItem("pilotwriter.tutorial.complete")) {
-        const t = setTimeout(() => startTutorial(), 900);
-        return () => clearTimeout(t);
-      }
-    } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [novelSyncDone]);
-
-  // ── Tutorial: run step actions + recompute spotlight on step change ──
-  useEffect(() => {
-    if (!tutorialActive) { setTutorialRect(null); tutorialPrevStep.current = -1; return; }
-    const step = TUTORIAL_STEPS[tutorialStep];
-    if (!step) return;
-    // Leave previous step
-    const prev = tutorialPrevStep.current;
-    if (prev >= 0 && prev !== tutorialStep && TUTORIAL_STEPS[prev]?.onLeave) {
-      TUTORIAL_STEPS[prev].onLeave!();
-    }
-    tutorialPrevStep.current = tutorialStep;
-    // Enter current step
-    if (step.onEnter) step.onEnter();
-    // Measure with delay so modals/DOM have time to render
-    const delay = step.onEnter ? 500 : 120;
-    const measure = () => {
-      const el = document.querySelector(`[data-tutorial="${step.target}"]`) as HTMLElement | null;
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-        // Double rAF to ensure scroll + layout is settled before measuring
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const r = el.getBoundingClientRect();
-            setTutorialRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-          });
-        });
-      } else {
-        setTutorialRect(null);
-      }
-    };
-    const t = setTimeout(measure, delay);
-    // Re-measure on resize/scroll for the spotlight to follow
-    const throttledMeasure = () => requestAnimationFrame(measure);
-    window.addEventListener("resize", throttledMeasure);
-    window.addEventListener("scroll", throttledMeasure, true);
-    return () => { clearTimeout(t); window.removeEventListener("resize", throttledMeasure); window.removeEventListener("scroll", throttledMeasure, true); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tutorialActive, tutorialStep]);
 
   useEffect(() => {
     const flushNow = () => {
@@ -11029,7 +10836,7 @@ function NovelWorkspacePage() {
   return (
     <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
       <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}${focusMode ? " pw-focus-mode" : ""}`}>
-        <aside className="pw-sidebar" data-tutorial="sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
+        <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
             <div className="pw-logo-swap">
               <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
@@ -11110,12 +10917,12 @@ function NovelWorkspacePage() {
           <div className="pw-toolbar">
             <span className="pw-project-title">{novel.title || "Untitled Novel"}</span>
             <span className="pw-dot" />
-            <button type="button" className="pw-mode-btn" data-tutorial="overview" onClick={() => setActiveChapterId(null)}>
+            <button type="button" className="pw-mode-btn" onClick={() => setActiveChapterId(null)}>
               Overview
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <button type="button" className="pw-theme-toggle" data-tutorial="theme" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
+            <button type="button" className="pw-theme-toggle" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
               <span className="pw-theme-icon">{currentTheme === "dark" ? "☀" : "☽"}</span>
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
             </button>
@@ -11142,7 +10949,6 @@ function NovelWorkspacePage() {
             <button type="button" className="btn pw-proofread-btn"
               style={{ display: "flex", alignItems: "center", gap: 5 }}
               title="The Editor — AI manuscript analysis"
-              data-tutorial="editor"
               onClick={() => setShowEditorModal(true)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
@@ -11163,7 +10969,7 @@ function NovelWorkspacePage() {
               )}
             </button>
             )}
-            <button type="button" className="btn btn-primary" data-tutorial="plan" onClick={() => setShowPlanModal(true)}>
+            <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
             <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }} onClick={() => {
@@ -11214,7 +11020,7 @@ function NovelWorkspacePage() {
                   if (Array.isArray(data)) setShareLinks(data);
                 }).catch(() => {}).finally(() => setShareLinksLoading(false));
               }
-            }} data-tutorial="share" title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
+            }} title={pendingFeedbackCount > 0 ? "Review feedback" : "Share chapters for feedback"}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               {pendingFeedbackCount > 0 && (
                 <span style={{
@@ -11228,13 +11034,12 @@ function NovelWorkspacePage() {
               )}
             </button>
             <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }}
-              data-tutorial="export"
               onClick={() => openExportModal()}
               title="Export to EPUB or DOCX"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </button>
-            <span data-tutorial="settings"><ProfileButton onClick={() => setProfileOpen(true)} /></span>
+            <span><ProfileButton onClick={() => setProfileOpen(true)} /></span>
           </div>
         </div>
 
@@ -12041,7 +11846,7 @@ function NovelWorkspacePage() {
                       <h3>{isNF ? "My Story" : "Canon"}</h3>
                       <p className="pw-overview-sub">{isNF ? "Your life story source of truth — people, places, and events." : "Your story\u2019s source of truth — characters, world, and voice."}</p>
                     </div>
-                    <button type="button" className="btn btn-primary" data-tutorial="canon" onClick={() => { if (isNF) setBibleSection("nf-about"); setShowStoryBibleModal(true); }}>
+                    <button type="button" className="btn btn-primary" onClick={() => { if (isNF) setBibleSection("nf-about"); setShowStoryBibleModal(true); }}>
                       {isNF ? "Open My Story" : "Open Canon"}
                     </button>
                   </div>
@@ -12229,7 +12034,7 @@ function NovelWorkspacePage() {
 
               {/* ── Manuscript Health Score ── */}
               <div className="pw-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
-                <div className="pw-overview-card" data-tutorial="health">
+                <div className="pw-overview-card">
                   <div className="pw-overview-card-head">
                     <div>
                       <h3>Manuscript Health</h3>
@@ -12460,7 +12265,6 @@ function NovelWorkspacePage() {
         <div className="pw-modal-overlay" onClick={() => { cancelAiWork(); setShowPlanModal(false); saveNow(); }}>
           <div
             className="pw-plan-modal"
-            data-tutorial="plan-modal"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
@@ -12623,7 +12427,7 @@ function NovelWorkspacePage() {
 
               {/* ── Arc Intelligence panel ── */}
               {(novel.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
-                <div data-tutorial="arc-panel" style={{
+                <div style={{
                   marginBottom: 18, borderRadius: 14,
                   background: "var(--pw-overlay-bg)",
                   border: "1px solid var(--pw-border)",
@@ -14579,7 +14383,7 @@ function NovelWorkspacePage() {
 
       {showStoryBibleModal && novel && (!isNF || !!nfData?.nfCategory) && (
         <div className="pw-modal-overlay" onClick={() => { cancelAiWork(); setShowStoryBibleModal(false); saveNow(); }}>
-          <div className="pw-bible-modal" data-tutorial="canon-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="pw-bible-modal" onClick={(event) => event.stopPropagation()}>
             <div className="pw-bible-modal-head">
               <div>
                 <p className="pw-bible-modal-kicker">{isNF ? (nfData?.nfCategory === "biography" ? "Biography & Memoir" : "Non-Fiction") : "Novel Overview"}</p>
@@ -14687,7 +14491,6 @@ function NovelWorkspacePage() {
                     key={item.id}
                     type="button"
                     className={`pw-bible-nav-btn ${bibleSection === item.id ? "active" : ""}`}
-                    data-tutorial={`canon-${item.id}`}
                     onClick={() => setBibleSection(item.id)}
                   >
                     {item.label}
@@ -20016,7 +19819,6 @@ function NovelWorkspacePage() {
           window.location.href = "/";
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
-        onStartTutorial={() => startTutorial()}
         initialTab={profileInitialTab}
       />
 
@@ -20725,7 +20527,7 @@ function NovelWorkspacePage() {
 
       {/* ── Floating Chat FAB (bottom-left) ── */}
       {!charChatOpen && (
-        <div className="pw-chat-fab-wrap" data-tutorial="chat">
+        <div className="pw-chat-fab-wrap">
           {/* Picker popup (opens upward from FAB) */}
           {charChatPickerOpen && (
             <>
@@ -20904,93 +20706,6 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Tutorial overlay ── */}
-      {tutorialActive && (() => {
-        const step = TUTORIAL_STEPS[tutorialStep];
-        if (!step) return null;
-        const isFirst = tutorialStep === 0;
-        const isLast = tutorialStep === TUTORIAL_STEPS.length - 1;
-        const pad = 10;
-        const cardW = 340;
-        const cardH = 420;
-        const gap = 16;
-        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-
-        const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(val, max));
-
-        let cardTop = vh / 2 - cardH / 2;
-        let cardLeft = vw / 2 - cardW / 2;
-        let centered = true;
-
-        if (tutorialRect) {
-          centered = false;
-          const r = tutorialRect;
-          const spaceRight = vw - r.left - r.width;
-          const spaceLeft = r.left;
-          const spaceBelow = vh - r.top - r.height;
-          const spaceAbove = r.top;
-
-          if (spaceRight > cardW + gap * 2) {
-            cardLeft = r.left + r.width + gap;
-            cardTop = r.top + r.height / 2 - cardH / 2;
-          } else if (spaceLeft > cardW + gap * 2) {
-            cardLeft = r.left - cardW - gap;
-            cardTop = r.top + r.height / 2 - cardH / 2;
-          } else if (spaceBelow > cardH + gap) {
-            cardTop = r.top + r.height + gap;
-            cardLeft = r.left + r.width / 2 - cardW / 2;
-          } else if (spaceAbove > cardH + gap) {
-            cardTop = r.top - cardH - gap;
-            cardLeft = r.left + r.width / 2 - cardW / 2;
-          } else {
-            cardTop = vh / 2 - cardH / 2;
-            cardLeft = vw / 2 - cardW / 2;
-          }
-
-          cardLeft = clamp(cardLeft, gap, vw - cardW - gap);
-          cardTop = clamp(cardTop, gap, vh - cardH - gap);
-        }
-
-        const cardStyle: React.CSSProperties = centered
-          ? { top: "50%", left: "50%", transform: "translate(-50%, -50%)" }
-          : { top: cardTop, left: cardLeft };
-
-        return (
-          <div className="pw-tutorial-overlay" onClick={completeTutorial}>
-            <div className="pw-tutorial-spotlight" style={{
-              top: tutorialRect ? tutorialRect.top - pad : window.innerHeight / 2,
-              left: tutorialRect ? tutorialRect.left - pad : window.innerWidth / 2,
-              width: tutorialRect ? tutorialRect.width + pad * 2 : 0,
-              height: tutorialRect ? tutorialRect.height + pad * 2 : 0,
-              opacity: tutorialRect ? 1 : 0,
-            }} />
-            <div className={`pw-tutorial-card${tutorialStep === 0 ? " pw-tutorial-entering" : ""}`} style={cardStyle} onClick={(e) => e.stopPropagation()}>
-              <div className="pw-tutorial-content" key={tutorialStep}>
-                <div className="pw-tutorial-step-num">{tutorialStep + 1} of {TUTORIAL_STEPS.length}</div>
-                <h4 className="pw-tutorial-title">{step.title}</h4>
-                <p className="pw-tutorial-desc">{step.desc}</p>
-              </div>
-              <div className="pw-tutorial-dots">
-                {TUTORIAL_STEPS.map((_, i) => (
-                  <span key={i} className={`pw-tutorial-dot${i === tutorialStep ? " active" : i < tutorialStep ? " done" : ""}`} />
-                ))}
-              </div>
-              <div className="pw-tutorial-actions">
-                <button type="button" className="pw-tutorial-skip" onClick={completeTutorial}>Skip tutorial</button>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {!isFirst && (
-                    <button type="button" className="pw-tutorial-back" onClick={() => setTutorialStep((s) => s - 1)}>Back</button>
-                  )}
-                  <button type="button" className="pw-tutorial-next" onClick={() => isLast ? completeTutorial() : setTutorialStep((s) => s + 1)}>
-                    {isLast ? "Finish" : "Next \u2192"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Novel counter — bottom-right */}
       <div style={{

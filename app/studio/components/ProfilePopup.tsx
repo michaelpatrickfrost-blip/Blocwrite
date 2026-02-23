@@ -102,7 +102,6 @@ type ProfilePopupProps = {
   onAiToggle?: (off: boolean) => void;
   onLogout?: () => void;
   onSettingsChange?: () => void;
-  onStartTutorial?: () => void;
   initialTab?: SettingsTab;
 };
 
@@ -116,7 +115,6 @@ export function ProfilePopup({
   onAiToggle,
   onLogout,
   onSettingsChange,
-  onStartTutorial,
   initialTab,
 }: ProfilePopupProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
@@ -516,30 +514,12 @@ export function ProfilePopup({
                 </div>
               )}
 
-              {onStartTutorial && (
-                <div className="pw-settings-group">
-                  <div className="pw-settings-group-title">Tutorial</div>
-                  <p className="pw-settings-hint">Walk through every feature step by step.</p>
-                  <button
-                    type="button"
-                    className="pw-tutorial-restart-btn"
-                    onClick={() => {
-                      try { window.localStorage.removeItem("pilotwriter.tutorial.complete"); } catch { /* ignore */ }
-                      onStartTutorial();
-                      onClose();
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-                    Restart Tutorial
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
           {/* ─── AI Provider tab ─── */}
           {activeTab === "ai" && (
-            <div className="pw-settings-section" data-tutorial="settings-ai">
+            <div className="pw-settings-section">
               <div className="pw-settings-group">
                 <div className="pw-settings-group-title">Provider</div>
                 <div className="pw-settings-provider-cards">
