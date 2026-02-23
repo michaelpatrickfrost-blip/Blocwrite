@@ -1197,11 +1197,14 @@ function NovelWorkspacePage() {
   const [navigatingAway, setNavigatingAway] = useState(false);
   const sidebarHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initialize theme from localStorage
+  // Initialize theme from localStorage and apply to document
   useEffect(() => {
     try {
       const stored = localStorage.getItem("bw-theme") as "dark" | "light" | null;
-      if (stored) setCurrentTheme(stored);
+      if (stored) {
+        setCurrentTheme(stored);
+        document.documentElement.setAttribute("data-theme", stored);
+      }
     } catch { /* ignore */ }
   }, []);
 
