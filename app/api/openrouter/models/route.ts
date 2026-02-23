@@ -106,7 +106,8 @@ export async function GET(request: Request) {
     const provider = normalizeProvider(request.headers.get("x-provider"));
     const apiKey = normalizeApiKey(request.headers.get("x-provider-key") || request.headers.get("x-openrouter-key"));
     const baseUrl = cleanBaseUrl(request.headers.get("x-provider-base-url"), provider);
-    const requiresKey = provider !== "lmstudio";
+    const modelsArePublic = provider === "openrouter";
+    const requiresKey = provider !== "lmstudio" && !modelsArePublic;
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });
     }
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
       Accept: "application/json",
     };
 
-    if (apiKey) {
+    if (apiKey && !modelsArePublic) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
 
