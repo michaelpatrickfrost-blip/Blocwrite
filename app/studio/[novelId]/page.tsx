@@ -15555,7 +15555,7 @@ function NovelWorkspacePage() {
                                     setSpineDoctorResult({ issues: aiIssues, score: aiScore, summary: aiSummary });
                                   } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
                                 }}>
-                                  {spineBusy ? "Wait..." : "🩺 Story Doctor"}
+                                  {spineBusy ? "Wait..." : "✦ Story Doctor"}
                                 </button>
                               )}
                               {beats.length > 0 && (
@@ -15572,8 +15572,8 @@ function NovelWorkspacePage() {
                               { key: "act1", label: "Act 1", icon: "1" },
                               { key: "act2", label: "Act 2", icon: "2" },
                               { key: "act3", label: "Act 3", icon: "3" },
-                              { key: "subplots", label: "Subplots", icon: "🔀" },
-                              { key: "arcs", label: "Arcs", icon: "🎭" },
+                              { key: "subplots", label: "Subplots", icon: "S" },
+                              { key: "arcs", label: "Arcs", icon: "A" },
                             ];
                             const prog = spineProgress.toLowerCase();
                             const activeIdx = prog.includes("act 1") || prog.includes("setup") ? 0
