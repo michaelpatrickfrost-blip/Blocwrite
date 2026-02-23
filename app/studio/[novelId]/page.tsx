@@ -299,91 +299,6 @@ function genreArcExamples(genres: string[]): string {
   return examples.slice(0, 8).join(", ");
 }
 
-function scoreArcPresetByGenres(userGenres: string[], arcGenres: string[]): number {
-  const normalizeGenreToken = (token: string): string => {
-    const t = token.toLowerCase().trim();
-    const typoMap: Record<string, string> = {
-      thrilelr: "thriller",
-      thiller: "thriller",
-      thrilller: "thriller",
-      mystrey: "mystery",
-      mysetry: "mystery",
-      suspsense: "suspense",
-      suspence: "suspense",
-      psychlogical: "psychological",
-      psycological: "psychological",
-      romcom: "rom-com",
-      scifi: "sci-fi",
-      "sci fi": "sci-fi",
-      sciencefiction: "sci-fi",
-      youngadult: "young adult",
-    };
-    return typoMap[t] ?? t;
-  };
-
-  const aliases: Record<string, string[]> = {
-    thriller: ["suspense", "psychological", "crime", "mystery", "noir", "spy", "espionage"],
-    suspense: ["thriller", "mystery", "crime"],
-    mystery: ["detective", "crime", "thriller", "suspense", "noir"],
-    crime: ["thriller", "mystery", "noir", "detective"],
-    horror: ["gothic", "dark", "paranormal", "psychological"],
-    fantasy: ["epic", "adventure", "ya", "young adult"],
-    "sci-fi": ["science fiction", "science", "dystopian", "cyberpunk"],
-    romance: ["rom-com", "contemporary", "drama"],
-    "rom-com": ["romance", "comedy", "contemporary"],
-    ya: ["young adult"],
-    "young adult": ["ya"],
-  };
-  const tokens = userGenres
-    .flatMap((g) => g.toLowerCase().split(/[^a-z0-9]+/g))
-    .map(normalizeGenreToken)
-    .filter(Boolean);
-  const expanded = new Set<string>(tokens);
-  for (const t of [...tokens]) {
-    for (const a of aliases[t] ?? []) expanded.add(a);
-  }
-
-  // Add phrase-level normalized genres for values like "psychological thriller".
-  for (const raw of userGenres) {
-    const phrase = normalizeGenreToken(raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
-    if (phrase) expanded.add(phrase);
-    if (phrase.includes("thriller")) expanded.add("thriller");
-    if (phrase.includes("mystery")) expanded.add("mystery");
-    if (phrase.includes("crime")) expanded.add("crime");
-    if (phrase.includes("horror")) expanded.add("horror");
-    if (phrase.includes("romance")) expanded.add("romance");
-    if (phrase.includes("comedy")) expanded.add("comedy");
-  }
-
-  let score = 0;
-  for (const g of arcGenres) {
-    const lower = g.toLowerCase();
-    if (expanded.has(lower)) score += 3;
-    else if ([...expanded].some((ug) => ug.includes(lower) || lower.includes(ug))) score += 1;
-  }
-
-  const arcSet = new Set(arcGenres.map((g) => g.toLowerCase()));
-  const hasAny = (values: string[]) => values.some((v) => expanded.has(v));
-  const arcHasAny = (values: string[]) => values.some((v) => arcSet.has(v));
-
-  const thrillerFamily = ["thriller", "suspense", "mystery", "detective", "crime", "noir", "psychological", "horror", "dark", "spy", "espionage"];
-  const romanceFamily = ["romance", "rom-com"];
-  const comedyFamily = ["comedy", "satire", "cozy"];
-
-  const wantsThrillerFamily = hasAny(thrillerFamily);
-  const wantsRomance = hasAny(romanceFamily);
-  const wantsComedy = hasAny(comedyFamily);
-
-  if (wantsThrillerFamily && arcHasAny(thrillerFamily)) score += 4;
-  if (wantsThrillerFamily && !wantsRomance && arcHasAny(romanceFamily)) score -= 9;
-  if (wantsThrillerFamily && !wantsComedy && arcHasAny(comedyFamily)) score -= 9;
-
-  // Clamp to avoid extreme values while keeping ranking stable.
-  if (score < -10) score = -10;
-  if (score > 50) score = 50;
-  return score;
-}
-
 function normalizeCharacterNameKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -15713,29 +15628,7 @@ function NovelWorkspacePage() {
                       const clampedScore = Math.min(100, score);
                       const scoreColor = clampedScore >= 80 ? "#22c55e" : clampedScore >= 50 ? "#f59e0b" : "#ef4444";
 
-                      const ALL_ARC_OPTIONS = [
-                        { id: "heros-journey", name: "Hero's Journey", genres: ["fantasy", "sci-fi", "adventure", "ya", "young adult", "action", "epic"], hint: "Ordinary world → call to adventure → trials → transformation → return. The protagonist leaves their comfort zone, faces escalating challenges, and returns changed." },
-                        { id: "rags-to-riches", name: "Rags to Riches", genres: ["drama", "romance", "historical", "literary", "contemporary", "ya"], hint: "A character starts with nothing and rises through talent, luck, or determination. Early humiliation gives way to growing confidence and eventual triumph — but the journey tests what they're willing to sacrifice." },
-                        { id: "tragedy", name: "Tragedy", genres: ["literary", "drama", "thriller", "dark", "noir", "historical", "gothic"], hint: "A great character is undone by a fatal flaw. They rise, overreach, and fall. The audience watches a preventable destruction unfold. The ending is devastating but earned." },
-                        { id: "rebirth", name: "Rebirth", genres: ["literary", "romance", "drama", "contemporary", "women", "upmarket"], hint: "A character trapped in darkness or stagnation is gradually reawakened. Something — a person, event, or realization — cracks through their defenses and they transform into someone new." },
-                        { id: "voyage-return", name: "Voyage & Return", genres: ["fantasy", "sci-fi", "adventure", "portal", "ya", "horror"], hint: "Characters enter a strange new world, face its dangers and wonders, and return home changed. The unfamiliar world forces them to confront truths about themselves." },
-                        { id: "overcoming-monster", name: "Overcoming the Monster", genres: ["thriller", "horror", "action", "fantasy", "crime", "suspense", "adventure"], hint: "A threat looms — a person, system, force — and the protagonist must defeat it. The monster seems impossible to beat. Allies gather, plans form, sacrifices are made." },
-                        { id: "quest", name: "The Quest", genres: ["fantasy", "adventure", "sci-fi", "epic", "action", "western"], hint: "A group sets out on a mission with a clear goal. The journey matters as much as the destination — bonds are tested, detours reveal character, and the prize may not be what they expected." },
-                        { id: "comedy", name: "Comedy / Tangled Web", genres: ["comedy", "romance", "rom-com", "contemporary", "satire", "cozy"], hint: "Confusion, misunderstandings, and tangled relationships escalate before unraveling into resolution. Characters work at cross-purposes, creating chaos that eventually sorts itself out." },
-                        { id: "mystery-revelation", name: "Mystery / Revelation", genres: ["mystery", "thriller", "crime", "detective", "noir", "suspense", "psychological"], hint: "Something is hidden. Layer by layer, the truth is uncovered — each revelation changes what the reader thought they knew. Trust no one. Everyone has secrets." },
-                        { id: "love-story", name: "Love Story", genres: ["romance", "rom-com", "drama", "contemporary", "historical", "ya"], hint: "Two people are drawn together despite obstacles — distance, family, timing, secrets, or their own fears. The story builds through connection, tension, and vulnerability toward union or heartbreak." },
-                        { id: "descent", name: "Descent into Darkness", genres: ["horror", "thriller", "psychological", "dark", "gothic", "noir", "crime"], hint: "A character spirals deeper into obsession, madness, or moral corruption. Each choice takes them further from who they were. The reader watches, gripped, hoping they'll turn back — knowing they won't." },
-                      ];
                       const userGenres = (novel.storyBible.summary?.genre ?? []).map(g => g.toLowerCase());
-                      const STORY_ARC_OPTIONS = ALL_ARC_OPTIONS.map((arc) => ({
-                        ...arc,
-                        genreScore: scoreArcPresetByGenres(userGenres, arc.genres),
-                      })).sort((a, b) => {
-                        if (b.genreScore !== a.genreScore) return b.genreScore - a.genreScore;
-                        return a.name.localeCompare(b.name);
-                      });
-                      const displayedArcOptions = STORY_ARC_OPTIONS;
-                      const topMatchCount = STORY_ARC_OPTIONS[0]?.genreScore ?? 0;
 
                       return (
                         <div>
@@ -15751,8 +15644,7 @@ function NovelWorkspacePage() {
                                   className="btn btn-primary"
                                   disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())}
                                   onClick={async () => {
-                                    const top = STORY_ARC_OPTIONS[0];
-                                    setSpineArcChoice(top && top.genreScore > 0 ? top.id : null);
+                                    setSpineArcChoice(null);
                                     setSpineArcDynamicOptions(null);
                                     setSpineShowArcPicker(true);
                                     const synopsis = (novel.storyBible.summary?.synopsisShort || "").trim();
@@ -15760,19 +15652,19 @@ function NovelWorkspacePage() {
                                     setSpineArcDynamicLoading(true);
                                     try {
                                       const aiPrompt = [
-                                        "Create 3 story-arc options for this novel.",
+                                        "Create 5 story-arc options for this novel.",
                                         `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
                                         `Synopsis: ${synopsis.slice(0, 900)}`,
-                                        'Return JSON: { "options": [{ "name": "2-5 words", "description": "2-3 sentences", "rationale": "why this fits genre" }] }',
+                                        'Return JSON: { "options": [{ "name": "2-6 words", "description": "2-3 sentences", "rationale": "why this fits genre" }] }',
                                         "Make each option genuinely different and genre-specific.",
                                       ].join("\n");
                                       const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
                                         aiPrompt,
-                                        800,
+                                        1100,
                                         { timeoutMs: 90000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
                                       );
                                       const options = (ai?.options ?? [])
-                                        .slice(0, 3)
+                                        .slice(0, 5)
                                         .map((o, i) => ({
                                           id: `opt-${i + 1}`,
                                           name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
@@ -15780,8 +15672,11 @@ function NovelWorkspacePage() {
                                           rationale: (o.rationale || "").slice(0, 140),
                                         }))
                                         .filter((o) => o.description.length > 10);
-                                      if (options.length > 0) setSpineArcDynamicOptions(options);
-                                    } catch { /* keep static presets if AI fails */ }
+                                      if (options.length > 0) {
+                                        setSpineArcDynamicOptions(options);
+                                        setSpineArcChoice(`ai:${options[0].id}`);
+                                      }
+                                    } catch { /* keep retry prompt visible */ }
                                     finally {
                                       setSpineArcDynamicLoading(false);
                                     }
@@ -15929,8 +15824,8 @@ function NovelWorkspacePage() {
                           {spineShowArcPicker && (
                             <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
                               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
-                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick a narrative shape for your story, or describe your own. This guides how the AI builds your beats, subplots, and characters.</p>
-                              {spineArcDynamicLoading && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>Generating fresh AI arc options...</p>}
+                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>AI is generating 5 genre-specific arc directions for this story.</p>
+                              {spineArcDynamicLoading && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>Analyzing genre + synopsis and crafting arc options...</p>}
                               {spineArcDynamicOptions && spineArcDynamicOptions.length > 0 && (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)" }}>AI-Crafted Arc Directions</div>
@@ -15951,30 +15846,56 @@ function NovelWorkspacePage() {
                                   ))}
                                 </div>
                               )}
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                                {displayedArcOptions.map(arc => {
-                                  const genreMatch = arc.genreScore;
-                                  const isRecommended = genreMatch > 0 && genreMatch >= topMatchCount;
-                                  return (
-                                  <button key={arc.id} type="button" onClick={() => setSpineArcChoice(spineArcChoice === arc.id ? null : arc.id)}
-                                    style={{
-                                      textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                                      background: spineArcChoice === arc.id ? "rgba(var(--accent-rgb, 124,92,252), 0.12)" : isRecommended ? "rgba(var(--accent-rgb, 124,92,252), 0.04)" : "var(--pw-surface)",
-                                      border: `1px solid ${spineArcChoice === arc.id ? "var(--pw-accent)" : isRecommended ? "rgba(var(--accent-rgb, 124,92,252), 0.3)" : "var(--pw-border-light)"}`,
-                                      transition: "all 0.15s",
-                                    }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                      <span style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === arc.id ? "var(--pw-accent)" : "var(--pw-text)" }}>{arc.name}</span>
-                                      {isRecommended && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>Recommended</span>}
-                                    </div>
-                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{arc.hint}</div>
-                                  </button>);
-                                })}
-                              </div>
+                              {!spineArcDynamicLoading && (!spineArcDynamicOptions || spineArcDynamicOptions.length === 0) && (
+                                <div style={{ marginBottom: 12, padding: 10, border: "1px solid var(--pw-border-light)", borderRadius: 8, background: "var(--pw-surface)" }}>
+                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>AI couldn't generate arc options yet. Try again.</div>
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ fontSize: 11 }}
+                                    onClick={async () => {
+                                      if (spineArcDynamicLoading || !novel) return;
+                                      const synopsis = (novel.storyBible.summary?.synopsisShort || "").trim();
+                                      if (!synopsis) return;
+                                      setSpineArcDynamicLoading(true);
+                                      try {
+                                        const aiPrompt = [
+                                          "Create 5 story-arc options for this novel.",
+                                          `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
+                                          `Synopsis: ${synopsis.slice(0, 900)}`,
+                                          'Return JSON: { "options": [{ "name": "2-6 words", "description": "2-3 sentences", "rationale": "why this fits genre" }] }',
+                                          "Make each option genuinely different and genre-specific.",
+                                        ].join("\n");
+                                        const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
+                                          aiPrompt,
+                                          1100,
+                                          { timeoutMs: 90000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
+                                        );
+                                        const options = (ai?.options ?? [])
+                                          .slice(0, 5)
+                                          .map((o, i) => ({
+                                            id: `opt-${i + 1}`,
+                                            name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
+                                            description: (o.description || "").slice(0, 280),
+                                            rationale: (o.rationale || "").slice(0, 140),
+                                          }))
+                                          .filter((o) => o.description.length > 10);
+                                        if (options.length > 0) {
+                                          setSpineArcDynamicOptions(options);
+                                          setSpineArcChoice(`ai:${options[0].id}`);
+                                        }
+                                      } catch { /* keep retry prompt visible */ }
+                                      finally { setSpineArcDynamicLoading(false); }
+                                    }}
+                                  >
+                                    Retry AI Options
+                                  </button>
+                                </div>
+                              )}
                               <div style={{ marginBottom: 12 }}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", display: "block", marginBottom: 4 }}>Or describe your own arc direction:</label>
                                 <textarea
-                                  value={spineArcChoice && !spineArcChoice.startsWith("ai:") && !STORY_ARC_OPTIONS.some(a => a.id === spineArcChoice) ? spineArcChoice : ""}
+                                  value={spineArcChoice && !spineArcChoice.startsWith("ai:") ? spineArcChoice : ""}
                                   onChange={(e) => setSpineArcChoice(e.target.value || null)}
                                   placeholder="e.g. 'A slow-burn revenge story where the protagonist methodically dismantles the empire that destroyed their family, but starts to question if they've become the thing they hate...'"
                                   rows={3}
@@ -15995,14 +15916,11 @@ function NovelWorkspacePage() {
                                   const existingChars = storyCharacters.slice(0, 10);
                                   const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 50) : ""}`).join("\n  ");
                                   const locCtx = (novel.storyBible.locations ?? []).slice(0, 5).map(l => l.name).join(", ");
-                                  const arcPreset = STORY_ARC_OPTIONS.find(a => a.id === spineArcChoice);
                                   const dynamicPreset = spineArcChoice?.startsWith("ai:")
                                     ? spineArcDynamicOptions?.find((o) => `ai:${o.id}` === spineArcChoice)
                                     : null;
                                   const arcDirective = dynamicPreset
                                     ? `ARC: ${dynamicPreset.name} — ${dynamicPreset.description.slice(0, 140)}`
-                                    : arcPreset
-                                    ? `ARC: ${arcPreset.name} — ${arcPreset.hint.slice(0, 100)}`
                                     : `ARC: ${(spineArcChoice || "").slice(0, 150)}`;
 
                                   // Helper: parse JSON from AI response with repair fallback
