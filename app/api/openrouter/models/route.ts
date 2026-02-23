@@ -127,6 +127,8 @@ export async function GET(request: Request) {
       message?: string;
     }) | GenericModelsPayload = {};
 
+    console.log(`[models] provider=${provider} baseUrl=${baseUrl} hasKey=${!!apiKey} sendAuth=${!!apiKey && !modelsPublic}`);
+
     for (const endpoint of endpoints) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), MODELS_TIMEOUT_MS);
@@ -137,8 +139,10 @@ export async function GET(request: Request) {
           cache: "no-store",
           signal: controller.signal,
         });
+        console.log(`[models] endpoint=${endpoint} status=${response.status}`);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
+          console.log(`[models] TIMEOUT fetching ${endpoint}`);
           return NextResponse.json(
             { error: `${providerLabel(provider)} timed out while loading models.` },
             { status: 504 },
@@ -158,6 +162,7 @@ export async function GET(request: Request) {
       const errorMsg =
         readOpenRouterError(payload as Parameters<typeof readOpenRouterError>[0]) ||
         `${providerLabel(provider)} error ${status}`;
+      console.log(`[models] ERROR: ${errorMsg} (status ${status})`);
       return NextResponse.json({ error: errorMsg }, { status });
     }
 
@@ -175,6 +180,7 @@ export async function GET(request: Request) {
           },
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
+      console.log(`[models] OK: ${models.length} models for ${provider}`);
       return NextResponse.json({ models });
     }
 
@@ -196,9 +202,11 @@ export async function GET(request: Request) {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    console.log(`[models] OK: ${models.length} OpenRouter models returned`);
     return NextResponse.json({ models });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to fetch models.";
+    console.log(`[models] EXCEPTION: ${message}`);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

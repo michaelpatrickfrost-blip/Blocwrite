@@ -137,6 +137,7 @@ export function ProfilePopup({
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const modelsFetchedForProvider = useRef<string | null>(null);
 
   // Subscription state
   type SubInfo = {
@@ -197,6 +198,10 @@ export function ProfilePopup({
     setOpenRouterKey(newKey);
     setAssistantBaseUrl(newBaseUrl);
     setOpenRouterModel(newModel);
+    setModels([]);
+    setModelsError(null);
+    setShowModelDropdown(false);
+    setModelSearch("");
     onProviderSettingsChange?.({ provider: id, key: newKey, model: newModel, baseUrl: newBaseUrl });
   }, [onProviderSettingsChange]);
 
@@ -294,6 +299,8 @@ export function ProfilePopup({
   const fetchModels = useCallback(async () => {
     setModelsLoading(true);
     setModelsError(null);
+    setModels([]);
+    const provider = assistantProvider;
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 45000);
@@ -301,7 +308,7 @@ export function ProfilePopup({
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
         headers: {
-          "x-provider": assistantProvider,
+          "x-provider": provider,
           "x-provider-key": normalizeClientApiKey(openRouterKey),
           "x-provider-base-url": assistantBaseUrl.trim(),
         },
@@ -313,12 +320,15 @@ export function ProfilePopup({
         error?: string;
       };
       if (!res.ok) {
-        setModelsError(payload.error || "Unable to load models.");
+        setModelsError(payload.error || `Unable to load models (HTTP ${res.status}).`);
         return;
       }
       const list = Array.isArray(payload.models) ? payload.models : [];
+      modelsFetchedForProvider.current = provider;
       setModels(list);
-      if (list.length > 0) setShowModelDropdown(true);
+      if (list.length === 0) {
+        setModelsError("Server returned 0 models. Try clicking Refresh.");
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
         setModelsError("Model list request timed out. Try again.");
@@ -342,12 +352,15 @@ export function ProfilePopup({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showModelDropdown]);
 
-  // Auto-fetch models when AI tab is active
+  // Auto-fetch models when AI tab is active or provider changes
   useEffect(() => {
-    if (activeTab === "ai" && models.length === 0 && !modelsLoading && !modelsError) {
+    if (activeTab !== "ai" || modelsLoading) return;
+    const needsFetch = models.length === 0 && !modelsError;
+    const providerChanged = modelsFetchedForProvider.current !== null && modelsFetchedForProvider.current !== assistantProvider;
+    if (needsFetch || providerChanged) {
       void fetchModels();
     }
-  }, [activeTab, models.length, modelsLoading, modelsError, fetchModels]);
+  }, [activeTab, assistantProvider, models.length, modelsLoading, modelsError, fetchModels]);
 
   // Fetch subscription info when account tab is opened
   useEffect(() => {
@@ -580,6 +593,11 @@ export function ProfilePopup({
                 <div className="pw-settings-group-title">
                   Model
                   {modelsLoading && <span className="pw-settings-loading"> loading...</span>}
+                  {!modelsLoading && models.length > 0 && (
+                    <span style={{ fontSize: 11, color: "var(--pw-text-dim)", fontWeight: 400, marginLeft: 6 }}>
+                      ({models.length} available)
+                    </span>
+                  )}
                 </div>
                 <div className="pw-settings-input-row">
                   <input
@@ -609,6 +627,16 @@ export function ProfilePopup({
                   >
                     {modelsLoading ? "..." : "Browse"}
                   </button>
+                  <button
+                    type="button"
+                    className="pw-settings-btn"
+                    onClick={() => void fetchModels()}
+                    disabled={modelsLoading}
+                    title="Refresh model list"
+                    style={{ minWidth: 0, padding: "0 10px" }}
+                  >
+                    {modelsLoading ? "..." : "↻"}
+                  </button>
                 </div>
                 {modelsError && (
                   <p className="pw-settings-status error">
@@ -617,11 +645,11 @@ export function ProfilePopup({
                   </p>
                 )}
                 {showModelDropdown && models.length > 0 && (
-                  <div className="pw-settings-model-dropdown">
+                  <div className="pw-settings-model-dropdown" ref={modelDropdownRef}>
                     <input
                       className="pw-settings-model-search"
                       type="text"
-                      placeholder="Search models..."
+                      placeholder={`Search ${models.length} models...`}
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}
                       autoFocus
