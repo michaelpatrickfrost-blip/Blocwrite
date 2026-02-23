@@ -226,26 +226,25 @@ function Hero() {
   );
 }
 
-/* ── Trust Bar ── */
+/* ── Trust Strip ── */
 function TrustBar() {
-  const items = [
-    { emoji: "⚡", label: "7-day free trial", sub: "Full access. No card upfront." },
-    { emoji: "🔑", label: "You bring the AI", sub: "Your key, your model, your cost." },
-    { emoji: "🔒", label: "Writing stays private", sub: "No training. No sharing. Ever." },
-    { emoji: "📄", label: "Publish-ready export", sub: "Clean EPUB & DOCX output." },
-  ];
   return (
-    <section style={{ background: C.bgDark, padding: "0" }}>
-      <div className="bw-trust-grid" style={{ ...wrap(), display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0 }}>
-        {items.map((s, i) => (
-          <div key={s.label} style={{
-            textAlign: "center", padding: "36px 20px",
-            borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none",
-          }}>
-            <span style={{ fontSize: 28, display: "block", marginBottom: 14 }}>{s.emoji}</span>
-            <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: "#fff" }}>{s.label}</p>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", margin: "6px 0 0", lineHeight: 1.5 }}>{s.sub}</p>
-          </div>
+    <section style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+      <div className="bw-trust-grid" style={{ ...wrap(), display: "flex", justifyContent: "center", alignItems: "center", gap: 10, padding: "22px 32px", flexWrap: "wrap" }}>
+        {[
+          "7-day free trial",
+          "You own your AI key",
+          "No training on your data",
+          "EPUB & DOCX export",
+          "Cancel anytime",
+        ].map((t, i, arr) => (
+          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.textSoft }}>{t}</span>
+            </span>
+            {i < arr.length - 1 && <span style={{ color: C.border, fontSize: 11 }}>|</span>}
+          </span>
         ))}
       </div>
     </section>
