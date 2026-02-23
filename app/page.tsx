@@ -235,29 +235,264 @@ function TrustBar() {
   );
 }
 
-/* ── Screenshot preview — no fade, just clean rounded shadow ── */
-function ScreenshotPreview({ src, alt }: { src: string; alt: string }) {
+/* ── Shared animated preview shell ── */
+const PV = {
+  bg: "#13132b",
+  card: "#1a1a38",
+  border: "rgba(124,92,252,0.18)",
+  text: "#e4e2f0",
+  dim: "#706f8a",
+  accent: "#7c5cfc",
+  accentSoft: "rgba(124,92,252,0.15)",
+  gold: "#e2c87e",
+  green: "#34d399",
+  red: "#f87171",
+  orange: "#fb923c",
+};
+
+function PreviewShell({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)", maxWidth: 520 }}>
-      <img src={src} alt={alt} style={{ width: "100%", height: "auto", display: "block" }} />
+    <div style={{ background: PV.bg, borderRadius: 16, border: `1px solid ${PV.border}`, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.4)", maxWidth: 480, width: "100%" }}>
+      {children}
+      <style>{`
+        @keyframes pvFadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes pvSlideIn { from { opacity:0; transform:translateX(-16px) } to { opacity:1; transform:translateX(0) } }
+        @keyframes pvGrow { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+        @keyframes pvPulse { 0%,100% { opacity:0.4 } 50% { opacity:1 } }
+        @keyframes pvDraw { from { stroke-dashoffset:200 } to { stroke-dashoffset:0 } }
+        @keyframes pvType { from { width:0 } to { width:100% } }
+        @keyframes pvCount { from { opacity:0 } to { opacity:1 } }
+      `}</style>
     </div>
   );
 }
 
 function PlotSpinePreview() {
-  return <ScreenshotPreview src="/previews/plot-spine.png" alt="Blocwrite Plot Spine — story beats, tension arc, character presence" />;
+  const beats = [
+    { act: "ACT I", label: "Inciting Incident", pct: 15 },
+    { act: "ACT I", label: "First Plot Point", pct: 25 },
+    { act: "ACT II", label: "Rising Action", pct: 45 },
+    { act: "ACT II", label: "Midpoint Reversal", pct: 55 },
+    { act: "ACT III", label: "Climax", pct: 80 },
+    { act: "ACT III", label: "Resolution", pct: 95 },
+  ];
+  const chars = ["Elena Voss", "Jack Mercer", "Dr Singh"];
+  return (
+    <PreviewShell>
+      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: PV.accent, letterSpacing: "0.08em" }}>PLOT SPINE</span>
+        <span style={{ fontSize: 11, color: PV.dim, background: PV.accentSoft, padding: "3px 10px", borderRadius: 20 }}>Three-Act Structure</span>
+      </div>
+      {/* Tension Arc */}
+      <div style={{ padding: "16px 20px 0" }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>TENSION ARC</div>
+        <svg viewBox="0 0 400 80" style={{ width: "100%", height: 60 }}>
+          <defs><linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={PV.accent} stopOpacity="0.1"/><stop offset="50%" stopColor={PV.accent} stopOpacity="0.3"/><stop offset="100%" stopColor={PV.accent} stopOpacity="0.05"/></linearGradient></defs>
+          <path d="M0,70 C60,65 100,50 140,40 C180,30 200,15 240,10 C280,5 320,8 360,25 C380,35 400,55 400,70" fill="url(#arcGrad)" stroke="none" />
+          <path d="M0,70 C60,65 100,50 140,40 C180,30 200,15 240,10 C280,5 320,8 360,25 C380,35 400,55 400,70" fill="none" stroke={PV.accent} strokeWidth="2" strokeDasharray="200" style={{ animation: "pvDraw 2.5s ease-out forwards" }} />
+          {[15,25,50,55,80,95].map((x,i) => (
+            <circle key={i} cx={x*4} cy={[62,50,22,14,10,45][i]} r="4" fill={PV.accent} style={{ animation: `pvFadeUp 0.4s ${0.3+i*0.3}s both` }} />
+          ))}
+        </svg>
+      </div>
+      {/* Story Beats */}
+      <div style={{ padding: "4px 20px 12px" }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>STORY BEATS</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {beats.map((b, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, animation: `pvSlideIn 0.4s ${0.2+i*0.15}s both` }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: i < 2 ? PV.green : i < 4 ? PV.gold : PV.red, width: 42, flexShrink: 0 }}>{b.act}</span>
+              <span style={{ fontSize: 12, color: PV.text, flex: 1 }}>{b.label}</span>
+              <div style={{ width: 60, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                <div style={{ width: `${b.pct}%`, height: "100%", borderRadius: 2, background: PV.accent, transformOrigin: "left", animation: `pvGrow 0.6s ${0.4+i*0.15}s both` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Character presence */}
+      <div style={{ padding: "8px 20px 16px", borderTop: `1px solid ${PV.border}` }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>CHARACTER PRESENCE</div>
+        {chars.map((c, ci) => (
+          <div key={c} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, animation: `pvFadeUp 0.3s ${0.8+ci*0.2}s both` }}>
+            <span style={{ fontSize: 11, color: PV.text, width: 80, flexShrink: 0 }}>{c}</span>
+            <div style={{ flex: 1, display: "flex", gap: 3 }}>
+              {Array.from({ length: 6 }).map((_, bi) => {
+                const on = ci === 0 ? true : ci === 1 ? bi !== 2 && bi !== 4 : bi > 1 && bi < 5;
+                return <div key={bi} style={{ width: 14, height: 14, borderRadius: 3, background: on ? [PV.accent, PV.gold, PV.green][ci] : "rgba(255,255,255,0.05)", opacity: on ? 0.85 : 0.3, animation: `pvPulse 2s ${bi*0.2}s infinite` }} />;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </PreviewShell>
+  );
 }
 
 function CanonPreview() {
-  return <ScreenshotPreview src="/previews/bolt-ons.png" alt="Blocwrite Canon — Bolt-Ons and craft directives" />;
+  const tabs = ["Characters", "Locations", "Lore", "Style & Voice"];
+  const characters = [
+    { name: "Elena Voss", role: "Protagonist", traits: ["Resourceful", "Haunted"] },
+    { name: "Jack Mercer", role: "Ally", traits: ["Loyal", "Witty"] },
+    { name: "Dr Singh", role: "Antagonist", traits: ["Brilliant", "Cold"] },
+  ];
+  return (
+    <PreviewShell>
+      <div style={{ padding: "16px 20px 0", borderBottom: `1px solid ${PV.border}` }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: PV.gold, letterSpacing: "0.08em" }}>THE CANON</span>
+        <div style={{ display: "flex", gap: 0, marginTop: 12 }}>
+          {tabs.map((t, i) => (
+            <div key={t} style={{ fontSize: 11, fontWeight: 600, padding: "8px 14px", color: i === 0 ? PV.accent : PV.dim, borderBottom: i === 0 ? `2px solid ${PV.accent}` : "2px solid transparent", cursor: "default" }}>{t}</div>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: "16px 20px 20px" }}>
+        {characters.map((c, i) => (
+          <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 14px", marginBottom: 8, borderRadius: 10, background: PV.card, border: `1px solid ${PV.border}`, animation: `pvFadeUp 0.5s ${0.2+i*0.25}s both` }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${[PV.accent, PV.gold, PV.red][i]}, ${PV.bg})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+              {c.name[0]}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: PV.text }}>{c.name}</span>
+                <span style={{ fontSize: 10, color: PV.dim, background: PV.accentSoft, padding: "2px 8px", borderRadius: 10 }}>{c.role}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+                {c.traits.map(t => (
+                  <span key={t} style={{ fontSize: 10, color: PV.dim, padding: "2px 7px", borderRadius: 6, border: `1px solid ${PV.border}` }}>{t}</span>
+                ))}
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={PV.dim} strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
+          {[{ n: "5", l: "Characters" }, { n: "16", l: "Locations" }, { n: "7", l: "Lore entries" }].map((s, i) => (
+            <div key={s.l} style={{ animation: `pvFadeUp 0.4s ${1+i*0.15}s both` }}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: PV.accent }}>{s.n}</span>
+              <span style={{ fontSize: 10, color: PV.dim, marginLeft: 4 }}>{s.l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </PreviewShell>
+  );
 }
 
 function BlocsPreview() {
-  return <ScreenshotPreview src="/previews/blocs.png" alt="Blocwrite Scene Blocs — chapter editor with scene-by-scene drafting" />;
+  const scenes = [
+    { id: 1, title: "The Discovery", words: 847, status: "done" },
+    { id: 2, title: "Confrontation at the Docks", words: 612, status: "writing" },
+    { id: 3, title: "The Hidden Letter", words: 0, status: "planned" },
+  ];
+  return (
+    <PreviewShell>
+      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#6246ea", letterSpacing: "0.08em" }}>SCENE BLOCS</span>
+          <span style={{ fontSize: 11, color: PV.dim }}>Ch. 3 — The Vanishing Body</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, color: PV.dim }}>Blocs</span>
+          <div style={{ width: 28, height: 16, borderRadius: 8, background: PV.accent, position: "relative" }}>
+            <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, right: 2 }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: "16px 20px 20px" }}>
+        {scenes.map((s, i) => (
+          <div key={s.id} style={{ marginBottom: 12, borderRadius: 10, background: PV.card, border: `1px solid ${s.status === "writing" ? PV.accent : PV.border}`, overflow: "hidden", animation: `pvFadeUp 0.5s ${0.2+i*0.25}s both` }}>
+            <div style={{ padding: "12px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: PV.accent }}>SCENE {s.id}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: PV.text }}>{s.title}</span>
+                </div>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: s.status === "done" ? "rgba(52,211,153,0.12)" : s.status === "writing" ? PV.accentSoft : "rgba(255,255,255,0.04)", color: s.status === "done" ? PV.green : s.status === "writing" ? PV.accent : PV.dim }}>
+                  {s.status === "done" ? "Complete" : s.status === "writing" ? "Drafting..." : "Planned"}
+                </span>
+              </div>
+              {s.status === "writing" && (
+                <div style={{ fontSize: 12, color: PV.dim, lineHeight: 1.6, overflow: "hidden" }}>
+                  <div style={{ animation: "pvType 3s steps(40) infinite", whiteSpace: "nowrap", overflow: "hidden", color: PV.text }}>
+                    Rain hammered the corrugated roof as Mercer pulled the envelope from his coat...
+                  </div>
+                </div>
+              )}
+              {s.status === "done" && (
+                <div style={{ fontSize: 12, color: PV.dim, lineHeight: 1.6 }}>
+                  Elena pushed through the warehouse door. The air tasted of rust and old secrets...
+                </div>
+              )}
+              {s.status === "planned" && (
+                <div style={{ fontSize: 11, color: PV.dim, fontStyle: "italic" }}>Elena finds the letter hidden inside the piano. Flashback to her mother&apos;s warning.</div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+                <span style={{ fontSize: 10, color: PV.dim }}>{s.words > 0 ? `${s.words} words` : "—"}</span>
+                {s.words > 0 && (
+                  <div style={{ width: 60, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(100, (s.words / 1000) * 100)}%`, height: "100%", borderRadius: 2, background: s.status === "done" ? PV.green : PV.accent, transformOrigin: "left", animation: `pvGrow 0.8s ${0.5+i*0.2}s both` }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", animation: `pvFadeUp 0.4s 1.2s both` }}>
+          <div style={{ width: 20, height: 20, borderRadius: 6, border: `1px dashed ${PV.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: PV.dim }}>+</div>
+          <span style={{ fontSize: 11, color: PV.dim }}>Generate prose for this scene</span>
+        </div>
+      </div>
+    </PreviewShell>
+  );
 }
 
 function NFPreview() {
-  return <ScreenshotPreview src="/previews/non-fiction.png" alt="Blocwrite Non-Fiction — Life Events for biography and memoir" />;
+  const events = [
+    { year: "1987", title: "Born in Sheffield", emotion: 8, color: PV.gold },
+    { year: "1995", title: "Family moves to London", emotion: 5, color: PV.accent },
+    { year: "2003", title: "First published article", emotion: 9, color: PV.green },
+    { year: "2011", title: "The diagnosis", emotion: 2, color: PV.red },
+  ];
+  return (
+    <PreviewShell>
+      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${PV.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: PV.orange, letterSpacing: "0.08em" }}>NON-FICTION</span>
+        <span style={{ fontSize: 11, color: PV.dim, background: "rgba(251,146,60,0.1)", padding: "3px 10px", borderRadius: 20 }}>Biography</span>
+      </div>
+      {/* Mini Life Interview */}
+      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${PV.border}` }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 8 }}>LIFE INTERVIEW</div>
+        <div style={{ animation: "pvFadeUp 0.5s 0.2s both" }}>
+          <div style={{ fontSize: 12, color: PV.accent, marginBottom: 4, fontWeight: 600 }}>AI: What moment changed everything for you?</div>
+          <div style={{ fontSize: 12, color: PV.text, padding: "8px 12px", background: PV.card, borderRadius: 8, border: `1px solid ${PV.border}`, overflow: "hidden" }}>
+            <div style={{ whiteSpace: "nowrap", overflow: "hidden", animation: "pvType 4s steps(50) infinite" }}>
+              It was the summer of 2003 when I got the call from the editor. Everything shifted after that...
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Timeline */}
+      <div style={{ padding: "12px 20px 16px" }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PV.dim, letterSpacing: "0.1em", marginBottom: 10 }}>EMOTIONAL TIMELINE</div>
+        <div style={{ position: "relative", paddingLeft: 20 }}>
+          <div style={{ position: "absolute", left: 6, top: 0, bottom: 0, width: 2, background: PV.border }} />
+          {events.map((e, i) => (
+            <div key={e.year} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, animation: `pvSlideIn 0.4s ${0.4+i*0.2}s both`, position: "relative" }}>
+              <div style={{ position: "absolute", left: -14, width: 10, height: 10, borderRadius: "50%", background: e.color, border: `2px solid ${PV.bg}` }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: e.color, width: 36, flexShrink: 0 }}>{e.year}</span>
+              <span style={{ fontSize: 12, color: PV.text, flex: 1 }}>{e.title}</span>
+              <div style={{ display: "flex", gap: 2 }}>
+                {Array.from({ length: 10 }).map((_, di) => (
+                  <div key={di} style={{ width: 3, height: 10, borderRadius: 1, background: di < e.emotion ? e.color : "rgba(255,255,255,0.05)", opacity: di < e.emotion ? 0.7 : 0.3 }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </PreviewShell>
+  );
 }
 
 
