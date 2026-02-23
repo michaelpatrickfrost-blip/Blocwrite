@@ -443,11 +443,11 @@ function Pricing() {
         <p style={{ fontSize: 14, color: C.textMuted, marginBottom: 56 }}>Every plan includes a 7-day free trial. Cancel anytime.</p>
 
         <div className="bw-pricing-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, maxWidth: 720, margin: "0 auto" }}>
-          <PriceCard name="Monthly" price="\u00a312.99" period="month" badge={null}
+          <PriceCard name="Monthly" price="£12.99" period="month" badge={null}
             features={["Full studio access", "Unlimited novels & chapters", "Canon, Plan, Blocs, Export", "The Editor & Co-Author", "Bolt-Ons & Writing Packs", "Non-Fiction & Biography mode", "Bring your own AI key", "Cancel anytime"]}
           />
-          <PriceCard name="Annual" price="\u00a399" period="year" badge="Save 36%" highlighted
-            features={["Everything in Monthly", "Billed annually", "Works out to \u00a38.25/mo", "Priority for new features", "Cancel anytime"]}
+          <PriceCard name="Annual" price="£99" period="year" badge="Save 36%" highlighted
+            features={["Everything in Monthly", "Billed annually", "Works out to £8.25/mo", "Priority for new features", "Cancel anytime"]}
           />
         </div>
 
