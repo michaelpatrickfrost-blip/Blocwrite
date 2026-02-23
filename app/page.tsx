@@ -43,7 +43,7 @@ export default function LandingPage() {
         @keyframes bwShimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
         .bw-float { animation: bwFloat 6s ease-in-out infinite; }
         .bw-fade-up { animation: bwFadeUp 0.8s ease forwards; }
-        .bw-mockup { border-radius:16px; overflow:hidden; box-shadow:0 40px 100px rgba(12,12,29,0.25), 0 8px 32px rgba(12,12,29,0.12); }
+        .bw-mockup { border-radius:16px; overflow:hidden; }
         .bw-card-hover { transition: transform 0.3s ease, box-shadow 0.3s ease; }
         .bw-card-hover:hover { transform: translateY(-6px); box-shadow: 0 24px 64px rgba(12,12,29,0.12); }
         .bw-feature-row { display:grid; grid-template-columns:1fr 1fr; gap:80px; align-items:center; }
@@ -203,10 +203,65 @@ function Hero() {
           </a>
         </div>
 
-        {/* Floating mockup */}
-        <div className="bw-hero-mockup-wrap" style={{ marginTop: 72, position: "relative" }}>
-          <div className="bw-float" style={{ borderRadius: 20, overflow: "hidden", boxShadow: "0 60px 120px rgba(0,0,0,0.4), 0 0 80px rgba(124,92,252,0.08)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <img src="/screenshots/overview.png?v=3" alt="Blocwrite Studio" style={{ width: "100%", height: "auto", display: "block" }} />
+        {/* Abstract app preview */}
+        <div className="bw-hero-mockup-wrap" style={{ marginTop: 72, position: "relative", maxWidth: 860, margin: "72px auto 0" }}>
+          <div className="bw-float" style={{
+            borderRadius: 20, overflow: "hidden",
+            boxShadow: "0 60px 120px rgba(0,0,0,0.4), 0 0 80px rgba(124,92,252,0.08)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            background: "linear-gradient(135deg, #12122a 0%, #1a1a3a 100%)",
+          }}>
+            {/* Browser chrome bar */}
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff5f57" }} />
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#febc2e" }} />
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#28c840" }} />
+              <span style={{ flex: 1, marginLeft: 12, height: 24, borderRadius: 6, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>blocwrite.com/studio</span>
+              </span>
+            </div>
+            {/* App content preview */}
+            <div style={{ padding: "24px 28px", display: "grid", gridTemplateColumns: "180px 1fr", gap: 20, minHeight: 340 }}>
+              {/* Sidebar */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: 20 }}>
+                {["Overview", "Canon", "Plan", "Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Editor", "Health", "Export"].map((item, j) => (
+                  <div key={item} style={{
+                    padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 500,
+                    color: j === 0 ? "#fff" : "rgba(255,255,255,0.35)",
+                    background: j === 0 ? "rgba(124,92,252,0.2)" : "transparent",
+                    border: j === 0 ? "1px solid rgba(124,92,252,0.3)" : "1px solid transparent",
+                  }}>{item}</div>
+                ))}
+              </div>
+              {/* Main content area */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ flex: 1, height: 80, borderRadius: 12, background: "rgba(124,92,252,0.08)", border: "1px solid rgba(124,92,252,0.15)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 16px" }}>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>Word Count</span>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: "#b8a4ff" }}>47,832</span>
+                  </div>
+                  <div style={{ flex: 1, height: 80, borderRadius: 12, background: "rgba(226,200,126,0.06)", border: "1px solid rgba(226,200,126,0.12)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 16px" }}>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>Health Score</span>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: "#e2c87e" }}>8.4</span>
+                  </div>
+                  <div style={{ flex: 1, height: 80, borderRadius: 12, background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.12)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 16px" }}>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>Chapters</span>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: "#10b981" }}>24</span>
+                  </div>
+                </div>
+                {/* Skeleton chapter list */}
+                {[1,2,3].map(n => (
+                  <div key={n} style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(124,92,252,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#7c5cfc" }}>{n}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ height: 8, width: `${70 - n * 10}%`, borderRadius: 4, background: "rgba(255,255,255,0.1)", marginBottom: 6 }} />
+                      <div style={{ height: 6, width: `${90 - n * 8}%`, borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+                    </div>
+                    <div style={{ width: 48, height: 6, borderRadius: 4, background: n === 1 ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.06)" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -241,35 +296,137 @@ function TrustBar() {
   );
 }
 
-/* ── Showcase — 3 hero features with floating mockups ── */
-const SHOWCASES = [
-  {
-    pre: "PLOT SPINE",
-    title: "Build your story\u2019s DNA before writing a word.",
-    desc: "Choose a narrative arc, and the AI generates story beats across three acts, subplots, and character arcs \u2014 all mapped to your chapters. Every scene knows where it sits in the bigger picture.",
-    details: ["Genre-aware arc picker", "Beats, subplots, character arcs", "Auto-links to chapter plan", "Story Enhancer for emotional depth"],
-    img: "/screenshots/plan.png?v=3",
-    color: "#7c5cfc",
-  },
-  {
-    pre: "THE CANON",
-    title: "Your story\u2019s single source of truth.",
-    desc: "Characters with personality and speech patterns. Locations with sensory detail. Lore, voice rules, worldbuilding. The AI reads all of it before writing \u2014 so nothing ever drifts from your story.",
-    details: ["Full character profiles", "Locations & worldbuilding", "Style & voice directives", "AI-powered synopsis tools"],
-    img: "/screenshots/canon.png?v=3",
-    color: "#e2c87e",
-  },
-  {
-    pre: "SCENE-BY-SCENE DRAFTING",
-    title: "Rich blueprints. Precise prose.",
-    desc: "Each chapter splits into scene blocs with detailed writer\u2019s blueprints \u2014 opening lines, emotional arcs, sensory palettes, dialogue cues, and tension levels. The AI follows your blueprint exactly.",
-    details: ["Opening & closing instructions", "Emotional arc tracking", "Sensory palette guidance", "Anti-AI prose rules built in"],
-    img: "/screenshots/blocs.png?v=3",
-    color: "#6246ea",
-  },
-];
+/* ── Showcase — 3 hero features with styled UI previews ── */
+function PlotSpinePreview() {
+  const beats = [
+    { act: "Act 1", label: "Inciting Incident", ch: "Ch 2", t: 0.3 },
+    { act: "Act 1", label: "First Threshold", ch: "Ch 4", t: 0.5 },
+    { act: "Act 2", label: "Rising Conflict", ch: "Ch 8", t: 0.7 },
+    { act: "Act 2", label: "Midpoint Reversal", ch: "Ch 12", t: 0.85 },
+    { act: "Act 3", label: "Climax", ch: "Ch 20", t: 1.0 },
+    { act: "Act 3", label: "Resolution", ch: "Ch 24", t: 0.4 },
+  ];
+  return (
+    <div style={{ borderRadius: 16, background: "#12122a", border: "1px solid rgba(124,92,252,0.15)", padding: 24, minHeight: 320 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#7c5cfc" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#b8a4ff", letterSpacing: "0.06em" }}>PLOT SPINE</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,0.25)", padding: "3px 10px", borderRadius: 6, background: "rgba(124,92,252,0.1)" }}>Hero&apos;s Journey</span>
+      </div>
+      {beats.map((b, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < beats.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.2)", width: 36, textTransform: "uppercase" }}>{b.act}</span>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>{b.label}</span>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginRight: 8 }}>{b.ch}</span>
+          <div style={{ width: 60, height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+            <div style={{ width: `${b.t * 100}%`, height: "100%", borderRadius: 3, background: `rgba(124,92,252,${0.3 + b.t * 0.5})` }} />
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: 16, display: "flex", gap: 6 }}>
+        {["3 Subplots", "4 Character Arcs", "24 Beats"].map(s => (
+          <span key={s} style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.3)", padding: "4px 10px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>{s}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CanonPreview() {
+  const chars = [
+    { name: "Elena Voss", role: "Protagonist", color: "#e2c87e" },
+    { name: "Marcus Chen", role: "Antagonist", color: "#ef4444" },
+    { name: "Dr. Amara Obi", role: "Mentor", color: "#10b981" },
+  ];
+  return (
+    <div style={{ borderRadius: 16, background: "#12122a", border: "1px solid rgba(226,200,126,0.15)", padding: 24, minHeight: 320 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#e2c87e" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#e2c87e", letterSpacing: "0.06em" }}>THE CANON</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {["Characters", "Locations", "Lore"].map((tab, j) => (
+          <span key={tab} style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 8, color: j === 0 ? "#e2c87e" : "rgba(255,255,255,0.3)", background: j === 0 ? "rgba(226,200,126,0.1)" : "transparent", border: j === 0 ? "1px solid rgba(226,200,126,0.2)" : "1px solid transparent" }}>{tab}</span>
+        ))}
+      </div>
+      {chars.map((c, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < chars.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c.color}15`, border: `1px solid ${c.color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: c.color }}>{c.name[0]}</div>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{c.name}</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginLeft: 8 }}>{c.role}</span>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+        </div>
+      ))}
+      <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.2)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Voice Rules</span>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "6px 0 0", lineHeight: 1.5 }}>Close third-person. Spare prose. Short sentences in action. Let silence do the heavy lifting.</p>
+      </div>
+    </div>
+  );
+}
+
+function BlocsPreview() {
+  const blocs = [
+    { num: 1, label: "The Arrival", words: "680 / 800", pct: 85, emotionalArc: "Anticipation \u2192 Unease" },
+    { num: 2, label: "First Confrontation", words: "420 / 600", pct: 70, emotionalArc: "Tension \u2192 Resolve" },
+    { num: 3, label: "The Revelation", words: "0 / 700", pct: 0, emotionalArc: "Shock \u2192 Determination" },
+  ];
+  return (
+    <div style={{ borderRadius: 16, background: "#12122a", border: "1px solid rgba(98,70,234,0.15)", padding: 24, minHeight: 320 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6246ea" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#b8a4ff", letterSpacing: "0.06em" }}>CHAPTER 7 \u2014 BLOCS</span>
+      </div>
+      {blocs.map((b, i) => (
+        <div key={i} style={{ padding: 14, borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", marginBottom: i < blocs.length - 1 ? 8 : 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(98,70,234,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#b8a4ff" }}>{b.num}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.75)" }}>{b.label}</span>
+            <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,0.25)" }}>{b.words}</span>
+          </div>
+          <div style={{ width: "100%", height: 4, borderRadius: 2, background: "rgba(255,255,255,0.04)", marginBottom: 8 }}>
+            <div style={{ width: `${b.pct}%`, height: "100%", borderRadius: 2, background: b.pct > 0 ? "rgba(98,70,234,0.5)" : "transparent", transition: "width 0.3s" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>Emotional Arc:</span>
+            <span style={{ fontSize: 10, color: "rgba(184,164,255,0.5)" }}>{b.emotionalArc}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ShowcaseSection() {
+  const SHOWCASES = [
+    {
+      pre: "PLOT SPINE",
+      title: "Build your story\u2019s DNA before writing a word.",
+      desc: "Choose a narrative arc, and the AI generates story beats across three acts, subplots, and character arcs \u2014 all mapped to your chapters. Every scene knows where it sits in the bigger picture.",
+      details: ["Genre-aware arc picker", "Beats, subplots, character arcs", "Auto-links to chapter plan", "Story Enhancer for emotional depth"],
+      color: "#7c5cfc",
+      preview: <PlotSpinePreview />,
+    },
+    {
+      pre: "THE CANON",
+      title: "Your story\u2019s single source of truth.",
+      desc: "Characters with personality and speech patterns. Locations with sensory detail. Lore, voice rules, worldbuilding. The AI reads all of it before writing \u2014 so nothing ever drifts from your story.",
+      details: ["Full character profiles", "Locations & worldbuilding", "Style & voice directives", "AI-powered synopsis tools"],
+      color: "#e2c87e",
+      preview: <CanonPreview />,
+    },
+    {
+      pre: "SCENE-BY-SCENE DRAFTING",
+      title: "Rich blueprints. Precise prose.",
+      desc: "Each chapter splits into scene blocs with detailed writer\u2019s blueprints \u2014 opening lines, emotional arcs, sensory palettes, dialogue cues, and tension levels. The AI follows your blueprint exactly.",
+      details: ["Opening & closing instructions", "Emotional arc tracking", "Sensory palette guidance", "Anti-AI prose rules built in"],
+      color: "#6246ea",
+      preview: <BlocsPreview />,
+    },
+  ];
+
   return (
     <section id="features" style={{ padding: "100px 0 60px" }}>
       <div style={wrap()}>
@@ -301,10 +458,8 @@ function ShowcaseSection() {
                   ))}
                 </div>
               </div>
-              <div>
-                <div className="bw-mockup bw-float" style={{ animationDelay: `${i * 0.8}s` }}>
-                  <img src={s.img} alt={s.pre} style={{ width: "100%", height: "auto", display: "block" }} />
-                </div>
+              <div className="bw-float" style={{ animationDelay: `${i * 0.8}s` }}>
+                {s.preview}
               </div>
             </div>
           ))}
@@ -378,8 +533,26 @@ function NonFictionSection() {
 
         <div className="bw-feature-row" style={{ marginBottom: 64 }}>
           <div>
-            <div className="bw-mockup" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-              <img src="/screenshots/nonfiction.png?v=3" alt="Non-Fiction mode" style={{ width: "100%", height: "auto", display: "block" }} />
+            <div style={{ borderRadius: 16, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(226,200,126,0.12)", padding: 24, minHeight: 320 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#e2c87e" }} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#e2c87e", letterSpacing: "0.06em" }}>LIFE INTERVIEW</span>
+              </div>
+              <div style={{ padding: 14, borderRadius: 10, background: "rgba(226,200,126,0.04)", border: "1px solid rgba(226,200,126,0.08)", marginBottom: 12 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#e2c87e", display: "block", marginBottom: 6 }}>AI Question</span>
+                <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0, lineHeight: 1.5 }}>Tell me about a moment that changed how you saw yourself. What happened, and who was there?</p>
+              </div>
+              <div style={{ padding: 14, borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", marginBottom: 16 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 6 }}>Your Answer</span>
+                <div style={{ height: 6, width: "90%", borderRadius: 3, background: "rgba(255,255,255,0.06)", marginBottom: 5 }} />
+                <div style={{ height: 6, width: "75%", borderRadius: 3, background: "rgba(255,255,255,0.04)", marginBottom: 5 }} />
+                <div style={{ height: 6, width: "60%", borderRadius: 3, background: "rgba(255,255,255,0.03)" }} />
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["3 People Extracted", "2 Locations Found", "1 Theme Identified"].map(s => (
+                  <span key={s} style={{ fontSize: 9, fontWeight: 600, color: "rgba(226,200,126,0.5)", padding: "4px 8px", borderRadius: 6, background: "rgba(226,200,126,0.06)", border: "1px solid rgba(226,200,126,0.1)" }}>{s}</span>
+                ))}
+              </div>
             </div>
           </div>
           <div>
