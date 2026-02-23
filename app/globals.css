@@ -2738,7 +2738,7 @@ a { color: inherit; text-decoration: none; }
 }
 .pw-settings-model-search::placeholder { color: var(--pw-text-dim); }
 .pw-settings-model-list {
-  max-height: 200px;
+  max-height: 420px;
   overflow-y: auto;
 }
 .pw-settings-model-row {
