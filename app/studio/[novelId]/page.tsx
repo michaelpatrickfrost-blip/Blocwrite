@@ -15680,8 +15680,15 @@ function NovelWorkspacePage() {
                                     : `ARC: ${(spineArcChoice || "").slice(0, 150)}`;
 
                                   // Helper: parse JSON from AI response with repair fallback
+                                  function cleanAiOutput(raw: string): string {
+                                    let out = stripThinkingBlocks(raw);
+                                    out = out.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+                                    return out.trim();
+                                  }
+
                                   function extractJson<T>(raw: string): T | null {
-                                    const m = raw.match(/\{[\s\S]*\}/);
+                                    const cleaned = cleanAiOutput(raw);
+                                    const m = cleaned.match(/\{[\s\S]*\}/);
                                     if (!m) return null;
                                     try { return JSON.parse(m[0]) as T; } catch {
                                       const repaired = attemptCloseTruncatedJson(m[0]);
@@ -15690,11 +15697,11 @@ function NovelWorkspacePage() {
                                     return null;
                                   }
 
-                                  // Helper: single small AI call with 1 retry
                                   async function smallCall(prompt: string, tokens: number, sys: string): Promise<string> {
-                                    for (let a = 0; a < 2; a++) {
+                                    for (let a = 0; a < 3; a++) {
                                       try {
-                                        const r = await requestOpenRouterText(prompt, tokens, 60000, sys, false, 0.7);
+                                        const useJsonMode = a >= 1;
+                                        const r = await requestOpenRouterText(prompt, tokens, 120000, sys, useJsonMode, 0.7);
                                         if (r && r.trim().length > 5) return r;
                                       } catch { /* retry */ }
                                     }
@@ -15773,9 +15780,38 @@ function NovelWorkspacePage() {
                                     const rawBeats = parsed?.beats ?? [];
 
                                     if (rawBeats.length === 0 && cfg.act === 1) {
-                                      setSpineError("Your AI model couldn't generate story beats. Try a different model or check your API key. The model needs to return valid JSON.");
-                                      setSpineBusy(false); setSpineProgress("");
-                                      failed = true; break;
+                                      setSpineProgress("First attempt didn't return beats — retrying with simpler prompt...");
+                                      const fallbackPrompt = [
+                                        `Generate 4 story beats for Act 1 of a ${genre} novel.`,
+                                        `Synopsis: ${synopsis.slice(0, 400)}`,
+                                        `Return JSON: { "beats": [{ "title": "string", "description": "string", "tension": 2, "characterNames": ["${existingChars[0]?.name || "Character"}"] }] }`,
+                                        `Return ONLY the JSON object. No explanation.`,
+                                      ].join("\n");
+                                      const fallbackRaw = await smallCall(fallbackPrompt, 1200, "Return only valid JSON.");
+                                      const fallbackParsed = extractJson<{ beats?: RawBeat[] }>(fallbackRaw);
+                                      const fallbackBeats = fallbackParsed?.beats ?? [];
+                                      if (fallbackBeats.length > 0) {
+                                        const offset2 = allBeats.length;
+                                        allBeats = [...allBeats, ...fallbackBeats.map((b, i) => {
+                                          (b.characterNames ?? []).forEach(n => allCharNames.add(n));
+                                          return {
+                                            id: `beat-${Date.now().toString(36)}-${offset2 + i}`,
+                                            title: b.title || `Beat ${offset2 + i + 1}`,
+                                            description: b.description || "",
+                                            act: 1 as const,
+                                            chapterHint: -1,
+                                            characterIds: findCharIdsInText(`${b.title} ${b.description} ${(b.characterNames ?? []).join(" ")}`, b.characterNames),
+                                            locationHint: b.locationHint || "",
+                                            tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 2) as 1|2|3|4|5,
+                                            sortOrder: offset2 + i,
+                                          };
+                                        })];
+                                      } else {
+                                        const modelName = openRouterModel || "your AI model";
+                                        setSpineError(`${modelName} couldn't return valid JSON for story beats. This model may not support structured output well. Try a different model (GPT-4o, Claude, or Gemini Pro work best) or check your API key.`);
+                                        setSpineBusy(false); setSpineProgress("");
+                                        failed = true; break;
+                                      }
                                     }
 
                                     const offset = allBeats.length;
