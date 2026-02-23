@@ -15761,14 +15761,14 @@ function NovelWorkspacePage() {
                                 <button
                                   type="button"
                                   className="btn btn-primary"
-                                  disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())}
+                                  disabled={spineBusy || spineArcPickerAnalyzing || !(novel.storyBible.summary?.synopsisShort?.trim())}
                                   onClick={async () => {
                                     const top = STORY_ARC_OPTIONS[0];
                                     setSpineArcChoice(top && top.genreScore > 0 ? top.id : null);
                                     setSpineArcAiRationale(null);
                                     setSpineArcAiRankedIds(null);
-                                    setSpineShowArcPicker(true);
                                     setSpineArcPickerAnalyzing(true);
+                                    setSpineShowArcPicker(false);
                                     try {
                                       const optionsList = STORY_ARC_OPTIONS.map((arc) => `${arc.id}: ${arc.name} [genres: ${arc.genres.join(", ")}] — ${arc.hint.slice(0, 120)}`).join("\n");
                                       const aiPickPrompt = [
@@ -15794,10 +15794,13 @@ function NovelWorkspacePage() {
                                       if (recId) setSpineArcChoice(recId);
                                       if (aiPick?.rationale?.trim()) setSpineArcAiRationale(aiPick.rationale.trim().slice(0, 180));
                                     } catch { /* fallback to weighted static ranking */ }
-                                    finally { setSpineArcPickerAnalyzing(false); }
+                                    finally {
+                                      setSpineArcPickerAnalyzing(false);
+                                      setSpineShowArcPicker(true);
+                                    }
                                   }}
                                 >
-                                  ✦ Build Full Spine
+                                  {spineArcPickerAnalyzing ? "Analysing genre..." : "✦ Build Full Spine"}
                                 </button>
                               ) : (
                                 <button type="button" className="btn" style={{ opacity: 0.5, cursor: "help" }} onClick={() => alert("Your spine is already built with interconnected beats, subplots, and character arcs. Regenerating would overwrite all your work and break the connections you've crafted.\n\nTo start fresh, use \"Clear Spine\" first — then build a new one.")}>
