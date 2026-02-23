@@ -237,34 +237,37 @@ function TrustBar() {
   );
 }
 
-/* ── Screenshot-based preview with fade ── */
-function ScreenshotPreview({ src, alt, fadeTo = "#0c0c1d" }: { src: string; alt: string; fadeTo?: string }) {
+/* ── Screenshot preview — no fade, just clean rounded shadow ── */
+function ScreenshotPreview({ src, alt }: { src: string; alt: string }) {
   return (
-    <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+    <div style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)", maxWidth: 520 }}>
       <img src={src} alt={alt} style={{ width: "100%", height: "auto", display: "block" }} />
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to top, ${fadeTo} 0%, transparent 100%)`, pointerEvents: "none" }} />
     </div>
   );
 }
 
 function PlotSpinePreview() {
-  return <ScreenshotPreview src="/previews/plot-spine.png" alt="Blocwrite Plot Spine — story beats, tension arc, character presence" fadeTo="#fafaf9" />;
+  return <ScreenshotPreview src="/previews/plot-spine.png" alt="Blocwrite Plot Spine — story beats, tension arc, character presence" />;
 }
 
 function CanonPreview() {
-  return <ScreenshotPreview src="/previews/bolt-ons.png" alt="Blocwrite Canon — Bolt-Ons and craft directives" fadeTo="#fafaf9" />;
+  return <ScreenshotPreview src="/previews/bolt-ons.png" alt="Blocwrite Canon — Bolt-Ons and craft directives" />;
 }
 
 function BlocsPreview() {
-  return <ScreenshotPreview src="/previews/blocs.png" alt="Blocwrite Scene Blocs — chapter editor with scene-by-scene drafting" fadeTo="#fafaf9" />;
+  return <ScreenshotPreview src="/previews/blocs.png" alt="Blocwrite Scene Blocs — chapter editor with scene-by-scene drafting" />;
 }
 
 function NFPreview() {
-  return <ScreenshotPreview src="/previews/non-fiction.png" alt="Blocwrite Non-Fiction — Life Events for biography and memoir" fadeTo="#0c0c1d" />;
+  return <ScreenshotPreview src="/previews/non-fiction.png" alt="Blocwrite Non-Fiction — Life Events for biography and memoir" />;
 }
 
 function HeroAppPreview() {
-  return <ScreenshotPreview src="/previews/studio-overview.png" alt="Blocwrite Studio — novel overview with Canon and Dashboard" fadeTo="#14142e" />;
+  return (
+    <div style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 20px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)", maxWidth: 900 }}>
+      <img src="/previews/studio-overview.png" alt="Blocwrite Studio — novel overview with Canon and Dashboard" style={{ width: "100%", height: "auto", display: "block" }} />
+    </div>
+  );
 }
 
 function ShowcaseSection() {
