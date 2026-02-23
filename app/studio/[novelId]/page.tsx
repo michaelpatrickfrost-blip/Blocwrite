@@ -327,6 +327,26 @@ function scoreArcPresetByGenres(userGenres: string[], arcGenres: string[]): numb
     if (expanded.has(lower)) score += 3;
     else if ([...expanded].some((ug) => ug.includes(lower) || lower.includes(ug))) score += 1;
   }
+
+  const arcSet = new Set(arcGenres.map((g) => g.toLowerCase()));
+  const hasAny = (values: string[]) => values.some((v) => expanded.has(v));
+  const arcHasAny = (values: string[]) => values.some((v) => arcSet.has(v));
+
+  const thrillerFamily = ["thriller", "suspense", "mystery", "detective", "crime", "noir", "psychological", "horror", "dark", "spy", "espionage"];
+  const romanceFamily = ["romance", "rom-com"];
+  const comedyFamily = ["comedy", "satire", "cozy"];
+
+  const wantsThrillerFamily = hasAny(thrillerFamily);
+  const wantsRomance = hasAny(romanceFamily);
+  const wantsComedy = hasAny(comedyFamily);
+
+  if (wantsThrillerFamily && arcHasAny(thrillerFamily)) score += 4;
+  if (wantsThrillerFamily && !wantsRomance && arcHasAny(romanceFamily)) score -= 9;
+  if (wantsThrillerFamily && !wantsComedy && arcHasAny(comedyFamily)) score -= 9;
+
+  // Clamp to avoid extreme values while keeping ranking stable.
+  if (score < -10) score = -10;
+  if (score > 50) score = 50;
   return score;
 }
 
@@ -15685,6 +15705,9 @@ function NovelWorkspacePage() {
                           {/* Build Full Spine + Story Doctor + Clear buttons */}
                           {!aiOff && (
                             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                              <span style={{ fontSize: 10, color: "var(--pw-text-dim)", border: "1px solid var(--pw-border-light)", borderRadius: 999, padding: "3px 8px" }}>
+                                Spine mode: Auto (model-adaptive)
+                              </span>
                               {beats.length === 0 ? (
                                 <button
                                   type="button"
