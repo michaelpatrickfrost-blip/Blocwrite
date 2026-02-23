@@ -300,6 +300,27 @@ function genreArcExamples(genres: string[]): string {
 }
 
 function scoreArcPresetByGenres(userGenres: string[], arcGenres: string[]): number {
+  const normalizeGenreToken = (token: string): string => {
+    const t = token.toLowerCase().trim();
+    const typoMap: Record<string, string> = {
+      thrilelr: "thriller",
+      thiller: "thriller",
+      thrilller: "thriller",
+      mystrey: "mystery",
+      mysetry: "mystery",
+      suspsense: "suspense",
+      suspence: "suspense",
+      psychlogical: "psychological",
+      psycological: "psychological",
+      romcom: "rom-com",
+      scifi: "sci-fi",
+      "sci fi": "sci-fi",
+      sciencefiction: "sci-fi",
+      youngadult: "young adult",
+    };
+    return typoMap[t] ?? t;
+  };
+
   const aliases: Record<string, string[]> = {
     thriller: ["suspense", "psychological", "crime", "mystery", "noir", "spy", "espionage"],
     suspense: ["thriller", "mystery", "crime"],
@@ -315,10 +336,23 @@ function scoreArcPresetByGenres(userGenres: string[], arcGenres: string[]): numb
   };
   const tokens = userGenres
     .flatMap((g) => g.toLowerCase().split(/[^a-z0-9]+/g))
+    .map(normalizeGenreToken)
     .filter(Boolean);
   const expanded = new Set<string>(tokens);
   for (const t of [...tokens]) {
     for (const a of aliases[t] ?? []) expanded.add(a);
+  }
+
+  // Add phrase-level normalized genres for values like "psychological thriller".
+  for (const raw of userGenres) {
+    const phrase = normalizeGenreToken(raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+    if (phrase) expanded.add(phrase);
+    if (phrase.includes("thriller")) expanded.add("thriller");
+    if (phrase.includes("mystery")) expanded.add("mystery");
+    if (phrase.includes("crime")) expanded.add("crime");
+    if (phrase.includes("horror")) expanded.add("horror");
+    if (phrase.includes("romance")) expanded.add("romance");
+    if (phrase.includes("comedy")) expanded.add("comedy");
   }
 
   let score = 0;
