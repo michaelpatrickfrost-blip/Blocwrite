@@ -13,7 +13,7 @@ function toUpdatePatch(action: ReviewAction) {
       return {
         reviewStatus: "saved_for_later",
         reviewerAction: "save_later",
-        reviewedAt: null as Date | null,
+        reviewedAt: null,
       };
     case "reject":
       return {
@@ -34,7 +34,9 @@ function toUpdatePatch(action: ReviewAction) {
         reviewedAt: new Date(),
       };
     default:
-      return null;
+      return {
+        reviewStatus: "pending",
+      };
   }
 }
 
@@ -88,29 +90,14 @@ export async function PATCH(request: Request) {
     }
 
     const patch = toUpdatePatch(action);
-    if (!patch) {
-      return NextResponse.json({ error: "Invalid action." }, { status: 400 });
-    }
 
-    const updated = await prisma.annotation.update({
+    await prisma.annotation.update({
       where: { id: annotationId },
-      data: patch,
-      select: {
-        id: true,
-        reviewStatus: true,
-        reviewerAction: true,
-        reviewedAt: true,
-      },
+      data: patch as any,
     });
 
     return NextResponse.json({
       ok: true,
-      annotation: {
-        id: updated.id,
-        reviewStatus: updated.reviewStatus,
-        reviewerAction: updated.reviewerAction,
-        reviewedAt: updated.reviewedAt?.toISOString() ?? null,
-      },
     });
   } catch (error) {
     console.error("Annotation review update error:", error);
