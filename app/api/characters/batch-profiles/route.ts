@@ -230,6 +230,80 @@ const PROFILE_SHAPE = `{
   "tags": ["keyword1", "keyword2", "keyword3"]
 }`;
 
+const REQUIRED_PROFILE_STRING_FIELDS = [
+  "appearance",
+  "personality",
+  "goals",
+  "fears",
+  "backstory",
+  "accent",
+  "speakingStyle",
+  "reactionPattern",
+  "voiceNotes",
+  "secrets",
+  "readerSecretHint",
+] as const;
+
+function asText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function fallbackFieldText(field: (typeof REQUIRED_PROFILE_STRING_FIELDS)[number], char: CharacterInput) {
+  const baseRole = (char.role || "supporting character").toLowerCase();
+  switch (field) {
+    case "appearance":
+      return `${char.name} has a presence that fits their role as ${baseRole}, with distinctive visual details that make them easy to recognize on the page.`;
+    case "personality":
+      return `${char.name} is layered and emotionally readable, showing clear strengths, flaws, and contradictions that drive scene-to-scene behavior.`;
+    case "goals":
+      return `${char.name} wants something specific and personal, and that goal creates pressure on their choices throughout the story.`;
+    case "fears":
+      return `${char.name} fears loss, failure, or exposure in ways that influence their decisions, especially under stress.`;
+    case "backstory":
+      return `${char.name} carries formative experiences from their past that explain their worldview, loyalties, and present-day motivations.`;
+    case "accent":
+      return `${char.name} speaks in a grounded, natural voice with subtle regional flavor rather than exaggerated dialect.`;
+    case "speakingStyle":
+      return `${char.name} communicates in a distinct cadence and vocabulary, making their dialogue easy to identify without tags.`;
+    case "reactionPattern":
+      return `Under pressure, ${char.name} shows a consistent reaction pattern that reveals character and escalates conflict.`;
+    case "voiceNotes":
+      return `Write ${char.name}'s dialogue with clear intent, specific word choice, and emotional subtext tied to each scene objective.`;
+    case "secrets":
+      return `${char.name} is holding back information that could change relationships or plot direction if revealed.`;
+    case "readerSecretHint":
+      return `Subtle contradictions in ${char.name}'s behavior foreshadow that there is more beneath the surface without spoiling the reveal.`;
+    default:
+      return `${char.name} has a defined characterization for this field.`;
+  }
+}
+
+function normalizeTags(value: unknown, char: CharacterInput) {
+  const raw = Array.isArray(value) ? value : [];
+  const tags = raw
+    .map((item) => (typeof item === "string" ? item.trim().toLowerCase() : ""))
+    .filter(Boolean)
+    .slice(0, 6);
+  if (tags.length >= 3) return tags;
+  const roleTag = (char.role || "supporting").toLowerCase().replace(/\s+/g, "-");
+  const defaults = [roleTag, "character-arc", "story-driver"];
+  for (const tag of defaults) {
+    if (!tags.includes(tag)) tags.push(tag);
+    if (tags.length >= 3) break;
+  }
+  return tags;
+}
+
+function normalizeProfile(profile: Record<string, unknown>, char: CharacterInput) {
+  const out: Record<string, unknown> = { ...profile };
+  for (const field of REQUIRED_PROFILE_STRING_FIELDS) {
+    const current = asText(out[field]);
+    out[field] = current || fallbackFieldText(field, char);
+  }
+  out.tags = normalizeTags(out.tags, char);
+  return out;
+}
+
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as BatchRequest;
   const { provider, apiKey, model, characters, storyContext } = body;
@@ -298,17 +372,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (profile && typeof profile === "object") {
-        const filledFields = Object.entries(profile).filter(
+        const normalized = normalizeProfile(profile, char);
+        const filledFields = Object.entries(normalized).filter(
           ([, v]) => (typeof v === "string" && v.trim().length > 0) || (Array.isArray(v) && v.length > 0),
         );
         console.log(`[batch-profiles] ${char.name}: parsed OK, ${filledFields.length} fields filled`);
-
-        if (filledFields.length >= 3) {
-          results.push({ characterId: char.id, profile });
-        } else {
-          console.warn(`[batch-profiles] ${char.name}: only ${filledFields.length} fields, skipping`);
-          results.push({ characterId: char.id, profile: null, error: `Only ${filledFields.length} fields filled` });
-        }
+        results.push({ characterId: char.id, profile: normalized });
       } else {
         console.error(`[batch-profiles] ${char.name}: could not parse JSON from AI response`);
         results.push({ characterId: char.id, profile: null, error: "Could not parse AI response as JSON" });

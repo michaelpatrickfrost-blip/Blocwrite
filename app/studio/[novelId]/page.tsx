@@ -813,6 +813,20 @@ const CHARACTER_SURNAME_FALLBACKS = [
   "Keating",
   "West",
 ] as const;
+const CHARACTER_GIVEN_NAME_FALLBACKS = [
+  "Alex",
+  "Jordan",
+  "Casey",
+  "Taylor",
+  "Morgan",
+  "Riley",
+  "Jamie",
+  "Avery",
+  "Cameron",
+  "Harper",
+  "Drew",
+  "Reese",
+] as const;
 
 const ROLE_ALIAS_TOKENS = [
   "anonymous", "stranger", "blackmailer", "killer", "informant", "witness",
@@ -3035,6 +3049,21 @@ function NovelWorkspacePage() {
     const firstName = parts[0];
     const surnameIndex = (hashText(`${firstName}-${fallbackSeed}`) + fallbackSeed) % CHARACTER_SURNAME_FALLBACKS.length;
     return `${firstName} ${CHARACTER_SURNAME_FALLBACKS[surnameIndex]}`.slice(0, STORY_BIBLE_LIMITS.character.name);
+  }
+
+  function makeFallbackHumanName(seedText: string, fallbackSeed = 0) {
+    const hash = hashText(`${seedText}-${fallbackSeed}`);
+    const first = CHARACTER_GIVEN_NAME_FALLBACKS[(hash + fallbackSeed) % CHARACTER_GIVEN_NAME_FALLBACKS.length];
+    const last = CHARACTER_SURNAME_FALLBACKS[(hash + fallbackSeed * 3) % CHARACTER_SURNAME_FALLBACKS.length];
+    return `${first} ${last}`.slice(0, STORY_BIBLE_LIMITS.character.name);
+  }
+
+  function coerceHumanCharacterName(rawName: string, fallbackSeed = 0) {
+    const candidate = (rawName || "").trim();
+    if (!candidate || isRoleLikeCharacterLabel(candidate) || !isLikelyHumanName(candidate)) {
+      return makeFallbackHumanName(candidate || "character", fallbackSeed);
+    }
+    return ensureFullCharacterName(candidate, fallbackSeed);
   }
 
   function addSummaryGenre(genre: string) {
@@ -7342,6 +7371,30 @@ function NovelWorkspacePage() {
       const existingCharIdsBefore = new Set((novel.storyBible.characters ?? []).map((c) => c.id));
       const characterByName = new Map<string, Novel["storyBible"]["characters"][number]>();
       const mergedCharacters = [...(novel.storyBible.characters ?? [])];
+      const getCharacterNameVariants = (character: Novel["storyBible"]["characters"][number]) => {
+        const variants = [character.name || ""];
+        const aliases = (character.otherNames || "")
+          .split(/[;,]/)
+          .map((alias) => alias.trim())
+          .filter(Boolean);
+        return [...variants, ...aliases].map((value) => normalizeLookup(value)).filter(Boolean);
+      };
+      const appendCharacterAlias = (
+        character: Novel["storyBible"]["characters"][number],
+        aliasRaw: string,
+      ) => {
+        const alias = aliasRaw.trim();
+        if (!alias) return;
+        const aliasKey = normalizeLookup(alias);
+        if (!aliasKey) return;
+        const existingAliases = (character.otherNames || "")
+          .split(/[;,]/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        const existingAliasKeys = new Set(existingAliases.map((item) => normalizeLookup(item)));
+        if (existingAliasKeys.has(aliasKey) || normalizeLookup(character.name || "") === aliasKey) return;
+        character.otherNames = [...existingAliases, alias].join("; ");
+      };
       mergedCharacters.forEach((character) => {
         const key = normalizeLookup(character.name || "");
         if (key) characterByName.set(key, character);
@@ -7360,28 +7413,44 @@ function NovelWorkspacePage() {
         const first = words[0];
         const last = words.length > 1 ? words[words.length - 1] : "";
         // Match by first name if unique
-        const firstMatches = mergedCharacters.filter((c) => normalizeLookup(c.name || "").split(/\s+/)[0] === first);
+        const firstMatches = mergedCharacters.filter((c) =>
+          getCharacterNameVariants(c).some((variant) => variant.split(/\s+/)[0] === first),
+        );
         if (firstMatches.length === 1) return firstMatches[0].id;
         // Match by last name — "John Thompson" should find existing "Mary Thompson"
         if (last) {
           const lastMatches = mergedCharacters.filter((c) => {
-            const parts = normalizeLookup(c.name || "").split(/\s+/);
-            return parts.length > 1 && parts[parts.length - 1] === last;
+            return getCharacterNameVariants(c).some((variant) => {
+              const parts = variant.split(/\s+/);
+              return parts.length > 1 && parts[parts.length - 1] === last;
+            });
           });
           if (lastMatches.length === 1) return lastMatches[0].id;
         }
         return "";
       };
       const ensureCharacterId = (rawName: string) => {
-        const name = rawName.trim();
-        if (!name) return "";
-        if (isRoleLikeCharacterLabel(name)) return "";
-        if (!isLikelyHumanName(name)) return "";
+        const raw = rawName.trim();
+        if (!raw) return "";
+        const name = coerceHumanCharacterName(raw, mergedCharacters.length + 1);
         const fuzzyExistingId = findExistingCharacterIdByName(name);
         if (fuzzyExistingId) return fuzzyExistingId;
         const key = normalizeLookup(name);
         const existing = characterByName.get(key);
         if (existing) return existing.id;
+        const parts = key.split(/\s+/).filter(Boolean);
+        const first = parts[0];
+        if (first && first.length > 2) {
+          const firstMatches = mergedCharacters.filter((c) =>
+            getCharacterNameVariants(c).some((variant) => variant.split(/\s+/)[0] === first),
+          );
+          if (firstMatches.length === 1) {
+            appendCharacterAlias(firstMatches[0], raw);
+            appendCharacterAlias(firstMatches[0], name);
+            return firstMatches[0].id;
+          }
+        }
+        const alias = isRoleLikeCharacterLabel(raw) ? raw : "";
         const created: Novel["storyBible"]["characters"][number] = {
           id: createEntityId("char"),
           name,
@@ -7402,10 +7471,14 @@ function NovelWorkspacePage() {
           tags: [],
           pronouns: "",
           groups: "",
-          otherNames: "",
+          otherNames: alias,
         };
         mergedCharacters.push(created);
         characterByName.set(key, created);
+        if (alias) {
+          const aliasKey = normalizeLookup(alias);
+          if (aliasKey) characterByName.set(aliasKey, created);
+        }
         return created.id;
       };
 
@@ -8058,21 +8131,49 @@ function NovelWorkspacePage() {
       });
       const newCharIds: string[] = [];
       const newChars = [...(novel.storyBible.characters ?? [])];
+      const getNameVariantsForMerge = (character: typeof newChars[number]) => {
+        const variants = [character.name || ""];
+        const aliases = (character.otherNames || "")
+          .split(/[;,]/)
+          .map((alias) => alias.trim())
+          .filter(Boolean);
+        return [...variants, ...aliases].map((value) => normalizeLookup(value)).filter(Boolean);
+      };
+      const appendAliasForMerge = (character: typeof newChars[number], aliasRaw: string) => {
+        const alias = aliasRaw.trim();
+        if (!alias) return;
+        const aliasKey = normalizeLookup(alias);
+        if (!aliasKey) return;
+        const existingAliases = (character.otherNames || "")
+          .split(/[;,]/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        const existingAliasKeys = new Set(existingAliases.map((item) => normalizeLookup(item)));
+        if (existingAliasKeys.has(aliasKey) || normalizeLookup(character.name || "") === aliasKey) return;
+        character.otherNames = [...existingAliases, alias].join("; ");
+      };
       const uniqueNames = [...new Set(allMentionedCharNames.map((n) => n.trim()).filter(Boolean))];
-      for (const name of uniqueNames) {
-        if (isRoleLikeCharacterLabel(name) || !isLikelyHumanName(name)) continue;
+      for (const rawName of uniqueNames) {
+        const name = coerceHumanCharacterName(rawName, newChars.length + 1);
         const key = normalizeLookup(name);
         if (charByName.has(key)) continue;
         // Check first-name match
         const first = key.split(/\s+/)[0];
-        const firstMatches = newChars.filter((c) => normalizeLookup(c.name || "").split(/\s+/)[0] === first);
-        if (firstMatches.length === 1) continue;
+        const firstMatches = newChars.filter((c) =>
+          getNameVariantsForMerge(c).some((variant) => variant.split(/\s+/)[0] === first),
+        );
+        if (firstMatches.length === 1) {
+          appendAliasForMerge(firstMatches[0], rawName);
+          appendAliasForMerge(firstMatches[0], name);
+          charByName.set(key, firstMatches[0].id);
+          continue;
+        }
         const newChar: typeof newChars[number] = {
           id: createEntityId("char"), name, role: "Supporting", logline: "",
           appearance: "", personality: "", goals: "", fears: "", backstory: "",
           secrets: "", readerSecretHint: "", accent: "", speakingStyle: "",
           reactionPattern: "", relationships: [], voiceNotes: "", tags: [],
-          pronouns: "", groups: "", otherNames: "",
+          pronouns: "", groups: "", otherNames: isRoleLikeCharacterLabel(rawName) ? rawName : "",
         };
         newChars.push(newChar);
         charByName.set(key, newChar.id);
@@ -16538,13 +16639,13 @@ function NovelWorkspacePage() {
                                       `\nSynopsis: ${synopsis.slice(0, 500)}`,
                                       `\nStory context: ${beatCtx.slice(0, 800)}`,
                                       `\nCharacters to profile:\n${charList}`,
-                                      `\nReturn JSON: { "characters": [{ "name": "...", "role": "Supporting"|"Minor", "logline": "1 sentence hook", "appearance": "physical description", "personality": "key traits", "goals": "what they want", "fears": "what they dread", "backstory": "2-3 sentences of background" }] }`,
-                                      "Make each profile feel like a real person. Appearance, personality, goals, fears, and backstory should all feel grounded in the story world.",
+                                      `\nReturn JSON: { "characters": [{ "name": "...", "role": "Supporting"|"Minor", "logline": "1 sentence hook", "appearance": "physical description", "personality": "key traits", "goals": "what they want", "fears": "what they dread", "backstory": "2-3 sentences of background", "accent": "regional accent and vocal texture", "speakingStyle": "how they speak, cadence, vocabulary", "reactionPattern": "how they react under stress", "voiceNotes": "dialogue writing notes", "secrets": "hidden truth the author knows", "readerSecretHint": "spoiler-safe foreshadow hint", "tags": ["tag1","tag2","tag3"] }] }`,
+                                      "Make each profile feel like a real person. Every field must be filled with useful, story-grounded detail.",
                                     ].join("\n");
                                     const raw = await requestOpenRouterText(prompt, 3000, 120000, "You are a character designer. Build vivid, specific character profiles. Return only valid JSON.", false, 0.6);
                                     const jsonMatch = raw.match(/\{[\s\S]*\}/);
                                     if (jsonMatch) {
-                                      const parsed = JSON.parse(jsonMatch[0]) as { characters?: Array<{ name: string; role?: string; logline?: string; appearance?: string; personality?: string; goals?: string; fears?: string; backstory?: string }> };
+                                      const parsed = JSON.parse(jsonMatch[0]) as { characters?: Array<{ name: string; role?: string; logline?: string; appearance?: string; personality?: string; goals?: string; fears?: string; backstory?: string; accent?: string; speakingStyle?: string; reactionPattern?: string; voiceNotes?: string; secrets?: string; readerSecretHint?: string; tags?: string[] }> };
                                       if (parsed.characters?.length) {
                                         mutateNovel((n) => {
                                           const merged = [...n.storyBible.characters];
@@ -16564,6 +16665,13 @@ function NovelWorkspacePage() {
                                                 goals: c.goals || existing.goals || "",
                                                 fears: c.fears || existing.fears || "",
                                                 backstory: c.backstory || existing.backstory || "",
+                                                accent: c.accent || existing.accent || "",
+                                                speakingStyle: c.speakingStyle || existing.speakingStyle || "",
+                                                reactionPattern: c.reactionPattern || existing.reactionPattern || "",
+                                                voiceNotes: c.voiceNotes || existing.voiceNotes || "",
+                                                secrets: c.secrets || existing.secrets || "",
+                                                readerSecretHint: c.readerSecretHint || existing.readerSecretHint || "",
+                                                tags: parseStringList(c.tags).length > 0 ? parseStringList(c.tags) : existing.tags || [],
                                               };
                                             } else {
                                               merged.push({
@@ -16576,6 +16684,17 @@ function NovelWorkspacePage() {
                                                 goals: c.goals || "",
                                                 fears: c.fears || "",
                                                 backstory: c.backstory || "",
+                                                accent: c.accent || "",
+                                                speakingStyle: c.speakingStyle || "",
+                                                reactionPattern: c.reactionPattern || "",
+                                                voiceNotes: c.voiceNotes || "",
+                                                secrets: c.secrets || "",
+                                                readerSecretHint: c.readerSecretHint || "",
+                                                tags: parseStringList(c.tags),
+                                                pronouns: "",
+                                                groups: "",
+                                                otherNames: "",
+                                                relationships: [],
                                               });
                                             }
                                           }
