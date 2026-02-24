@@ -4770,233 +4770,115 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
 
     try {
-      /* ══════════════════════════════════════════════════════════════
-       * SINGLE BATCH CALL — generate all bloc synopses at once.
-       * ══════════════════════════════════════════════════════════════ */
-
-      type BatchBlocResult = { blocs?: Array<{ synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }> };
-
-      const focusIds = FOCUS_PRESETS.map((p) => p.id).join(", ");
-
-      const batchPrompt = [
-        `You are a senior developmental editor building a scene-by-scene WRITER'S BLUEPRINT for a single chapter. This blueprint will be the primary instruction set for a prose author — every detail you include directly shapes the quality of the final novel.`,
-        ``,
-        `Split this chapter into EXACTLY ${BLOC_COUNT} scene blocs. Each bloc is a continuous scene that will be turned into polished prose. Think deeply about how each scene opens, builds, and hands off to the next — like a relay race where the baton pass matters as much as the sprint.`,
-        ``,
-        `CRITICAL: You MUST return EXACTLY ${BLOC_COUNT} blocs — not 1, not 2, not 3 — EXACTLY ${BLOC_COUNT}.`,
-        ``,
-        `Return ONLY this JSON structure:`,
-        `{ "blocs": [{ "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 3, "focus": "...", "wordTarget": 600 }, ...] }`,
-        ``,
-        `For EACH bloc, provide ALL of these fields:`,
-        ``,
-        `- "synopsis": 4-8 DETAILED sentences. This is the writer's roadmap. Describe exactly what happens — character actions, reactions, revelations, micro-decisions, power shifts. Include the scene GOAL (what the POV character wants), the OBSTACLE (what's blocking them), and the OUTCOME (how it shifts). Name every character involved. Mention specific gestures, body language cues, and spatial movement. This is NOT a summary — it's a set of rich instructions that a prose author will follow beat by beat.`,
-        ``,
-        `- "openingLine": A specific instruction for how the scene should BEGIN. Examples: "Open mid-conversation — Elena is already pushing back, voice tight", "Start with a sensory jolt — the crack of the door hitting the wall", "Begin in Marcus's head — he's replaying the argument while staring at the rain". The opening must either hook the reader or seamlessly continue from the previous bloc.`,
-        ``,
-        `- "closingHook": How this scene should END and bridge into the next bloc. This is crucial for flow. Examples: "End on the unanswered phone ringing — tension carries into next scene", "Close with Elena's whispered 'I know what you did' — a line that recontextualises everything", "Trail off mid-thought as the door opens — cut to next scene". The closing of bloc N must make bloc N+1 feel inevitable.`,
-        ``,
-        `- "emotionalArc": The emotional journey WITHIN this single scene, written as a trajectory. Examples: "confident → shaken → quietly resolved", "playful banter → an accidental confession → awkward retreat", "numb detachment → a crack of vulnerability when she sees the photo". This guides the prose writer's emotional pacing.`,
-        ``,
-        `- "sensoryPalette": 2-4 specific sensory details the prose writer should weave in. NOT generic ("it was cold") — SPECIFIC and evocative. Examples: "the metallic taste of adrenaline; fluorescent lights humming; her coffee gone cold, a skin forming on top", "wet tarmac reflecting streetlights; the weight of the envelope in his coat pocket; a dog barking three streets away". Ground the scene in the real, physical world.`,
-        ``,
-        `- "dialogueNotes": Key exchanges or subtext cues. What conversations MUST happen, what's said vs. what's meant. Examples: "Elena confronts Marcus about the missing file — he deflects with humour but she notices his hand trembling", "No spoken dialogue — communicate through loaded silences, a shared glance, the way she moves his jacket off her chair". Even in non-dialogue-heavy scenes, note the communication dynamics.`,
-        ``,
-        `- "tension": A number 1-5 rating. 1 = calm/reflective, 2 = mild unease, 3 = building pressure, 4 = high stakes confrontation, 5 = peak crisis/climax. This guides sentence length, paragraph density, and pacing.`,
-        ``,
-        `- "focus": Best writing mode for this scene, one of: ${focusIds}`,
-        ``,
-        `- "wordTarget": Recommended word count (0 for best-fit, or 400/600/800/1000/1500). Longer for pivotal moments, shorter for transitional beats.`,
-        "",
-        "═══ CHARACTER ROSTER — USE THESE EXACT NAMES ═══",
-        `The following characters exist in this story. You MUST use their EXACT names (not generic labels like "the protagonist" or "the hero"). Every synopsis must reference characters by their proper name.`,
-        "",
-        `  ${characterRoster}`,
-        "",
-        "BLUEPRINT RULES:",
-        `- Return EXACTLY ${BLOC_COUNT} blocs in the array. This is mandatory.`,
-        "- Think like a novelist planning their own chapter. Each bloc should feel like you're talking to yourself about how to write this scene brilliantly.",
-        "- ALWAYS use the character's PROPER NAME (e.g. 'Elena', 'Marcus') — NEVER use generic labels.",
-        "- FLOW IS EVERYTHING: Bloc 1's closingHook must set up Bloc 2's openingLine. Bloc 2's closingHook must set up Bloc 3. And so on. A reader should never feel a seam between scenes.",
-        "- VARY THE RHYTHM: If Bloc 1 is dialogue-heavy, make Bloc 2 more introspective or action-driven. Alternate tension levels. Don't write four scenes that all feel the same.",
-        "- Bloc 1 opens the chapter with a HOOK — not setup, not throat-clearing. Drop the reader into something alive.",
-        `- The final bloc must close the chapter with either a cliffhanger, a resonant image, an emotional landing, or a question that pulls the reader into the next chapter.`,
-        "- Be ruthlessly specific in every field. Vague instructions produce vague prose.",
-        "- This is an internal drafting blueprint, NOT reader-facing copy.",
-        "",
-        storyPosition.chapterNumber > 0
-          ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.`
-          : "",
-        storyPosition.arcGuidance,
-        `Chapter: ${activeChapter.title}`,
-        `Chapter synopsis: ${chapterSynopsis}`,
-        previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 300)}` : "",
-        nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 300)}` : "",
-        "",
-        context,
-        "",
-        `FINAL REMINDER: Return EXACTLY ${BLOC_COUNT} blocs. Every field filled. Use character NAMES. Make every closingHook flow into the next openingLine.`,
-      ].filter(Boolean).join("\n");
-
       type BlocEntry = { synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number };
-      let batchBlocs: BlocEntry[] = [];
-
-      // Attempt batch call (single retry max) with balanced speed/detail budgets.
-      for (let attempt = 0; attempt < 2 && batchBlocs.length < BLOC_COUNT; attempt++) {
-        try {
-          const raw = await requestOpenRouterText(
-            batchPrompt,
-            1500,
-            120000,
-            systemMsg,
-            false,
-            0.4,
-          );
-          let parsed = parseJsonFromAi<BatchBlocResult | BlocEntry[]>(raw);
-          if (!parsed) {
-            const repaired = attemptCloseTruncatedJson(raw.trim());
-            if (repaired) try { parsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
-          }
-          if (Array.isArray(parsed)) {
-            batchBlocs = parsed;
-          } else if (parsed && typeof parsed === "object") {
-            const obj = parsed as Record<string, unknown>;
-            if (Array.isArray(obj.blocs)) {
-              batchBlocs = obj.blocs as BlocEntry[];
-            } else if (Array.isArray(obj.blocks)) {
-              batchBlocs = obj.blocks as BlocEntry[];
-            } else if (Array.isArray(obj.scenes)) {
-              batchBlocs = obj.scenes as BlocEntry[];
-            } else {
-              for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { batchBlocs = obj[key] as BlocEntry[]; break; }
-              }
-            }
-          }
-          batchBlocs = batchBlocs.filter((b) => {
-            const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
-            if (syn.length < 15) return false;
-            const lower = syn.toLowerCase();
-            if (/^(continuation|the (story|scene|chapter) continues)/.test(lower)) return false;
-            return true;
-          });
-          if (batchBlocs.length >= BLOC_COUNT) break;
-        } catch {
-          // retry
-        }
-      }
-
-      // ── Build blocks from batch results ──
+      const focusIds = FOCUS_PRESETS.map((p) => p.id).join(", ");
       const validFocusIds = FOCUS_PRESETS.map((p) => p.id);
       const validWordTargets = WORD_TARGET_OPTIONS.map((o) => o.value);
       const blocks: SceneBlock[] = [];
-      for (let i = 0; i < Math.min(BLOC_COUNT, batchBlocs.length); i++) {
-        const b = batchBlocs[i];
-        const synopsis = (typeof b?.synopsis === "string" ? b.synopsis!.trim() : "");
-        if (synopsis.length >= 15) {
-          const suggestedFocus = typeof b.focus === "string" && validFocusIds.includes(b.focus) ? b.focus : "default";
-          const suggestedTarget = typeof b.wordTarget === "number" && validWordTargets.includes(b.wordTarget) ? b.wordTarget : 0;
-          blocks.push({
-            ...DEFAULT_SCENE_BLOCK,
-            synopsis,
-            notes: chapterLevelBolton,
-            focus: suggestedFocus,
-            wordTarget: suggestedTarget,
-            openingLine: typeof b.openingLine === "string" ? b.openingLine.trim() : undefined,
-            closingHook: typeof b.closingHook === "string" ? b.closingHook.trim() : undefined,
-            emotionalArc: typeof b.emotionalArc === "string" ? b.emotionalArc.trim() : undefined,
-            sensoryPalette: typeof b.sensoryPalette === "string" ? b.sensoryPalette.trim() : undefined,
-            dialogueNotes: typeof b.dialogueNotes === "string" ? b.dialogueNotes.trim() : undefined,
-            tension: typeof b.tension === "number" && b.tension >= 1 && b.tension <= 5 ? b.tension : undefined,
-          });
-        }
-      }
+      const toSceneBlock = (entry: BlocEntry | null, index: number): SceneBlock | null => {
+        const synopsis = (entry?.synopsis || "").trim();
+        if (synopsis.length < 15) return null;
+        const suggestedFocus = typeof entry?.focus === "string" && validFocusIds.includes(entry.focus) ? entry.focus : "default";
+        const suggestedTarget = typeof entry?.wordTarget === "number" && validWordTargets.includes(entry.wordTarget) ? entry.wordTarget : 0;
+        return {
+          ...DEFAULT_SCENE_BLOCK,
+          synopsis,
+          notes: chapterLevelBolton,
+          focus: suggestedFocus,
+          wordTarget: suggestedTarget,
+          openingLine: typeof entry?.openingLine === "string" ? entry.openingLine.trim() : undefined,
+          closingHook: typeof entry?.closingHook === "string" ? entry.closingHook.trim() : undefined,
+          emotionalArc: typeof entry?.emotionalArc === "string" ? entry.emotionalArc.trim() : undefined,
+          sensoryPalette: typeof entry?.sensoryPalette === "string" ? entry.sensoryPalette.trim() : undefined,
+          dialogueNotes: typeof entry?.dialogueNotes === "string" ? entry.dialogueNotes.trim() : undefined,
+          tension: typeof entry?.tension === "number" && entry.tension >= 1 && entry.tension <= 5 ? entry.tension : undefined,
+        };
+      };
 
-      // ── Full-batch retry if we got fewer than 3 blocs ──
-      if (blocks.length < 3) {
-        try {
-          const retryPrompt = [
-            `IMPORTANT: Your previous response did not return ${BLOC_COUNT} blocs. Try again.`,
-            batchPrompt,
-          ].join("\n\n");
-          const retryRaw = await requestOpenRouterText(retryPrompt, 1500, 120000, systemMsg, false, 0.4);
-          let retryParsed = parseJsonFromAi<BatchBlocResult | BlocEntry[]>(retryRaw);
-          if (!retryParsed) {
-            const repaired = attemptCloseTruncatedJson(retryRaw.trim());
-            if (repaired) try { retryParsed = JSON.parse(repaired) as BatchBlocResult; } catch { /* ignore */ }
-          }
-          let retryBlocs: BlocEntry[] = [];
-          if (Array.isArray(retryParsed)) {
-            retryBlocs = retryParsed;
-          } else if (retryParsed && typeof retryParsed === "object") {
-            const obj = retryParsed as Record<string, unknown>;
-            for (const key of ["blocs", "blocks", "scenes"]) {
-              if (Array.isArray(obj[key])) { retryBlocs = obj[key] as BlocEntry[]; break; }
-            }
-            if (!retryBlocs.length) {
-              for (const key of Object.keys(obj)) {
-                if (Array.isArray(obj[key])) { retryBlocs = obj[key] as BlocEntry[]; break; }
-              }
-            }
-          }
-          retryBlocs = retryBlocs.filter((b) => {
-            const syn = typeof b?.synopsis === "string" ? b.synopsis.trim() : "";
-            return syn.length >= 15 && !/^(continuation|the (story|scene|chapter) continues)/i.test(syn);
-          });
-          if (retryBlocs.length > blocks.length) {
-            blocks.length = 0;
-            for (let i = 0; i < Math.min(BLOC_COUNT, retryBlocs.length); i++) {
-              const rb = retryBlocs[i];
-              const synopsis = rb?.synopsis?.trim() ?? "";
-              if (synopsis.length >= 15) {
-                const sf = typeof rb.focus === "string" && validFocusIds.includes(rb.focus) ? rb.focus : "default";
-                const st = typeof rb.wordTarget === "number" && validWordTargets.includes(rb.wordTarget) ? rb.wordTarget : 0;
-                blocks.push({
-                  ...DEFAULT_SCENE_BLOCK, synopsis, notes: chapterLevelBolton, focus: sf, wordTarget: st,
-                  openingLine: typeof rb.openingLine === "string" ? rb.openingLine.trim() : undefined,
-                  closingHook: typeof rb.closingHook === "string" ? rb.closingHook.trim() : undefined,
-                  emotionalArc: typeof rb.emotionalArc === "string" ? rb.emotionalArc.trim() : undefined,
-                  sensoryPalette: typeof rb.sensoryPalette === "string" ? rb.sensoryPalette.trim() : undefined,
-                  dialogueNotes: typeof rb.dialogueNotes === "string" ? rb.dialogueNotes.trim() : undefined,
-                  tension: typeof rb.tension === "number" && rb.tension >= 1 && rb.tension <= 5 ? rb.tension : undefined,
-                });
-              }
-            }
-          }
-        } catch { /* fall through to individual repairs */ }
-      }
+      for (let i = 0; i < BLOC_COUNT; i++) {
+        const isLast = i === BLOC_COUNT - 1;
+        const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
+        const oneBlocPrompt = [
+          `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
+          `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+          "- synopsis must be detailed (4-8 sentences) and specific about what happens.",
+          "- Use exact character names from the roster. Never use generic labels.",
+          "- Make the ending of this bloc flow naturally into the next one.",
+          "",
+          `CHARACTER ROSTER:\n  ${characterRoster}`,
+          "",
+          `Chapter: ${activeChapter.title}`,
+          `Chapter synopsis: ${chapterSynopsis}`,
+          previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
+          previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+          isLast ? "This is the FINAL bloc — close the chapter strongly." : `This bloc must advance beyond Bloc ${i}.`,
+          nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
+          storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
+          storyPosition.arcGuidance,
+          context,
+        ].filter(Boolean).join("\n");
 
-      // ── Individual repair: fill any remaining missing blocs ──
-      if (blocks.length < BLOC_COUNT && blocks.length > 0) {
-        for (let i = blocks.length; i < BLOC_COUNT; i++) {
-          const isLast = i === BLOC_COUNT - 1;
-          const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
-          const repairPrompt = [
-            `Write a 1-3 sentence synopsis for scene bloc ${i + 1} of ${BLOC_COUNT} in this chapter.`,
-            `The synopsis must describe specific actions and show what HAPPENS.`,
-            `Use the EXACT character names from the roster below — NEVER use generic labels like "the protagonist".`,
-            `Return JSON: { "synopsis": "your synopsis" }`,
-            "",
-            `CHARACTER ROSTER:\n  ${characterRoster}`,
-            "",
-            `Chapter: ${activeChapter.title}`,
-            `Chapter synopsis: ${chapterSynopsis}`,
-            previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
-            previousChapterSynopsis ? `Previous chapter: ${clampPromptText(previousChapterSynopsis, 150)}` : "",
-            isLast ? "This is the FINAL bloc — wrap up and close the chapter." : `This bloc must advance the story beyond where Bloc ${i} left off.`,
-            context,
-          ].filter(Boolean).join("\n");
+        let blockBuilt = false;
+        for (let attempt = 0; attempt < 2 && !blockBuilt; attempt++) {
           try {
-            const data = await requestOpenRouterJson<{ synopsis?: string }>(
-              repairPrompt,
-              300,
+            const jsonResult = await requestOpenRouterJson<{ bloc?: BlocEntry; scene?: BlocEntry; synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }>(
+              oneBlocPrompt,
+              700,
               { timeoutMs: 60000, systemMessage: "Return ONLY valid JSON." },
             );
-            const syn = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
-            if (syn.length >= 15) {
-              blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: syn, notes: chapterLevelBolton });
+            const fromJson = jsonResult?.bloc
+              ?? jsonResult?.scene
+              ?? (jsonResult?.synopsis ? {
+                synopsis: jsonResult.synopsis,
+                focus: jsonResult.focus,
+                wordTarget: jsonResult.wordTarget,
+                openingLine: jsonResult.openingLine,
+                closingHook: jsonResult.closingHook,
+                emotionalArc: jsonResult.emotionalArc,
+                sensoryPalette: jsonResult.sensoryPalette,
+                dialogueNotes: jsonResult.dialogueNotes,
+                tension: jsonResult.tension,
+              } : null);
+            const built = toSceneBlock(fromJson, i);
+            if (built) {
+              blocks.push(built);
+              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+              blockBuilt = true;
+              break;
             }
-          } catch { /* skip */ }
+          } catch { /* retry with text parser fallback */ }
+
+          try {
+            const raw = await requestOpenRouterText(oneBlocPrompt, 700, 60000, systemMsg, false, 0.4);
+            const parsed = parseJsonFromAi<Record<string, unknown>>(raw);
+            const fromParsed = parsed?.bloc as BlocEntry | undefined
+              ?? parsed?.scene as BlocEntry | undefined
+              ?? (typeof parsed?.synopsis === "string"
+                ? {
+                  synopsis: parsed.synopsis as string,
+                  focus: parsed.focus as string | undefined,
+                  wordTarget: parsed.wordTarget as number | undefined,
+                  openingLine: parsed.openingLine as string | undefined,
+                  closingHook: parsed.closingHook as string | undefined,
+                  emotionalArc: parsed.emotionalArc as string | undefined,
+                  sensoryPalette: parsed.sensoryPalette as string | undefined,
+                  dialogueNotes: parsed.dialogueNotes as string | undefined,
+                  tension: parsed.tension as number | undefined,
+                }
+                : null);
+            const built = toSceneBlock(fromParsed, i);
+            if (built) {
+              blocks.push(built);
+              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+              blockBuilt = true;
+            }
+          } catch { /* next attempt */ }
+        }
+
+        if (!blockBuilt) {
+          const fallbackSynopsis = `${isLast ? "Chapter-closing" : "Progressive"} scene where named characters push the conflict forward with concrete actions and emotional consequences.`;
+          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: fallbackSynopsis, notes: chapterLevelBolton });
+          updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
         }
       }
 
