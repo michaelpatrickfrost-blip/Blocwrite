@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 900;
 
-type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type ProviderId = "openrouter" | "lmstudio";
 
 interface CharacterInput {
   id: string;
@@ -31,9 +31,7 @@ interface ProfileResult {
 
 const PROVIDER_BASE: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
-  infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
-  huggingface: "https://router.huggingface.co/v1",
 };
 
 function cleanBaseUrl(raw: string, provider: ProviderId): string {
@@ -47,18 +45,10 @@ function cleanBaseUrl(raw: string, provider: ProviderId): string {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
   }
-  if (provider === "infermatic") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
   if (provider === "lmstudio") {
     const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
     if (fixed.endsWith("/v1")) return fixed;
     return `${fixed}/v1`;
-  }
-  if (provider === "huggingface") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
   }
   return normalized;
 }
@@ -95,10 +85,6 @@ async function callAi(
     stream: false,
     temperature,
   };
-  if (provider === "infermatic") {
-    body.stop = ["```", "\n\n\n\n"];
-  }
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
@@ -249,7 +235,7 @@ export async function POST(request: NextRequest) {
   if (!model || !characters?.length) {
     return NextResponse.json({ error: "Missing model or characters" }, { status: 400 });
   }
-  if (!apiKey && (provider === "openrouter" || provider === "infermatic" || provider === "huggingface")) {
+  if (!apiKey && provider === "openrouter") {
     return NextResponse.json({ error: "Missing API key" }, { status: 400 });
   }
 

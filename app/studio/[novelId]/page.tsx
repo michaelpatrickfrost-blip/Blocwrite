@@ -74,7 +74,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type AssistantProviderId = "openrouter" | "lmstudio";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -693,25 +693,11 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     defaultModel: "openai/gpt-4o-mini",
   },
   {
-    id: "infermatic",
-    label: "Infermatic",
-    requiresKey: true,
-    defaultBaseUrl: "https://api.totalgpt.ai/v1",
-    defaultModel: "Mixtral-8x7B-Instruct-v0.1",
-  },
-  {
     id: "lmstudio",
     label: "LM Studio",
     requiresKey: false,
     defaultBaseUrl: "http://127.0.0.1:1234/v1",
     defaultModel: "local-model",
-  },
-  {
-    id: "huggingface",
-    label: "Hugging Face",
-    requiresKey: true,
-    defaultBaseUrl: "https://router.huggingface.co/v1",
-    defaultModel: "deepseek-ai/DeepSeek-R1",
   },
 ];
 

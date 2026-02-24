@@ -123,7 +123,7 @@ const jsonLdSoftware = {
     "Chapter-by-chapter novel planner",
     "Living story bible (Canon) with characters, locations, lore",
     "Scene-by-scene bloc writing system",
-    "Bring Your Own AI — OpenRouter, Infermatic, or LM Studio",
+    "Bring Your Own AI — OpenRouter, Arli AI (OpenAI-compatible), or LM Studio",
     "AI-optional — every feature works without AI",
     "Professional manuscript export to EPUB and DOCX",
     "Style and voice controls",
@@ -149,7 +149,7 @@ const jsonLdFaq = {
       name: "Is AI included in the subscription?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No. Blocwrite does not include AI credits or charge for AI usage. You bring your own API key from OpenRouter, Infermatic, or LM Studio. Free models are available on OpenRouter, and LM Studio is completely free (runs locally on your computer). The subscription covers only the studio workspace.",
+        text: "No. Blocwrite does not include AI credits or charge for AI usage. You bring your own API key from OpenRouter, an OpenAI-compatible endpoint like Arli AI, or LM Studio. Free models are available on OpenRouter, and LM Studio is completely free (runs locally on your computer). The subscription covers only the studio workspace.",
       },
     },
     {
@@ -197,7 +197,7 @@ const jsonLdFaq = {
       name: "What AI models can I use?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Any model available through OpenRouter (including free ones like Llama, Mistral, and Gemma), Infermatic, or a locally hosted model via LM Studio. You choose the model and control the costs.",
+        text: "Any model available through OpenRouter (including free ones like Llama, Mistral, and Gemma), a compatible OpenAI-style provider endpoint such as Arli AI, or a locally hosted model via LM Studio. You choose the model and control the costs.",
       },
     },
   ],

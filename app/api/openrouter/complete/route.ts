@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 // Force long-lived connections for slow model providers
 export const maxDuration = 900; // 15 minutes for self-hosted/slow providers
 
-type ProviderId = "openrouter" | "infermatic" | "lmstudio" | "huggingface";
+type ProviderId = "openrouter" | "lmstudio";
 type CompletionRequest = {
   provider?: ProviderId;
   model?: string;
@@ -28,19 +28,15 @@ type OpenRouterErrorPayload = {
 
 const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
-  infermatic: "https://api.totalgpt.ai/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
-  huggingface: "https://router.huggingface.co/v1",
 };
 const PROVIDER_TIMEOUT_MS: Record<ProviderId, number> = {
   openrouter: 300000,
-  infermatic: 420000,
   lmstudio: 300000,
-  huggingface: 300000,
 };
 
 function normalizeProvider(raw: unknown): ProviderId {
-  if (raw === "openrouter" || raw === "infermatic" || raw === "lmstudio" || raw === "huggingface") return raw;
+  if (raw === "openrouter" || raw === "lmstudio") return raw;
   return "openrouter";
 }
 
@@ -62,18 +58,10 @@ function cleanBaseUrl(raw: unknown, provider: ProviderId) {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
   }
-  if (provider === "infermatic") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
   if (provider === "lmstudio") {
     const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
     if (fixed.endsWith("/v1")) return fixed;
     return `${fixed}/v1`;
-  }
-  if (provider === "huggingface") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
   }
   return normalized;
 }
@@ -102,7 +90,7 @@ function extractUpstreamError(payload: OpenRouterErrorPayload) {
 }
 
 function normalizeProviderError(message: string, status: number, model: string, provider: ProviderId) {
-  const providerLabel = provider === "openrouter" ? "OpenRouter" : provider === "infermatic" ? "Infermatic" : provider === "huggingface" ? "Hugging Face" : "LM Studio";
+  const providerLabel = provider === "openrouter" ? "OpenRouter" : "LM Studio";
   if (message === '{"detail":"Bad Request"}' || message.toLowerCase() === "bad request") {
     return `${providerLabel} rejected this request for model "${model}". Choose a different model or shorten the request.`;
   }
@@ -111,9 +99,6 @@ function normalizeProviderError(message: string, status: number, model: string, 
   if (status === 429) return `${providerLabel} rate limit reached. Wait a moment, then try again.`;
   if (/Model Group.*Fallbacks=None/i.test(message) || /model.*not found/i.test(message) || /does not exist/i.test(message)) {
     return `Model "${model}" is no longer available on ${providerLabel}. Open Settings and pick a different model.`;
-  }
-  if (status === 500 && provider === "infermatic") {
-    return `${providerLabel} server error for model "${model}". The model may be offline — try a different one in Settings.`;
   }
   return message || `${providerLabel} error ${status}`;
 }
@@ -160,8 +145,6 @@ export async function POST(request: Request) {
     if (provider === "openrouter") {
       headers["X-Title"] = "PilotWriter";
     }
-    // Hugging Face: no special headers needed beyond Authorization
-
     const requestBody: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
@@ -170,11 +153,6 @@ export async function POST(request: Request) {
     };
     if (temperature != null) requestBody.temperature = temperature;
     if (jsonMode) requestBody.response_format = { type: "json_object" };
-    // Infermatic/vLLM: add stop sequences for common non-prose output patterns
-    if (provider === "infermatic") {
-      requestBody.stop = ["```", "\n\n\n\n"];
-    }
-
     const controller = new AbortController();
     const timeoutMs = PROVIDER_TIMEOUT_MS[provider];
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
