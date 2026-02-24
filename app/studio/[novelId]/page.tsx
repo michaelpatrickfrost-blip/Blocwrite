@@ -43,6 +43,7 @@ import {
   type NonfictionCategory,
   type ScrapbookEntry,
   type ResearchNote,
+  type EraResearchNote,
   type StoryCard,
   type StoryBeat,
   type Subplot,
@@ -8871,6 +8872,21 @@ function NovelWorkspacePage() {
         nonfiction: { ...n.storyBible.nonfiction!, ...patch },
       },
     }));
+  }
+
+  function buildEraContextFromNotes(notes: EraResearchNote[]) {
+    const take = (tag: string, fallback: string) =>
+      notes
+        .filter((n) => n.tags.includes(tag))
+        .slice(0, 4)
+        .map((n) => `- ${n.title}: ${n.summary || fallback} (${n.sourceName})`)
+        .join("\n");
+    return {
+      culturalNotes: take("culture", "Relevant cultural context."),
+      historicalEvents: take("historical", "Relevant historical context."),
+      technology: take("technology", "Relevant technology and daily-life context."),
+      musicAndMedia: take("media", "Relevant media and entertainment context."),
+    };
   }
 
   function updatePlotSpine(patch: Partial<PlotSpine>) {
@@ -18353,57 +18369,122 @@ function NovelWorkspacePage() {
                       onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, centralTheme: e.target.value } } }))}
                     />
 
-                    {!aiOff && nfData?.era && (
-                      <div style={{ marginTop: 16 }}>
-                        <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
-                          onClick={async () => {
-                            if (!novel || storyAiBusyAction) return;
-                            setStoryAiBusyAction("nf-era-context");
-                            setStoryAiError(null);
-                            try {
-                              const bookTypeLabel = nfData?.nfCategory === "biography" ? (nfData?.subtype === "biography" ? "biography" : "memoir") : (nfData?.subtype || "non-fiction book");
-                              const prompt = [
-                                `Generate historical and cultural context for a ${bookTypeLabel} set in: ${nfData?.era || ""}.`,
-                                nfData?.setting ? `Location: ${nfData.setting}` : "",
-                                "Return JSON: { \"culturalNotes\": \"3-5 sentences about daily life, culture, and social norms of that era\", \"historicalEvents\": \"key events happening in the world during this time\", \"technology\": \"what technology and communication looked like\", \"musicAndMedia\": \"popular culture, music, TV, films of the era\" }",
-                              ].filter(Boolean).join("\n");
-                              const data = await requestOpenRouterJson<{ culturalNotes?: string; historicalEvents?: string; technology?: string; musicAndMedia?: string }>(prompt, 800, { systemMessage: "Era research assistant for non-fiction writers. Return valid JSON only." });
-                              const lore = [...(novel.storyBible.lore ?? [])];
-                              const entries: Array<{ key: string; val: string | undefined; cat: LoreEntry["category"] }> = [
-                                { key: "Cultural Context", val: data.culturalNotes, cat: "Culture" },
-                                { key: "Historical Events", val: data.historicalEvents, cat: "History" },
-                                { key: "Technology & Daily Life", val: data.technology, cat: "Tech" },
-                                { key: "Music & Popular Culture", val: data.musicAndMedia, cat: "Culture" },
-                              ];
-                              let changed = 0;
-                              for (const entry of entries) {
-                                const value = (entry.val || "").trim();
-                                if (!value) continue;
-                                const existingIdx = lore.findIndex((l) => l.title === entry.key);
-                                if (existingIdx >= 0) {
-                                  if ((lore[existingIdx].content || "").trim() !== value || lore[existingIdx].category !== entry.cat) {
-                                    lore[existingIdx] = { ...lore[existingIdx], content: value, category: entry.cat };
-                                    changed += 1;
-                                  }
-                                } else {
-                                  lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: value });
-                                  changed += 1;
+                    {!aiOff && (
+                      <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+                        <label>Era Research Query</label>
+                        <input
+                          className="pw-bible-input"
+                          placeholder="Try: 90s Leeds club culture and daily life"
+                          value={nfData?.eraResearchQuery ?? ""}
+                          onChange={(e) => updateNfData({ eraResearchQuery: e.target.value })}
+                        />
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
+                            onClick={async () => {
+                              if (!novel || storyAiBusyAction) return;
+                              const query = (nfData?.eraResearchQuery || "").trim() || [nfData?.era, nfData?.setting].filter(Boolean).join(" ");
+                              if (!query) {
+                                setStoryAiError("Add an Era Research Query, or fill Era/Setting first.");
+                                return;
+                              }
+                              setStoryAiBusyAction("nf-era-context");
+                              setStoryAiError(null);
+                              try {
+                                const response = await fetch("/api/nonfiction/era-research", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    query,
+                                    era: nfData?.era || "",
+                                    setting: nfData?.setting || "",
+                                    limit: 10,
+                                  }),
+                                });
+                                const payload = await response.json() as { notes?: EraResearchNote[]; error?: string };
+                                if (!response.ok) throw new Error(payload.error || "Era research failed");
+                                const fetchedNotes = Array.isArray(payload.notes) ? payload.notes : [];
+                                if (fetchedNotes.length === 0) {
+                                  throw new Error("No source-backed research notes found. Try a more specific query.");
                                 }
-                              }
-                              if (changed === 0) {
-                                throw new Error("AI returned no usable era context. Try adding a bit more detail to Era and Setting.");
-                              }
-                              mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, lore } }));
-                            } catch (err: unknown) {
-                              if (err instanceof Error && err.name === "AbortError") { /* */ } else {
-                                setStoryAiError(err instanceof Error ? err.message : "Failed to generate era context");
-                              }
-                            } finally { setStoryAiBusyAction(null); }
-                          }}
-                        >
-                          {storyAiBusyAction === "nf-era-context" ? "Researching..." : "AI Era Research"}
-                        </button>
-                        <p className="pw-field-help" style={{ marginTop: 4 }}>Generates historical & cultural context for your era and adds it to your story lore.</p>
+                                const existingNotes = nfData?.eraResearchNotes ?? [];
+                                const noteMap = new Map<string, EraResearchNote>();
+                                for (const note of existingNotes) {
+                                  noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
+                                }
+                                for (const note of fetchedNotes) {
+                                  noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
+                                }
+                                const mergedNotes = [...noteMap.values()];
+                                const buckets = buildEraContextFromNotes(mergedNotes);
+                                const lore = [...(novel.storyBible.lore ?? [])];
+                                const entries: Array<{ key: string; val: string; cat: LoreEntry["category"] }> = [
+                                  { key: "Cultural Context", val: buckets.culturalNotes, cat: "Culture" },
+                                  { key: "Historical Events", val: buckets.historicalEvents, cat: "History" },
+                                  { key: "Technology & Daily Life", val: buckets.technology, cat: "Tech" },
+                                  { key: "Music & Popular Culture", val: buckets.musicAndMedia, cat: "Culture" },
+                                ];
+                                for (const entry of entries) {
+                                  const value = (entry.val || "").trim();
+                                  if (!value) continue;
+                                  const existingIdx = lore.findIndex((l) => l.title === entry.key);
+                                  if (existingIdx >= 0) lore[existingIdx] = { ...lore[existingIdx], content: value, category: entry.cat };
+                                  else lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: value });
+                                }
+                                mutateNovel((n) => ({
+                                  ...n,
+                                  storyBible: {
+                                    ...n.storyBible,
+                                    lore,
+                                    nonfiction: {
+                                      ...n.storyBible.nonfiction!,
+                                      eraResearchQuery: query,
+                                      eraResearchNotes: mergedNotes,
+                                      eraCulturalNotes: buckets.culturalNotes,
+                                      eraHistoricalEvents: buckets.historicalEvents,
+                                      eraTechnology: buckets.technology,
+                                      eraMusicAndMedia: buckets.musicAndMedia,
+                                    },
+                                  },
+                                }));
+                              } catch (err: unknown) {
+                                if (err instanceof Error && err.name === "AbortError") { /* */ } else {
+                                  setStoryAiError(err instanceof Error ? err.message : "Failed to generate era context");
+                                }
+                              } finally { setStoryAiBusyAction(null); }
+                            }}
+                          >
+                            {storyAiBusyAction === "nf-era-context" ? "Researching..." : "Research Era (Sources)"}
+                          </button>
+                        </div>
+                        <p className="pw-field-help" style={{ marginTop: 0 }}>
+                          Pulls source-backed notes (with links), organises context by theme, and makes notes attachable to life events.
+                        </p>
+                      </div>
+                    )}
+
+                    {(nfData?.eraCulturalNotes || nfData?.eraHistoricalEvents || nfData?.eraTechnology || nfData?.eraMusicAndMedia) && (
+                      <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+                        <label>Era Research Notes</label>
+                        <textarea className="pw-bible-input" rows={3} placeholder="Cultural context" value={nfData?.eraCulturalNotes ?? ""} onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, eraCulturalNotes: e.target.value } } }))} />
+                        <textarea className="pw-bible-input" rows={3} placeholder="Historical events" value={nfData?.eraHistoricalEvents ?? ""} onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, eraHistoricalEvents: e.target.value } } }))} />
+                        <textarea className="pw-bible-input" rows={2} placeholder="Technology and daily life" value={nfData?.eraTechnology ?? ""} onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, eraTechnology: e.target.value } } }))} />
+                        <textarea className="pw-bible-input" rows={2} placeholder="Music and media" value={nfData?.eraMusicAndMedia ?? ""} onChange={(e) => mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!, eraMusicAndMedia: e.target.value } } }))} />
+                        {(nfData?.eraResearchNotes ?? []).length > 0 && (
+                          <div style={{ marginTop: 4, display: "grid", gap: 6 }}>
+                            <label>Source Notes</label>
+                            {(nfData?.eraResearchNotes ?? []).map((note) => (
+                              <div key={note.id} style={{ padding: "8px 10px", border: "1px solid var(--pw-border-light)", borderRadius: 8, background: "var(--pw-surface)" }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                  <strong style={{ fontSize: 12 }}>{note.title}</strong>
+                                  <a href={note.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--pw-accent)" }}>
+                                    {note.sourceName}
+                                  </a>
+                                </div>
+                                <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.45 }}>{note.summary}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -18457,6 +18538,7 @@ function NovelWorkspacePage() {
                                     places: [],
                                     emotion: String(r.emotion || ""),
                                     impact: String(r.impact || ""),
+                                    eraNoteIds: [],
                                     sortOrder: (nfData?.lifeEvents?.length ?? 0) + i,
                                   }));
                                   mutateNovel((n) => ({
@@ -18483,6 +18565,7 @@ function NovelWorkspacePage() {
                           const newEvent: LifeEvent = {
                             id: createEntityId("le"), title: "", date: "", description: "",
                             people: [], places: [], emotion: "", impact: "",
+                            eraNoteIds: [],
                             sortOrder: nfData?.lifeEvents?.length ?? 0,
                           };
                           mutateNovel((n) => ({
@@ -18505,7 +18588,9 @@ function NovelWorkspacePage() {
                       </div>
                     )}
 
-                    {(nfData?.lifeEvents ?? []).map((evt, idx) => (
+                    {(nfData?.lifeEvents ?? []).map((evt, idx) => {
+                      const linkedEraNotes = (nfData?.eraResearchNotes ?? []).filter((note) => (evt.eraNoteIds ?? []).includes(note.id));
+                      return (
                       <div key={evt.id} style={{
                         background: "var(--pw-surface)", borderRadius: 8, padding: 14, marginBottom: 8,
                         border: "1px solid var(--pw-border-light)",
@@ -18614,6 +18699,71 @@ function NovelWorkspacePage() {
                             />
                           </div>
                         </div>
+                        {(nfData?.eraResearchNotes ?? []).length > 0 && (
+                          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                            <label style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Era context attached to this event</label>
+                            <select
+                              className="pw-bible-input"
+                              value=""
+                              onChange={(e) => {
+                                const selectedId = e.target.value;
+                                if (!selectedId) return;
+                                mutateNovel((n) => ({
+                                  ...n,
+                                  storyBible: {
+                                    ...n.storyBible,
+                                    nonfiction: {
+                                      ...n.storyBible.nonfiction!,
+                                      lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map((le) => {
+                                        if (le.id !== evt.id) return le;
+                                        const nextIds = new Set([...(le.eraNoteIds ?? []), selectedId]);
+                                        return { ...le, eraNoteIds: [...nextIds] };
+                                      }),
+                                    },
+                                  },
+                                }));
+                              }}
+                            >
+                              <option value="">Attach source note...</option>
+                              {(nfData?.eraResearchNotes ?? [])
+                                .filter((note) => !(evt.eraNoteIds ?? []).includes(note.id))
+                                .map((note) => (
+                                  <option key={note.id} value={note.id}>{note.title}</option>
+                                ))}
+                            </select>
+                            {linkedEraNotes.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {linkedEraNotes.map((note) => (
+                                  <span key={note.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(var(--accent-rgb, 124,92,252), 0.1)", color: "var(--pw-accent)" }}>
+                                    {note.title}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        mutateNovel((n) => ({
+                                          ...n,
+                                          storyBible: {
+                                            ...n.storyBible,
+                                            nonfiction: {
+                                              ...n.storyBible.nonfiction!,
+                                              lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map((le) => {
+                                                if (le.id !== evt.id) return le;
+                                                return { ...le, eraNoteIds: (le.eraNoteIds ?? []).filter((id) => id !== note.id) };
+                                              }),
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      style={{ border: "none", background: "transparent", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                                      title="Remove attached source"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end", gap: 6 }}>
                           {nfData?.nfCategory === "biography" && (
                             <button type="button" className="pw-ai-mini-btn" style={{ fontSize: 10 }}
@@ -18648,6 +18798,9 @@ function NovelWorkspacePage() {
                                     evt.places.length ? `Place(s): ${evt.places.join(", ")}` : "",
                                     evt.people.length ? `People present: ${evt.people.join(", ")}` : "",
                                     evt.emotion ? `Emotional tone: ${evt.emotion}` : "",
+                                    linkedEraNotes.length
+                                      ? `Attached era sources:\n${linkedEraNotes.map((n) => `- ${n.title}: ${n.summary} (${n.sourceName}: ${n.sourceUrl})`).join("\n")}`
+                                      : "",
                                   ].filter(Boolean).join("\n");
                                   const dialogue = await requestOpenRouterText(prompt, 500, 60000, "Memoir dialogue reconstruction specialist. Write authentic, period-appropriate dialogue based on real events.");
                                   if (!dialogue?.trim()) throw new Error("AI returned no dialogue. Try adding more event detail first.");
@@ -18671,7 +18824,7 @@ function NovelWorkspacePage() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    )})}
                     {storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
                   </div>
                 )}
@@ -18738,6 +18891,7 @@ function NovelWorkspacePage() {
                                         description: String(e.description || ""), emotion: String(e.emotion || ""),
                                         impact: String(e.impact || ""), people: Array.isArray(e.people) ? e.people.map(String) : [],
                                         places: Array.isArray(e.places) ? e.places.map(String) : [],
+                                        eraNoteIds: [],
                                         sortOrder: (nf.lifeEvents?.length ?? 0) + i,
                                       };
                                     });
@@ -18888,6 +19042,7 @@ function NovelWorkspacePage() {
                                         description: String(e.description || ""), emotion: String(e.emotion || ""),
                                         impact: String(e.impact || ""), people: Array.isArray(e.people) ? e.people.map(String) : [],
                                         places: Array.isArray(e.places) ? e.places.map(String) : [],
+                                        eraNoteIds: [],
                                         sortOrder: (nf.lifeEvents?.length ?? 0) + i,
                                       };
                                     });

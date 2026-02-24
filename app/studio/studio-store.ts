@@ -303,7 +303,18 @@ export type LifeEvent = {
   places: string[];
   emotion: string;
   impact: string;
+  eraNoteIds?: string[];
   sortOrder: number;
+};
+
+export type EraResearchNote = {
+  id: string;
+  title: string;
+  summary: string;
+  sourceName: string;
+  sourceUrl: string;
+  tags: string[];
+  createdAt: string;
 };
 
 export type NonfictionSubtype = "memoir" | "biography" | "true-crime" | "historical" | "investigative";
@@ -345,6 +356,12 @@ export type NonfictionData = {
   era: string;
   setting: string;
   centralTheme: string;
+  eraResearchQuery?: string;
+  eraCulturalNotes?: string;
+  eraHistoricalEvents?: string;
+  eraTechnology?: string;
+  eraMusicAndMedia?: string;
+  eraResearchNotes?: EraResearchNote[];
   lifeEvents: LifeEvent[];
   interviewTranscript: Array<{ role: "ai" | "user"; text: string }>;
   interviewPhase: string;
@@ -1050,6 +1067,20 @@ function normalizeStoryBible(raw: unknown): StoryBible {
           era: typeof nf.era === "string" ? nf.era : "",
           setting: typeof nf.setting === "string" ? nf.setting : "",
           centralTheme: typeof nf.centralTheme === "string" ? nf.centralTheme : "",
+          eraResearchQuery: typeof nf.eraResearchQuery === "string" ? nf.eraResearchQuery : "",
+          eraCulturalNotes: typeof nf.eraCulturalNotes === "string" ? nf.eraCulturalNotes : "",
+          eraHistoricalEvents: typeof nf.eraHistoricalEvents === "string" ? nf.eraHistoricalEvents : "",
+          eraTechnology: typeof nf.eraTechnology === "string" ? nf.eraTechnology : "",
+          eraMusicAndMedia: typeof nf.eraMusicAndMedia === "string" ? nf.eraMusicAndMedia : "",
+          eraResearchNotes: Array.isArray(nf.eraResearchNotes) ? (nf.eraResearchNotes as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `ern-${i}`,
+            title: typeof e.title === "string" ? e.title : "",
+            summary: typeof e.summary === "string" ? e.summary : "",
+            sourceName: typeof e.sourceName === "string" ? e.sourceName : "Source",
+            sourceUrl: typeof e.sourceUrl === "string" ? e.sourceUrl : "",
+            tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
+            createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
+          })) : [],
           lifeEvents: Array.isArray(nf.lifeEvents) ? (nf.lifeEvents as Array<Record<string, unknown>>).map((e, i) => ({
             id: typeof e.id === "string" && e.id ? e.id : `le-${i}`,
             title: typeof e.title === "string" ? e.title : "",
@@ -1059,6 +1090,7 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             places: Array.isArray(e.places) ? e.places.filter((p): p is string => typeof p === "string") : [],
             emotion: typeof e.emotion === "string" ? e.emotion : "",
             impact: typeof e.impact === "string" ? e.impact : "",
+            eraNoteIds: Array.isArray(e.eraNoteIds) ? e.eraNoteIds.filter((x): x is string => typeof x === "string") : [],
             sortOrder: typeof e.sortOrder === "number" ? e.sortOrder : i,
           })) : [],
           interviewTranscript: Array.isArray(nf.interviewTranscript) ? (nf.interviewTranscript as Array<Record<string, unknown>>).filter(
@@ -1505,6 +1537,12 @@ export function createNovel(title: string, coverImage: string | null = null, nov
           era: "",
           setting: "",
           centralTheme: "",
+          eraResearchQuery: "",
+          eraCulturalNotes: "",
+          eraHistoricalEvents: "",
+          eraTechnology: "",
+          eraMusicAndMedia: "",
+          eraResearchNotes: [],
           lifeEvents: [],
           interviewTranscript: [],
           interviewPhase: "big-picture",
