@@ -11347,7 +11347,7 @@ function NovelWorkspacePage() {
                     onClick={() => setActiveChapterId(chapter.id)}
                   >
                     <span>{chapter.title || "Untitled chapter"}</span>
-                    {aiOff && <span style={{ display: "block", fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{countChapterWords(chapter).toLocaleString()} words</span>}
+                    <span style={{ display: "block", fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{countChapterWords(chapter).toLocaleString()} words</span>
                   </button>
                   <button
                     type="button"
