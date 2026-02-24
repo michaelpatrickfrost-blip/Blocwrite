@@ -8932,8 +8932,8 @@ function NovelWorkspacePage() {
 
   function extractEntityCandidates(text: string): string[] {
     const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/g) ?? [];
-    const blocked = new Set(["The", "And", "For", "With", "Source", "Internet", "Archive", "Wikipedia", "Open Library", "History", "Culture", "Media", "Technology"]);
-    return [...new Set(matches.map((m) => m.trim()).filter((m) => m.length >= 3 && !blocked.has(m)).slice(0, 6))];
+    const blocked = new Set(["The", "And", "For", "With", "Source", "Internet", "Archive", "Wikipedia", "Open Library"]);
+    return [...new Set(matches.map((m) => m.trim()).filter((m) => m.length >= 3 && !blocked.has(m)).slice(0, 8))];
   }
 
   function buildResearchLinkSuggestions(
@@ -8948,17 +8948,9 @@ function NovelWorkspacePage() {
     );
     const createdAt = new Date().toISOString();
     const suggestions: ResearchLinkSuggestion[] = [];
-    const genericTags = new Set(["context", "culture", "historical", "technology", "media", "era-research"]);
     for (const note of notes) {
-      if (typeof note.confidence === "number" && note.confidence < 55) continue;
-      const extracted = extractEntityCandidates(`${note.title} ${note.summary}`);
-      const terms = [...new Set([...(note.tags ?? []), ...extracted])]
-        .map((t) => t.trim())
-        .filter((t) => t && !genericTags.has(t.toLowerCase()))
-        .slice(0, 5);
-      let perNoteCount = 0;
+      const terms = [...new Set([...(note.tags ?? []), ...extractEntityCandidates(`${note.title} ${note.summary}`)])].filter(Boolean).slice(0, 6);
       for (const termRaw of terms) {
-        if (perNoteCount >= 2) break;
         const term = termRaw.trim();
         if (!term) continue;
         const lower = term.toLowerCase();
@@ -8983,13 +8975,12 @@ function NovelWorkspacePage() {
             status: "pending",
             createdAt,
           });
-          perNoteCount += 1;
         };
 
         if (matchedLocation) push("location", matchedLocation.name, matchedLocation.id);
         else if (matchedCharacter) push("character", matchedCharacter.name, matchedCharacter.id);
         else if (matchedEvent) push("lifeEventPlace", term, matchedEvent.id);
-        else if (term.includes(" ")) push("location", term);
+        else push("location", term);
       }
     }
     return suggestions;
@@ -9012,7 +9003,7 @@ function NovelWorkspacePage() {
           query,
           era: nfData?.era || "",
           setting: nfData?.setting || "",
-          limit: 8,
+          limit: 12,
         }),
       });
       const payload = await response.json() as { notes?: EraResearchNote[]; error?: string };
@@ -18756,7 +18747,7 @@ function NovelWorkspacePage() {
                         {queue.length === 0 ? (
                           <div style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No pending links. Run research to generate suggestions.</div>
                         ) : (
-                          queue.slice(0, 12).map((item) => {
+                          queue.slice(0, 40).map((item) => {
                             const sourceNote = noteById.get(item.noteId);
                             const selectionKey = researchLinkSelection[item.id] ?? item.targetId ?? "";
                             const placeNameKey = researchLinkSelection[`${item.id}:name`] ?? item.targetName;
