@@ -98,6 +98,9 @@ function extractUpstreamError(payload: OpenRouterErrorPayload) {
 function normalizeProviderError(message: string, status: number, model: string, provider: ProviderId) {
   const providerLabel =
     provider === "openrouter" ? "OpenRouter" : provider === "arli" ? "Arli AI" : "LM Studio";
+  if (provider === "arli" && /servers?\s+restarting|try again in\s+\d+\s*minutes?/i.test(message)) {
+    return `${providerLabel} is temporarily restarting. Please retry in a few minutes or switch model.`;
+  }
   if (message === '{"detail":"Bad Request"}' || message.toLowerCase() === "bad request") {
     return `${providerLabel} rejected this request for model "${model}". Choose a different model or shorten the request.`;
   }
@@ -108,6 +111,11 @@ function normalizeProviderError(message: string, status: number, model: string, 
     return `Model "${model}" is no longer available on ${providerLabel}. Open Settings and pick a different model.`;
   }
   return message || `${providerLabel} error ${status}`;
+}
+
+function shouldRetryArli(status: number, message: string) {
+  if (status === 502 || status === 503 || status === 504) return true;
+  return /servers?\s+restarting|temporar(?:y|ily)\s+unavailable|try again in\s+\d+\s*minutes?/i.test(message);
 }
 
 export async function POST(request: Request) {
@@ -160,30 +168,52 @@ export async function POST(request: Request) {
     };
     if (temperature != null) requestBody.temperature = temperature;
     if (jsonMode) requestBody.response_format = { type: "json_object" };
-    const controller = new AbortController();
     const timeoutMs = PROVIDER_TIMEOUT_MS[provider];
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    let response: Response;
-    try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return NextResponse.json(
-          { error: `Provider timeout after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.` },
-          { status: 504 },
-        );
+    const maxAttempts = provider === "arli" ? 3 : 1;
+    let response: Response | null = null;
+    let payload: OpenRouterErrorPayload = {};
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof DOMException && error.name === "AbortError") {
+          if (provider === "arli" && attempt < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          return NextResponse.json(
+            { error: `Provider timeout after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.` },
+            { status: 504 },
+          );
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+
+      payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
+      if (response.ok) break;
+
+      const upstream = extractUpstreamError(payload);
+      if (provider === "arli" && attempt < maxAttempts && shouldRetryArli(response.status, upstream)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      break;
     }
 
-    const payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
+    if (!response) {
+      return NextResponse.json({ error: "Provider request failed." }, { status: 500 });
+    }
 
     if (!response.ok) {
       const upstream = extractUpstreamError(payload);
