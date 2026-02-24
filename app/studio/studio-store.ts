@@ -313,6 +313,8 @@ export type EraResearchNote = {
   summary: string;
   sourceName: string;
   sourceUrl: string;
+  sourceType?: "encyclopedia" | "book" | "archive" | "news";
+  confidence?: number;
   tags: string[];
   createdAt: string;
 };
@@ -1078,6 +1080,8 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             summary: typeof e.summary === "string" ? e.summary : "",
             sourceName: typeof e.sourceName === "string" ? e.sourceName : "Source",
             sourceUrl: typeof e.sourceUrl === "string" ? e.sourceUrl : "",
+            sourceType: (typeof e.sourceType === "string" && ["encyclopedia", "book", "archive", "news"].includes(e.sourceType) ? e.sourceType : undefined) as EraResearchNote["sourceType"],
+            confidence: typeof e.confidence === "number" ? e.confidence : undefined,
             tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
             createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
           })) : [],

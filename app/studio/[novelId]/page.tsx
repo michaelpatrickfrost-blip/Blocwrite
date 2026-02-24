@@ -8889,6 +8889,31 @@ function NovelWorkspacePage() {
     };
   }
 
+  function mergeEraNotesIntoResearchNotes(existing: ResearchNote[], eraNotes: EraResearchNote[]) {
+    const map = new Map<string, ResearchNote>();
+    for (const note of existing) {
+      const key = `${(note.source || "").toLowerCase()}|${note.title.toLowerCase()}`;
+      map.set(key, note);
+    }
+    for (const eraNote of eraNotes) {
+      const sourceLabel = `${eraNote.sourceName} - ${eraNote.sourceUrl}`;
+      const key = `${sourceLabel.toLowerCase()}|${eraNote.title.toLowerCase()}`;
+      if (map.has(key)) continue;
+      const strength: ResearchNote["strength"] =
+        eraNote.sourceType === "archive" ? "primary" : eraNote.sourceType === "book" ? "secondary" : "anecdotal";
+      map.set(key, {
+        id: `rn-era-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: eraNote.title,
+        content: eraNote.summary,
+        source: sourceLabel,
+        tags: [...new Set([...(eraNote.tags ?? []), "era-research"])],
+        createdAt: eraNote.createdAt || new Date().toISOString(),
+        strength,
+      });
+    }
+    return [...map.values()];
+  }
+
   function updatePlotSpine(patch: Partial<PlotSpine>) {
     mutateNovel((n) => ({
       ...n,
@@ -18443,6 +18468,11 @@ function NovelWorkspacePage() {
                                       eraHistoricalEvents: buckets.historicalEvents,
                                       eraTechnology: buckets.technology,
                                       eraMusicAndMedia: buckets.musicAndMedia,
+                                      researchNotes: mergeEraNotesIntoResearchNotes(
+                                        n.storyBible.nonfiction?.researchNotes ?? [],
+                                        mergedNotes
+                                      ),
+                                      researchExtractedAt: new Date().toISOString(),
                                     },
                                   },
                                 }));
@@ -18476,11 +18506,73 @@ function NovelWorkspacePage() {
                               <div key={note.id} style={{ padding: "8px 10px", border: "1px solid var(--pw-border-light)", borderRadius: 8, background: "var(--pw-surface)" }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                                   <strong style={{ fontSize: 12 }}>{note.title}</strong>
-                                  <a href={note.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--pw-accent)" }}>
-                                    {note.sourceName}
-                                  </a>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                    {typeof note.confidence === "number" && (
+                                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: "rgba(var(--accent-rgb, 124,92,252), 0.12)", color: "var(--pw-accent)" }}>
+                                        match {note.confidence}%
+                                      </span>
+                                    )}
+                                    {note.sourceType && (
+                                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: "var(--pw-hover-bg, rgba(255,255,255,0.06))", color: "var(--pw-text-dim)" }}>
+                                        {note.sourceType}
+                                      </span>
+                                    )}
+                                    <a href={note.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--pw-accent)" }}>
+                                      {note.sourceName}
+                                    </a>
+                                  </div>
                                 </div>
                                 <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.45 }}>{note.summary}</p>
+                                <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                  <button
+                                    type="button"
+                                    className="pw-ai-mini-btn"
+                                    style={{ fontSize: 10 }}
+                                    onClick={() => {
+                                      const sourceLabel = `${note.sourceName} - ${note.sourceUrl}`;
+                                      const exists = (nfData?.researchNotes ?? []).some((rn) => rn.title.toLowerCase() === note.title.toLowerCase() && rn.source.toLowerCase() === sourceLabel.toLowerCase());
+                                      if (exists) return;
+                                      const strength: ResearchNote["strength"] =
+                                        note.sourceType === "archive" ? "primary" : note.sourceType === "book" ? "secondary" : "anecdotal";
+                                      updateNfData({
+                                        researchNotes: [
+                                          ...(nfData?.researchNotes ?? []),
+                                          {
+                                            id: `rn-era-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                            title: note.title,
+                                            content: note.summary,
+                                            source: sourceLabel,
+                                            tags: [...new Set([...(note.tags ?? []), "era-research"])],
+                                            createdAt: new Date().toISOString(),
+                                            strength,
+                                          },
+                                        ],
+                                      });
+                                    }}
+                                  >
+                                    Add to Research Notes
+                                  </button>
+                                  {nfData?.nfCategory === "biography" && (
+                                    <button
+                                      type="button"
+                                      className="pw-ai-mini-btn"
+                                      style={{ fontSize: 10 }}
+                                      onClick={() => {
+                                        const entry: ScrapbookEntry = {
+                                          id: `sb-era-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                          title: note.title,
+                                          content: `${note.summary}\n\nSource: ${note.sourceName} (${note.sourceUrl})`,
+                                          linkedEventId: "",
+                                          createdAt: new Date().toISOString(),
+                                        };
+                                        updateNfData({ scrapbook: [...(nfData?.scrapbook ?? []), entry] });
+                                        setBibleSection("nf-scrapbook");
+                                      }}
+                                    >
+                                      Add to Scrapbook
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
