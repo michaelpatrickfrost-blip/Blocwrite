@@ -1001,13 +1001,13 @@ function NovelWorkspacePage() {
   // shareEmailSentMsg removed — single email button opens app directly
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
-  const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; chapters: Array<{ id: string; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; createdAt: string }> }> }>>([]);
+  const [feedbackData, setFeedbackData] = useState<Array<{ id: string; token: string; novelId: string; readerName: string | null; createdAt: string; unresolvedCount: number; chapters: Array<{ id: string; sourceChapterId: string | null; title: string; content: string; annotations: Array<{ id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; reviewStatus: string; reviewedAt: string | null; reviewerAction: string | null; createdAt: string }> }> }>>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [applyingFeedbackId, setApplyingFeedbackId] = useState<string | null>(null);
   const [dismissedAnnotations, setDismissedAnnotations] = useState<Set<string>>(new Set());
   // Sequential feedback review state
   const [feedbackReviewMode, setFeedbackReviewMode] = useState(false);
-  const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<Array<{ fbId: string; token: string; readerName: string | null; chapterId: string; chapterTitle: string; chapterContent: string; ann: { id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string } }>>([]);
+  const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<Array<{ fbId: string; token: string; readerName: string | null; chapterId: string; sourceChapterId: string | null; chapterTitle: string; chapterContent: string; ann: { id: string; selectedText: string; startOffset: number; endOffset: number; note: string; type: string; reviewStatus?: string } }>>([]);
   const [feedbackReviewIdx, setFeedbackReviewIdx] = useState(0);
   const [feedbackReviewApplying, setFeedbackReviewApplying] = useState(false);
   const [feedbackReviewDone, setFeedbackReviewDone] = useState(false);
@@ -1019,6 +1019,8 @@ function NovelWorkspacePage() {
   const [fbPreviewGenerating, setFbPreviewGenerating] = useState(false);
   const [fbAiRecommendation, setFbAiRecommendation] = useState<string | null>(null);
   const [fbAiRecommendationLoading, setFbAiRecommendationLoading] = useState(false);
+  const [fbManualEditOpen, setFbManualEditOpen] = useState(false);
+  const [fbManualEditText, setFbManualEditText] = useState("");
   const fbAiRecommendationGenRef = useRef<string | null>(null);
   const [showEditorModal, setShowEditorModal] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorResult | null>(null);
@@ -1244,6 +1246,9 @@ function NovelWorkspacePage() {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingGoalWords, setEditingGoalWords] = useState<string | null>(null);
   const [hideBlocks, setHideBlocks] = useState(false);
+  const [blocCountMode, setBlocCountMode] = useState<"auto" | "custom">("auto");
+  const [customBlocCount, setCustomBlocCount] = useState(4);
+  const [lastAutoBlocCount, setLastAutoBlocCount] = useState<number | null>(null);
   const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
   const [sidebarPinned, setSidebarPinned] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1594,18 +1599,206 @@ function NovelWorkspacePage() {
     setPlanGeneratePacingMode("balanced");
   }, [novelId]);
 
+  function buildFeedbackReviewQueue(data: typeof feedbackData) {
+    const queue: typeof feedbackReviewQueue = [];
+    for (const fb of data) {
+      for (const ch of fb.chapters ?? []) {
+        for (const ann of ch.annotations ?? []) {
+          queue.push({
+            fbId: fb.id,
+            token: fb.token,
+            readerName: fb.readerName,
+            chapterId: ch.id,
+            sourceChapterId: ch.sourceChapterId ?? null,
+            chapterTitle: ch.title,
+            chapterContent: ch.content,
+            ann: {
+              id: ann.id,
+              selectedText: ann.selectedText,
+              startOffset: ann.startOffset,
+              endOffset: ann.endOffset,
+              note: ann.note,
+              type: ann.type,
+              reviewStatus: ann.reviewStatus,
+            },
+          });
+        }
+      }
+    }
+    return queue;
+  }
+
+  async function refreshFeedbackReviewData() {
+    setFeedbackLoading(true);
+    try {
+      const response = await fetch("/api/share/feedback");
+      const data = response.ok ? await response.json() : [];
+      if (Array.isArray(data)) {
+        setFeedbackData(data);
+        setFeedbackReviewQueue(buildFeedbackReviewQueue(data));
+        const unresolvedNoteCount = data.reduce((sum, fb) => sum + Number(fb?.unresolvedCount ?? 0), 0);
+        const completedNoNoteCount = data.filter((fb) => Number(fb?.unresolvedCount ?? 0) === 0).length;
+        setPendingFeedbackCount(unresolvedNoteCount + completedNoNoteCount);
+      } else {
+        setFeedbackData([]);
+        setFeedbackReviewQueue([]);
+        setPendingFeedbackCount(0);
+      }
+    } catch {
+      setFeedbackData([]);
+      setFeedbackReviewQueue([]);
+      setPendingFeedbackCount(0);
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }
+
+  async function updateAnnotationReviewStatus(
+    annotationId: string,
+    action: "save_later" | "reject" | "applied_manual" | "applied_ai",
+  ) {
+    const response = await fetch("/api/share/feedback/annotation", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotationId, action }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update review status.");
+    }
+  }
+
+  function resolveFeedbackChapter(item: { sourceChapterId?: string | null; chapterTitle: string }) {
+    if (!novel) return null;
+    if (item.sourceChapterId) {
+      const byId = novel.chapters.find((c) => c.id === item.sourceChapterId);
+      if (byId) return byId;
+    }
+    return novel.chapters.find((c) => c.title === item.chapterTitle) ?? null;
+  }
+
+  function markFeedbackLinksReviewed(links: Array<{ token: string }>) {
+    for (const entry of links) {
+      fetch(`/api/share/${entry.token}`, { method: "PATCH" }).catch(() => {});
+    }
+  }
+
+  function advanceFeedbackQueue(currentItem: (typeof feedbackReviewQueue)[number], options?: { decrementPending?: boolean }) {
+    if (options?.decrementPending) {
+      setPendingFeedbackCount((prev) => Math.max(0, prev - 1));
+    }
+    setFeedbackReviewQueue((prev) => {
+      const currentIndex = prev.findIndex((entry) => entry.ann.id === currentItem.ann.id);
+      if (currentIndex === -1) return prev;
+      const nextQueue = prev.filter((entry) => entry.ann.id !== currentItem.ann.id);
+      if (nextQueue.length === 0) {
+        markFeedbackLinksReviewed(feedbackData);
+        setFeedbackReviewIdx(0);
+        setFeedbackReviewDone(true);
+        setFeedbackReviewMode(false);
+        return [];
+      }
+      const nextIdx = Math.min(currentIndex, nextQueue.length - 1);
+      setFeedbackReviewIdx(nextIdx);
+      const chapter = resolveFeedbackChapter(nextQueue[nextIdx]);
+      if (chapter) setActiveChapterId(chapter.id);
+      return nextQueue;
+    });
+  }
+
+  async function applyFeedbackRevision(
+    item: (typeof feedbackReviewQueue)[number],
+    revisedText: string,
+    action: "applied_manual" | "applied_ai",
+  ) {
+    if (!novel) return false;
+    const matchChapter = resolveFeedbackChapter(item);
+    if (!matchChapter) {
+      alert("Could not find this chapter in your novel.");
+      return false;
+    }
+    setActiveChapterId(matchChapter.id);
+
+    const currentContent = matchChapter.content || "";
+    const selectedText = item.ann.selectedText;
+    let applied = false;
+    let idx = currentContent.indexOf(selectedText);
+    if (idx >= 0) {
+      const newContent = currentContent.slice(0, idx) + revisedText + currentContent.slice(idx + selectedText.length);
+      updateChapter(matchChapter.id, { content: newContent }, true);
+      applied = true;
+    }
+    if (!applied) {
+      const normSelected = selectedText.replace(/\s+/g, " ").trim();
+      const normContent = currentContent.replace(/\s+/g, " ");
+      const normIdx = normContent.indexOf(normSelected);
+      if (normIdx !== -1) {
+        let origIdx = 0;
+        let normChars = 0;
+        while (origIdx < currentContent.length && normChars < normIdx) {
+          if (/\s/.test(currentContent[origIdx])) {
+            while (origIdx < currentContent.length && /\s/.test(currentContent[origIdx])) origIdx++;
+            normChars++;
+          } else {
+            origIdx++;
+            normChars++;
+          }
+        }
+        let endNorm = normChars;
+        let endOrig = origIdx;
+        while (endOrig < currentContent.length && endNorm < normIdx + normSelected.length) {
+          if (/\s/.test(currentContent[endOrig])) {
+            while (endOrig < currentContent.length && /\s/.test(currentContent[endOrig])) endOrig++;
+            endNorm++;
+          } else {
+            endOrig++;
+            endNorm++;
+          }
+        }
+        const newContent = currentContent.slice(0, origIdx) + revisedText + currentContent.slice(endOrig);
+        updateChapter(matchChapter.id, { content: newContent }, true);
+        applied = true;
+      }
+    }
+    if (!applied) {
+      const words = selectedText.split(/\s+/).filter(Boolean);
+      if (words.length >= 3) {
+        const startPhrase = words.slice(0, Math.min(4, words.length)).join(" ");
+        const endPhrase = words.slice(-Math.min(4, words.length)).join(" ");
+        const sIdx = currentContent.indexOf(startPhrase);
+        const eIdx = sIdx !== -1 ? currentContent.indexOf(endPhrase, sIdx) : -1;
+        if (sIdx !== -1 && eIdx !== -1) {
+          const end = eIdx + endPhrase.length;
+          const newContent = currentContent.slice(0, sIdx) + revisedText + currentContent.slice(end);
+          updateChapter(matchChapter.id, { content: newContent }, true);
+          applied = true;
+        }
+      }
+    }
+    if (!applied) {
+      alert("Could not locate this passage in the current chapter. The text may have changed since sharing.");
+      return false;
+    }
+    await updateAnnotationReviewStatus(item.ann.id, action);
+    setFeedbackReviewAccepted((c) => c + 1);
+    setFbPreviewOriginal(null);
+    setFbPreviewRevised(null);
+    setFbAiRecommendation(null);
+    setFbAiRecommendationLoading(false);
+    setFbManualEditOpen(false);
+    setFbManualEditText("");
+    fbAiRecommendationGenRef.current = null;
+    advanceFeedbackQueue(item, { decrementPending: true });
+    return true;
+  }
+
   // Fetch pending feedback count on mount / novelId change + poll every 60s
   useEffect(() => {
     const checkFeedback = () => {
       fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((data) => {
         if (Array.isArray(data)) {
-          let count = 0;
-          for (const fb of data) {
-            for (const ch of fb.chapters ?? []) {
-              count += (ch.annotations ?? []).length;
-            }
-          }
-          setPendingFeedbackCount(count);
+          const unresolvedNoteCount = data.reduce((sum, fb) => sum + Number(fb?.unresolvedCount ?? 0), 0);
+          const completedNoNoteCount = data.filter((fb) => Number(fb?.unresolvedCount ?? 0) === 0).length;
+          setPendingFeedbackCount(unresolvedNoteCount + completedNoNoteCount);
         }
       }).catch(() => {});
     };
@@ -1626,6 +1819,8 @@ function NovelWorkspacePage() {
     setFbAiRecommendationLoading(true);
     setFbPreviewOriginal(null);
     setFbPreviewRevised(null);
+    setFbManualEditOpen(false);
+    setFbManualEditText(item.ann.selectedText);
     const recSysMsg = [
       "You are a skilled prose editor reviewing beta reader feedback on a novel manuscript.",
       "A reader highlighted a passage and left a comment. Your job:",
@@ -1671,6 +1866,7 @@ function NovelWorkspacePage() {
         if (revised) {
           setFbPreviewOriginal(item.ann.selectedText);
           setFbPreviewRevised(revised);
+          setFbManualEditText(revised);
         }
       }
       setFbAiRecommendationLoading(false);
@@ -4724,6 +4920,21 @@ function NovelWorkspacePage() {
 
   /* applyBlockFormatting removed — formatting now applies to chapter body textarea via applyRawFormatting */
 
+  function getPreferredBlocCount(chapterSynopsis: string, chapterGoalWords?: number) {
+    if (blocCountMode === "custom") {
+      return Math.max(2, Math.min(8, Number.isFinite(customBlocCount) ? customBlocCount : 4));
+    }
+    const synopsisWords = chapterSynopsis.trim().split(/\s+/).filter(Boolean).length;
+    const targetWords = typeof chapterGoalWords === "number" && chapterGoalWords > 0 ? chapterGoalWords : 0;
+    let autoCount = 4;
+    if (targetWords >= 2600 || synopsisWords >= 180) autoCount = 6;
+    else if (targetWords >= 1800 || synopsisWords >= 120) autoCount = 5;
+    else if (targetWords > 0 && targetWords <= 900 && synopsisWords < 70) autoCount = 3;
+    autoCount = Math.max(2, Math.min(8, autoCount));
+    setLastAutoBlocCount(autoCount);
+    return autoCount;
+  }
+
   async function runGenerateChapterBlocks() {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
@@ -4737,7 +4948,7 @@ function NovelWorkspacePage() {
       return;
     }
 
-    const BLOC_COUNT = 4;
+    const BLOC_COUNT = getPreferredBlocCount(chapterSynopsis, activeChapter.goalWords);
     const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
     const systemMsg = `You are a senior developmental editor and story architect. Build a detailed scene-by-scene writer's blueprint. Think deeply about narrative flow, emotional pacing, and sensory grounding. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
 
@@ -11030,7 +11241,6 @@ function NovelWorkspacePage() {
               if (!novel) return;
               if (pendingFeedbackCount > 0) {
                 // Open feedback review mode
-                setFeedbackLoading(true);
                 setShowFeedbackPanel(true);
                 setFeedbackReviewMode(false);
                 setFeedbackReviewDone(false);
@@ -11038,29 +11248,9 @@ function NovelWorkspacePage() {
                 setFeedbackReviewAccepted(0);
                 setFeedbackReviewRejected(0);
                 setDismissedAnnotations(new Set());
-                fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
-                  if (Array.isArray(d)) {
-                    setFeedbackData(d);
-                    // Build the review queue from all feedback
-                    const queue: typeof feedbackReviewQueue = [];
-                    for (const fb of d) {
-                      for (const ch of fb.chapters ?? []) {
-                        for (const ann of ch.annotations ?? []) {
-                          queue.push({
-                            fbId: fb.id,
-                            token: fb.token,
-                            readerName: fb.readerName,
-                            chapterId: ch.id,
-                            chapterTitle: ch.title,
-                            chapterContent: ch.content,
-                            ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
-                          });
-                        }
-                      }
-                    }
-                    setFeedbackReviewQueue(queue);
-                  }
-                }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                setFbManualEditOpen(false);
+                setFbManualEditText("");
+                void refreshFeedbackReviewData();
               } else {
                 setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
                 setShareResult(null);
@@ -11129,7 +11319,6 @@ function NovelWorkspacePage() {
                 }}
                 onClick={() => {
                   if (!novel) return;
-                  setFeedbackLoading(true);
                   setShowFeedbackPanel(true);
                   setFeedbackReviewMode(false);
                   setFeedbackReviewDone(false);
@@ -11137,24 +11326,9 @@ function NovelWorkspacePage() {
                   setFeedbackReviewAccepted(0);
                   setFeedbackReviewRejected(0);
                   setDismissedAnnotations(new Set());
-                  fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
-                    if (Array.isArray(d)) {
-                      setFeedbackData(d);
-                      const queue: typeof feedbackReviewQueue = [];
-                      for (const fb of d) {
-                        for (const ch of fb.chapters ?? []) {
-                          for (const ann of ch.annotations ?? []) {
-                            queue.push({
-                              fbId: fb.id, token: fb.token, readerName: fb.readerName,
-                              chapterId: ch.id, chapterTitle: ch.title, chapterContent: ch.content,
-                              ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
-                            });
-                          }
-                        }
-                      }
-                      setFeedbackReviewQueue(queue);
-                    }
-                  }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                  setFbManualEditOpen(false);
+                  setFbManualEditText("");
+                  void refreshFeedbackReviewData();
                 }}
                 onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.35)"; }}
                 onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.18)"; }}
@@ -11243,21 +11417,97 @@ function NovelWorkspacePage() {
 
                 <div className="pw-toolbar-row">
                   {!aiOff && (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={storyAiBusyAction !== null}
-                    onClick={() => {
-                      const blocks = getSceneBlocks(activeChapter);
-                      if (blocks.length > 0) {
-                        setRegenConfirm({ message: "This will regenerate all blocs for this chapter. Existing bloc synopses could be overwritten.", onConfirm: () => { setRegenConfirm(null); void runGenerateChapterBlocks(); } });
-                      } else {
-                        void runGenerateChapterBlocks();
-                      }
-                    }}
-                  >
-                    {storyAiBusyAction === `chapter-blocks-${activeChapter.id}` ? "Generating…" : "✦ Generate blocs"}
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={storyAiBusyAction !== null}
+                      onClick={() => {
+                        const blocks = getSceneBlocks(activeChapter);
+                        if (blocks.length > 0) {
+                          setRegenConfirm({ message: "This will regenerate all blocs for this chapter. Existing bloc synopses could be overwritten.", onConfirm: () => { setRegenConfirm(null); void runGenerateChapterBlocks(); } });
+                        } else {
+                          void runGenerateChapterBlocks();
+                        }
+                      }}
+                    >
+                      {storyAiBusyAction === `chapter-blocks-${activeChapter.id}` ? "Generating…" : "✦ Generate blocs"}
+                    </button>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid var(--pw-border-light)",
+                        background: "var(--pw-surface-alt)",
+                      }}
+                      title="Choose how many blocs to generate"
+                    >
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                        Blocs
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBlocCountMode("auto")}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "3px 8px",
+                          borderRadius: 999,
+                          border: blocCountMode === "auto" ? "1px solid rgba(var(--accent-rgb,124,92,252),0.25)" : "1px solid transparent",
+                          background: blocCountMode === "auto" ? "rgba(var(--accent-rgb,124,92,252),0.12)" : "transparent",
+                          color: blocCountMode === "auto" ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBlocCountMode("custom")}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "3px 8px",
+                          borderRadius: 999,
+                          border: blocCountMode === "custom" ? "1px solid rgba(var(--accent-rgb,124,92,252),0.25)" : "1px solid transparent",
+                          background: blocCountMode === "custom" ? "rgba(var(--accent-rgb,124,92,252),0.12)" : "transparent",
+                          color: blocCountMode === "custom" ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Custom
+                      </button>
+                      {blocCountMode === "custom" ? (
+                        <input
+                          type="number"
+                          min={2}
+                          max={8}
+                          value={customBlocCount}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            setCustomBlocCount(Number.isFinite(value) ? Math.max(2, Math.min(8, value)) : 4);
+                          }}
+                          title="Custom bloc count (2-8)"
+                          style={{
+                            width: 46,
+                            fontSize: 11,
+                            padding: "3px 6px",
+                            borderRadius: 6,
+                            border: "1px solid var(--pw-border)",
+                            background: "var(--pw-surface)",
+                            color: "var(--pw-text)",
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 11, color: "var(--pw-text-dim)", minWidth: 42, textAlign: "center" }}>
+                          {lastAutoBlocCount ?? 4}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   )}
                   {(() => {
                     const chIdx = novel.chapters.findIndex((c) => c.id === activeChapter.id);
@@ -13345,25 +13595,9 @@ function NovelWorkspacePage() {
                             setFeedbackReviewAccepted(0);
                             setFeedbackReviewRejected(0);
                             setDismissedAnnotations(new Set());
-                            setFeedbackLoading(true);
-                            fetch("/api/share/feedback").then((r) => r.ok ? r.json() : []).then((d) => {
-                              if (Array.isArray(d)) {
-                                setFeedbackData(d);
-                                const queue: typeof feedbackReviewQueue = [];
-                                for (const fb of d) {
-                                  for (const ch of fb.chapters ?? []) {
-                                    for (const ann of ch.annotations ?? []) {
-                                      queue.push({
-                                        fbId: fb.id, token: fb.token, readerName: fb.readerName,
-                                        chapterId: ch.id, chapterTitle: ch.title, chapterContent: ch.content,
-                                        ann: { id: ann.id, selectedText: ann.selectedText, startOffset: ann.startOffset, endOffset: ann.endOffset, note: ann.note, type: ann.type },
-                                      });
-                                    }
-                                  }
-                                }
-                                setFeedbackReviewQueue(queue);
-                              }
-                            }).catch(() => {}).finally(() => setFeedbackLoading(false));
+                            setFbManualEditOpen(false);
+                            setFbManualEditText("");
+                            void refreshFeedbackReviewData();
                           }} style={{ color: "var(--pw-success, #10b981)" }}>Review</button>
                         )}
                         <button type="button" className="pw-export-tool-btn" onClick={async () => {
@@ -13394,7 +13628,7 @@ function NovelWorkspacePage() {
             )}
 
             {/* No feedback — jump to share modal */}
-            {!feedbackLoading && feedbackReviewQueue.length === 0 && !feedbackReviewDone && (
+            {!feedbackLoading && feedbackReviewQueue.length === 0 && feedbackData.length === 0 && !feedbackReviewDone && (
               <div style={{ padding: 40, textAlign: "center" }}>
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim, #6b7280)" strokeWidth="1.5" strokeLinecap="round" style={{ margin: "0 auto 14px", display: "block" }}>
                   <circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/>
@@ -13419,6 +13653,53 @@ function NovelWorkspacePage() {
                       fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
                     }
                   }}>Share Chapters</button>
+                </div>
+              </div>
+            )}
+
+            {/* Review submitted with no actionable inline notes */}
+            {!feedbackLoading && feedbackReviewQueue.length === 0 && feedbackData.length > 0 && !feedbackReviewDone && (
+              <div style={{ padding: 40, textAlign: "center" }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim, #6b7280)" strokeWidth="1.5" strokeLinecap="round" style={{ margin: "0 auto 14px", display: "block" }}>
+                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                </svg>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>Review Completed</h3>
+                <p style={{ fontSize: 13, color: "var(--pw-text-muted)", lineHeight: 1.5, marginBottom: 20 }}>
+                  A reader finished reviewing. No unresolved inline notes were left.
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    className="btn pw-cancel-btn"
+                    onClick={() => {
+                      markFeedbackLinksReviewed(feedbackData);
+                      setPendingFeedbackCount(0);
+                      setShowFeedbackPanel(false);
+                    }}
+                  >
+                    Mark as seen
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: 13, padding: "8px 20px" }}
+                    onClick={() => {
+                      setShowFeedbackPanel(false);
+                      if (novel) {
+                        setSelectedShareChapterIds(novel.chapters.map((c) => c.id));
+                        setShareResult(null);
+                        setShareError(null);
+                        setSharePassword("");
+                        setShareExpiryDays(7);
+                        setShareRecipientEmail("");
+                        setShowShareModal(true);
+                        setShareLinksLoading(true);
+                        fetch("/api/share").then((r) => r.ok ? r.json() : []).then((linkData) => { if (Array.isArray(linkData)) setShareLinks(linkData); }).catch(() => {}).finally(() => setShareLinksLoading(false));
+                      }
+                    }}
+                  >
+                    Share Chapters
+                  </button>
                 </div>
               </div>
             )}
@@ -13500,11 +13781,13 @@ function NovelWorkspacePage() {
                       setFbPreviewGenerating(false);
                       setFbAiRecommendation(null);
                       setFbAiRecommendationLoading(false);
+                      setFbManualEditOpen(false);
+                      setFbManualEditText("");
                       fbAiRecommendationGenRef.current = null;
                       // Jump to the first feedback's chapter
                       const first = feedbackReviewQueue[0];
                       if (first && novel) {
-                        const matchChapter = novel.chapters.find((c) => c.title === first.chapterTitle);
+                        const matchChapter = resolveFeedbackChapter(first);
                         if (matchChapter) setActiveChapterId(matchChapter.id);
                       }
                     }}>
@@ -13526,7 +13809,9 @@ function NovelWorkspacePage() {
               if (!item) return null;
               const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-muted)";
               const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "rgba(255,255,255,0.03)";
-              const progress = ((feedbackReviewIdx) / feedbackReviewQueue.length) * 100;
+              const reviewedSoFar = feedbackReviewAccepted + feedbackReviewRejected;
+              const totalInSession = reviewedSoFar + feedbackReviewQueue.length;
+              const progress = totalInSession > 0 ? (reviewedSoFar / totalInSession) * 100 : 0;
 
               return (
                 <div>
@@ -13534,7 +13819,7 @@ function NovelWorkspacePage() {
                   <div style={{ padding: "16px 20px 0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)" }}>
-                        Note {feedbackReviewIdx + 1} of {feedbackReviewQueue.length}
+                        Note {reviewedSoFar + 1} of {totalInSession}
                       </span>
                       <span style={{ fontSize: 11, color: "var(--pw-text-muted)" }}>
                         {feedbackReviewAccepted} accepted · {feedbackReviewRejected} skipped
@@ -13697,56 +13982,104 @@ function NovelWorkspacePage() {
                     </div>
                   )}
 
-                  {/* ─── Action buttons ─── */}
-                  <div style={{ padding: "0 20px 20px", display: "flex", gap: 10 }}>
-                    {/* Skip / Reject */}
+                  {/* ─── Manual edit panel ─── */}
+                  <div style={{ padding: "0 20px 10px" }}>
                     <button
                       type="button"
                       className="btn"
-                      style={{
-                        flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
-                        border: "1px solid var(--pw-border)",
-                        background: "transparent", color: "var(--pw-text-muted)",
-                        cursor: "pointer", transition: "all 0.15s",
-                      }}
-                      disabled={feedbackReviewApplying || fbPreviewGenerating}
+                      style={{ fontSize: 12, padding: "7px 10px", borderRadius: 8 }}
                       onClick={() => {
-                        // If rejecting a preview, just clear it and stay on this item
-                        if (fbPreviewRevised !== null) {
-                          setFbPreviewOriginal(null);
-                          setFbPreviewRevised(null);
-                          return;
-                        }
-                        // Skip — move to next
+                        setFbManualEditOpen((open) => !open);
+                        if (!fbManualEditText.trim()) setFbManualEditText(fbPreviewRevised || item.ann.selectedText);
+                      }}
+                    >
+                      {fbManualEditOpen ? "Hide Manual Edit" : "Manual Edit"}
+                    </button>
+                    {fbManualEditOpen && (
+                      <div style={{ marginTop: 8 }}>
+                        <textarea
+                          value={fbManualEditText}
+                          onChange={(e) => setFbManualEditText(e.target.value)}
+                          placeholder="Edit the highlighted passage exactly how you want it."
+                          style={{
+                            width: "100%",
+                            minHeight: 96,
+                            borderRadius: 10,
+                            border: "1px solid var(--pw-border)",
+                            background: "var(--pw-surface-alt)",
+                            color: "var(--pw-text)",
+                            padding: "10px 12px",
+                            fontSize: 13,
+                            lineHeight: 1.6,
+                            resize: "vertical",
+                          }}
+                        />
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            disabled={feedbackReviewApplying || !fbManualEditText.trim()}
+                            style={{ fontSize: 12, padding: "8px 12px" }}
+                            onClick={async () => {
+                              if (!fbManualEditText.trim()) return;
+                              setFeedbackReviewApplying(true);
+                              try {
+                                await applyFeedbackRevision(item, fbManualEditText.trim(), "applied_manual");
+                              } finally {
+                                setFeedbackReviewApplying(false);
+                              }
+                            }}
+                          >
+                            Apply Manual Edit
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ─── Action buttons ─── */}
+                  <div style={{ padding: "0 20px 20px", display: "flex", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10 }}
+                      disabled={feedbackReviewApplying || fbPreviewGenerating}
+                      onClick={async () => {
+                        await updateAnnotationReviewStatus(item.ann.id, "save_later");
+                        setFbPreviewOriginal(null);
+                        setFbPreviewRevised(null);
+                        setFbAiRecommendation(null);
+                        setFbAiRecommendationLoading(false);
+                        setFbManualEditOpen(false);
+                        setFbManualEditText("");
+                        fbAiRecommendationGenRef.current = null;
+                        advanceFeedbackQueue(item);
+                      }}
+                    >
+                      Save for later
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10 }}
+                      disabled={feedbackReviewApplying || fbPreviewGenerating}
+                      onClick={async () => {
+                        await updateAnnotationReviewStatus(item.ann.id, "reject");
                         setFeedbackReviewRejected((c) => c + 1);
                         setFbPreviewOriginal(null);
                         setFbPreviewRevised(null);
                         setFbAiRecommendation(null);
                         setFbAiRecommendationLoading(false);
+                        setFbManualEditOpen(false);
+                        setFbManualEditText("");
                         fbAiRecommendationGenRef.current = null;
-                        const nextIdx = feedbackReviewIdx + 1;
-                        if (nextIdx >= feedbackReviewQueue.length) {
-                          const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
-                          for (const t of tokens) {
-                            fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
-                          }
-                          setFeedbackReviewDone(true);
-                          setFeedbackReviewMode(false);
-                          setPendingFeedbackCount(0);
-                        } else {
-                          setFeedbackReviewIdx(nextIdx);
-                          const next = feedbackReviewQueue[nextIdx];
-                          if (next && novel && next.chapterTitle !== item.chapterTitle) {
-                            const matchChapter = novel.chapters.find((c) => c.title === next.chapterTitle);
-                            if (matchChapter) setActiveChapterId(matchChapter.id);
-                          }
-                        }
+                        advanceFeedbackQueue(item, { decrementPending: true });
                       }}
                     >
-                      {fbPreviewRevised !== null ? "Reject" : "Skip"}
+                      Reject note
                     </button>
 
-                    {/* Regenerate — only visible when a preview exists */}
                     {fbPreviewRevised !== null && (
                       <button
                         type="button"
@@ -13755,12 +14088,9 @@ function NovelWorkspacePage() {
                           flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
                           border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
                           background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", color: "var(--pw-accent, #b8a4ff)",
-                          cursor: fbPreviewGenerating ? "wait" : "pointer", transition: "all 0.15s",
-                          opacity: fbPreviewGenerating ? 0.6 : 1,
                         }}
                         disabled={fbPreviewGenerating}
                         onClick={async () => {
-                          // Re-generate — call AI again
                           setFbPreviewGenerating(true);
                           try {
                             const sysMsg = [
@@ -13802,6 +14132,7 @@ function NovelWorkspacePage() {
                                 revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
                               }
                               setFbPreviewRevised(revised);
+                              setFbManualEditText(revised);
                             } else {
                               alert("AI could not regenerate. Try again.");
                             }
@@ -13812,21 +14143,10 @@ function NovelWorkspacePage() {
                           }
                         }}
                       >
-                        {fbPreviewGenerating ? (
-                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                            Regenerating...
-                          </span>
-                        ) : (
-                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-                            Regenerate
-                          </span>
-                        )}
+                        {fbPreviewGenerating ? "Regenerating..." : "Regenerate"}
                       </button>
                     )}
 
-                    {/* Generate / Accept */}
                     <button
                       type="button"
                       className="btn btn-primary"
@@ -13837,210 +14157,78 @@ function NovelWorkspacePage() {
                       }}
                       disabled={feedbackReviewApplying || fbPreviewGenerating}
                       onClick={async () => {
-                        if (!novel) return;
-                        const matchChapter = novel.chapters.find((c) => c.title === item.chapterTitle);
-                        if (!matchChapter) {
-                          alert("Could not find this chapter in your novel.");
-                          return;
-                        }
-                        setActiveChapterId(matchChapter.id);
-
                         if (fbPreviewRevised !== null) {
-                          /* ═══ ACCEPT — apply the previewed revision ═══ */
                           setFeedbackReviewApplying(true);
                           try {
-                            const currentContent = matchChapter.content || "";
-                            const selectedText = item.ann.selectedText;
-
-                            // Try exact match first
-                            let idx = currentContent.indexOf(selectedText);
-
-                            // Fuzzy match: try with normalised whitespace
-                            if (idx === -1) {
-                              const normSelected = selectedText.replace(/\s+/g, " ").trim();
-                              const normContent = currentContent.replace(/\s+/g, " ");
-                              const normIdx = normContent.indexOf(normSelected);
-                              if (normIdx !== -1) {
-                                // Map normalised offset back to original content
-                                let origChars = 0;
-                                let origIdx = 0;
-                                let normChars = 0;
-                                while (origIdx < currentContent.length && normChars < normIdx) {
-                                  if (/\s/.test(currentContent[origIdx])) {
-                                    while (origIdx < currentContent.length && /\s/.test(currentContent[origIdx])) origIdx++;
-                                    normChars++;
-                                  } else {
-                                    origIdx++;
-                                    normChars++;
-                                  }
-                                }
-                                origChars = origIdx;
-                                // Find the end in original
-                                let endNorm = normChars;
-                                let endOrig = origIdx;
-                                while (endOrig < currentContent.length && endNorm < normIdx + normSelected.length) {
-                                  if (/\s/.test(currentContent[endOrig])) {
-                                    while (endOrig < currentContent.length && /\s/.test(currentContent[endOrig])) endOrig++;
-                                    endNorm++;
-                                  } else {
-                                    endOrig++;
-                                    endNorm++;
-                                  }
-                                }
-                                idx = origChars;
-                                const origSelectedLen = endOrig - origChars;
-                                const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + origSelectedLen);
-                                updateChapter(matchChapter.id, { content: newContent }, true);
-                                setFeedbackReviewAccepted((c) => c + 1);
-                                idx = -2; // sentinel: already applied
-                              }
-                            }
-
-                            // Context-based fallback: use surrounding text to locate the passage
-                            if (idx === -1) {
-                              const words = selectedText.split(/\s+/).filter(Boolean);
-                              if (words.length >= 3) {
-                                const startPhrase = words.slice(0, Math.min(4, words.length)).join(" ");
-                                const endPhrase = words.slice(-Math.min(4, words.length)).join(" ");
-                                const sIdx = currentContent.indexOf(startPhrase);
-                                const eIdx = sIdx !== -1 ? currentContent.indexOf(endPhrase, sIdx) : -1;
-                                if (sIdx !== -1 && eIdx !== -1) {
-                                  const end = eIdx + endPhrase.length;
-                                  const newContent = currentContent.slice(0, sIdx) + fbPreviewRevised + currentContent.slice(end);
-                                  updateChapter(matchChapter.id, { content: newContent }, true);
-                                  setFeedbackReviewAccepted((c) => c + 1);
-                                  idx = -2; // sentinel: already applied
-                                }
-                              }
-                            }
-
-                            if (idx >= 0) {
-                              // Exact match found — apply directly
-                              const newContent = currentContent.slice(0, idx) + fbPreviewRevised + currentContent.slice(idx + selectedText.length);
-                              updateChapter(matchChapter.id, { content: newContent }, true);
-                              setFeedbackReviewAccepted((c) => c + 1);
-                            } else if (idx === -1) {
-                              alert("Could not locate this passage in the current chapter. The text may have changed since sharing. Skipping this note.");
-                            }
+                            await applyFeedbackRevision(item, fbPreviewRevised, "applied_ai");
                           } finally {
                             setFeedbackReviewApplying(false);
-                            // Sync sceneBlocks from new content so block mode stays in sync
-                            if (novel) {
-                              const updatedCh = novel.chapters.find(c => c.id === matchChapter.id);
-                              if (updatedCh && updatedCh.sceneBlocks && updatedCh.sceneBlocks.length > 0) {
-                                const paras = updatedCh.content.split(/\n\n+/).filter(Boolean);
-                                let pi = 0;
-                                const syncedBlocks = updatedCh.sceneBlocks.map(b => {
-                                  if (!b.prose?.trim()) return b;
-                                  const bpc = b.prose.split(/\n\n+/).filter(Boolean).length || 1;
-                                  const np = paras.slice(pi, pi + bpc).join("\n\n");
-                                  pi += bpc;
-                                  return { ...b, prose: np || b.prose };
-                                });
-                                updateSceneBlocks(matchChapter.id, syncedBlocks);
-                              }
-                            }
                           }
-                          // Clear preview and move to next
-                          setFbPreviewOriginal(null);
-                          setFbPreviewRevised(null);
-                          setFbAiRecommendation(null);
-                          setFbAiRecommendationLoading(false);
-                          fbAiRecommendationGenRef.current = null;
-                          const nextIdx = feedbackReviewIdx + 1;
-                          if (nextIdx >= feedbackReviewQueue.length) {
-                            const tokens = [...new Set(feedbackReviewQueue.map((q) => q.token))];
-                            for (const t of tokens) {
-                              fetch(`/api/share/${t}`, { method: "PATCH" }).catch(() => {});
+                          return;
+                        }
+                        setFbPreviewGenerating(true);
+                        setFbPreviewOriginal(item.ann.selectedText);
+                        try {
+                          const fbSysMsg = [
+                            "You are a careful, skilled prose editor working on a novel manuscript.",
+                            "A beta reader highlighted a passage and left feedback. Your job:",
+                            "1. Revise ONLY the highlighted passage to address the reader's concern.",
+                            "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
+                            "3. Keep the same tense, POV, and narrative perspective.",
+                            "4. Do NOT add new plot points, characters, or information not implied by the original.",
+                            "5. Do NOT expand the passage significantly — keep roughly the same length.",
+                            "6. Do NOT rewrite surrounding text — only revise what was highlighted.",
+                            "7. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
+                            "8. If the feedback is vague or you're unsure, make the smallest meaningful improvement.",
+                          ].join("\n");
+                          const fbUserPrompt = [
+                            `HIGHLIGHTED PASSAGE:`,
+                            `"""`,
+                            item.ann.selectedText,
+                            `"""`,
+                            ``,
+                            `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
+                            ``,
+                            `SURROUNDING CONTEXT (for tone/flow — do NOT modify this, only use for reference):`,
+                            `"""`,
+                            item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
+                            `[HIGHLIGHTED PASSAGE GOES HERE]`,
+                            item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
+                            `"""`,
+                            ``,
+                            `Now revise the highlighted passage. Return ONLY the revised text, nothing else:`,
+                          ].join("\n");
+                          const fbAiText = await requestOpenRouterText(fbUserPrompt, 1200, 120000, fbSysMsg, false);
+                          if (fbAiText.trim()) {
+                            let revised = fbAiText.trim();
+                            if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
+                              revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
                             }
-                            setFeedbackReviewDone(true);
-                            setFeedbackReviewMode(false);
-                            setPendingFeedbackCount(0);
+                            setFbPreviewRevised(revised);
+                            setFbManualEditText(revised);
                           } else {
-                            setFeedbackReviewIdx(nextIdx);
-                            const next = feedbackReviewQueue[nextIdx];
-                            if (next && next.chapterTitle !== item.chapterTitle) {
-                              const mc = novel.chapters.find((c) => c.title === next.chapterTitle);
-                              if (mc) setActiveChapterId(mc.id);
-                            }
+                            setFbPreviewOriginal(null);
+                            alert("AI could not generate a revision. Try again.");
                           }
-                        } else {
-                          /* ═══ GENERATE — call AI and show preview ═══ */
-                          setFbPreviewGenerating(true);
-                          setFbPreviewOriginal(item.ann.selectedText);
-                          try {
-                            const fbSysMsg = [
-                              "You are a careful, skilled prose editor working on a novel manuscript.",
-                              "A beta reader highlighted a passage and left feedback. Your job:",
-                              "1. Revise ONLY the highlighted passage to address the reader's concern.",
-                              "2. PRESERVE the author's unique voice, style, tone, sentence rhythm, and vocabulary.",
-                              "3. Keep the same tense, POV, and narrative perspective.",
-                              "4. Do NOT add new plot points, characters, or information not implied by the original.",
-                              "5. Do NOT expand the passage significantly — keep roughly the same length.",
-                              "6. Do NOT rewrite surrounding text — only revise what was highlighted.",
-                              "7. Return ONLY the revised passage text. No explanations, labels, quotes, or meta-commentary.",
-                              "8. If the feedback is vague or you're unsure, make the smallest meaningful improvement.",
-                            ].join("\n");
-                            const fbUserPrompt = [
-                              `HIGHLIGHTED PASSAGE:`,
-                              `"""`,
-                              item.ann.selectedText,
-                              `"""`,
-                              ``,
-                              `READER'S FEEDBACK (${item.ann.type}): "${item.ann.note}"`,
-                              ``,
-                              `SURROUNDING CONTEXT (for tone/flow — do NOT modify this, only use for reference):`,
-                              `"""`,
-                              item.chapterContent.slice(Math.max(0, item.ann.startOffset - 600), item.ann.startOffset),
-                              `[HIGHLIGHTED PASSAGE GOES HERE]`,
-                              item.chapterContent.slice(item.ann.endOffset, item.ann.endOffset + 600),
-                              `"""`,
-                              ``,
-                              `Now revise the highlighted passage. Return ONLY the revised text, nothing else:`,
-                            ].join("\n");
-                            const fbAiText = await requestOpenRouterText(fbUserPrompt, 1200, 120000, fbSysMsg, false);
-                            if (fbAiText.trim()) {
-                              let revised = fbAiText.trim();
-                              if ((revised.startsWith('"""') && revised.endsWith('"""')) || (revised.startsWith('"') && revised.endsWith('"') && !item.ann.selectedText.startsWith('"'))) {
-                                revised = revised.replace(/^"{1,3}/, "").replace(/"{1,3}$/, "").trim();
-                              }
-                              setFbPreviewRevised(revised);
-                            } else {
-                              setFbPreviewOriginal(null);
-                              alert("AI could not generate a revision. Try again.");
-                            }
-                          } catch (err) {
-                            if (!isCancelledError(err)) {
-                              setFbPreviewOriginal(null);
-                              alert("Failed to generate. Check your AI connection.");
-                            }
-                          } finally {
-                            setFbPreviewGenerating(false);
+                        } catch (err) {
+                          if (!isCancelledError(err)) {
+                            setFbPreviewOriginal(null);
+                            alert("Failed to generate. Check your AI connection.");
                           }
+                        } finally {
+                          setFbPreviewGenerating(false);
                         }
                       }}
                     >
-                      {feedbackReviewApplying ? (
-                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                          Applying...
-                        </span>
-                      ) : fbPreviewGenerating ? (
-                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                          Generating...
-                        </span>
-                      ) : fbPreviewRevised !== null ? (
-                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                          Accept Change
-                        </span>
-                      ) : fbAiRecommendationLoading ? (
-                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                          <span style={{ width: 14, height: 14, border: "2px solid var(--pw-border)", borderTopColor: "var(--pw-text)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                          AI Analyzing...
-                        </span>
-                      ) : "Generate AI Fix"}
+                      {feedbackReviewApplying
+                        ? "Applying..."
+                        : fbPreviewGenerating
+                          ? "Generating..."
+                          : fbPreviewRevised !== null
+                            ? "Accept AI Change"
+                            : fbAiRecommendationLoading
+                              ? "AI Analyzing..."
+                              : "Generate AI Fix"}
                     </button>
                   </div>
                 </div>
@@ -14055,7 +14243,7 @@ function NovelWorkspacePage() {
                 </svg>
                 <h3 style={{ fontSize: 20, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>Feedback Complete</h3>
                 <p style={{ fontSize: 14, color: "var(--pw-text-muted)", lineHeight: 1.6, marginBottom: 24, maxWidth: 340, margin: "0 auto 24px" }}>
-                  All {feedbackReviewQueue.length} note{feedbackReviewQueue.length !== 1 ? "s" : ""} reviewed.
+                  All {(feedbackReviewAccepted + feedbackReviewRejected)} note{(feedbackReviewAccepted + feedbackReviewRejected) !== 1 ? "s" : ""} reviewed.
                   {feedbackReviewAccepted > 0 && <><br/><span style={{ color: "#10b981", fontWeight: 600 }}>{feedbackReviewAccepted} applied</span></>}
                   {feedbackReviewRejected > 0 && <><span style={{ color: "var(--pw-text-dim)" }}> · {feedbackReviewRejected} skipped</span></>}
                 </p>

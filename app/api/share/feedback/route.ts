@@ -4,6 +4,7 @@ import { verifySessionToken, COOKIE_NAME } from "@/lib/bw-auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+const UNRESOLVED_REVIEW_STATUSES = ["pending", "saved_for_later"] as const;
 
 /**
  * GET /api/share/feedback — Authenticated: author views received feedback
@@ -32,6 +33,7 @@ export async function GET() {
           orderBy: { order: "asc" },
           include: {
             annotations: {
+              where: { reviewStatus: { in: [...UNRESOLVED_REVIEW_STATUSES] } },
               orderBy: { createdAt: "asc" },
             },
           },
@@ -47,8 +49,10 @@ export async function GET() {
         readerName: link.readerName,
         status: link.status,
         createdAt: link.createdAt.toISOString(),
+        unresolvedCount: link.chapters.reduce((count, ch) => count + ch.annotations.length, 0),
         chapters: link.chapters.map((ch) => ({
           id: ch.id,
+          sourceChapterId: ch.sourceChapterId,
           title: ch.chapterTitle,
           content: ch.chapterContent,
           order: ch.order,
@@ -59,6 +63,9 @@ export async function GET() {
             endOffset: a.endOffset,
             note: a.note,
             type: a.type,
+            reviewStatus: a.reviewStatus,
+            reviewedAt: a.reviewedAt?.toISOString() ?? null,
+            reviewerAction: a.reviewerAction,
             createdAt: a.createdAt.toISOString(),
           })),
         })),

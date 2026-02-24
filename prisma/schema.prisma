@@ -242,6 +242,7 @@ model ShareLink {
 model SharedChapter {
   id             String       @id @default(cuid())
   shareLinkId    String
+  sourceChapterId String?
   chapterTitle   String
   chapterContent String
   order          Int
@@ -260,9 +261,13 @@ model Annotation {
   endOffset       Int
   note            String
   type            String   @default("comment") // "comment" | "suggestion" | "issue"
+  reviewStatus    String   @default("pending") // "pending" | "saved_for_later" | "applied" | "rejected"
+  reviewedAt      DateTime?
+  reviewerAction  String?  // "manual" | "ai" | "reject" | "save_later"
   createdAt       DateTime @default(now())
 
   sharedChapter SharedChapter @relation(fields: [sharedChapterId], references: [id], onDelete: Cascade)
 
   @@index([sharedChapterId])
+  @@index([reviewStatus])
 }

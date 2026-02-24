@@ -294,6 +294,7 @@ export async function POST(request: Request) {
     const selectedChapters = chapters
       .filter((ch) => chapterIds.includes(ch.id))
       .map((ch, idx) => ({
+        sourceChapterId: ch.id,
         chapterTitle: ch.title || `Chapter ${idx + 1}`,
         chapterContent: extractProse(ch.content || ""),
         order: idx,
