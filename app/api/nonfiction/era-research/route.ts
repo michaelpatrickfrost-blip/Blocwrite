@@ -237,15 +237,20 @@ export async function POST(req: NextRequest) {
       if (!deDupe.has(key)) deDupe.set(key, candidate);
     }
 
-    const ranked = [...deDupe.values()]
+    const rankedAll = [...deDupe.values()]
       .map((candidate) => ({
         candidate,
         score: scoreCandidate(query, candidate),
       }))
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => b.score - a.score);
+
+    const ranked = rankedAll
+      .filter((x) => x.score >= 0.35)
       .slice(0, limit);
 
-    const notes: EraResearchNote[] = ranked.map(({ candidate, score }, idx) => {
+    const finalRanked = ranked.length > 0 ? ranked : rankedAll.slice(0, Math.min(limit, 5));
+
+    const notes: EraResearchNote[] = finalRanked.map(({ candidate, score }, idx) => {
       const combined = `${candidate.title} ${candidate.summary}`;
       return {
         id: `ern-${Date.now()}-${idx}`,
