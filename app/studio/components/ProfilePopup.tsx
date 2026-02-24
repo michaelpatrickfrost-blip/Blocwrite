@@ -618,7 +618,7 @@ export function ProfilePopup({
                     disabled={modelsLoading}
                     title="Browse available models"
                   >
-                    {modelsLoading ? "..." : "Browse"}
+                    Browse
                   </button>
                   <button
                     type="button"
@@ -628,7 +628,7 @@ export function ProfilePopup({
                     title="Refresh model list"
                     style={{ minWidth: 0, padding: "0 10px" }}
                   >
-                    {modelsLoading ? "..." : "↻"}
+                    ↻
                   </button>
                 </div>
                 {modelsError && (
