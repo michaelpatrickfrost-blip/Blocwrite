@@ -2665,10 +2665,12 @@ a { color: inherit; text-decoration: none; }
 /* ── Provider cards ── */
 .pw-settings-provider-cards {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .pw-settings-provider-card {
   flex: 1;
+  min-width: 120px;
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;

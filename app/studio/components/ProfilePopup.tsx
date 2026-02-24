@@ -638,7 +638,7 @@ export function ProfilePopup({
                   </p>
                 )}
                 {showModelDropdown && models.length > 0 && (
-                  <div className="pw-settings-model-dropdown" ref={modelDropdownRef}>
+                  <div className="pw-settings-model-dropdown">
                     <input
                       className="pw-settings-model-search"
                       type="text"
