@@ -74,7 +74,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "lmstudio";
+type AssistantProviderId = "openrouter" | "arli" | "lmstudio";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -691,6 +691,13 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     requiresKey: true,
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4o-mini",
+  },
+  {
+    id: "arli",
+    label: "Arli AI",
+    requiresKey: true,
+    defaultBaseUrl: "https://api.arliai.com/v1",
+    defaultModel: "google/gemma-3-27b-it",
   },
   {
     id: "lmstudio",

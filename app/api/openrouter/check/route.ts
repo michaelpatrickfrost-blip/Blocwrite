@@ -2,20 +2,23 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type ProviderId = "openrouter" | "lmstudio";
+type ProviderId = "openrouter" | "arli" | "lmstudio";
 
 const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
+  arli: "https://api.arliai.com/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
 };
 const CHECK_TIMEOUT_MS = 15000;
 
 function providerLabel(provider: ProviderId) {
-  return provider === "openrouter" ? "OpenRouter" : "LM Studio";
+  if (provider === "openrouter") return "OpenRouter";
+  if (provider === "arli") return "Arli AI";
+  return "LM Studio";
 }
 
 function normalizeProvider(raw: string | null): ProviderId {
-  if (raw === "openrouter" || raw === "lmstudio") return raw;
+  if (raw === "openrouter" || raw === "arli" || raw === "lmstudio") return raw;
   return "openrouter";
 }
 
@@ -32,6 +35,10 @@ function cleanBaseUrl(raw: string | null, provider: ProviderId) {
   if (provider === "openrouter") {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
+  }
+  if (provider === "arli") {
+    if (normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/v1`;
   }
   if (provider === "lmstudio") {
     const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
@@ -75,7 +82,7 @@ export async function POST(request: Request) {
     const provider = normalizeProvider(request.headers.get("x-provider"));
     const apiKey = normalizeApiKey(request.headers.get("x-provider-key") || request.headers.get("x-openrouter-key"));
     const baseUrl = cleanBaseUrl(request.headers.get("x-provider-base-url"), provider);
-    const requiresKey = provider === "openrouter";
+    const requiresKey = provider === "openrouter" || provider === "arli";
 
     if (requiresKey && !apiKey) {
       return NextResponse.json({ ok: false, error: "Missing API key." }, { status: 400 });

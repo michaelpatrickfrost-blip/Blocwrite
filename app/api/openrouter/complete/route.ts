@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 // Force long-lived connections for slow model providers
 export const maxDuration = 900; // 15 minutes for self-hosted/slow providers
 
-type ProviderId = "openrouter" | "lmstudio";
+type ProviderId = "openrouter" | "arli" | "lmstudio";
 type CompletionRequest = {
   provider?: ProviderId;
   model?: string;
@@ -28,15 +28,17 @@ type OpenRouterErrorPayload = {
 
 const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
+  arli: "https://api.arliai.com/v1",
   lmstudio: "http://127.0.0.1:1234/v1",
 };
 const PROVIDER_TIMEOUT_MS: Record<ProviderId, number> = {
   openrouter: 300000,
+  arli: 300000,
   lmstudio: 300000,
 };
 
 function normalizeProvider(raw: unknown): ProviderId {
-  if (raw === "openrouter" || raw === "lmstudio") return raw;
+  if (raw === "openrouter" || raw === "arli" || raw === "lmstudio") return raw;
   return "openrouter";
 }
 
@@ -57,6 +59,10 @@ function cleanBaseUrl(raw: unknown, provider: ProviderId) {
   if (provider === "openrouter") {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
+  }
+  if (provider === "arli") {
+    if (normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/v1`;
   }
   if (provider === "lmstudio") {
     const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
@@ -90,7 +96,8 @@ function extractUpstreamError(payload: OpenRouterErrorPayload) {
 }
 
 function normalizeProviderError(message: string, status: number, model: string, provider: ProviderId) {
-  const providerLabel = provider === "openrouter" ? "OpenRouter" : "LM Studio";
+  const providerLabel =
+    provider === "openrouter" ? "OpenRouter" : provider === "arli" ? "Arli AI" : "LM Studio";
   if (message === '{"detail":"Bad Request"}' || message.toLowerCase() === "bad request") {
     return `${providerLabel} rejected this request for model "${model}". Choose a different model or shorten the request.`;
   }
@@ -118,7 +125,7 @@ export async function POST(request: Request) {
       typeof body.temperature === "number" && Number.isFinite(body.temperature)
         ? Math.max(0, Math.min(2, body.temperature))
         : undefined;
-    const requiresKey = provider !== "lmstudio";
+    const requiresKey = provider === "openrouter" || provider === "arli";
 
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });

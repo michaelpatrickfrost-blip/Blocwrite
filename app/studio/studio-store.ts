@@ -1624,7 +1624,7 @@ export function gatherSettings(): Record<string, string> {
       "bw-theme",
     ];
     // Sync model and baseUrl per provider (but NOT keys — those stay local)
-    for (const p of ["openrouter", "lmstudio"]) {
+    for (const p of ["openrouter", "arli", "lmstudio"]) {
       for (const field of ["model", "baseUrl"]) {
         keys.push(`pilotwriter.assistant.${p}.${field}`);
       }
