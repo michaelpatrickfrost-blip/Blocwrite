@@ -18375,11 +18375,23 @@ function NovelWorkspacePage() {
                                 { key: "Technology & Daily Life", val: data.technology, cat: "Tech" },
                                 { key: "Music & Popular Culture", val: data.musicAndMedia, cat: "Culture" },
                               ];
+                              let changed = 0;
                               for (const entry of entries) {
-                                if (!entry.val) continue;
-                                if (!lore.some(l => l.title === entry.key)) {
-                                  lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: entry.val });
+                                const value = (entry.val || "").trim();
+                                if (!value) continue;
+                                const existingIdx = lore.findIndex((l) => l.title === entry.key);
+                                if (existingIdx >= 0) {
+                                  if ((lore[existingIdx].content || "").trim() !== value || lore[existingIdx].category !== entry.cat) {
+                                    lore[existingIdx] = { ...lore[existingIdx], content: value, category: entry.cat };
+                                    changed += 1;
+                                  }
+                                } else {
+                                  lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: value });
+                                  changed += 1;
                                 }
+                              }
+                              if (changed === 0) {
+                                throw new Error("AI returned no usable era context. Try adding a bit more detail to Era and Setting.");
                               }
                               mutateNovel((n) => ({ ...n, storyBible: { ...n.storyBible, lore } }));
                             } catch (err: unknown) {
@@ -18617,7 +18629,7 @@ function NovelWorkspacePage() {
                                 setBibleSection("nf-scrapbook");
                               }}>Write About This</button>
                           )}
-                          {!aiOff && evt.description && (
+                          {!aiOff && (evt.description || evt.title || evt.people.length > 0 || evt.emotion) && (
                             <button type="button" className="pw-ai-mini-btn" style={{ fontSize: 10 }}
                               disabled={storyAiBusyAction !== null}
                               onClick={async () => {
@@ -18630,19 +18642,23 @@ function NovelWorkspacePage() {
                                     "Write 3-5 short exchanges of natural dialogue between the people present.",
                                     "Make it feel authentic to the era and emotional tone. Return ONLY the dialogue, no narration.",
                                     `\nEvent: ${evt.title}`,
-                                    `Description: ${evt.description}`,
+                                    evt.description ? `Description: ${evt.description}` : "",
+                                    evt.impact ? `Impact: ${evt.impact}` : "",
+                                    evt.date ? `Date/era marker: ${evt.date}` : "",
+                                    evt.places.length ? `Place(s): ${evt.places.join(", ")}` : "",
                                     evt.people.length ? `People present: ${evt.people.join(", ")}` : "",
                                     evt.emotion ? `Emotional tone: ${evt.emotion}` : "",
                                   ].filter(Boolean).join("\n");
                                   const dialogue = await requestOpenRouterText(prompt, 500, 60000, "Memoir dialogue reconstruction specialist. Write authentic, period-appropriate dialogue based on real events.");
-                                  if (dialogue?.trim()) {
-                                    const newDesc = evt.description + "\n\n--- Reconstructed Dialogue ---\n" + dialogue.trim();
-                                    mutateNovel((n) => ({
-                                      ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
-                                        lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, description: newDesc } : le),
-                                      } },
-                                    }));
-                                  }
+                                  if (!dialogue?.trim()) throw new Error("AI returned no dialogue. Try adding more event detail first.");
+                                  const baseDesc = (evt.description || "").trim();
+                                  const separator = baseDesc ? "\n\n--- Reconstructed Dialogue ---\n" : "--- Reconstructed Dialogue ---\n";
+                                  const newDesc = baseDesc + separator + dialogue.trim();
+                                  mutateNovel((n) => ({
+                                    ...n, storyBible: { ...n.storyBible, nonfiction: { ...n.storyBible.nonfiction!,
+                                      lifeEvents: (n.storyBible.nonfiction?.lifeEvents ?? []).map(le => le.id === evt.id ? { ...le, description: newDesc } : le),
+                                    } },
+                                  }));
                                 } catch (err: unknown) {
                                   if (err instanceof Error && err.name === "AbortError") { /* */ } else {
                                     setStoryAiError(err instanceof Error ? err.message : "Dialogue reconstruction failed");
