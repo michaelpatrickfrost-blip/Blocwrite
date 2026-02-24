@@ -3222,6 +3222,68 @@ function NovelWorkspacePage() {
     return out.trim();
   }
 
+  function normalizeForOverlap(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[^a-z0-9'\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function getWordWindows(text: string, windowSize = 10): Set<string> {
+    const words = normalizeForOverlap(text).split(" ").filter(Boolean);
+    const windows = new Set<string>();
+    if (words.length < windowSize) return windows;
+    for (let i = 0; i <= words.length - windowSize; i++) {
+      windows.add(words.slice(i, i + windowSize).join(" "));
+    }
+    return windows;
+  }
+
+  function getComparableSentences(text: string): string[] {
+    return text
+      .split(/[.!?]\s+/)
+      .map((s) => normalizeForOverlap(s))
+      .filter((s) => s.split(" ").length >= 8);
+  }
+
+  function detectProseRepetition(
+    candidate: string,
+    previousText: string,
+  ): { repeating: boolean; reason: string; exactSentenceMatches: number; windowOverlapRatio: number } {
+    if (!candidate.trim() || !previousText.trim()) {
+      return { repeating: false, reason: "", exactSentenceMatches: 0, windowOverlapRatio: 0 };
+    }
+
+    const previousSentences = new Set(getComparableSentences(previousText));
+    const candidateSentences = getComparableSentences(candidate);
+    let exactSentenceMatches = 0;
+    for (const sentence of candidateSentences) {
+      if (previousSentences.has(sentence)) exactSentenceMatches++;
+    }
+
+    const candidateWindows = getWordWindows(candidate, 10);
+    const previousWindows = getWordWindows(previousText, 10);
+    let sharedWindows = 0;
+    for (const window of candidateWindows) {
+      if (previousWindows.has(window)) sharedWindows++;
+    }
+    const windowOverlapRatio = candidateWindows.size > 0 ? sharedWindows / candidateWindows.size : 0;
+
+    const repeating =
+      exactSentenceMatches >= 2 ||
+      windowOverlapRatio >= 0.24 ||
+      (exactSentenceMatches >= 1 && windowOverlapRatio >= 0.16);
+
+    return {
+      repeating,
+      reason: `matches=${exactSentenceMatches}, overlap=${(windowOverlapRatio * 100).toFixed(1)}%`,
+      exactSentenceMatches,
+      windowOverlapRatio,
+    };
+  }
+
   function buildBoundedSection<T>(
     title: string,
     items: T[],
@@ -5238,6 +5300,15 @@ function NovelWorkspacePage() {
       }
       return "";
     })();
+    const priorChapterProse = precedingBlocs
+      .map((b) => b.prose?.trim() || "")
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(-10000);
+    const priorProseForComparison = [priorChapterProse, blockIndex === 0 ? prevChapterEnding : ""]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(-12000);
 
     setStoryAiBusyAction(`block-prose-${blockIndex}`);
     setStoryAiError(null);
@@ -5440,6 +5511,8 @@ function NovelWorkspacePage() {
         "- THE BLUEPRINT ABOVE IS YOUR PRIMARY INSTRUCTION SET. Follow the opening instruction, emotional arc, sensory palette, dialogue notes, pacing guidance, and closing instruction precisely.",
         "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. Track where every character IS at the end of the previous scene and continue from THAT state.",
         "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
+        "- Your opening lines must continue from the latest state of the prior scene/chapter. Do not reset context or replay the same moment.",
+        "- This scene must introduce NEW progression: at least one new action, revelation, decision, or consequence beyond previous scenes.",
         "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
         "- If there is prose after your scene, your ending must flow naturally into it.",
         isNF ? "- Non-fiction: use details from Source Material (life events, scrapbook, research notes). Write with authenticity, sensory memory, and emotional truth. Match the Style & Voice rules exactly." : "- Maintain character and canon consistency throughout. Follow voice rules and style guidance precisely.",
@@ -5485,6 +5558,54 @@ function NovelWorkspacePage() {
           fixed = cleanProseOutput(fixed);
           if (fixed && Math.abs(countWords(fixed) - block.wordTarget) < Math.abs(wc - block.wordTarget)) {
             prose = fixed;
+          }
+        }
+      }
+
+      if (priorProseForComparison) {
+        const repeatCheck = detectProseRepetition(prose, priorProseForComparison);
+        if (repeatCheck.repeating) {
+          const antiRepeatPrompt = [
+            `The draft for Scene ${blockIndex + 1} is repeating prior prose (${repeatCheck.reason}).`,
+            "Rewrite ONLY this scene so it CONTINUES forward from the prior scene/chapter without repeating events, wording, or dialogue.",
+            "",
+            "HARD RULES:",
+            "- Keep the same POV, tense, style, and character consistency.",
+            "- Keep the same scene intent from the synopsis.",
+            "- Remove repeated sentences/phrases from earlier scenes.",
+            "- Preserve continuity with previous prose and flow naturally into following prose if provided.",
+            "- Add forward movement (new consequence, choice, revelation, or obstacle).",
+            "- Return prose only.",
+            "",
+            `Scene synopsis: ${block.synopsis}`,
+            immediatePrevProse
+              ? `Immediately previous scene prose (continue from this):\n"""\n${immediatePrevProse.slice(-3200)}\n"""`
+              : prevChapterEnding
+                ? `Previous chapter ending (continue from this):\n"""\n${prevChapterEnding.slice(-2400)}\n"""`
+                : "",
+            followingProse ? `Following prose (avoid contradicting/repeating):\n"""\n${followingProse.slice(0, 2000)}\n"""` : "",
+            `Earlier prose to avoid repeating:\n"""\n${priorProseForComparison.slice(-5000)}\n"""`,
+            "",
+            `Current draft to rewrite:\n"""\n${prose}\n"""`,
+          ].filter(Boolean).join("\n");
+
+          let deRepeated = await requestOpenRouterText(
+            antiRepeatPrompt,
+            Math.min(6000, Math.round((isBestFit ? 1000 : block.wordTarget || 900) * 2.1)),
+            180000,
+            systemMsg,
+            false,
+          );
+          deRepeated = cleanProseOutput(deRepeated);
+          if (deRepeated) {
+            const improvedCheck = detectProseRepetition(deRepeated, priorProseForComparison);
+            if (
+              !improvedCheck.repeating ||
+              improvedCheck.windowOverlapRatio < repeatCheck.windowOverlapRatio ||
+              improvedCheck.exactSentenceMatches < repeatCheck.exactSentenceMatches
+            ) {
+              prose = deRepeated;
+            }
           }
         }
       }
