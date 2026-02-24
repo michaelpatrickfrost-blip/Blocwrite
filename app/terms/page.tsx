@@ -71,7 +71,7 @@ export default function TermsPage() {
             <li><strong>Talk to Your Characters:</strong> AI-driven conversations with characters from your Canon. The &ldquo;End &amp; Review&rdquo; feature generates story recommendations based on chat transcripts, which can be accepted or dismissed.</li>
             <li><strong>Manuscript Health Report:</strong> AI assessment of pacing, dialogue, clarity, and engagement with per-chapter breakdowns and a thematic consistency scanner.</li>
             <li><strong>Continuity Engine:</strong> Multi-layered consistency checks across timeline, character, location, and canon data.</li>
-            <li><strong>Arc Intelligence Engine:</strong> Tracking of character goal evolution, growth, stagnation, and structural arc patterns.</li>
+            <li><strong>Narrative Structure Analysis:</strong> Tracking of character goal evolution, growth, stagnation, and structural arc patterns.</li>
             <li><strong>Writing Packs:</strong> Pre-built genre-specific collections of bolt-on writing directives (e.g. Romance Plot Kit, Fantasy World Builder, Thriller Dialogue Engine).</li>
             <li><strong>Shareable Manuscripts:</strong> Time-limited shareable links for beta readers and editors, with annotation support.</li>
             <li><strong>Manuscript Export:</strong> Export your completed manuscript in multiple formats.</li>
@@ -162,7 +162,7 @@ export default function TermsPage() {
         <div style={sectionStyle}>
           <h2 style={headingStyle}>8. AI Features &amp; Third-Party Services</h2>
           <p style={paraStyle}>
-            The AI-powered features of Blocwrite — including prose generation, smart rewrite modes, chapter rewrites, manuscript health assessment, thematic consistency scanning, narrative control centre analysis, arc intelligence, continuity checks, knowledge/reveal scanning, and character conversations — are powered by third-party AI models accessed via API services (such as OpenRouter, Infermatic, Hugging Face, or locally hosted models via LM Studio).
+            The AI-powered features of Blocwrite — including prose generation, smart rewrite modes, chapter rewrites, manuscript health assessment, thematic consistency scanning, narrative control centre analysis, continuity checks, knowledge/reveal scanning, and character conversations — are powered by third-party AI models accessed via API services (such as OpenRouter, Infermatic, Hugging Face, or locally hosted models via LM Studio).
           </p>
           <p style={paraStyle}>
             <strong>BYOK Model:</strong> Blocwrite does not include AI credits. You provide your own API key and choose which AI model to use. AI usage costs are determined by your chosen provider and model, not by Blocwrite. Free models are available through some providers.

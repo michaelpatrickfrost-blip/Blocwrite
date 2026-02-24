@@ -478,7 +478,7 @@ function ShowcaseSection() {
       pre: "PLOT SPINE",
       title: "Map your entire story before you write a word.",
       desc: "Pick a narrative arc \u2014 Hero\u2019s Journey, Three-Act, Save the Cat \u2014 and the AI builds story beats across all three acts, weaves in subplots, and tracks character arcs. Every chapter knows exactly where it sits in the bigger picture. No more \u2018writing into the dark\u2019.",
-      details: ["Genre-aware arc picker", "Beats, subplots & character arcs", "Auto-links to your chapter plan", "Story Enhancer deepens emotional layers"],
+      details: ["Genre-aware arc picker", "Beats, subplots & character arcs", "Auto-links to your chapter plan", "Deep emotional layering built in"],
       color: "#7c5cfc",
       preview: <PlotSpinePreview />,
     },
@@ -631,7 +631,7 @@ function NonFictionSection() {
 function IntelligenceGrid() {
   const items = [
     { title: "Smart Rewrite", desc: "Highlight any passage and rewrite it six ways: emotional, suspenseful, poetic, tighter, bestseller, or polish. Pick the version you like." },
-    { title: "Story Enhancer", desc: "Enriches your chapter synopses with deeper emotion, stronger transitions, and more character nuance \u2014 without changing a single plot beat." },
+    { title: "Chapter Depth Tools", desc: "Enrich chapter synopses with deeper emotion, stronger transitions, and sharper character nuance while keeping your core plot intact." },
     { title: "Plot Spine Doctor", desc: "Scans your entire spine for structural weaknesses \u2014 pacing drops, missing tension, character gaps \u2014 and offers one-click fixes." },
     { title: "Full Formatting Toolbar", desc: "Bold, italic, headings, alignment, section breaks. Every format option carries through cleanly to your exported manuscript." },
     { title: "Anti-AI Prose Rules", desc: "No \u2018fluorescent\u2019, no \u2018ethereal\u2019, no walls of em dashes. Built-in rules enforce natural sentence variety and show-don\u2019t-tell writing." },

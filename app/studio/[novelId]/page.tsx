@@ -4841,13 +4841,13 @@ function NovelWorkspacePage() {
       type BlocEntry = { synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number };
       let batchBlocs: BlocEntry[] = [];
 
-      // Attempt batch call (with 2 retries max) — higher token budget for rich blueprints
-      for (let attempt = 0; attempt < 3 && batchBlocs.length < BLOC_COUNT; attempt++) {
+      // Attempt batch call (single retry max) with balanced speed/detail budgets.
+      for (let attempt = 0; attempt < 2 && batchBlocs.length < BLOC_COUNT; attempt++) {
         try {
           const raw = await requestOpenRouterText(
             batchPrompt,
-            2400,
-            300000,
+            1500,
+            120000,
             systemMsg,
             false,
             0.4,
@@ -4919,7 +4919,7 @@ function NovelWorkspacePage() {
             `IMPORTANT: Your previous response did not return ${BLOC_COUNT} blocs. Try again.`,
             batchPrompt,
           ].join("\n\n");
-          const retryRaw = await requestOpenRouterText(retryPrompt, 2400, 300000, systemMsg, false, 0.4);
+          const retryRaw = await requestOpenRouterText(retryPrompt, 1500, 120000, systemMsg, false, 0.4);
           let retryParsed = parseJsonFromAi<BatchBlocResult | BlocEntry[]>(retryRaw);
           if (!retryParsed) {
             const repaired = attemptCloseTruncatedJson(retryRaw.trim());
@@ -4990,7 +4990,7 @@ function NovelWorkspacePage() {
             const data = await requestOpenRouterJson<{ synopsis?: string }>(
               repairPrompt,
               300,
-              { timeoutMs: 120000, systemMessage: "Return ONLY valid JSON." },
+              { timeoutMs: 60000, systemMessage: "Return ONLY valid JSON." },
             );
             const syn = (typeof data.synopsis === "string" ? data.synopsis : "").trim();
             if (syn.length >= 15) {
@@ -7591,7 +7591,7 @@ function NovelWorkspacePage() {
     }
   }
 
-  /* ─── Arc Intelligence Engine ─── */
+  /* ─── Plan Enhancement Engine ─── */
 
   function novelHasProse(): boolean {
     if (!novel) return false;
@@ -7699,7 +7699,7 @@ function NovelWorkspacePage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Arc analysis failed.";
       setArcError(msg.includes("empty response")
-        ? "Arc Intelligence got an empty response — try again."
+        ? "Plan analysis got an empty response — try again."
         : msg);
     } finally {
       setArcBusy(false);
@@ -7827,7 +7827,7 @@ function NovelWorkspacePage() {
           batchPrompt,
           tokenBudget,
           { systemMessage: spineIsActive
-            ? "Expert story enhancer. Deepen and enrich chapter synopses without changing any plot events. Preserve every beat. Return ONLY valid JSON."
+            ? "Expert story editor. Deepen and enrich chapter synopses without changing any plot events. Preserve every beat. Return ONLY valid JSON."
             : "Expert story architect. Rewrite chapter synopses with rich detail. Return ONLY valid JSON.",
             timeoutMs: Math.max(240000, batchSize * 30000) },
         );
@@ -7922,7 +7922,7 @@ function NovelWorkspacePage() {
         const existingUnprofiled = getUnprofiledCharacterIds();
         const allUnprofiled = [...new Set([...newCharIds, ...existingUnprofiled])];
         if (allUnprofiled.length > 0) {
-          setProfileOfferPopup({ characterIds: allUnprofiled, source: "Arc Intelligence" });
+          setProfileOfferPopup({ characterIds: allUnprofiled, source: "Chapter Plan" });
         }
       }, 1000);
 
@@ -12597,8 +12597,8 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
-              {/* ── Arc Intelligence panel ── */}
-              {(novel.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
+              {/* ── Plan analysis panel ── */}
+              {novel && false && (novel?.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
                 <div style={{
                   marginBottom: 18, borderRadius: 14,
                   background: "var(--pw-overlay-bg)",
@@ -12619,8 +12619,8 @@ function NovelWorkspacePage() {
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                       </div>
                       <div>
-                        <span style={{ fontWeight: 700, fontSize: 14 }}>{hasPlotSpine() ? "Story Enhancer" : "Arc Intelligence"}</span>
-                        {novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{hasPlotSpine() ? "Plan Enhancer" : "Plan Analysis"}</span>
+                        {novel?.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
                           <span style={{
                             marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
                             background: "rgba(124,92,252,0.12)", color: "#b8a4ff",
@@ -12634,13 +12634,13 @@ function NovelWorkspacePage() {
                       type="button"
                       disabled={arcBusy || aiOff || !!storyAiBusyAction}
                       onClick={() => {
-                        if (novel.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null) {
+                        if (novel?.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null) {
                           setArcRegenWarning(true);
                         } else {
                           void runArcAnalysis();
                         }
                       }}
-                      title={aiOff ? "Enable AI to use Arc Intelligence" : "Regenerate arc choices"}
+                      title={aiOff ? "Enable AI to use plan analysis" : "Regenerate arc choices"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
                         background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--accent-rgb, 124,92,252), 0.08)",
@@ -12652,7 +12652,7 @@ function NovelWorkspacePage() {
                       {arcBusy ? (
                         <><span className="pw-plan-spinner" style={{ width: 12, height: 12 }} /> Generating Arcs...</>
                       ) : (
-                        <>{novel.storyBible.bookPlan?.arcAnalysis ? "Regenerate" : "Run Analysis"}</>
+                        <>{novel?.storyBible.bookPlan?.arcAnalysis ? "Regenerate" : "Run Analysis"}</>
                       )}
                     </button>
                   </div>
@@ -12681,10 +12681,10 @@ function NovelWorkspacePage() {
                   )}
 
                   {/* Choice cards */}
-                  {!arcBusy && novel.storyBible.bookPlan?.arcAnalysis?.choices && (() => {
-                    const arc = novel.storyBible.bookPlan.arcAnalysis!;
+                  {!arcBusy && novel?.storyBible.bookPlan?.arcAnalysis?.choices && (() => {
+                    const arc = novel?.storyBible.bookPlan.arcAnalysis!;
                     const choices = arc.choices!;
-                    const selectedIdx = arc.selectedChoiceIndex;
+                    const selectedIdx = arc.selectedChoiceIndex ?? 0;
                     const hasProse = novelHasProse();
                     return (
                       <div style={{ padding: "14px 18px 18px" }}>
@@ -12847,8 +12847,8 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
-              {/* Also show a small "Run Arc Intelligence" button when no analysis exists yet */}
-              {!novel.storyBible.bookPlan?.arcAnalysis && !arcBusy && planChapters.length >= 3 && !aiOff && (
+              {/* Also show a small "Run Plan Analysis" button when no analysis exists yet */}
+              {novel && false && !novel?.storyBible.bookPlan?.arcAnalysis && !arcBusy && planChapters.length >= 3 && !aiOff && (
                 <div style={{ marginBottom: 14, textAlign: "center" }}>
                   <button
                     type="button"
@@ -12861,7 +12861,7 @@ function NovelWorkspacePage() {
                     }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
-                    Run Arc Intelligence
+                    Run Plan Analysis
                   </button>
                 </div>
               )}
@@ -19888,8 +19888,8 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Arc Intelligence offer popup (shown after plan generation) ── */}
-      {showArcOfferPopup && !aiOff && planChapters.length >= 3 && (
+      {/* ── Plan analysis offer popup (shown after plan generation) ── */}
+      {false && showArcOfferPopup && !aiOff && planChapters.length >= 3 && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 10001,
           background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
@@ -19920,9 +19920,9 @@ function NovelWorkspacePage() {
               </svg>
             </div>
 
-            <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Arc Intelligence</h3>
+            <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Plan Analysis</h3>
             <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 20px", lineHeight: 1.5 }}>
-              Your plan is ready. Arc Intelligence will generate 3 distinct narrative arc paths — each scored for best outcome. Pick one and it rewrites your chapter synopses to match.
+              Your plan is ready. Plan Analysis will generate 3 distinct narrative arc paths — each scored for best outcome. Pick one and it rewrites your chapter synopses to match.
             </p>
 
             <div style={{
@@ -19962,7 +19962,7 @@ function NovelWorkspacePage() {
                   cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.2)",
                 }}
               >
-                Generate Arc Paths
+                Generate Plan Paths
               </button>
             </div>
           </div>
@@ -20102,7 +20102,7 @@ function NovelWorkspacePage() {
               </svg>
             </div>
 
-            <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 800 }}>Regenerate Arc Paths?</h3>
+            <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 800 }}>Regenerate Plan Paths?</h3>
             <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: "0 0 22px", lineHeight: 1.5 }}>
               You already have an applied arc. Regenerating will create 3 new arc options and clear your current selection. Your existing chapter synopses will remain until you apply a new choice.
             </p>
