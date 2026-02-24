@@ -4924,13 +4924,7 @@ function NovelWorkspacePage() {
     if (blocCountMode === "custom") {
       return Math.max(2, Math.min(8, Number.isFinite(customBlocCount) ? customBlocCount : 4));
     }
-    const synopsisWords = chapterSynopsis.trim().split(/\s+/).filter(Boolean).length;
-    const targetWords = typeof chapterGoalWords === "number" && chapterGoalWords > 0 ? chapterGoalWords : 0;
-    let autoCount = 4;
-    if (targetWords >= 2600 || synopsisWords >= 180) autoCount = 6;
-    else if (targetWords >= 1800 || synopsisWords >= 120) autoCount = 5;
-    else if (targetWords > 0 && targetWords <= 900 && synopsisWords < 70) autoCount = 3;
-    autoCount = Math.max(2, Math.min(8, autoCount));
+    const autoCount = 4;
     setLastAutoBlocCount(autoCount);
     return autoCount;
   }
@@ -11305,54 +11299,6 @@ function NovelWorkspacePage() {
             {!showStoryBibleModal && !aiOff && storyAiError && (
               <div className="pw-ora-error" style={{ margin: 0 }}>
                 {storyAiError}
-              </div>
-            )}
-            {pendingFeedbackCount > 0 && !showFeedbackPanel && (
-              <div
-                style={{
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: "10px 16px", borderRadius: 10, cursor: "pointer",
-                  background: "linear-gradient(135deg, rgba(124,92,252,0.08) 0%, rgba(124,92,252,0.03) 100%)",
-                  border: "1px solid rgba(124,92,252,0.18)",
-                  animation: "pulse 3s infinite",
-                  transition: "all 0.2s ease",
-                }}
-                onClick={() => {
-                  if (!novel) return;
-                  setShowFeedbackPanel(true);
-                  setFeedbackReviewMode(false);
-                  setFeedbackReviewDone(false);
-                  setFeedbackReviewIdx(0);
-                  setFeedbackReviewAccepted(0);
-                  setFeedbackReviewRejected(0);
-                  setDismissedAnnotations(new Set());
-                  setFbManualEditOpen(false);
-                  setFbManualEditText("");
-                  void refreshFeedbackReviewData();
-                }}
-                onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.35)"; }}
-                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(124,92,252,0.18)"; }}
-              >
-                <div style={{
-                  width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-                  background: "rgba(124,92,252,0.12)", border: "1px solid rgba(124,92,252,0.2)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-                  </svg>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", lineHeight: 1.3 }}>
-                    Reader Feedback Ready
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
-                    {pendingFeedbackCount} note{pendingFeedbackCount !== 1 ? "s" : ""} waiting for your review — click to start
-                  </div>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6"/>
-                </svg>
               </div>
             )}
           </div>
