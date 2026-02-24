@@ -319,6 +319,37 @@ export type EraResearchNote = {
   createdAt: string;
 };
 
+export type ResearchTopic = {
+  id: string;
+  label: string;
+  query: string;
+  lastRunAt: string;
+  noteIds?: string[];
+};
+
+export type ResearchLinkTargetType = "character" | "location" | "lifeEventPlace";
+
+export type ResearchLinkSuggestion = {
+  id: string;
+  noteId: string;
+  tag: string;
+  targetType: ResearchLinkTargetType;
+  targetId?: string;
+  targetName: string;
+  status: "pending" | "approved" | "rejected" | "later";
+  createdAt: string;
+};
+
+export type ApprovedResearchLink = {
+  id: string;
+  noteId: string;
+  targetType: ResearchLinkTargetType;
+  targetId?: string;
+  targetName: string;
+  tag: string;
+  approvedAt: string;
+};
+
 export type NonfictionSubtype = "memoir" | "biography" | "true-crime" | "historical" | "investigative";
 export type NonfictionCategory = "biography" | "other";
 
@@ -364,6 +395,9 @@ export type NonfictionData = {
   eraTechnology?: string;
   eraMusicAndMedia?: string;
   eraResearchNotes?: EraResearchNote[];
+  researchTopics?: ResearchTopic[];
+  researchLinkQueue?: ResearchLinkSuggestion[];
+  approvedResearchLinks?: ApprovedResearchLink[];
   lifeEvents: LifeEvent[];
   interviewTranscript: Array<{ role: "ai" | "user"; text: string }>;
   interviewPhase: string;
@@ -1085,6 +1119,32 @@ function normalizeStoryBible(raw: unknown): StoryBible {
             tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
             createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
           })) : [],
+          researchTopics: Array.isArray(nf.researchTopics) ? (nf.researchTopics as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `rt-${i}`,
+            label: typeof e.label === "string" ? e.label : "",
+            query: typeof e.query === "string" ? e.query : "",
+            lastRunAt: typeof e.lastRunAt === "string" ? e.lastRunAt : "",
+            noteIds: Array.isArray(e.noteIds) ? e.noteIds.filter((x): x is string => typeof x === "string") : [],
+          })) : [],
+          researchLinkQueue: Array.isArray(nf.researchLinkQueue) ? (nf.researchLinkQueue as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `rlq-${i}`,
+            noteId: typeof e.noteId === "string" ? e.noteId : "",
+            tag: typeof e.tag === "string" ? e.tag : "",
+            targetType: (typeof e.targetType === "string" && ["character", "location", "lifeEventPlace"].includes(e.targetType) ? e.targetType : "location") as ResearchLinkTargetType,
+            targetId: typeof e.targetId === "string" ? e.targetId : "",
+            targetName: typeof e.targetName === "string" ? e.targetName : "",
+            status: (typeof e.status === "string" && ["pending", "approved", "rejected", "later"].includes(e.status) ? e.status : "pending") as ResearchLinkSuggestion["status"],
+            createdAt: typeof e.createdAt === "string" ? e.createdAt : "",
+          })) : [],
+          approvedResearchLinks: Array.isArray(nf.approvedResearchLinks) ? (nf.approvedResearchLinks as Array<Record<string, unknown>>).map((e, i) => ({
+            id: typeof e.id === "string" && e.id ? e.id : `arl-${i}`,
+            noteId: typeof e.noteId === "string" ? e.noteId : "",
+            targetType: (typeof e.targetType === "string" && ["character", "location", "lifeEventPlace"].includes(e.targetType) ? e.targetType : "location") as ResearchLinkTargetType,
+            targetId: typeof e.targetId === "string" ? e.targetId : "",
+            targetName: typeof e.targetName === "string" ? e.targetName : "",
+            tag: typeof e.tag === "string" ? e.tag : "",
+            approvedAt: typeof e.approvedAt === "string" ? e.approvedAt : "",
+          })) : [],
           lifeEvents: Array.isArray(nf.lifeEvents) ? (nf.lifeEvents as Array<Record<string, unknown>>).map((e, i) => ({
             id: typeof e.id === "string" && e.id ? e.id : `le-${i}`,
             title: typeof e.title === "string" ? e.title : "",
@@ -1547,6 +1607,9 @@ export function createNovel(title: string, coverImage: string | null = null, nov
           eraTechnology: "",
           eraMusicAndMedia: "",
           eraResearchNotes: [],
+          researchTopics: [],
+          researchLinkQueue: [],
+          approvedResearchLinks: [],
           lifeEvents: [],
           interviewTranscript: [],
           interviewPhase: "big-picture",

@@ -44,6 +44,8 @@ import {
   type ScrapbookEntry,
   type ResearchNote,
   type EraResearchNote,
+  type ResearchLinkSuggestion,
+  type ResearchLinkTargetType,
   type StoryCard,
   type StoryBeat,
   type Subplot,
@@ -1115,7 +1117,7 @@ function NovelWorkspacePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showStoryBibleModal, setShowStoryBibleModal] = useState(false);
   const [bibleSection, setBibleSection] = useState<
-    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "plotSpine" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
+    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "plotSpine" | "nf-about" | "nf-research-hub" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
   >(
     "summary",
   );
@@ -1151,6 +1153,7 @@ function NovelWorkspacePage() {
   const [knowledgeScanBusy, setKnowledgeScanBusy] = useState(false);
   const [knowledgeScanError, setKnowledgeScanError] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
+  const [researchLinkSelection, setResearchLinkSelection] = useState<Record<string, string>>({});
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
   const profileLangLabel = PROFILE_LANGUAGE_OPTIONS.find((o) => o.code === profileLangCode)?.label || "English";
@@ -5392,7 +5395,7 @@ function NovelWorkspacePage() {
           }
         }
 
-        if (nf?.nfCategory === "other") {
+        if (nf?.researchNotes?.length) {
           const relevantNotes = (nf.researchNotes ?? []).filter(n =>
             n.content && (
               combinedSearch.includes(n.title.toLowerCase()) ||
@@ -5405,6 +5408,13 @@ function NovelWorkspacePage() {
               parts.push(`  - "${n.title}"${n.source ? ` [Source: ${n.source}]` : ""}${n.strength ? ` (${n.strength})` : ""}: ${clampPromptText(n.content, 200)}`);
             });
           }
+        }
+        const approvedLinks = nf?.approvedResearchLinks ?? [];
+        if (approvedLinks.length > 0) {
+          parts.push("Approved research links (prioritize these details):");
+          approvedLinks.slice(-20).forEach((link) => {
+            parts.push(`  - ${link.tag} -> ${link.targetType}: ${link.targetName}`);
+          });
         }
 
         const chapterIdx = novel.chapters.findIndex(c => c.id === targetChapterId);
@@ -7228,10 +7238,16 @@ function NovelWorkspacePage() {
             parts.push(`  - "${s.title || "Untitled"}"${linkedEvt ? ` (linked to: ${linkedEvt.title})` : ""}: ${clampPromptText(s.content || "", 200)}`);
           });
         }
-        if (nf?.nfCategory === "other" && nf.researchNotes?.length) {
+        if (nf?.researchNotes?.length) {
           parts.push("\nResearch Notes:");
           nf.researchNotes.forEach((rn) => {
             parts.push(`  - "${rn.title || "Untitled"}"${rn.source ? ` [Source: ${rn.source}]` : ""}: ${clampPromptText(rn.content || "", 150)}`);
+          });
+        }
+        if (nf?.approvedResearchLinks?.length) {
+          parts.push("\nApproved Research Links:");
+          nf.approvedResearchLinks.slice(-30).forEach((link) => {
+            parts.push(`  - ${link.tag} -> ${link.targetType}: ${link.targetName}`);
           });
         }
         if (nf?.storyCards?.length) {
@@ -8912,6 +8928,156 @@ function NovelWorkspacePage() {
       });
     }
     return [...map.values()];
+  }
+
+  function extractEntityCandidates(text: string): string[] {
+    const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/g) ?? [];
+    const blocked = new Set(["The", "And", "For", "With", "Source", "Internet", "Archive", "Wikipedia", "Open Library"]);
+    return [...new Set(matches.map((m) => m.trim()).filter((m) => m.length >= 3 && !blocked.has(m)).slice(0, 8))];
+  }
+
+  function buildResearchLinkSuggestions(
+    notes: EraResearchNote[],
+    existingQueue: ResearchLinkSuggestion[],
+    characters: Character[],
+    locations: Array<{ id: string; name: string }>,
+    events: LifeEvent[],
+  ) {
+    const existingKeys = new Set(
+      existingQueue.map((q) => `${q.noteId}|${q.targetType}|${(q.targetId || "").toLowerCase()}|${q.targetName.toLowerCase()}|${q.tag.toLowerCase()}`),
+    );
+    const createdAt = new Date().toISOString();
+    const suggestions: ResearchLinkSuggestion[] = [];
+    for (const note of notes) {
+      const terms = [...new Set([...(note.tags ?? []), ...extractEntityCandidates(`${note.title} ${note.summary}`)])].filter(Boolean).slice(0, 6);
+      for (const termRaw of terms) {
+        const term = termRaw.trim();
+        if (!term) continue;
+        const lower = term.toLowerCase();
+        const matchedLocation = locations.find((l) => l.name.toLowerCase() === lower || l.name.toLowerCase().includes(lower));
+        const matchedCharacter = characters.find((c) => c.name.toLowerCase() === lower || c.name.toLowerCase().includes(lower));
+        const matchedEvent = events.find((e) =>
+          e.title.toLowerCase().includes(lower) ||
+          e.description.toLowerCase().includes(lower),
+        );
+
+        const push = (targetType: ResearchLinkTargetType, targetName: string, targetId = "") => {
+          const key = `${note.id}|${targetType}|${targetId.toLowerCase()}|${targetName.toLowerCase()}|${lower}`;
+          if (existingKeys.has(key)) return;
+          existingKeys.add(key);
+          suggestions.push({
+            id: `rlq-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            noteId: note.id,
+            tag: term,
+            targetType,
+            targetId,
+            targetName,
+            status: "pending",
+            createdAt,
+          });
+        };
+
+        if (matchedLocation) push("location", matchedLocation.name, matchedLocation.id);
+        else if (matchedCharacter) push("character", matchedCharacter.name, matchedCharacter.id);
+        else if (matchedEvent) push("lifeEventPlace", term, matchedEvent.id);
+        else push("location", term);
+      }
+    }
+    return suggestions;
+  }
+
+  async function runNfEraResearch(customQuery?: string) {
+    if (!novel || storyAiBusyAction) return;
+    const query = (customQuery || nfData?.eraResearchQuery || "").trim() || [nfData?.era, nfData?.setting].filter(Boolean).join(" ");
+    if (!query) {
+      setStoryAiError("Add an Era Research Query, or fill Era/Setting first.");
+      return;
+    }
+    setStoryAiBusyAction("nf-era-context");
+    setStoryAiError(null);
+    try {
+      const response = await fetch("/api/nonfiction/era-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          era: nfData?.era || "",
+          setting: nfData?.setting || "",
+          limit: 12,
+        }),
+      });
+      const payload = await response.json() as { notes?: EraResearchNote[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Era research failed");
+      const fetchedNotes = Array.isArray(payload.notes) ? payload.notes : [];
+      if (fetchedNotes.length === 0) throw new Error("No source-backed research notes found. Try a more specific query.");
+
+      const existingNotes = nfData?.eraResearchNotes ?? [];
+      const noteMap = new Map<string, EraResearchNote>();
+      for (const note of existingNotes) noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
+      for (const note of fetchedNotes) noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
+      const mergedNotes = [...noteMap.values()];
+      const buckets = buildEraContextFromNotes(mergedNotes);
+      const lore = [...(novel.storyBible.lore ?? [])];
+      const entries: Array<{ key: string; val: string; cat: LoreEntry["category"] }> = [
+        { key: "Cultural Context", val: buckets.culturalNotes, cat: "Culture" },
+        { key: "Historical Events", val: buckets.historicalEvents, cat: "History" },
+        { key: "Technology & Daily Life", val: buckets.technology, cat: "Tech" },
+        { key: "Music & Popular Culture", val: buckets.musicAndMedia, cat: "Culture" },
+      ];
+      for (const entry of entries) {
+        const value = (entry.val || "").trim();
+        if (!value) continue;
+        const existingIdx = lore.findIndex((l) => l.title === entry.key);
+        if (existingIdx >= 0) lore[existingIdx] = { ...lore[existingIdx], content: value, category: entry.cat };
+        else lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: value });
+      }
+      const newQueue = buildResearchLinkSuggestions(
+        mergedNotes,
+        nfData?.researchLinkQueue ?? [],
+        novel.storyBible.characters ?? [],
+        novel.storyBible.locations ?? [],
+        nfData?.lifeEvents ?? [],
+      );
+      const topicId = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      mutateNovel((n) => ({
+        ...n,
+        storyBible: {
+          ...n.storyBible,
+          lore,
+          nonfiction: {
+            ...n.storyBible.nonfiction!,
+            eraResearchQuery: query,
+            eraResearchNotes: mergedNotes,
+            eraCulturalNotes: buckets.culturalNotes,
+            eraHistoricalEvents: buckets.historicalEvents,
+            eraTechnology: buckets.technology,
+            eraMusicAndMedia: buckets.musicAndMedia,
+            researchNotes: mergeEraNotesIntoResearchNotes(
+              n.storyBible.nonfiction?.researchNotes ?? [],
+              mergedNotes,
+            ),
+            researchExtractedAt: new Date().toISOString(),
+            researchTopics: [
+              {
+                id: topicId,
+                label: query,
+                query,
+                lastRunAt: new Date().toISOString(),
+                noteIds: fetchedNotes.map((x) => x.id),
+              },
+              ...((n.storyBible.nonfiction?.researchTopics ?? []).filter((x) => x.query.toLowerCase() !== query.toLowerCase())),
+            ].slice(0, 20),
+            researchLinkQueue: [...(n.storyBible.nonfiction?.researchLinkQueue ?? []), ...newQueue],
+          },
+        },
+      }));
+    } catch (err: unknown) {
+      if (!(err instanceof Error && err.name === "AbortError")) {
+        setStoryAiError(err instanceof Error ? err.message : "Failed to generate era context");
+      }
+    } finally {
+      setStoryAiBusyAction(null);
+    }
   }
 
   function updatePlotSpine(patch: Partial<PlotSpine>) {
@@ -14900,6 +15066,7 @@ function NovelWorkspacePage() {
               <aside className="pw-bible-nav">
                 {(isNF ? (nfData?.nfCategory === "biography" ? [
                     { id: "nf-about" as const, label: "About" },
+                    { id: "nf-research-hub" as const, label: "Research Hub" },
                     { id: "nf-interview" as const, label: "Life Interview" },
                     { id: "nf-events" as const, label: "Life Events" },
                     { id: "nf-scrapbook" as const, label: "Scrapbook" },
@@ -14912,6 +15079,7 @@ function NovelWorkspacePage() {
                     { id: "summary" as const, label: "Summary" },
                   ] : [
                     { id: "nf-about" as const, label: "About" },
+                    { id: "nf-research-hub" as const, label: "Research Hub" },
                     { id: "nf-researcher" as const, label: "Researcher" },
                     { id: "nf-research-notes" as const, label: "Research Notes" },
                     { id: "nf-events" as const, label: "Key Events" },
@@ -18405,83 +18573,7 @@ function NovelWorkspacePage() {
                         />
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
-                            onClick={async () => {
-                              if (!novel || storyAiBusyAction) return;
-                              const query = (nfData?.eraResearchQuery || "").trim() || [nfData?.era, nfData?.setting].filter(Boolean).join(" ");
-                              if (!query) {
-                                setStoryAiError("Add an Era Research Query, or fill Era/Setting first.");
-                                return;
-                              }
-                              setStoryAiBusyAction("nf-era-context");
-                              setStoryAiError(null);
-                              try {
-                                const response = await fetch("/api/nonfiction/era-research", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    query,
-                                    era: nfData?.era || "",
-                                    setting: nfData?.setting || "",
-                                    limit: 10,
-                                  }),
-                                });
-                                const payload = await response.json() as { notes?: EraResearchNote[]; error?: string };
-                                if (!response.ok) throw new Error(payload.error || "Era research failed");
-                                const fetchedNotes = Array.isArray(payload.notes) ? payload.notes : [];
-                                if (fetchedNotes.length === 0) {
-                                  throw new Error("No source-backed research notes found. Try a more specific query.");
-                                }
-                                const existingNotes = nfData?.eraResearchNotes ?? [];
-                                const noteMap = new Map<string, EraResearchNote>();
-                                for (const note of existingNotes) {
-                                  noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
-                                }
-                                for (const note of fetchedNotes) {
-                                  noteMap.set(`${note.sourceUrl}|${note.title.toLowerCase()}`, note);
-                                }
-                                const mergedNotes = [...noteMap.values()];
-                                const buckets = buildEraContextFromNotes(mergedNotes);
-                                const lore = [...(novel.storyBible.lore ?? [])];
-                                const entries: Array<{ key: string; val: string; cat: LoreEntry["category"] }> = [
-                                  { key: "Cultural Context", val: buckets.culturalNotes, cat: "Culture" },
-                                  { key: "Historical Events", val: buckets.historicalEvents, cat: "History" },
-                                  { key: "Technology & Daily Life", val: buckets.technology, cat: "Tech" },
-                                  { key: "Music & Popular Culture", val: buckets.musicAndMedia, cat: "Culture" },
-                                ];
-                                for (const entry of entries) {
-                                  const value = (entry.val || "").trim();
-                                  if (!value) continue;
-                                  const existingIdx = lore.findIndex((l) => l.title === entry.key);
-                                  if (existingIdx >= 0) lore[existingIdx] = { ...lore[existingIdx], content: value, category: entry.cat };
-                                  else lore.push({ id: createEntityId("lore"), title: entry.key, category: entry.cat, content: value });
-                                }
-                                mutateNovel((n) => ({
-                                  ...n,
-                                  storyBible: {
-                                    ...n.storyBible,
-                                    lore,
-                                    nonfiction: {
-                                      ...n.storyBible.nonfiction!,
-                                      eraResearchQuery: query,
-                                      eraResearchNotes: mergedNotes,
-                                      eraCulturalNotes: buckets.culturalNotes,
-                                      eraHistoricalEvents: buckets.historicalEvents,
-                                      eraTechnology: buckets.technology,
-                                      eraMusicAndMedia: buckets.musicAndMedia,
-                                      researchNotes: mergeEraNotesIntoResearchNotes(
-                                        n.storyBible.nonfiction?.researchNotes ?? [],
-                                        mergedNotes
-                                      ),
-                                      researchExtractedAt: new Date().toISOString(),
-                                    },
-                                  },
-                                }));
-                              } catch (err: unknown) {
-                                if (err instanceof Error && err.name === "AbortError") { /* */ } else {
-                                  setStoryAiError(err instanceof Error ? err.message : "Failed to generate era context");
-                                }
-                              } finally { setStoryAiBusyAction(null); }
-                            }}
+                            onClick={() => void runNfEraResearch()}
                           >
                             {storyAiBusyAction === "nf-era-context" ? "Researching..." : "Research Era (Sources)"}
                           </button>
@@ -18588,6 +18680,269 @@ function NovelWorkspacePage() {
                     </div>
                   </div>
                 )}
+
+                {/* ═══════════════════ NON-FICTION: RESEARCH HUB (all NF) ═══════════════════ */}
+                {bibleSection === "nf-research-hub" && isNF && (() => {
+                  const topics = nfData?.researchTopics ?? [];
+                  const notes = nfData?.eraResearchNotes ?? [];
+                  const queue = (nfData?.researchLinkQueue ?? []).filter((q) => q.status === "pending" || q.status === "later");
+                  const approved = nfData?.approvedResearchLinks ?? [];
+                  const noteById = new Map(notes.map((n) => [n.id, n]));
+                  const lifeEvents = nfData?.lifeEvents ?? [];
+                  const characters = novel.storyBible.characters ?? [];
+                  const locations = novel.storyBible.locations ?? [];
+
+                  return (
+                    <div className="pw-bible-section">
+                      <div className="pw-bible-flex-head">
+                        <div>
+                          <h3>Research Hub</h3>
+                          <p className="pw-field-help">Run focused research queries, collect sources, and manually approve links into People, Places, and Events.</p>
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {!aiOff && (
+                            <button
+                              type="button"
+                              className="pw-ai-mini-btn"
+                              disabled={storyAiBusyAction !== null}
+                              onClick={() => void runNfEraResearch()}
+                            >
+                              {storyAiBusyAction === "nf-era-context" ? "Researching..." : "Run Research"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <label>Research Query</label>
+                        <input
+                          className="pw-bible-input"
+                          placeholder="e.g. 90s Leeds nightlife, policing, and youth culture"
+                          value={nfData?.eraResearchQuery ?? ""}
+                          onChange={(e) => updateNfData({ eraResearchQuery: e.target.value })}
+                        />
+                        {topics.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {topics.slice(0, 10).map((topic) => (
+                              <button
+                                key={topic.id}
+                                type="button"
+                                className="pw-ai-mini-btn"
+                                style={{ fontSize: 10, opacity: 0.85 }}
+                                onClick={() => {
+                                  updateNfData({ eraResearchQuery: topic.query });
+                                  void runNfEraResearch(topic.query);
+                                }}
+                              >
+                                {topic.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+                        <h4 style={{ margin: 0 }}>Manual Link Review Queue</h4>
+                        <p className="pw-field-help" style={{ margin: 0 }}>Approve suggestions to tie research directly into canon entities and event places.</p>
+                        {queue.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>No pending links. Run research to generate suggestions.</div>
+                        ) : (
+                          queue.slice(0, 40).map((item) => {
+                            const sourceNote = noteById.get(item.noteId);
+                            const selectionKey = researchLinkSelection[item.id] ?? item.targetId ?? "";
+                            const placeNameKey = researchLinkSelection[`${item.id}:name`] ?? item.targetName;
+                            return (
+                              <div key={item.id} style={{ border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: 10, background: "var(--pw-surface)" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                                  <strong style={{ fontSize: 12 }}>{item.tag}</strong>
+                                  <span style={{ fontSize: 10, color: "var(--pw-text-dim)", textTransform: "uppercase" }}>{item.targetType}</span>
+                                </div>
+                                {sourceNote && (
+                                  <p style={{ margin: "4px 0 8px", fontSize: 11, color: "var(--pw-text-dim)" }}>
+                                    From: {sourceNote.title}
+                                  </p>
+                                )}
+                                {item.targetType === "character" && (
+                                  <select
+                                    className="pw-bible-input"
+                                    value={selectionKey}
+                                    onChange={(e) => setResearchLinkSelection((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                                  >
+                                    <option value="">Create new person: {item.targetName}</option>
+                                    {characters.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                )}
+                                {item.targetType === "location" && (
+                                  <select
+                                    className="pw-bible-input"
+                                    value={selectionKey}
+                                    onChange={(e) => setResearchLinkSelection((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                                  >
+                                    <option value="">Create new place: {item.targetName}</option>
+                                    {locations.map((l) => (
+                                      <option key={l.id} value={l.id}>{l.name}</option>
+                                    ))}
+                                  </select>
+                                )}
+                                {item.targetType === "lifeEventPlace" && (
+                                  <div style={{ display: "grid", gap: 6 }}>
+                                    <select
+                                      className="pw-bible-input"
+                                      value={selectionKey}
+                                      onChange={(e) => setResearchLinkSelection((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                                    >
+                                      <option value="">Pick event...</option>
+                                      {lifeEvents.map((ev) => (
+                                        <option key={ev.id} value={ev.id}>{ev.title || ev.date || "Untitled event"}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      className="pw-bible-input"
+                                      value={placeNameKey}
+                                      onChange={(e) => setResearchLinkSelection((prev) => ({ ...prev, [`${item.id}:name`]: e.target.value }))}
+                                      placeholder="Place to attach"
+                                    />
+                                  </div>
+                                )}
+                                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                                  <button
+                                    type="button"
+                                    className="pw-ai-mini-btn"
+                                    style={{ fontSize: 10 }}
+                                    onClick={() => {
+                                      mutateNovel((n) => {
+                                        const nf = { ...n.storyBible.nonfiction! };
+                                        const queueNow = [...(nf.researchLinkQueue ?? [])];
+                                        const idx = queueNow.findIndex((q) => q.id === item.id);
+                                        if (idx < 0) return n;
+                                        const next = { ...queueNow[idx] };
+                                        const selected = researchLinkSelection[item.id] ?? next.targetId ?? "";
+                                        const selectedName = (researchLinkSelection[`${item.id}:name`] ?? next.targetName).trim() || next.targetName;
+                                        const approvedAt = new Date().toISOString();
+                                        let resolvedTargetName = next.targetName;
+                                        let resolvedTargetId = next.targetId || "";
+                                        if (next.targetType === "character") {
+                                          const chars = [...(n.storyBible.characters ?? [])];
+                                          if (selected) {
+                                            const existing = chars.find((c) => c.id === selected);
+                                            if (existing) {
+                                              resolvedTargetId = existing.id;
+                                              resolvedTargetName = existing.name;
+                                            }
+                                          } else {
+                                            const name = next.targetName.trim();
+                                            if (name && !chars.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+                                              const newChar = { id: createEntityId("char"), name, role: "Supporting" as const, logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "", relationships: [] };
+                                              chars.push(newChar);
+                                              resolvedTargetId = newChar.id;
+                                              resolvedTargetName = newChar.name;
+                                              n = { ...n, storyBible: { ...n.storyBible, characters: chars } };
+                                            }
+                                          }
+                                        }
+                                        if (next.targetType === "location") {
+                                          const locs = [...(n.storyBible.locations ?? [])];
+                                          if (selected) {
+                                            const existing = locs.find((l) => l.id === selected);
+                                            if (existing) {
+                                              resolvedTargetId = existing.id;
+                                              resolvedTargetName = existing.name;
+                                            }
+                                          } else {
+                                            const name = next.targetName.trim();
+                                            if (name && !locs.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+                                              const newLoc = { id: createEntityId("loc"), name, description: "Linked from research hub." };
+                                              locs.push(newLoc);
+                                              resolvedTargetId = newLoc.id;
+                                              resolvedTargetName = newLoc.name;
+                                              n = { ...n, storyBible: { ...n.storyBible, locations: locs } };
+                                            }
+                                          }
+                                        }
+                                        if (next.targetType === "lifeEventPlace") {
+                                          if (!selected) return n;
+                                          const eventsNow = [...(nf.lifeEvents ?? [])];
+                                          const eIdx = eventsNow.findIndex((e) => e.id === selected);
+                                          if (eIdx >= 0) {
+                                            const current = eventsNow[eIdx];
+                                            const nextPlaces = [...new Set([...(current.places ?? []), selectedName])];
+                                            eventsNow[eIdx] = { ...current, places: nextPlaces };
+                                            nf.lifeEvents = eventsNow;
+                                            resolvedTargetId = selected;
+                                            resolvedTargetName = selectedName;
+                                          }
+                                        }
+                                        next.status = "approved";
+                                        next.targetId = resolvedTargetId;
+                                        next.targetName = resolvedTargetName;
+                                        queueNow[idx] = next;
+                                        nf.researchLinkQueue = queueNow;
+                                        nf.approvedResearchLinks = [
+                                          ...(nf.approvedResearchLinks ?? []),
+                                          {
+                                            id: `arl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                            noteId: next.noteId,
+                                            targetType: next.targetType,
+                                            targetId: resolvedTargetId,
+                                            targetName: resolvedTargetName,
+                                            tag: next.tag,
+                                            approvedAt,
+                                          },
+                                        ];
+                                        return { ...n, storyBible: { ...n.storyBible, nonfiction: nf } };
+                                      });
+                                    }}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="pw-ai-mini-btn"
+                                    style={{ fontSize: 10, opacity: 0.75 }}
+                                    onClick={() => {
+                                      updateNfData({
+                                        researchLinkQueue: (nfData?.researchLinkQueue ?? []).map((q) => q.id === item.id ? { ...q, status: "later" } : q),
+                                      });
+                                    }}
+                                  >
+                                    Later
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="pw-ai-mini-btn"
+                                    style={{ fontSize: 10, background: "rgba(239,68,68,0.08)", color: "#ef4444" }}
+                                    onClick={() => {
+                                      updateNfData({
+                                        researchLinkQueue: (nfData?.researchLinkQueue ?? []).map((q) => q.id === item.id ? { ...q, status: "rejected" } : q),
+                                      });
+                                    }}
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {approved.length > 0 && (
+                        <div style={{ marginTop: 14, display: "grid", gap: 6 }}>
+                          <h4 style={{ margin: 0 }}>Approved Links</h4>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {approved.slice(-20).reverse().map((a) => (
+                              <span key={a.id} style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(var(--accent-rgb, 124,92,252), 0.12)", color: "var(--pw-accent)", fontSize: 11 }}>
+                                {a.tag} → {a.targetName}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* ═══════════════════ NON-FICTION: LIFE EVENTS ═══════════════════ */}
                 {bibleSection === "nf-events" && isNF && (
