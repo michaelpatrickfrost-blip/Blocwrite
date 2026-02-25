@@ -697,11 +697,11 @@ function Pricing() {
 
 function AICostExamples() {
   const rows = [
-    { words: "60,000", base: { claude: "$2.26", gpt: "$4.59", gemini: "$4.76", grok: "$0.40" }, editor: { claude: "$2.94", gpt: "$5.97", gemini: "$6.19", grok: "$0.52" } },
-    { words: "70,000", base: { claude: "$2.64", gpt: "$5.35", gemini: "$5.55", grok: "$0.47" }, editor: { claude: "$3.43", gpt: "$6.96", gemini: "$7.22", grok: "$0.61" } },
-    { words: "80,000", base: { claude: "$3.02", gpt: "$6.11", gemini: "$6.35", grok: "$0.53" }, editor: { claude: "$3.93", gpt: "$7.94", gemini: "$8.26", grok: "$0.69" } },
-    { words: "90,000", base: { claude: "$3.39", gpt: "$6.88", gemini: "$7.14", grok: "$0.60" }, editor: { claude: "$4.41", gpt: "$8.94", gemini: "$9.28", grok: "$0.78" } },
-    { words: "100,000", base: { claude: "$3.77", gpt: "$7.64", gemini: "$7.93", grok: "$0.67" }, editor: { claude: "$4.90", gpt: "$9.93", gemini: "$10.31", grok: "$0.87" } },
+    { words: "60,000", gpt: "$5.97", claude: "$2.94", grok: "$0.52", gemini: "$0.11" },
+    { words: "70,000", gpt: "$6.96", claude: "$3.43", grok: "$0.61", gemini: "$0.12" },
+    { words: "80,000", gpt: "$7.94", claude: "$3.93", grok: "$0.69", gemini: "$0.14" },
+    { words: "90,000", gpt: "$8.94", claude: "$4.41", grok: "$0.78", gemini: "$0.16" },
+    { words: "100,000", gpt: "$9.93", claude: "$4.90", grok: "$0.87", gemini: "$0.18" },
   ];
 
   const tableStyle: React.CSSProperties = {
@@ -738,33 +738,8 @@ function AICostExamples() {
             Estimated AI spend per full novel
           </h2>
           <p style={{ fontSize: 15, color: C.textSoft, maxWidth: 760, margin: "0 auto", lineHeight: 1.6 }}>
-            These are example totals for a full workflow (Canon, Spine, Plan, Blocs, and Prose). Estimates are based on recent OpenRouter model pricing and will vary by rewrite volume.
+            These are example totals for the full workflow (Spine, Canon, Plan, Blocs, Prose, and Editor). Estimates are based on recent OpenRouter model pricing and vary with rewrite volume.
           </p>
-        </div>
-
-        <div className="bw-ai-cost-table-wrap" style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Novel Words</th>
-                <th style={thStyle}>Claude Haiku 4.6</th>
-                <th style={thStyle}>GPT 5.2</th>
-                <th style={thStyle}>Gemini 3 Pro</th>
-                <th style={thStyle}>Grok</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={`base-${r.words}`}>
-                  <td style={{ ...tdStyle, fontWeight: 700, color: C.text }}>{r.words}</td>
-                  <td style={tdStyle}>{r.base.claude}</td>
-                  <td style={tdStyle}>{r.base.gpt}</td>
-                  <td style={tdStyle}>{r.base.gemini}</td>
-                  <td style={tdStyle}>{r.base.grok}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
 
         <div className="bw-ai-cost-table-wrap" style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
@@ -772,20 +747,20 @@ function AICostExamples() {
             <thead>
               <tr>
                 <th style={thStyle}>Novel Words</th>
-                <th style={thStyle}>Claude Haiku 4.6 (+Editor)</th>
-                <th style={thStyle}>GPT 5.2 (+Editor)</th>
-                <th style={thStyle}>Gemini 3 Pro (+Editor)</th>
-                <th style={thStyle}>Grok (+Editor)</th>
+                <th style={thStyle}>GPT 5.2</th>
+                <th style={thStyle}>Claude Haiku 4.6</th>
+                <th style={thStyle}>Grok</th>
+                <th style={thStyle}>Gemini 3 12B</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={`editor-${r.words}`}>
+                <tr key={`full-${r.words}`}>
                   <td style={{ ...tdStyle, fontWeight: 700, color: C.text }}>{r.words}</td>
-                  <td style={tdStyle}>{r.editor.claude}</td>
-                  <td style={tdStyle}>{r.editor.gpt}</td>
-                  <td style={tdStyle}>{r.editor.gemini}</td>
-                  <td style={tdStyle}>{r.editor.grok}</td>
+                  <td style={tdStyle}>{r.gpt}</td>
+                  <td style={tdStyle}>{r.claude}</td>
+                  <td style={tdStyle}>{r.grok}</td>
+                  <td style={tdStyle}>{r.gemini}</td>
                 </tr>
               ))}
             </tbody>
@@ -793,7 +768,7 @@ function AICostExamples() {
         </div>
 
         <p style={{ fontSize: 12, color: C.textMuted, marginTop: 12, lineHeight: 1.6 }}>
-          Pricing basis used: Claude Haiku 4.6 ($1/M input, $5/M output), GPT 5.2 ($1.75/M input, $14/M output), Gemini 3 Pro ($2/M input, $12/M output), Grok ($0.20/M input, $0.50/M output).
+          Pricing basis used: GPT 5.2 ($1.75/M input, $14/M output), Claude Haiku 4.6 ($1/M input, $5/M output), Grok ($0.20/M input, $0.50/M output), Gemini 3 12B ($0.04/M input, $0.13/M output).
         </p>
       </div>
     </section>
