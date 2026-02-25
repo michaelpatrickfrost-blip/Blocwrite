@@ -226,6 +226,12 @@ export function ProfilePopup({
 
       if (assistantProvider === "lmstudio") {
         const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        if (window.location.protocol === "https:" && /^http:\/\/(127\.0\.0\.1|localhost)/i.test(lmBaseUrl)) {
+          window.clearTimeout(timeoutId);
+          setOpenRouterError("LM Studio local URLs cannot be tested from the hosted HTTPS app. Use OpenRouter/Arli in cloud, or run Blocwrite locally to use LM Studio.");
+          setOpenRouterStatus("error");
+          return;
+        }
         try {
           const res = await fetch(`${lmBaseUrl}/chat/completions`, {
             method: "POST",
@@ -298,6 +304,47 @@ export function ProfilePopup({
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 45000);
 
+      if (provider === "lmstudio") {
+        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        if (window.location.protocol === "https:" && /^http:\/\/(127\.0\.0\.1|localhost)/i.test(lmBaseUrl)) {
+          window.clearTimeout(timeoutId);
+          setModelsError("LM Studio model listing from localhost is blocked on hosted HTTPS. Enter your model manually or run Blocwrite locally.");
+          return;
+        }
+        const lmRes = await fetch(`${lmBaseUrl}/models`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        window.clearTimeout(timeoutId);
+        const lmPayload = (await lmRes.json().catch(() => ({}))) as {
+          data?: Array<{ id?: string; name?: string; context_length?: number; max_context_length?: number }>;
+          error?: { message?: string } | string;
+          message?: string;
+        };
+        if (!lmRes.ok) {
+          const msg = typeof lmPayload.error === "string"
+            ? lmPayload.error
+            : lmPayload.error?.message || lmPayload.message || `LM Studio returned HTTP ${lmRes.status}`;
+          setModelsError(msg);
+          return;
+        }
+        const list = Array.isArray(lmPayload.data)
+          ? lmPayload.data
+              .filter((m): m is { id: string; name?: string; context_length?: number; max_context_length?: number } => typeof m.id === "string" && m.id.length > 0)
+              .map((m) => ({
+                id: m.id,
+                name: m.name || m.id,
+                contextLength: m.max_context_length ?? m.context_length ?? null,
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          : [];
+        modelsFetchedForProvider.current = provider;
+        setModels(list);
+        if (list.length === 0) setModelsError("LM Studio returned 0 models. Make sure a model is loaded.");
+        return;
+      }
+
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
         headers: {
@@ -347,7 +394,7 @@ export function ProfilePopup({
 
   // Auto-fetch models when AI tab is active or provider changes
   useEffect(() => {
-    if (activeTab !== "ai" || modelsLoading) return;
+    if (activeTab !== "ai" || modelsLoading || assistantProvider === "lmstudio") return;
     const needsFetch = models.length === 0 && !modelsError;
     const providerChanged = modelsFetchedForProvider.current !== null && modelsFetchedForProvider.current !== assistantProvider;
     if (needsFetch || providerChanged) {
