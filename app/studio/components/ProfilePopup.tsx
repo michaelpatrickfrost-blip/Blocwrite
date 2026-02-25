@@ -80,6 +80,26 @@ function normalizeClientApiKey(raw: string) {
   return trimmed.replace(/^Bearer\s+/i, "").trim();
 }
 
+function normalizeProviderBaseUrl(provider: AssistantProviderId, raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === provider)?.defaultBaseUrl || "";
+  }
+  const normalized = trimmed.replace(/\/+$/, "");
+  if (provider === "openrouter") {
+    if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/api/v1`;
+  }
+  if (provider === "arli") {
+    if (normalized.endsWith("/v1")) return normalized;
+    return `${normalized}/v1`;
+  }
+  // LM Studio / OpenAI-compatible local endpoints
+  const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
+  if (fixed.endsWith("/v1")) return fixed;
+  return `${fixed}/v1`;
+}
+
 type ProfilePopupProps = {
   open: boolean;
   onClose: () => void;
@@ -206,9 +226,10 @@ export function ProfilePopup({
   }, [assistantProvider, openRouterModel, assistantBaseUrl, onProviderSettingsChange]);
 
   const persistBaseUrl = useCallback((url: string) => {
-    setAssistantBaseUrl(url);
-    window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, url);
-    onProviderSettingsChange?.({ provider: assistantProvider, key: openRouterKey, model: openRouterModel, baseUrl: url });
+    const normalized = normalizeProviderBaseUrl(assistantProvider, url);
+    setAssistantBaseUrl(normalized);
+    window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, normalized);
+    onProviderSettingsChange?.({ provider: assistantProvider, key: openRouterKey, model: openRouterModel, baseUrl: normalized });
   }, [assistantProvider, openRouterKey, openRouterModel, onProviderSettingsChange]);
 
   const persistModel = useCallback((model: string) => {
@@ -225,7 +246,7 @@ export function ProfilePopup({
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
       if (assistantProvider === "lmstudio") {
-        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        const lmBaseUrl = normalizeProviderBaseUrl("lmstudio", assistantBaseUrl);
         try {
           const parsed = new URL(lmBaseUrl);
           const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
@@ -318,7 +339,7 @@ export function ProfilePopup({
       const timeoutId = window.setTimeout(() => controller.abort(), 45000);
 
       if (provider === "lmstudio") {
-        const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
+        const lmBaseUrl = normalizeProviderBaseUrl("lmstudio", assistantBaseUrl);
         try {
           const parsed = new URL(lmBaseUrl);
           const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
