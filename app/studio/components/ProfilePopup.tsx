@@ -226,9 +226,22 @@ export function ProfilePopup({
 
       if (assistantProvider === "lmstudio") {
         const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
-        if (window.location.protocol === "https:" && /^http:\/\/(127\.0\.0\.1|localhost)/i.test(lmBaseUrl)) {
+        try {
+          const parsed = new URL(lmBaseUrl);
+          const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+          if (window.location.protocol === "https:" && parsed.protocol === "http:") {
+            window.clearTimeout(timeoutId);
+            setOpenRouterError(
+              isLocalHost
+                ? `LM Studio local URL blocked on hosted HTTPS: ${lmBaseUrl}. Run Blocwrite locally, or use a reachable HTTPS endpoint.`
+                : `Insecure HTTP URL blocked on hosted HTTPS: ${lmBaseUrl}. Use an HTTPS endpoint for remote access.`,
+            );
+            setOpenRouterStatus("error");
+            return;
+          }
+        } catch {
           window.clearTimeout(timeoutId);
-          setOpenRouterError("LM Studio local URLs cannot be tested from the hosted HTTPS app. Use OpenRouter/Arli in cloud, or run Blocwrite locally to use LM Studio.");
+          setOpenRouterError(`Invalid LM Studio URL: ${lmBaseUrl}`);
           setOpenRouterStatus("error");
           return;
         }
@@ -306,9 +319,21 @@ export function ProfilePopup({
 
       if (provider === "lmstudio") {
         const lmBaseUrl = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
-        if (window.location.protocol === "https:" && /^http:\/\/(127\.0\.0\.1|localhost)/i.test(lmBaseUrl)) {
+        try {
+          const parsed = new URL(lmBaseUrl);
+          const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+          if (window.location.protocol === "https:" && parsed.protocol === "http:") {
+            window.clearTimeout(timeoutId);
+            setModelsError(
+              isLocalHost
+                ? `LM Studio localhost blocked on hosted HTTPS: ${lmBaseUrl}. Enter your model manually, run Blocwrite locally, or use a reachable HTTPS endpoint.`
+                : `Insecure HTTP URL blocked on hosted HTTPS: ${lmBaseUrl}. Use an HTTPS endpoint to list models.`,
+            );
+            return;
+          }
+        } catch {
           window.clearTimeout(timeoutId);
-          setModelsError("LM Studio model listing from localhost is blocked on hosted HTTPS. Enter your model manually or run Blocwrite locally.");
+          setModelsError(`Invalid LM Studio URL: ${lmBaseUrl}`);
           return;
         }
         const lmRes = await fetch(`${lmBaseUrl}/models`, {
