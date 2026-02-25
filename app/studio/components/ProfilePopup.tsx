@@ -94,10 +94,9 @@ function normalizeProviderBaseUrl(provider: AssistantProviderId, raw: string) {
     if (normalized.endsWith("/v1")) return normalized;
     return `${normalized}/v1`;
   }
-  // LM Studio / OpenAI-compatible local endpoints
-  const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
-  if (fixed.endsWith("/v1")) return fixed;
-  return `${fixed}/v1`;
+  // LM Studio / custom OpenAI-compatible endpoint:
+  // keep exactly what user entered (except trimming trailing slash).
+  return normalized;
 }
 
 type ProfilePopupProps = {
@@ -226,10 +225,10 @@ export function ProfilePopup({
   }, [assistantProvider, openRouterModel, assistantBaseUrl, onProviderSettingsChange]);
 
   const persistBaseUrl = useCallback((url: string) => {
-    const normalized = normalizeProviderBaseUrl(assistantProvider, url);
-    setAssistantBaseUrl(normalized);
-    window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, normalized);
-    onProviderSettingsChange?.({ provider: assistantProvider, key: openRouterKey, model: openRouterModel, baseUrl: normalized });
+    // Keep exactly what the user types in the field; normalize only at request time.
+    setAssistantBaseUrl(url);
+    window.localStorage.setItem(`pilotwriter.assistant.${assistantProvider}.baseUrl`, url);
+    onProviderSettingsChange?.({ provider: assistantProvider, key: openRouterKey, model: openRouterModel, baseUrl: url });
   }, [assistantProvider, openRouterKey, openRouterModel, onProviderSettingsChange]);
 
   const persistModel = useCallback((model: string) => {
