@@ -67,6 +67,7 @@ export default function LandingPage() {
           .bw-trust-grid { grid-template-columns:1fr 1fr !important; }
           .bw-pills-wrap { display:none !important; }
           .bw-nf-grid { grid-template-columns:1fr !important; }
+          .bw-ai-cost-table-wrap { overflow-x:auto; }
         }
         @media (max-width:480px) {
           .bw-hero-title { font-size:28px !important; }
@@ -82,6 +83,7 @@ export default function LandingPage() {
       <NonFictionSection />
       <IntelligenceGrid />
       <Pricing />
+      <AICostExamples />
       <FAQ />
       <CTABanner />
       <Footer />
@@ -687,6 +689,111 @@ function Pricing() {
 
         <p style={{ fontSize: 13, color: C.textMuted, maxWidth: 540, margin: "40px auto 0", lineHeight: 1.6 }}>
           Blocwrite never charges for AI. Connect your key from OpenRouter (free models available), an OpenAI-compatible endpoint like Arli AI, or LM Studio (local, completely free). Don&apos;t want AI? Toggle it off — every feature still works.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function AICostExamples() {
+  const rows = [
+    { words: "60,000", base: { claude: "$2.26", gpt: "$4.59", gemini: "$4.76", grok: "$0.40" }, editor: { claude: "$2.94", gpt: "$5.97", gemini: "$6.19", grok: "$0.52" } },
+    { words: "70,000", base: { claude: "$2.64", gpt: "$5.35", gemini: "$5.55", grok: "$0.47" }, editor: { claude: "$3.43", gpt: "$6.96", gemini: "$7.22", grok: "$0.61" } },
+    { words: "80,000", base: { claude: "$3.02", gpt: "$6.11", gemini: "$6.35", grok: "$0.53" }, editor: { claude: "$3.93", gpt: "$7.94", gemini: "$8.26", grok: "$0.69" } },
+    { words: "90,000", base: { claude: "$3.39", gpt: "$6.88", gemini: "$7.14", grok: "$0.60" }, editor: { claude: "$4.41", gpt: "$8.94", gemini: "$9.28", grok: "$0.78" } },
+    { words: "100,000", base: { claude: "$3.77", gpt: "$7.64", gemini: "$7.93", grok: "$0.67" }, editor: { claude: "$4.90", gpt: "$9.93", gemini: "$10.31", grok: "$0.87" } },
+  ];
+
+  const tableStyle: React.CSSProperties = {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: 760,
+  };
+  const thStyle: React.CSSProperties = {
+    textAlign: "left",
+    fontSize: 12,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: C.textMuted,
+    padding: "12px 14px",
+    borderBottom: `1px solid ${C.border}`,
+    background: C.bgWhite,
+  };
+  const tdStyle: React.CSSProperties = {
+    fontSize: 14,
+    color: C.textSoft,
+    padding: "12px 14px",
+    borderBottom: `1px solid ${C.borderSoft}`,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <section style={{ padding: "0 0 100px", background: C.bgWhite }}>
+      <div style={wrap()}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#7c5cfc", marginBottom: 14 }}>
+            AI COST EXAMPLES
+          </p>
+          <h2 className="bw-section-title" style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 12px", color: C.text }}>
+            Estimated AI spend per full novel
+          </h2>
+          <p style={{ fontSize: 15, color: C.textSoft, maxWidth: 760, margin: "0 auto", lineHeight: 1.6 }}>
+            These are example totals for a full workflow (Canon, Spine, Plan, Blocs, and Prose). Estimates are based on recent OpenRouter model pricing and will vary by rewrite volume.
+          </p>
+        </div>
+
+        <div className="bw-ai-cost-table-wrap" style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Novel Words</th>
+                <th style={thStyle}>Claude Haiku 4.6</th>
+                <th style={thStyle}>GPT 5.2</th>
+                <th style={thStyle}>Gemini 3 Pro</th>
+                <th style={thStyle}>Grok</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`base-${r.words}`}>
+                  <td style={{ ...tdStyle, fontWeight: 700, color: C.text }}>{r.words}</td>
+                  <td style={tdStyle}>{r.base.claude}</td>
+                  <td style={tdStyle}>{r.base.gpt}</td>
+                  <td style={tdStyle}>{r.base.gemini}</td>
+                  <td style={tdStyle}>{r.base.grok}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bw-ai-cost-table-wrap" style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Novel Words</th>
+                <th style={thStyle}>Claude Haiku 4.6 (+Editor)</th>
+                <th style={thStyle}>GPT 5.2 (+Editor)</th>
+                <th style={thStyle}>Gemini 3 Pro (+Editor)</th>
+                <th style={thStyle}>Grok (+Editor)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`editor-${r.words}`}>
+                  <td style={{ ...tdStyle, fontWeight: 700, color: C.text }}>{r.words}</td>
+                  <td style={tdStyle}>{r.editor.claude}</td>
+                  <td style={tdStyle}>{r.editor.gpt}</td>
+                  <td style={tdStyle}>{r.editor.gemini}</td>
+                  <td style={tdStyle}>{r.editor.grok}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p style={{ fontSize: 12, color: C.textMuted, marginTop: 12, lineHeight: 1.6 }}>
+          Pricing basis used: Claude Haiku 4.6 ($1/M input, $5/M output), GPT 5.2 ($1.75/M input, $14/M output), Gemini 3 Pro ($2/M input, $12/M output), Grok ($0.20/M input, $0.50/M output).
         </p>
       </div>
     </section>
