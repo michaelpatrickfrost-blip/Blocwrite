@@ -563,12 +563,14 @@ export function ProfilePopup({
                     {openRouterStatus === "checking" ? "Testing..." : openRouterStatus === "ok" ? "Connected" : "Test"}
                   </button>
                 </div>
-                {openRouterStatus === "ok" && (
-                  <p className="pw-settings-status ok">Connection successful</p>
-                )}
-                {openRouterStatus === "error" && openRouterError && (
-                  <p className="pw-settings-status error">{openRouterError}</p>
-                )}
+                <div className="pw-settings-status-row">
+                  {openRouterStatus === "ok" && (
+                    <p className="pw-settings-status ok">Connection successful</p>
+                  )}
+                  {openRouterStatus === "error" && openRouterError && (
+                    <p className="pw-settings-status error">{openRouterError}</p>
+                  )}
+                </div>
               </div>
 
               <div className="pw-settings-group">
@@ -582,7 +584,7 @@ export function ProfilePopup({
                 />
               </div>
 
-              <div className="pw-settings-group" ref={modelDropdownRef}>
+              <div className="pw-settings-group pw-settings-model-group" ref={modelDropdownRef}>
                 <div className="pw-settings-group-title">
                   Model
                   {modelsLoading && <span className="pw-settings-loading"> loading...</span>}
@@ -645,7 +647,6 @@ export function ProfilePopup({
                       placeholder={`Search ${models.length} models...`}
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}
-                      autoFocus
                     />
                     <div className="pw-settings-model-list">
                       {(() => {
