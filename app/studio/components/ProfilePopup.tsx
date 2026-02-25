@@ -641,10 +641,13 @@ export function ProfilePopup({
                   <input
                     className="pw-settings-input"
                     type="password"
-                    placeholder={selectedProvider.requiresKey ? "Enter your API key" : "Not required for this provider"}
+                    placeholder={
+                      selectedProvider.requiresKey
+                        ? "Enter your API key"
+                        : "Optional (use if your LM Studio endpoint requires auth)"
+                    }
                     value={openRouterKey}
                     onChange={(e) => persistKey(e.target.value)}
-                    disabled={!selectedProvider.requiresKey}
                   />
                   <button
                     type="button"
