@@ -75,7 +75,7 @@ type OpenRouterModelOption = {
     completion: string | null;
   };
 };
-type AssistantProviderId = "openrouter" | "arli" | "lmstudio";
+type AssistantProviderId = "openrouter";
 type AssistantProviderOption = {
   id: AssistantProviderId;
   label: string;
@@ -692,20 +692,6 @@ const ASSISTANT_PROVIDER_OPTIONS: AssistantProviderOption[] = [
     requiresKey: true,
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4o-mini",
-  },
-  {
-    id: "arli",
-    label: "Arli AI",
-    requiresKey: true,
-    defaultBaseUrl: "https://api.arliai.com/v1",
-    defaultModel: "google/gemma-3-27b-it",
-  },
-  {
-    id: "lmstudio",
-    label: "LM Studio",
-    requiresKey: false,
-    defaultBaseUrl: "http://127.0.0.1:1234/v1",
-    defaultModel: "local-model",
   },
 ];
 
@@ -5678,7 +5664,7 @@ function NovelWorkspacePage() {
     const model = (modelId || "").toLowerCase();
     const likelySmallPattern = /(mini|flash|haiku|small|7b|8b|instruct|qwen2\.5|mistral.*small|phi-|gemma-2|llama-3\.[12]-8b|deepseek-r1:free|free)/i;
     const likelyLargePattern = /(gpt-4\.1|gpt-5|claude.*sonnet|claude.*opus|gemini-2\.5-pro|o3|o1|r1)/i;
-    const smallModel = provider === "lmstudio" || likelySmallPattern.test(model);
+    const smallModel = likelySmallPattern.test(model);
     const highDetail = likelyLargePattern.test(model) && !smallModel;
     return {
       smallModel,
@@ -5730,52 +5716,7 @@ function NovelWorkspacePage() {
       const onGlobalAbort = () => controller.abort();
       aiAbortRef.current?.signal.addEventListener("abort", onGlobalAbort);
 
-      // LM Studio runs locally — call directly from the browser instead of the server proxy
-      if (assistantProvider === "lmstudio") {
-        const rawBase = (assistantBaseUrl.trim() || "http://127.0.0.1:1234/v1").replace(/\/+$/, "");
-        const localBaseUrl = rawBase;
-        const messages: Array<{ role: string; content: string }> = [];
-        if (systemMessage) messages.push({ role: "system", content: systemMessage });
-        messages.push({ role: "user", content: prompt });
-        const localBody: Record<string, unknown> = {
-          model: openRouterModel || "local-model",
-          max_tokens: maxTokens,
-          messages,
-          stream: false,
-        };
-        if (temperature != null) localBody.temperature = temperature;
-        if (jsonMode) localBody.response_format = { type: "json_object" };
-        const localHeaders: Record<string, string> = { "Content-Type": "application/json" };
-        try {
-          const localRes = await fetch(`${localBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers: localHeaders,
-            body: JSON.stringify(localBody),
-            signal: controller.signal,
-          });
-          const localPayload = (await localRes.json().catch(() => ({}))) as Record<string, unknown>;
-          const choices = localPayload.choices as Array<{ message?: { content?: string } }> | undefined;
-          const text = choices?.[0]?.message?.content ?? "";
-          if (!localRes.ok) {
-            const errMsg = typeof localPayload.error === "string" ? localPayload.error
-              : localPayload.error && typeof (localPayload.error as Record<string, unknown>).message === "string" ? ((localPayload.error as Record<string, unknown>).message as string)
-              : `LM Studio error ${localRes.status}`;
-            return { ok: false, status: localRes.status, text: "", apiError: errMsg };
-          }
-          return { ok: true, status: 200, text: text.trim() };
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") {
-            if (aiAbortRef.current?.signal.aborted) return { ok: false, status: 0, text: "", apiError: "cancelled" };
-            return { ok: false, status: 0, text: "", apiError: "timeout" };
-          }
-          return { ok: false, status: 0, text: "", apiError: "Could not reach LM Studio. Make sure it is running on your computer with the server enabled." };
-        } finally {
-          window.clearTimeout(timeoutId);
-          aiAbortRef.current?.signal.removeEventListener("abort", onGlobalAbort);
-        }
-      }
-
-      // Standard path: proxy through server for cloud providers
+      // Standard path: proxy through the server.
       let response: Response;
       try {
         response = await fetch("/api/openrouter/complete", {

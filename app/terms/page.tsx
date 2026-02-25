@@ -162,7 +162,7 @@ export default function TermsPage() {
         <div style={sectionStyle}>
           <h2 style={headingStyle}>8. AI Features &amp; Third-Party Services</h2>
           <p style={paraStyle}>
-            The AI-powered features of Blocwrite — including prose generation, smart rewrite modes, chapter rewrites, manuscript health assessment, thematic consistency scanning, narrative control centre analysis, continuity checks, knowledge/reveal scanning, and character conversations — are powered by third-party AI models accessed via API services (such as OpenRouter, compatible OpenAI-style endpoints such as Arli AI, or locally hosted models via LM Studio).
+            The AI-powered features of Blocwrite — including prose generation, smart rewrite modes, chapter rewrites, manuscript health assessment, thematic consistency scanning, narrative control centre analysis, continuity checks, knowledge/reveal scanning, and character conversations — are powered by third-party AI models accessed via OpenRouter.
           </p>
           <p style={paraStyle}>
             <strong>BYOK Model:</strong> Blocwrite does not include AI credits. You provide your own API key and choose which AI model to use. AI usage costs are determined by your chosen provider and model, not by Blocwrite. Free models are available through some providers.

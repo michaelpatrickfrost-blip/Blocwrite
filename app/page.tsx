@@ -688,7 +688,7 @@ function Pricing() {
         </div>
 
         <p style={{ fontSize: 13, color: C.textMuted, maxWidth: 540, margin: "40px auto 0", lineHeight: 1.6 }}>
-          Blocwrite never charges for AI. Connect your key from OpenRouter (free models available), an OpenAI-compatible endpoint like Arli AI, or LM Studio (local, completely free). Don&apos;t want AI? Toggle it off — every feature still works.
+          Blocwrite never charges for AI. Connect your key from OpenRouter (free models available). Don&apos;t want AI? Toggle it off — every feature still works.
         </p>
       </div>
     </section>
@@ -824,7 +824,7 @@ function PriceCard({ name, price, period, badge, features, highlighted }: {
 /* ── FAQ ── */
 const FAQ_ITEMS = [
   { q: "What is Blocwrite?", a: "A full novel-writing studio. You get Plot Spine planning, a living Canon that the AI actually reads, scene-by-scene drafting with detailed blueprints, 11-point continuity checking, manuscript health scoring, character chat, an AI co-author, smart rewrite, bolt-ons, writing packs, beta reader sharing, and publish-ready EPUB/DOCX export. Fiction and non-fiction." },
-  { q: "Wait \u2014 AI isn\u2019t included in the price?", a: "Correct. Blocwrite is the workspace; AI runs on your own API key. That means you choose the model and control the cost. Connect via OpenRouter (which offers free models), an OpenAI-compatible endpoint like Arli AI, or LM Studio for local, completely free inference. We will never charge you for AI usage." },
+  { q: "Wait \u2014 AI isn\u2019t included in the price?", a: "Correct. Blocwrite is the workspace; AI runs on your own API key. That means you choose the model and control the cost. Connect via OpenRouter (which offers free models). We will never charge you for AI usage." },
   { q: "What if I don\u2019t want to use AI at all?", a: "Toggle it off. Every feature \u2014 planning, writing, formatting, exporting \u2014 works without AI. You also get a writing session tracker, focus mode, and chapter word counts when AI is off." },
   { q: "What is the Plot Spine?", a: "Your story\u2019s structural backbone. Pick a narrative arc (Hero\u2019s Journey, Three-Act, Save the Cat, and more), and the AI generates story beats across all three acts, weaves in subplots, and maps character arcs. Every element auto-links to your chapter plan so each chapter knows exactly where it sits in the bigger picture." },
   { q: "How does The Editor work?", a: "One button, two modes. Inside a chapter: 11 continuity checks against your Canon, a grammar pass, and a prose polish. On the overview page: full-manuscript sentence-level rewrites with inline diffs you can accept or reject." },

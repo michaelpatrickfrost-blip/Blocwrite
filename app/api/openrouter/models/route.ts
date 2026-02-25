@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type ProviderId = "openrouter" | "arli" | "lmstudio";
+type ProviderId = "openrouter";
 type OpenRouterModel = {
   id?: string;
   name?: string;
@@ -20,25 +20,17 @@ type OpenRouterModelsPayload = {
   data?: OpenRouterModel[];
 };
 
-type GenericModelsPayload = {
-  data?: Array<{ id?: string; name?: string; context_length?: number; max_context_length?: number }>;
-};
-
 const PROVIDER_DEFAULT_BASE_URL: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
-  arli: "https://api.arliai.com/v1",
-  lmstudio: "http://127.0.0.1:1234/v1",
 };
 const MODELS_TIMEOUT_MS = 40000;
 
-function providerLabel(provider: ProviderId) {
-  if (provider === "openrouter") return "OpenRouter";
-  if (provider === "arli") return "Arli AI";
-  return "LM Studio";
+function providerLabel(_provider: ProviderId) {
+  return "OpenRouter";
 }
 
 function normalizeProvider(raw: string | null): ProviderId {
-  if (raw === "openrouter" || raw === "arli" || raw === "lmstudio") return raw;
+  if (raw === "openrouter") return raw;
   return "openrouter";
 }
 
@@ -55,15 +47,6 @@ function cleanBaseUrl(raw: string | null, provider: ProviderId) {
   if (provider === "openrouter") {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
-  }
-  if (provider === "arli") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
-  if (provider === "lmstudio") {
-    const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
-    if (fixed.endsWith("/v1")) return fixed;
-    return `${fixed}/v1`;
   }
   return normalized;
 }
@@ -94,7 +77,7 @@ function readOpenRouterError(payload: {
   return normalized;
 }
 
-function buildModelEndpoints(provider: ProviderId, baseUrl: string) {
+function buildModelEndpoints(baseUrl: string) {
   return [`${baseUrl}/models`];
 }
 
@@ -104,7 +87,7 @@ export async function GET(request: Request) {
     const apiKey = normalizeApiKey(request.headers.get("x-provider-key") || request.headers.get("x-openrouter-key"));
     const baseUrl = cleanBaseUrl(request.headers.get("x-provider-base-url"), provider);
     const modelsPublic = provider === "openrouter";
-    const requiresKey = provider !== "lmstudio" && !modelsPublic;
+    const requiresKey = !modelsPublic;
     if (requiresKey && !apiKey) {
       return NextResponse.json({ error: "Missing API key." }, { status: 400 });
     }
@@ -116,13 +99,13 @@ export async function GET(request: Request) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
 
-    const endpoints = buildModelEndpoints(provider, baseUrl);
+    const endpoints = buildModelEndpoints(baseUrl);
     let response: Response | null = null;
-    let payload: (OpenRouterModelsPayload & {
+    let payload: OpenRouterModelsPayload & {
       error?: { message?: string } | string;
       detail?: string | { message?: string } | Array<unknown>;
       message?: string;
-    }) | GenericModelsPayload = {};
+    } = {};
 
     console.log(`[models] provider=${provider} baseUrl=${baseUrl} hasKey=${!!apiKey} sendAuth=${!!apiKey && !modelsPublic}`);
 
@@ -163,30 +146,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status });
     }
 
-    const genericData = (payload as GenericModelsPayload).data;
-    if (provider !== "openrouter" && Array.isArray(genericData)) {
-      const models = genericData
-        .filter((item): item is { id: string; name?: string; context_length?: number; max_context_length?: number } => typeof item.id === "string" && item.id.length > 0)
-        .map((item) => ({
-          id: item.id,
-          name: item.name || item.id,
-          contextLength: item.max_context_length ?? item.context_length ?? null,
-          pricing: {
-            prompt: null,
-            completion: null,
-          },
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      console.log(`[models] OK: ${models.length} models for ${provider}`);
-      return NextResponse.json({ models });
-    }
-
-    const openRouterPayload = payload as OpenRouterModelsPayload & {
-      error?: { message?: string } | string;
-      detail?: string | { message?: string } | Array<unknown>;
-      message?: string;
-    };
-    const models = (openRouterPayload.data ?? [])
+    const models = (payload.data ?? [])
       .filter((item): item is OpenRouterModel & { id: string } => typeof item.id === "string" && item.id.length > 0)
       .map((item) => ({
         id: item.id,

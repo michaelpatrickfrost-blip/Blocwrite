@@ -17,7 +17,7 @@ type ModelOption = {
   contextLength: number | null;
 };
 
-type AssistantProviderId = "openrouter" | "arli" | "lmstudio";
+type AssistantProviderId = "openrouter";
 
 const ASSISTANT_PROVIDER_OPTIONS: Array<{
   id: AssistantProviderId;
@@ -32,20 +32,6 @@ const ASSISTANT_PROVIDER_OPTIONS: Array<{
     requiresKey: true,
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4o-mini",
-  },
-  {
-    id: "arli",
-    label: "Arli AI",
-    requiresKey: true,
-    defaultBaseUrl: "https://api.arliai.com/v1",
-    defaultModel: "google/gemma-3-27b-it",
-  },
-  {
-    id: "lmstudio",
-    label: "LM Studio",
-    requiresKey: false,
-    defaultBaseUrl: "http://127.0.0.1:1234/v1",
-    defaultModel: "local-model",
   },
 ];
 
@@ -86,17 +72,8 @@ function normalizeProviderBaseUrl(provider: AssistantProviderId, raw: string) {
     return ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === provider)?.defaultBaseUrl || "";
   }
   const normalized = trimmed.replace(/\/+$/, "");
-  if (provider === "openrouter") {
-    if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/api/v1`;
-  }
-  if (provider === "arli") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
-  // LM Studio / custom OpenAI-compatible endpoint:
-  // keep exactly what user entered (except trimming trailing slash).
-  return normalized;
+  if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
+  return `${normalized}/api/v1`;
 }
 
 type ProfilePopupProps = {
@@ -200,23 +177,6 @@ export function ProfilePopup({
     [onGrammarLocaleChange, onSettingsChange],
   );
 
-  const handleProviderChange = useCallback((id: AssistantProviderId) => {
-    setAssistantProvider(id);
-    window.localStorage.setItem("pilotwriter.assistant.provider", id);
-    const opt = ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === id);
-    const newKey = readStoredProviderField(id, "key");
-    const newBaseUrl = readStoredProviderField(id, "baseUrl") || opt?.defaultBaseUrl || "";
-    const newModel = readStoredProviderField(id, "model") || opt?.defaultModel || "";
-    setOpenRouterKey(newKey);
-    setAssistantBaseUrl(newBaseUrl);
-    setOpenRouterModel(newModel);
-    setModels([]);
-    setModelsError(null);
-    setShowModelDropdown(false);
-    setModelSearch("");
-    onProviderSettingsChange?.({ provider: id, key: newKey, model: newModel, baseUrl: newBaseUrl });
-  }, [onProviderSettingsChange]);
-
   const persistKey = useCallback((key: string) => {
     const normalized = normalizeClientApiKey(key);
     setOpenRouterKey(normalized);
@@ -244,59 +204,6 @@ export function ProfilePopup({
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
-      if (assistantProvider === "lmstudio") {
-        const lmBaseUrl = normalizeProviderBaseUrl("lmstudio", assistantBaseUrl);
-        try {
-          const parsed = new URL(lmBaseUrl);
-          const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-          if (window.location.protocol === "https:" && parsed.protocol === "http:") {
-            window.clearTimeout(timeoutId);
-            setOpenRouterError(
-              isLocalHost
-                ? `LM Studio local URL blocked on hosted HTTPS: ${lmBaseUrl}. Run Blocwrite locally, or use a reachable HTTPS endpoint.`
-                : `Insecure HTTP URL blocked on hosted HTTPS: ${lmBaseUrl}. Use an HTTPS endpoint for remote access.`,
-            );
-            setOpenRouterStatus("error");
-            return;
-          }
-        } catch {
-          window.clearTimeout(timeoutId);
-          setOpenRouterError(`Invalid LM Studio URL: ${lmBaseUrl}`);
-          setOpenRouterStatus("error");
-          return;
-        }
-        try {
-          const res = await fetch(`${lmBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: openRouterModel || "local-model",
-              max_tokens: 2,
-              messages: [{ role: "user", content: "hi" }],
-              stream: false,
-            }),
-            signal: controller.signal,
-          });
-          window.clearTimeout(timeoutId);
-          if (res.ok) {
-            setOpenRouterStatus("ok");
-          } else {
-            setOpenRouterError(`LM Studio returned status ${res.status}. Make sure a model is loaded.`);
-            setOpenRouterStatus("error");
-          }
-        } catch (e) {
-          window.clearTimeout(timeoutId);
-          if (e instanceof DOMException && e.name === "AbortError") {
-            setOpenRouterError("Connection timed out. Make sure LM Studio is running.");
-          } else {
-            setOpenRouterError("Could not reach LM Studio. Make sure it is running on your computer with the local server enabled (Developer > Start Server).");
-          }
-          setOpenRouterStatus("error");
-        }
-        return;
-      }
-
-      // Standard path: test via server proxy for cloud providers
       const res = await fetch("/api/openrouter/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -336,59 +243,6 @@ export function ProfilePopup({
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 45000);
-
-      if (provider === "lmstudio") {
-        const lmBaseUrl = normalizeProviderBaseUrl("lmstudio", assistantBaseUrl);
-        try {
-          const parsed = new URL(lmBaseUrl);
-          const isLocalHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-          if (window.location.protocol === "https:" && parsed.protocol === "http:") {
-            window.clearTimeout(timeoutId);
-            setModelsError(
-              isLocalHost
-                ? `LM Studio localhost blocked on hosted HTTPS: ${lmBaseUrl}. Enter your model manually, run Blocwrite locally, or use a reachable HTTPS endpoint.`
-                : `Insecure HTTP URL blocked on hosted HTTPS: ${lmBaseUrl}. Use an HTTPS endpoint to list models.`,
-            );
-            return;
-          }
-        } catch {
-          window.clearTimeout(timeoutId);
-          setModelsError(`Invalid LM Studio URL: ${lmBaseUrl}`);
-          return;
-        }
-        const lmRes = await fetch(`${lmBaseUrl}/models`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          signal: controller.signal,
-        });
-        window.clearTimeout(timeoutId);
-        const lmPayload = (await lmRes.json().catch(() => ({}))) as {
-          data?: Array<{ id?: string; name?: string; context_length?: number; max_context_length?: number }>;
-          error?: { message?: string } | string;
-          message?: string;
-        };
-        if (!lmRes.ok) {
-          const msg = typeof lmPayload.error === "string"
-            ? lmPayload.error
-            : lmPayload.error?.message || lmPayload.message || `LM Studio returned HTTP ${lmRes.status}`;
-          setModelsError(msg);
-          return;
-        }
-        const list = Array.isArray(lmPayload.data)
-          ? lmPayload.data
-              .filter((m): m is { id: string; name?: string; context_length?: number; max_context_length?: number } => typeof m.id === "string" && m.id.length > 0)
-              .map((m) => ({
-                id: m.id,
-                name: m.name || m.id,
-                contextLength: m.max_context_length ?? m.context_length ?? null,
-              }))
-              .sort((a, b) => a.name.localeCompare(b.name))
-          : [];
-        modelsFetchedForProvider.current = provider;
-        setModels(list);
-        if (list.length === 0) setModelsError("LM Studio returned 0 models. Make sure a model is loaded.");
-        return;
-      }
 
       const res = await fetch("/api/openrouter/models", {
         method: "GET",
@@ -437,9 +291,9 @@ export function ProfilePopup({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showModelDropdown]);
 
-  // Auto-fetch models when AI tab is active or provider changes
+  // Auto-fetch models when AI tab is active
   useEffect(() => {
-    if (activeTab !== "ai" || modelsLoading || assistantProvider === "lmstudio") return;
+    if (activeTab !== "ai" || modelsLoading) return;
     const needsFetch = models.length === 0 && !modelsError;
     const providerChanged = modelsFetchedForProvider.current !== null && modelsFetchedForProvider.current !== assistantProvider;
     if (needsFetch || providerChanged) {
@@ -620,19 +474,7 @@ export function ProfilePopup({
             <div className="pw-settings-section">
               <div className="pw-settings-group">
                 <div className="pw-settings-group-title">Provider</div>
-                <div className="pw-settings-provider-cards">
-                  {ASSISTANT_PROVIDER_OPTIONS.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`pw-settings-provider-card${assistantProvider === p.id ? " active" : ""}`}
-                      onClick={() => handleProviderChange(p.id)}
-                    >
-                      <span className="pw-settings-provider-name">{p.label}</span>
-                      {p.id === "openrouter" && <span className="pw-settings-provider-badge">Popular</span>}
-                    </button>
-                  ))}
-                </div>
+                <p className="pw-settings-hint">Blocwrite uses OpenRouter only.</p>
               </div>
 
               <div className="pw-settings-group">
@@ -641,11 +483,7 @@ export function ProfilePopup({
                   <input
                     className="pw-settings-input"
                     type="password"
-                    placeholder={
-                      selectedProvider.requiresKey
-                        ? "Enter your API key"
-                        : "Optional (use if your LM Studio endpoint requires auth)"
-                    }
+                    placeholder="Enter your OpenRouter API key"
                     value={openRouterKey}
                     onChange={(e) => persistKey(e.target.value)}
                   />
@@ -673,7 +511,7 @@ export function ProfilePopup({
                 <input
                   className="pw-settings-input"
                   type="text"
-                  placeholder={selectedProvider.requiresKey ? selectedProvider.defaultBaseUrl : "Leave blank for default"}
+                  placeholder={selectedProvider.defaultBaseUrl}
                   value={assistantBaseUrl}
                   onChange={(e) => persistBaseUrl(e.target.value)}
                 />

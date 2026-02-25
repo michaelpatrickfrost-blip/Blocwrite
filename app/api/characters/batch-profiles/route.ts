@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 900;
 
-type ProviderId = "openrouter" | "arli" | "lmstudio";
+type ProviderId = "openrouter";
 
 interface CharacterInput {
   id: string;
@@ -31,8 +31,6 @@ interface ProfileResult {
 
 const PROVIDER_BASE: Record<ProviderId, string> = {
   openrouter: "https://openrouter.ai/api/v1",
-  arli: "https://api.arliai.com/v1",
-  lmstudio: "http://127.0.0.1:1234/v1",
 };
 
 function cleanBaseUrl(raw: string, provider: ProviderId): string {
@@ -45,15 +43,6 @@ function cleanBaseUrl(raw: string, provider: ProviderId): string {
   if (provider === "openrouter") {
     if (normalized.endsWith("/api/v1") || normalized.endsWith("/v1")) return normalized;
     return `${normalized}/api/v1`;
-  }
-  if (provider === "arli") {
-    if (normalized.endsWith("/v1")) return normalized;
-    return `${normalized}/v1`;
-  }
-  if (provider === "lmstudio") {
-    const fixed = normalized.replace(/\/api\/v1$/i, "/v1").replace(/\/api$/i, "");
-    if (fixed.endsWith("/v1")) return fixed;
-    return `${fixed}/v1`;
   }
   return normalized;
 }
@@ -314,7 +303,7 @@ export async function POST(request: NextRequest) {
   if (!model || !characters?.length) {
     return NextResponse.json({ error: "Missing model or characters" }, { status: 400 });
   }
-  if (!apiKey && (provider === "openrouter" || provider === "arli")) {
+  if (!apiKey && provider === "openrouter") {
     return NextResponse.json({ error: "Missing API key" }, { status: 400 });
   }
 
