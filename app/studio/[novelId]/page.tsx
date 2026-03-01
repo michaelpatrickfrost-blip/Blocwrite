@@ -5466,6 +5466,99 @@ function NovelWorkspacePage() {
           tension: typeof entry?.tension === "number" && entry.tension >= 1 && entry.tension <= 5 ? entry.tension : undefined,
         };
       };
+      const findWeaknessForBloc = (candidateBlocks: SceneBlock[], idx: number) => {
+        const synopsis = (candidateBlocks[idx].synopsis || "").trim();
+        if (synopsis.length < 15) return "synopsis too short";
+        if (sentenceCount(synopsis) < 3) return "needs at least 3 concrete sentences";
+        if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return "needs more concrete detail";
+        if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
+        if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
+        const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
+        const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
+        if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) return `does not read like ${expectedStage}`;
+        const previous = candidateBlocks.filter((_, i) => i !== idx);
+        const { maxSimilarity } = findMostSimilarBloc(synopsis, previous);
+        if (maxSimilarity >= SIMILARITY_THRESHOLD) return `overlaps another bloc (${Math.round(maxSimilarity * 100)}%)`;
+        return null;
+      };
+      const buildDeterministicUniqueSynopsis = (idx: number, total: number, previousSynopsis: string) => {
+        const stage = expectedStageForIndex(idx, total);
+        const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
+        const prevSeed = firstSentence(previousSynopsis) || "the prior scene outcome";
+        const nextSeed = nextChapterSynopsis ? firstSentence(nextChapterSynopsis) : "the next development";
+        if (idx === total - 1) {
+          return `Bloc ${idx + 1} resolves the chapter pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`;
+        }
+        return `Bloc ${idx + 1} (${stage}) pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next bloc.`;
+      };
+      const repairWeakOrDuplicateBlocs = async (inputBlocks: SceneBlock[]) => {
+        let repaired = [...inputBlocks];
+        for (let pass = 0; pass < 2; pass++) {
+          for (let idx = 0; idx < repaired.length; idx++) {
+            const weakness = findWeaknessForBloc(repaired, idx);
+            if (!weakness) continue;
+            const expectedStage = expectedStageForIndex(idx, repaired.length);
+            const previousSynopses = repaired
+              .map((b, i) => (i === idx ? null : `Bloc ${i + 1}: ${b.synopsis}`))
+              .filter(Boolean)
+              .join("\n");
+            try {
+              const repairPrompt = [
+                `Rewrite ONLY bloc ${idx + 1} of ${repaired.length}.`,
+                `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+                `Current issue to fix: ${weakness}.`,
+                "- Must be highly specific with named characters, place, actions, conflict, and changed outcome.",
+                "- Must be distinct from every other bloc listed below.",
+                "- Minimum: 4 sentences and 55 words.",
+                "- Never use generic/template wording.",
+                idx > 0 ? "- Include explicit progression cue words (then/after/as a result/therefore/forcing)." : "",
+                `Required stage: ${expectedStage}.`,
+                `Chapter: ${activeChapter.title}`,
+                `Chapter synopsis: ${chapterSynopsis}`,
+                `Other blocs (do not repeat):\n${previousSynopses}`,
+                nextChapterSynopsis ? `Next chapter direction: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
+                context,
+              ].filter(Boolean).join("\n");
+              const regenerated = await requestOpenRouterJson<{ bloc?: BlocEntry; scene?: BlocEntry; synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }>(
+                repairPrompt,
+                950,
+                { timeoutMs: 90000, systemMessage: "Return ONLY valid JSON." },
+              );
+              const fromRegenerated = regenerated?.bloc
+                ?? regenerated?.scene
+                ?? (regenerated?.synopsis ? {
+                  synopsis: regenerated.synopsis,
+                  focus: regenerated.focus,
+                  wordTarget: regenerated.wordTarget,
+                  openingLine: regenerated.openingLine,
+                  closingHook: regenerated.closingHook,
+                  emotionalArc: regenerated.emotionalArc,
+                  sensoryPalette: regenerated.sensoryPalette,
+                  dialogueNotes: regenerated.dialogueNotes,
+                  tension: regenerated.tension,
+                } : null);
+              const rebuilt = toSceneBlock(fromRegenerated, idx);
+              if (rebuilt) {
+                const candidate = [...repaired];
+                candidate[idx] = rebuilt;
+                if (!findWeaknessForBloc(candidate, idx)) {
+                  repaired[idx] = rebuilt;
+                  continue;
+                }
+              }
+            } catch {
+              // fall through to deterministic repair
+            }
+            repaired[idx] = {
+              ...repaired[idx],
+              synopsis: buildDeterministicUniqueSynopsis(idx, repaired.length, idx > 0 ? repaired[idx - 1].synopsis : ""),
+            };
+          }
+          repaired = applyContinuityScaffold(repaired);
+          if (validateSceneSequence(repaired).ok) break;
+        }
+        return repaired;
+      };
 
       for (let i = 0; i < BLOC_COUNT; i++) {
         const isLast = i === BLOC_COUNT - 1;
@@ -5623,10 +5716,12 @@ function NovelWorkspacePage() {
       let finalizedBlocks = [...blocks];
       finalizedBlocks = applyContinuityScaffold(finalizedBlocks);
       finalizedBlocks = autoRepairSequence(finalizedBlocks);
+      finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
       const finalValidation = validateSceneSequence(finalizedBlocks);
       if (!finalValidation.ok) {
         // Last deterministic safety pass so users don't get weak placeholder-like output.
         finalizedBlocks = autoRepairSequence(finalizedBlocks);
+        finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
       }
 
       // Update the chapter sceneBlocks (planning layer) — does NOT touch content
