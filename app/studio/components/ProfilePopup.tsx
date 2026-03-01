@@ -92,6 +92,7 @@ type ProfilePopupProps = {
   onLogout?: () => void;
   onSettingsChange?: () => void;
   initialTab?: SettingsTab;
+  onLoreLockChange?: (enabled: boolean) => void;
 };
 
 export function ProfilePopup({
@@ -105,6 +106,7 @@ export function ProfilePopup({
   onLogout,
   onSettingsChange,
   initialTab,
+  onLoreLockChange,
 }: ProfilePopupProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
@@ -125,6 +127,7 @@ export function ProfilePopup({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
+  const [loreLockEnabled, setLoreLockEnabled] = useState(true);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const modelsFetchedForProvider = useRef<string | null>(null);
 
@@ -163,7 +166,27 @@ export function ProfilePopup({
     setOpenRouterKey(readStoredProviderField(getStoredProvider(), "key"));
     setAssistantBaseUrl(readStoredProviderField(getStoredProvider(), "baseUrl") || ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === getStoredProvider())?.defaultBaseUrl || "");
     setOpenRouterModel(readStoredProviderField(getStoredProvider(), "model") || ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === getStoredProvider())?.defaultModel || "");
+    try {
+      const raw = window.localStorage.getItem("pilotwriter.loreLock.enabled");
+      const enabled = raw == null ? true : raw === "true";
+      setLoreLockEnabled(enabled);
+      onLoreLockChange?.(enabled);
+    } catch {
+      setLoreLockEnabled(true);
+      onLoreLockChange?.(true);
+    }
   }, [open]);
+
+  const persistLoreLockEnabled = useCallback((enabled: boolean) => {
+    setLoreLockEnabled(enabled);
+    try {
+      window.localStorage.setItem("pilotwriter.loreLock.enabled", String(enabled));
+    } catch {
+      // ignore
+    }
+    onLoreLockChange?.(enabled);
+    onSettingsChange?.();
+  }, [onLoreLockChange, onSettingsChange]);
 
   const selectedProvider = ASSISTANT_PROVIDER_OPTIONS.find((p) => p.id === assistantProvider) ?? ASSISTANT_PROVIDER_OPTIONS[0];
 
@@ -475,6 +498,24 @@ export function ProfilePopup({
               <div className="pw-settings-group">
                 <div className="pw-settings-group-title">Provider</div>
                 <p className="pw-settings-hint">Blocwrite uses OpenRouter only.</p>
+              </div>
+
+              <div className="pw-settings-group">
+                <div className="pw-settings-group-title">Lore Consistency Lock</div>
+                <p className="pw-settings-hint">Warns when generated writing may conflict with lore constraints.</p>
+                <div className="pw-settings-toggle-row">
+                  <label className="pw-settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={loreLockEnabled}
+                      onChange={(e) => persistLoreLockEnabled(e.target.checked)}
+                    />
+                    <span className="pw-settings-toggle-track" />
+                  </label>
+                  <span className={`pw-settings-toggle-label ${loreLockEnabled ? "on" : "off"}`}>
+                    {loreLockEnabled ? "On" : "Off"}
+                  </span>
+                </div>
               </div>
 
               <div className="pw-settings-group">

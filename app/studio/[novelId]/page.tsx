@@ -124,6 +124,115 @@ type ProofreadCategory = {
   chip: string;
 };
 
+type LoreLockSeverity = "warning";
+type LoreLockActionType =
+  | "chapter_synopsis_generation"
+  | "chapter_synopsis_regeneration"
+  | "chapter_blocks_generation"
+  | "block_prose_generation"
+  | "selection_rewrite"
+  | "chapter_rewrite"
+  | "overview_editor_apply";
+type LoreLockIssue = {
+  id: string;
+  severity: LoreLockSeverity;
+  actionType: LoreLockActionType;
+  loreTitle: string;
+  rule: string;
+  conflict: string;
+  suggestion: string;
+};
+
+type LoreLockContextEntry = {
+  title: string;
+  constraints: string[];
+  keywords: string[];
+};
+
+const LORE_LOCK_CONTRADICTION_CUES = [
+  "no longer",
+  "without cost",
+  "without consequence",
+  "immune to",
+  "unlimited",
+  "breaks the rule",
+  "ignores the rule",
+  "bypasses",
+  "can now",
+  "suddenly can",
+  "works anyway",
+  "despite",
+];
+
+const LORE_LOCK_REQUIREMENT_CUES = [
+  "must",
+  "always",
+  "cannot",
+  "can't",
+  "never",
+  "only",
+  "requires",
+  "forbidden",
+  "forbids",
+  "cost",
+  "rule",
+  "limit",
+  "limitation",
+];
+
+function getLoreLockWords(value: string) {
+  const stopWords = new Set([
+    "the", "and", "for", "with", "that", "this", "from", "into", "over", "under", "then",
+    "than", "have", "has", "had", "your", "their", "there", "where", "when", "what", "which",
+    "while", "would", "could", "should", "will", "just", "about", "after", "before", "because",
+    "through", "every", "each", "only", "must", "cannot", "never", "always", "rule", "rules",
+  ]);
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4 && !stopWords.has(word));
+}
+
+function buildLoreLockContextEntries(loreEntries: LoreEntry[]): LoreLockContextEntry[] {
+  return loreEntries
+    .map((entry) => {
+      const constraints = (entry.constraints ?? [])
+        .map((constraint) => constraint.trim())
+        .filter(Boolean);
+      if (!entry.title.trim() && constraints.length === 0) return null;
+      const keywordSource = [entry.title, entry.content, ...constraints].join(" ");
+      return {
+        title: entry.title.trim() || "Untitled lore",
+        constraints,
+        keywords: Array.from(new Set(getLoreLockWords(keywordSource))).slice(0, 18),
+      };
+    })
+    .filter((entry): entry is LoreLockContextEntry => Boolean(entry));
+}
+
+function getLoreLockActionLabel(actionType: LoreLockActionType | null) {
+  switch (actionType) {
+    case "chapter_synopsis_generation":
+      return "chapter synopsis generation";
+    case "chapter_synopsis_regeneration":
+      return "chapter synopsis regeneration";
+    case "chapter_blocks_generation":
+      return "bloc generation";
+    case "block_prose_generation":
+      return "prose generation";
+    case "selection_rewrite":
+      return "selection rewrite";
+    case "chapter_rewrite":
+      return "chapter rewrite";
+    case "overview_editor_apply":
+      return "overview editor apply";
+    default:
+      return "writing";
+  }
+}
+
 function getMatchKey(match: GrammarMatch): string {
   return `${match.offset}:${match.length}:${match.message}`;
 }
@@ -1137,6 +1246,20 @@ function NovelWorkspacePage() {
   const [knowledgeScanBusy, setKnowledgeScanBusy] = useState(false);
   const [knowledgeScanError, setKnowledgeScanError] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
+  const [loreLockEnabled, setLoreLockEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const raw = window.localStorage.getItem("pilotwriter.loreLock.enabled");
+      return raw == null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+  const [loreLockStatus, setLoreLockStatus] = useState<"idle" | "checking" | "warn" | "ok">("idle");
+  const [loreLockIssues, setLoreLockIssues] = useState<LoreLockIssue[]>([]);
+  const [loreLockLastAction, setLoreLockLastAction] = useState<LoreLockActionType | null>(null);
+  const [loreLockDismissed, setLoreLockDismissed] = useState(false);
+  const [loreLockShowDetails, setLoreLockShowDetails] = useState(false);
   const [aiOff, setAiOff] = useState(() => getProfileAiOff());
   const profileLangCode = getProfileLanguage();
   const profileLangLabel = PROFILE_LANGUAGE_OPTIONS.find((o) => o.code === profileLangCode)?.label || "English";
@@ -1310,6 +1433,14 @@ function NovelWorkspacePage() {
     }, 1000);
     return () => window.clearInterval(timerId);
   }, [storyAiBusyAction]);
+
+  useEffect(() => {
+    if (loreLockEnabled) return;
+    setLoreLockStatus("idle");
+    setLoreLockIssues([]);
+    setLoreLockDismissed(false);
+    setLoreLockShowDetails(false);
+  }, [loreLockEnabled]);
 
   // Process batch profile queue one character at a time.
   // Each iteration runs after a React re-render, so all closures are FRESH —
@@ -4190,6 +4321,70 @@ function NovelWorkspacePage() {
     return parts.length > 2200 ? `${parts.slice(0, 2100).trimEnd()}\n[condensed]` : parts;
   }
 
+  const runLoreConsistencyCheck = useCallback((args: {
+    actionType: LoreLockActionType;
+    content: string;
+  }) => {
+    setLoreLockLastAction(args.actionType);
+    if (!loreLockEnabled || !novel) {
+      setLoreLockStatus("idle");
+      setLoreLockIssues([]);
+      return [] as LoreLockIssue[];
+    }
+
+    setLoreLockStatus("checking");
+    try {
+      const loreContext = buildLoreLockContextEntries(novel.storyBible.lore ?? []);
+      if (loreContext.length === 0) {
+        setLoreLockStatus("ok");
+        setLoreLockIssues([]);
+        return [] as LoreLockIssue[];
+      }
+
+      const haystack = args.content.toLowerCase();
+      const issues: LoreLockIssue[] = [];
+      for (const entry of loreContext) {
+        if (issues.length >= 6) break;
+        const mentionsTitle = entry.title && haystack.includes(entry.title.toLowerCase());
+        const keywordHits = entry.keywords.filter((keyword) => haystack.includes(keyword));
+        if (!mentionsTitle && keywordHits.length < 2) continue;
+
+        const conflictCue = LORE_LOCK_CONTRADICTION_CUES.find((cue) => haystack.includes(cue));
+        if (!conflictCue) continue;
+
+        const matchedConstraint = entry.constraints.find((constraint) => {
+          const lower = constraint.toLowerCase();
+          const requiresRule = LORE_LOCK_REQUIREMENT_CUES.some((token) => lower.includes(token));
+          if (!requiresRule) return false;
+          const anchorWords = getLoreLockWords(lower).slice(0, 6);
+          return anchorWords.some((word) => haystack.includes(word));
+        }) ?? entry.constraints[0];
+
+        if (!matchedConstraint) continue;
+        issues.push({
+          id: `lore-${Date.now()}-${issues.length}`,
+          severity: "warning",
+          actionType: args.actionType,
+          loreTitle: entry.title,
+          rule: matchedConstraint,
+          conflict: `Possible contradiction: generated text contains "${conflictCue}" near lore-linked content.`,
+          suggestion: "Review this section and keep the outcome within established lore constraints.",
+        });
+      }
+
+      setLoreLockIssues(issues);
+      setLoreLockStatus(issues.length > 0 ? "warn" : "ok");
+      if (issues.length > 0) {
+        setLoreLockDismissed(false);
+      }
+      return issues;
+    } catch {
+      // Checker must never break writing flows.
+      setLoreLockStatus("idle");
+      return [] as LoreLockIssue[];
+    }
+  }, [loreLockEnabled, novel]);
+
   function inferCanonIdsFromText(text: string) {
     if (!novel) return { characterIds: [] as string[], locationIds: [] as string[], loreIds: [] as string[] };
     const haystack = text.toLowerCase();
@@ -4426,6 +4621,10 @@ function NovelWorkspacePage() {
 
       // Replace the selected text
       const newText = fullProse.slice(0, selStart) + cleaned + fullProse.slice(selEnd);
+      runLoreConsistencyCheck({
+        actionType: "selection_rewrite",
+        content: newText,
+      });
       if (blockIdx >= 0) {
         pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
         const blocks = getSceneBlocks(activeChapter);
@@ -4586,6 +4785,11 @@ function NovelWorkspacePage() {
         return;
       }
 
+      runLoreConsistencyCheck({
+        actionType: "selection_rewrite",
+        content: fullContent.slice(0, selStart) + cleaned + fullContent.slice(selEnd),
+      });
+
       setRewritePreview({
         original: selectedText,
         revised: cleaned,
@@ -4621,6 +4825,10 @@ function NovelWorkspacePage() {
       // Plain editor mode: update chapter content directly (immediate undo)
       updateChapter(activeChapter.id, { content: newText }, true);
     }
+    runLoreConsistencyCheck({
+      actionType: "selection_rewrite",
+      content: newText,
+    });
     setRewritePreview(null);
     saveNow();
   }
@@ -4693,6 +4901,11 @@ function NovelWorkspacePage() {
         }
         updateSceneBlocks(chapterId, updatedBlocks);
         syncChapterContentFromBlocks(chapterId, updatedBlocks);
+        const combined = updatedBlocks.map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+        runLoreConsistencyCheck({
+          actionType: "chapter_rewrite",
+          content: combined,
+        });
       } else {
         // Plain editor: rewrite in chunks to handle long chapters
         const content = activeChapter.content ?? "";
@@ -4720,6 +4933,10 @@ function NovelWorkspacePage() {
         const finalText = rewrittenParts.join("\n\n");
         if (finalText.trim()) {
           updateChapter(chapterId, { content: finalText.trim() }, true);
+          runLoreConsistencyCheck({
+            actionType: "chapter_rewrite",
+            content: finalText.trim(),
+          });
         }
       }
     } catch (err) {
@@ -5050,7 +5267,119 @@ function NovelWorkspacePage() {
       const focusIds = FOCUS_PRESETS.map((p) => p.id).join(", ");
       const validFocusIds = FOCUS_PRESETS.map((p) => p.id);
       const validWordTargets = WORD_TARGET_OPTIONS.map((o) => o.value);
+      const SIMILARITY_THRESHOLD = 0.62;
       const blocks: SceneBlock[] = [];
+      const normalizeSynopsis = (value: string) =>
+        value
+          .toLowerCase()
+          .replace(/[^\w\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      const textDifference = (a: string, b: string): number => {
+        const na = normalizeSynopsis(a);
+        const nb = normalizeSynopsis(b);
+        if (!na || !nb) return 1;
+        if (na === nb) return 0;
+        const setA = new Set(na.split(" "));
+        const setB = new Set(nb.split(" "));
+        const intersection = [...setA].filter((w) => setB.has(w)).length;
+        const union = new Set([...setA, ...setB]).size;
+        return union === 0 ? 0 : 1 - intersection / union;
+      };
+      const hasProgressionCue = (synopsis: string) =>
+        /\b(then|after|later|by the end|therefore|as a result|forcing|which leads to|escalates|turning point|ultimately|until)\b/i.test(synopsis);
+      const sentenceCount = (text: string) =>
+        text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).length;
+      const expectedStageForIndex = (index: number, total: number): "setup" | "development" | "escalation" | "climax" | "resolution" => {
+        if (index === 0) return "setup";
+        if (index === total - 1) return "resolution";
+        if (index === total - 2) return "climax";
+        if (index >= Math.ceil(total / 2)) return "escalation";
+        return "development";
+      };
+      const stageCueRegex: Record<ReturnType<typeof expectedStageForIndex>, RegExp> = {
+        setup: /\b(introduces|sets up|establishes|begins|arrives|discovers|realizes|learns)\b/i,
+        development: /\b(complicates|pursues|tests|negotiates|investigates|adapts|pressures)\b/i,
+        escalation: /\b(escalates|worsens|intensifies|forces|corners|raises the stakes|backfires)\b/i,
+        climax: /\b(confronts|reveals|decides|chooses|breaks|wins|loses|turning point)\b/i,
+        resolution: /\b(resolves|lands|concludes|aftermath|reframes|sets up the next chapter|by the end)\b/i,
+      };
+      const hasExpectedStageCue = (synopsis: string, stage: ReturnType<typeof expectedStageForIndex>) =>
+        stageCueRegex[stage].test(synopsis);
+      const findMostSimilarBloc = (candidateSynopsis: string, existingBlocks: SceneBlock[]) => {
+        let maxSimilarity = 0;
+        let closestIndex = -1;
+        for (let idx = 0; idx < existingBlocks.length; idx++) {
+          const diff = textDifference(candidateSynopsis, existingBlocks[idx].synopsis || "");
+          const similarity = 1 - diff;
+          if (similarity > maxSimilarity) {
+            maxSimilarity = similarity;
+            closestIndex = idx;
+          }
+        }
+        return { maxSimilarity, closestIndex };
+      };
+      const firstSentence = (text: string) => {
+        const clean = text.trim().replace(/\s+/g, " ");
+        if (!clean) return "";
+        const match = clean.match(/[^.!?]+[.!?]?/);
+        return (match?.[0] || clean).trim();
+      };
+      const validateSceneSequence = (candidateBlocks: SceneBlock[]) => {
+        for (let idx = 0; idx < candidateBlocks.length; idx++) {
+          const synopsis = (candidateBlocks[idx].synopsis || "").trim();
+          if (synopsis.length < 15) return { ok: false, reason: `Bloc ${idx + 1} synopsis too short.` };
+          if (sentenceCount(synopsis) < 3) return { ok: false, reason: `Bloc ${idx + 1} needs at least 3 concrete sentences.` };
+          const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
+          if (!hasExpectedStageCue(synopsis, expectedStage)) {
+            return { ok: false, reason: `Bloc ${idx + 1} does not read like ${expectedStage}.` };
+          }
+          if (idx > 0 && !hasProgressionCue(synopsis)) {
+            return { ok: false, reason: `Bloc ${idx + 1} is missing explicit progression cues.` };
+          }
+          const previous = candidateBlocks.slice(0, idx);
+          const { maxSimilarity } = findMostSimilarBloc(synopsis, previous);
+          if (maxSimilarity >= SIMILARITY_THRESHOLD) {
+            return { ok: false, reason: `Bloc ${idx + 1} overlaps too much with earlier blocs.` };
+          }
+          if (idx > 0) {
+            const previousHook = (candidateBlocks[idx - 1].closingHook || "").trim().toLowerCase();
+            const opening = (candidateBlocks[idx].openingLine || "").trim().toLowerCase();
+            if (previousHook && opening && textDifference(previousHook, opening) > 0.92) {
+              return { ok: false, reason: `Bloc ${idx + 1} opening does not connect to prior closing hook.` };
+            }
+          }
+        }
+        return { ok: true as const };
+      };
+      const applyContinuityScaffold = (inputBlocks: SceneBlock[]) => {
+        if (inputBlocks.length === 0) return inputBlocks;
+        const lastIndex = inputBlocks.length - 1;
+        return inputBlocks.map((block, idx) => {
+          const next = idx < lastIndex ? inputBlocks[idx + 1] : null;
+          const prev = idx > 0 ? inputBlocks[idx - 1] : null;
+          const openingLine = block.openingLine?.trim()
+            || (idx === 0
+              ? `Open with immediate momentum: ${firstSentence(block.synopsis)}`
+              : `Continue directly from previous beat: ${firstSentence(prev?.closingHook || prev?.synopsis || "")}`);
+          const closingHook = block.closingHook?.trim()
+            || (next
+              ? `End on a turn that pushes the next scene: ${firstSentence(next.synopsis)}`
+              : "Close this chapter with a decisive shift that naturally points to the next chapter.");
+          const defaultTension = inputBlocks.length <= 1
+            ? 3
+            : Math.max(2, Math.min(5, 2 + Math.round((idx / lastIndex) * 3)));
+          const enforcedTension = idx === lastIndex
+            ? Math.max(4, defaultTension)
+            : defaultTension;
+          return {
+            ...block,
+            openingLine,
+            closingHook,
+            tension: typeof block.tension === "number" ? Math.max(block.tension, enforcedTension) : enforcedTension,
+          };
+        });
+      };
       const toSceneBlock = (entry: BlocEntry | null, index: number): SceneBlock | null => {
         const synopsis = (entry?.synopsis || "").trim();
         if (synopsis.length < 15) return null;
@@ -5073,29 +5402,35 @@ function NovelWorkspacePage() {
 
       for (let i = 0; i < BLOC_COUNT; i++) {
         const isLast = i === BLOC_COUNT - 1;
+        const expectedStage = expectedStageForIndex(i, BLOC_COUNT);
         const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
-        const oneBlocPrompt = [
-          `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
-          `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
-          "- synopsis must be detailed (4-8 sentences) and specific about what happens.",
-          "- Use exact character names from the roster. Never use generic labels.",
-          "- Make the ending of this bloc flow naturally into the next one.",
-          "",
-          `CHARACTER ROSTER:\n  ${characterRoster}`,
-          "",
-          `Chapter: ${activeChapter.title}`,
-          `Chapter synopsis: ${chapterSynopsis}`,
-          previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
-          previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
-          isLast ? "This is the FINAL bloc — close the chapter strongly." : `This bloc must advance beyond Bloc ${i}.`,
-          nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
-          storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
-          storyPosition.arcGuidance,
-          context,
-        ].filter(Boolean).join("\n");
-
         let blockBuilt = false;
-        for (let attempt = 0; attempt < 2 && !blockBuilt; attempt++) {
+        let rejectionHint = "";
+        for (let attempt = 0; attempt < 3 && !blockBuilt; attempt++) {
+          const oneBlocPrompt = [
+            `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
+            `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+            "- synopsis must be detailed (4-8 sentences) and specific about what happens.",
+            "- Use exact character names from the roster. Never use generic labels.",
+            "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
+            "- CRITICAL: never restate earlier blocs with different wording.",
+            `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
+            "- Include explicit verbs for actions and consequences, not just mood or description.",
+            "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
+            "",
+            `CHARACTER ROSTER:\n  ${characterRoster}`,
+            "",
+            `Chapter: ${activeChapter.title}`,
+            `Chapter synopsis: ${chapterSynopsis}`,
+            previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
+            previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+            isLast ? "This is the FINAL bloc — close the chapter strongly." : `This bloc must advance beyond Bloc ${i}.`,
+            nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
+            storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
+            storyPosition.arcGuidance,
+            rejectionHint ? `Fix this from the prior failed attempt: ${rejectionHint}` : "",
+            context,
+          ].filter(Boolean).join("\n");
           try {
             const jsonResult = await requestOpenRouterJson<{ bloc?: BlocEntry; scene?: BlocEntry; synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }>(
               oneBlocPrompt,
@@ -5117,15 +5452,31 @@ function NovelWorkspacePage() {
               } : null);
             const built = toSceneBlock(fromJson, i);
             if (built) {
-              blocks.push(built);
-              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
-              blockBuilt = true;
-              break;
+              const { maxSimilarity, closestIndex } = findMostSimilarBloc(built.synopsis, blocks);
+              const hasMinSentences = sentenceCount(built.synopsis) >= 3;
+              const stageMismatch = !hasExpectedStageCue(built.synopsis, expectedStage);
+              const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
+              const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
+              if (!isTooSimilar && !missingFlowCue && hasMinSentences && !stageMismatch) {
+                blocks.push(built);
+                updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+                blockBuilt = true;
+                break;
+              }
+              const closestBloc = closestIndex >= 0 ? `Bloc ${closestIndex + 1}` : "a previous bloc";
+              rejectionHint = !hasMinSentences
+                ? "Synopsis is too thin. Expand to at least 3 concrete action-consequence sentences."
+                : stageMismatch
+                  ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
+                  : isTooSimilar
+                ? `Too similar to ${closestBloc} (${Math.round(maxSimilarity * 100)}% overlap). Introduce a different scene purpose, different turning point, and different end state.`
+                : "Missing explicit progression cue. Add clear cause-and-effect transition words and a changed story state by scene end.";
             }
           } catch { /* retry with text parser fallback */ }
 
           try {
-            const raw = await requestOpenRouterText(oneBlocPrompt, 700, 60000, systemMsg, false, 0.4);
+            const temp = Math.min(0.9, 0.45 + attempt * 0.2);
+            const raw = await requestOpenRouterText(oneBlocPrompt, 700, 60000, systemMsg, false, temp);
             const parsed = parseJsonFromAi<Record<string, unknown>>(raw);
             const fromParsed = parsed?.bloc as BlocEntry | undefined
               ?? parsed?.scene as BlocEntry | undefined
@@ -5144,15 +5495,36 @@ function NovelWorkspacePage() {
                 : null);
             const built = toSceneBlock(fromParsed, i);
             if (built) {
-              blocks.push(built);
-              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
-              blockBuilt = true;
+              const { maxSimilarity, closestIndex } = findMostSimilarBloc(built.synopsis, blocks);
+              const hasMinSentences = sentenceCount(built.synopsis) >= 3;
+              const stageMismatch = !hasExpectedStageCue(built.synopsis, expectedStage);
+              const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
+              const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
+              if (!isTooSimilar && !missingFlowCue && hasMinSentences && !stageMismatch) {
+                blocks.push(built);
+                updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+                blockBuilt = true;
+                break;
+              }
+              const closestBloc = closestIndex >= 0 ? `Bloc ${closestIndex + 1}` : "a previous bloc";
+              rejectionHint = !hasMinSentences
+                ? "Synopsis is too thin. Expand to at least 3 concrete action-consequence sentences."
+                : stageMismatch
+                  ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
+                  : isTooSimilar
+                ? `Too similar to ${closestBloc} (${Math.round(maxSimilarity * 100)}% overlap). Introduce a different scene purpose, different turning point, and different end state.`
+                : "Missing explicit progression cue. Add clear cause-and-effect transition words and a changed story state by scene end.";
             }
           } catch { /* next attempt */ }
         }
 
         if (!blockBuilt) {
-          const fallbackSynopsis = `${isLast ? "Chapter-closing" : "Progressive"} scene where named characters push the conflict forward with concrete actions and emotional consequences.`;
+          const phaseHint = i === 0
+            ? "opening movement that establishes immediate objective and friction"
+            : isLast
+              ? "final movement that resolves this chapter's core pressure and points to what comes next"
+              : "middle movement that escalates stakes and forces a new decision";
+          const fallbackSynopsis = `Distinct ${phaseHint}. Characters take concrete actions, face a new obstacle, and end in a changed story state that pushes the next bloc forward.`;
           blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: fallbackSynopsis, notes: chapterLevelBolton });
           updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
         }
@@ -5162,12 +5534,72 @@ function NovelWorkspacePage() {
         throw new Error("AI returned invalid data — no usable blocs were found. Try again or switch to a different model.");
       }
 
+      let finalizedBlocks = [...blocks];
+      try {
+        const sequenceInput = blocks.map((block, idx) => ({
+          index: idx + 1,
+          synopsis: block.synopsis,
+          openingLine: block.openingLine || "",
+          closingHook: block.closingHook || "",
+          emotionalArc: block.emotionalArc || "",
+          tension: block.tension ?? null,
+          focus: block.focus || "default",
+          wordTarget: block.wordTarget || 0,
+        }));
+        const continuityPrompt = [
+          "Polish this full chapter bloc sequence for continuity and uniqueness.",
+          `Return JSON only: { "blocs": [ { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } ] }`,
+          "- Keep the same number of blocs.",
+          "- Every bloc synopsis must be distinct in purpose and events.",
+          "- Ensure a clear start -> escalation -> payoff flow across the chapter.",
+          "- Every bloc after the first must include explicit progression/cause-and-effect cues.",
+          "- Bloc stages by order: first=setup, early-middle=development, late-middle=escalation, penultimate=climax, final=resolution.",
+          "- Every synopsis must contain at least 3 concrete action-consequence sentences.",
+          "- openingLine of bloc N should feel like a continuation of closingHook of bloc N-1.",
+          "- Keep all canon names and chapter intent intact.",
+          `Chapter title: ${activeChapter.title}`,
+          `Chapter synopsis: ${chapterSynopsis}`,
+          previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+          nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
+          `Current bloc sequence JSON:\n${JSON.stringify(sequenceInput)}`,
+        ].filter(Boolean).join("\n");
+        const polished = await requestOpenRouterJson<{ blocs?: BlocEntry[]; blocks?: BlocEntry[]; sceneBlocks?: BlocEntry[] }>(
+          continuityPrompt,
+          1400,
+          { timeoutMs: 80000, systemMessage: "Return ONLY valid JSON." },
+        );
+        const polishedEntries = polished?.blocs ?? polished?.blocks ?? polished?.sceneBlocks ?? [];
+        if (Array.isArray(polishedEntries) && polishedEntries.length === blocks.length) {
+          const polishedBlocks = polishedEntries
+            .map((entry, idx) => toSceneBlock(entry, idx))
+            .filter((b): b is SceneBlock => Boolean(b))
+            .map((b) => ({ ...b, notes: chapterLevelBolton }));
+          if (polishedBlocks.length === blocks.length) {
+            const validation = validateSceneSequence(polishedBlocks);
+            if (validation.ok) {
+              finalizedBlocks = polishedBlocks;
+            }
+          }
+        }
+      } catch {
+        // Polishing pass is best-effort only; never block generation.
+      }
+      finalizedBlocks = applyContinuityScaffold(finalizedBlocks);
+      const finalValidation = validateSceneSequence(finalizedBlocks);
+      if (!finalValidation.ok) {
+        setStoryAiError(`Bloc continuity check: ${finalValidation.reason} You can regenerate if needed.`);
+      }
+
       // Update the chapter sceneBlocks (planning layer) — does NOT touch content
-      updateChapter(targetChapterId, { sceneBlocks: blocks });
+      updateChapter(targetChapterId, { sceneBlocks: finalizedBlocks });
+      runLoreConsistencyCheck({
+        actionType: "chapter_blocks_generation",
+        content: finalizedBlocks.map((scene) => scene.synopsis?.trim() || "").filter(Boolean).join("\n\n"),
+      });
 
       // Link generated bloc names back to Canon IDs for this chapter plan.
       if (planChapter) {
-        const linked = inferCanonIdsFromText([chapterSynopsis, ...blocks.map((b) => b.synopsis)].join("\n"));
+        const linked = inferCanonIdsFromText([chapterSynopsis, ...finalizedBlocks.map((b) => b.synopsis)].join("\n"));
         const mergedCharacterIds = Array.from(new Set([...(planChapter.characterIds ?? []), ...linked.characterIds]));
         const mergedLocationIds = Array.from(new Set([...(planChapter.locationIds ?? []), ...linked.locationIds]));
         const mergedLoreIds = Array.from(new Set([...(planChapter.loreIds ?? []), ...linked.loreIds]));
@@ -5623,6 +6055,10 @@ function NovelWorkspacePage() {
       updatedBlocks[blockIndex] = { ...block, prose };
       updateSceneBlocks(targetChapterId, updatedBlocks, true);
       syncChapterContentFromBlocks(targetChapterId, updatedBlocks);
+      runLoreConsistencyCheck({
+        actionType: "block_prose_generation",
+        content: updatedBlocks.map((scene) => scene.prose?.trim() || "").filter(Boolean).join("\n\n"),
+      });
       requestAnimationFrame(() => {
         const el = blockProseRefs.current[blockIndex];
         if (el) autoSizeEditorInput(el);
@@ -7703,6 +8139,10 @@ function NovelWorkspacePage() {
         }
 
         if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
+        runLoreConsistencyCheck({
+          actionType: "chapter_synopsis_generation",
+          content: synopsis,
+        });
         generatedSynopses.push(synopsis);
 
         // Track used location so next chapter picks a different one
@@ -8233,6 +8673,10 @@ function NovelWorkspacePage() {
       }
 
       const synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${title}.`;
+      runLoreConsistencyCheck({
+        actionType: "chapter_synopsis_regeneration",
+        content: synopsis,
+      });
       const characters = novel.storyBible.characters ?? [];
       const locations = novel.storyBible.locations ?? [];
       const lore = novel.storyBible.lore ?? [];
@@ -8690,6 +9134,10 @@ function NovelWorkspacePage() {
           skipped++;
         }
       }
+      runLoreConsistencyCheck({
+        actionType: "overview_editor_apply",
+        content,
+      });
       updateChapter(chapter.id, { content });
     }
 
@@ -11496,6 +11944,57 @@ function NovelWorkspacePage() {
             {!showStoryBibleModal && !aiOff && storyAiError && (
               <div className="pw-ora-error" style={{ margin: 0 }}>
                 {storyAiError}
+              </div>
+            )}
+            {!showStoryBibleModal && loreLockEnabled && !loreLockDismissed && loreLockStatus === "warn" && loreLockIssues.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid rgba(245, 158, 11, 0.45)",
+                  background: "rgba(245, 158, 11, 0.08)",
+                  color: "var(--pw-text)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>
+                    Lore warning ({loreLockIssues.length}){loreLockLastAction ? ` - ${getLoreLockActionLabel(loreLockLastAction)}` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ fontSize: 11, padding: "4px 8px" }}
+                      onClick={() => setLoreLockShowDetails((prev) => !prev)}
+                    >
+                      {loreLockShowDetails ? "Hide details" : "Details"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ fontSize: 11, padding: "4px 8px" }}
+                      onClick={() => {
+                        setLoreLockDismissed(true);
+                        setLoreLockShowDetails(false);
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+                {loreLockShowDetails && (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {loreLockIssues.slice(0, 3).map((issue) => (
+                      <div key={issue.id} style={{ fontSize: 11, color: "var(--pw-text-dim)", display: "grid", gap: 2 }}>
+                        <div><strong style={{ color: "var(--pw-text)" }}>{issue.loreTitle}:</strong> {issue.rule}</div>
+                        <div>{issue.conflict}</div>
+                        <div style={{ color: "var(--pw-text)" }}>Suggestion: {issue.suggestion}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -20741,6 +21240,7 @@ function NovelWorkspacePage() {
         }}
         onSettingsChange={() => void saveSettingsToServer(gatherSettings())}
         initialTab={profileInitialTab}
+        onLoreLockChange={(enabled) => setLoreLockEnabled(enabled)}
       />
 
       {/* ── Smart Rewrite floating toolbar ── */}

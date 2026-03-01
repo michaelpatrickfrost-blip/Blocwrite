@@ -1661,6 +1661,7 @@ export function gatherSettings(): Record<string, string> {
       "pilotwriter.profile.language",
       "pilotwriter.profile.aiOff",
       "pilotwriter.assistant.provider",
+      "pilotwriter.loreLock.enabled",
       "pilotwriter.boltons.library.v1",
       "pilotwriter.tutorial.complete",
       "bw-theme",
