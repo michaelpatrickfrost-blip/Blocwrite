@@ -5357,6 +5357,9 @@ function NovelWorkspacePage() {
         }
         return { ok: true as const };
       };
+      const isGenericTemplateSynopsis = (synopsis: string) =>
+        /\bdistinct\s+(opening|middle|final)\s+movement\b/i.test(synopsis) ||
+        /\bcharacters take concrete actions, face a new obstacle\b/i.test(synopsis);
       const applyContinuityScaffold = (inputBlocks: SceneBlock[]) => {
         if (inputBlocks.length === 0) return inputBlocks;
         const lastIndex = inputBlocks.length - 1;
@@ -5417,7 +5420,7 @@ function NovelWorkspacePage() {
           .join("\n");
         let blockBuilt = false;
         let rejectionHint = "";
-        for (let attempt = 0; attempt < 2 && !blockBuilt; attempt++) {
+        for (let attempt = 0; attempt < 3 && !blockBuilt; attempt++) {
           const oneBlocPrompt = [
             `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
@@ -5467,10 +5470,12 @@ function NovelWorkspacePage() {
               const { maxSimilarity, closestIndex } = findMostSimilarBloc(built.synopsis, blocks);
               const hasMinSentences = sentenceCount(built.synopsis) >= 3;
               const hasMinWords = wordCount(built.synopsis) >= MIN_SYNOPSIS_WORDS;
-              const stageMismatch = !hasExpectedStageCue(built.synopsis, expectedStage);
+              const requireStageCue = i === 0 || i === BLOC_COUNT - 1;
+              const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
-              if (!isTooSimilar && !missingFlowCue && hasMinSentences && hasMinWords && !stageMismatch) {
+              const isGeneric = isGenericTemplateSynopsis(built.synopsis);
+              if (!isTooSimilar && !missingFlowCue && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -5481,6 +5486,8 @@ function NovelWorkspacePage() {
                 ? "Synopsis is too thin. Expand to at least 3 concrete action-consequence sentences."
                 : !hasMinWords
                   ? "Synopsis lacks detail density. Expand to at least 45 words with concrete actions, reactions, and consequences."
+                  : isGeneric
+                    ? "Do not use template language. Replace placeholders with specific names, actions, settings, and consequences from this chapter."
                 : stageMismatch
                   ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
                   : isTooSimilar
@@ -5493,13 +5500,59 @@ function NovelWorkspacePage() {
         }
 
         if (!blockBuilt) {
-          const phaseHint = i === 0
-            ? "opening movement that establishes immediate objective and friction"
-            : isLast
-              ? "final movement that resolves this chapter's core pressure and points to what comes next"
-              : "middle movement that escalates stakes and forces a new decision";
-          const fallbackSynopsis = `Distinct ${phaseHint}. Characters take concrete actions, face a new obstacle, and end in a changed story state that pushes the next bloc forward.`;
-          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: fallbackSynopsis, notes: chapterLevelBolton });
+          try {
+            const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
+            const repairPrompt = [
+              `REPAIR bloc ${i + 1} of ${BLOC_COUNT}.`,
+              `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+              "- Write a concrete, scene-specific synopsis with named characters, setting, actions, conflict, and outcome.",
+              "- Minimum: 4 sentences and 55 words.",
+              "- Never use generic/template wording.",
+              "- Must advance beyond previous blocs and remain consistent with chapter synopsis.",
+              `Expected stage: ${expectedStage}.`,
+              `Chapter: ${activeChapter.title}`,
+              `Chapter synopsis: ${chapterSynopsis}`,
+              previousSynopses ? `Previous blocs:\n${previousSynopses}` : "",
+              nextChapterSynopsis ? `Next chapter direction: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
+              context,
+            ].filter(Boolean).join("\n");
+            const repaired = await requestOpenRouterJson<{ bloc?: BlocEntry; scene?: BlocEntry; synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }>(
+              repairPrompt,
+              900,
+              { timeoutMs: 90000, systemMessage: "Return ONLY valid JSON." },
+            );
+            const fromRepair = repaired?.bloc
+              ?? repaired?.scene
+              ?? (repaired?.synopsis ? {
+                synopsis: repaired.synopsis,
+                focus: repaired.focus,
+                wordTarget: repaired.wordTarget,
+                openingLine: repaired.openingLine,
+                closingHook: repaired.closingHook,
+                emotionalArc: repaired.emotionalArc,
+                sensoryPalette: repaired.sensoryPalette,
+                dialogueNotes: repaired.dialogueNotes,
+                tension: repaired.tension,
+              } : null);
+            const rebuilt = toSceneBlock(fromRepair, i);
+            const rebuiltTooThin = !rebuilt || sentenceCount(rebuilt.synopsis) < 3 || wordCount(rebuilt.synopsis) < MIN_SYNOPSIS_WORDS || isGenericTemplateSynopsis(rebuilt.synopsis);
+            if (rebuilt && !rebuiltTooThin) {
+              blocks.push(rebuilt);
+              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+              blockBuilt = true;
+            }
+          } catch {
+            // fall through to deterministic non-generic fallback below
+          }
+        }
+
+        if (!blockBuilt) {
+          const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
+          const prevSeed = blocks.length > 0 ? firstSentence(blocks[blocks.length - 1].synopsis) : "the opening situation";
+          const deterministicSynopsis = isLast
+            ? `In this closing scene, the central conflict around ${chapterSeed} reaches a concrete decision point. The characters act on what was set in motion by ${prevSeed}, and the confrontation forces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points into the next chapter.`
+            : `This scene advances the chapter conflict around ${chapterSeed} with a new obstacle that grows directly out of ${prevSeed}. The characters take specific actions under pressure, and those choices create immediate consequences that change the story state. The ending turns the tension forward so the next bloc has a clear handoff.`;
+          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: deterministicSynopsis, notes: chapterLevelBolton });
           updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
         }
       }
