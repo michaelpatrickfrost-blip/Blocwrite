@@ -5268,6 +5268,7 @@ function NovelWorkspacePage() {
       const validFocusIds = FOCUS_PRESETS.map((p) => p.id);
       const validWordTargets = WORD_TARGET_OPTIONS.map((o) => o.value);
       const SIMILARITY_THRESHOLD = 0.62;
+      const MIN_SYNOPSIS_WORDS = 45;
       const blocks: SceneBlock[] = [];
       const normalizeSynopsis = (value: string) =>
         value
@@ -5290,6 +5291,8 @@ function NovelWorkspacePage() {
         /\b(then|after|later|by the end|therefore|as a result|forcing|which leads to|escalates|turning point|ultimately|until)\b/i.test(synopsis);
       const sentenceCount = (text: string) =>
         text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).length;
+      const wordCount = (text: string) =>
+        text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
       const expectedStageForIndex = (index: number, total: number): "setup" | "development" | "escalation" | "climax" | "resolution" => {
         if (index === 0) return "setup";
         if (index === total - 1) return "resolution";
@@ -5330,8 +5333,10 @@ function NovelWorkspacePage() {
           const synopsis = (candidateBlocks[idx].synopsis || "").trim();
           if (synopsis.length < 15) return { ok: false, reason: `Bloc ${idx + 1} synopsis too short.` };
           if (sentenceCount(synopsis) < 3) return { ok: false, reason: `Bloc ${idx + 1} needs at least 3 concrete sentences.` };
+          if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return { ok: false, reason: `Bloc ${idx + 1} needs more concrete detail.` };
           const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
-          if (!hasExpectedStageCue(synopsis, expectedStage)) {
+          const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
+          if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) {
             return { ok: false, reason: `Bloc ${idx + 1} does not read like ${expectedStage}.` };
           }
           if (idx > 0 && !hasProgressionCue(synopsis)) {
@@ -5403,14 +5408,20 @@ function NovelWorkspacePage() {
       for (let i = 0; i < BLOC_COUNT; i++) {
         const isLast = i === BLOC_COUNT - 1;
         const expectedStage = expectedStageForIndex(i, BLOC_COUNT);
-        const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
+        const previousTrajectory = blocks
+          .map((b, idx) => `B${idx + 1}: ${firstSentence(b.synopsis)}`)
+          .join(" | ");
+        const recentSynopses = blocks
+          .slice(Math.max(0, blocks.length - 2))
+          .map((b, idx, arr) => `Bloc ${blocks.length - arr.length + idx + 1}: ${b.synopsis}`)
+          .join("\n");
         let blockBuilt = false;
         let rejectionHint = "";
-        for (let attempt = 0; attempt < 3 && !blockBuilt; attempt++) {
+        for (let attempt = 0; attempt < 2 && !blockBuilt; attempt++) {
           const oneBlocPrompt = [
             `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
-            "- synopsis must be detailed (4-8 sentences) and specific about what happens.",
+            "- synopsis must be detailed (4-8 sentences, minimum 45 words) and specific about what happens.",
             "- Use exact character names from the roster. Never use generic labels.",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
@@ -5422,7 +5433,8 @@ function NovelWorkspacePage() {
             "",
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
-            previousSynopses ? `Previous blocs already written:\n${previousSynopses}` : "",
+            previousTrajectory ? `Story trajectory so far: ${clampPromptText(previousTrajectory, 500)}` : "",
+            recentSynopses ? `Most recent blocs (avoid repetition):\n${recentSynopses}` : "",
             previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
             isLast ? "This is the FINAL bloc — close the chapter strongly." : `This bloc must advance beyond Bloc ${i}.`,
             nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
@@ -5454,10 +5466,11 @@ function NovelWorkspacePage() {
             if (built) {
               const { maxSimilarity, closestIndex } = findMostSimilarBloc(built.synopsis, blocks);
               const hasMinSentences = sentenceCount(built.synopsis) >= 3;
+              const hasMinWords = wordCount(built.synopsis) >= MIN_SYNOPSIS_WORDS;
               const stageMismatch = !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
-              if (!isTooSimilar && !missingFlowCue && hasMinSentences && !stageMismatch) {
+              if (!isTooSimilar && !missingFlowCue && hasMinSentences && hasMinWords && !stageMismatch) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -5466,56 +5479,17 @@ function NovelWorkspacePage() {
               const closestBloc = closestIndex >= 0 ? `Bloc ${closestIndex + 1}` : "a previous bloc";
               rejectionHint = !hasMinSentences
                 ? "Synopsis is too thin. Expand to at least 3 concrete action-consequence sentences."
+                : !hasMinWords
+                  ? "Synopsis lacks detail density. Expand to at least 45 words with concrete actions, reactions, and consequences."
                 : stageMismatch
                   ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
                   : isTooSimilar
                 ? `Too similar to ${closestBloc} (${Math.round(maxSimilarity * 100)}% overlap). Introduce a different scene purpose, different turning point, and different end state.`
                 : "Missing explicit progression cue. Add clear cause-and-effect transition words and a changed story state by scene end.";
             }
-          } catch { /* retry with text parser fallback */ }
-
-          try {
-            const temp = Math.min(0.9, 0.45 + attempt * 0.2);
-            const raw = await requestOpenRouterText(oneBlocPrompt, 700, 60000, systemMsg, false, temp);
-            const parsed = parseJsonFromAi<Record<string, unknown>>(raw);
-            const fromParsed = parsed?.bloc as BlocEntry | undefined
-              ?? parsed?.scene as BlocEntry | undefined
-              ?? (typeof parsed?.synopsis === "string"
-                ? {
-                  synopsis: parsed.synopsis as string,
-                  focus: parsed.focus as string | undefined,
-                  wordTarget: parsed.wordTarget as number | undefined,
-                  openingLine: parsed.openingLine as string | undefined,
-                  closingHook: parsed.closingHook as string | undefined,
-                  emotionalArc: parsed.emotionalArc as string | undefined,
-                  sensoryPalette: parsed.sensoryPalette as string | undefined,
-                  dialogueNotes: parsed.dialogueNotes as string | undefined,
-                  tension: parsed.tension as number | undefined,
-                }
-                : null);
-            const built = toSceneBlock(fromParsed, i);
-            if (built) {
-              const { maxSimilarity, closestIndex } = findMostSimilarBloc(built.synopsis, blocks);
-              const hasMinSentences = sentenceCount(built.synopsis) >= 3;
-              const stageMismatch = !hasExpectedStageCue(built.synopsis, expectedStage);
-              const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
-              const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
-              if (!isTooSimilar && !missingFlowCue && hasMinSentences && !stageMismatch) {
-                blocks.push(built);
-                updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
-                blockBuilt = true;
-                break;
-              }
-              const closestBloc = closestIndex >= 0 ? `Bloc ${closestIndex + 1}` : "a previous bloc";
-              rejectionHint = !hasMinSentences
-                ? "Synopsis is too thin. Expand to at least 3 concrete action-consequence sentences."
-                : stageMismatch
-                  ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
-                  : isTooSimilar
-                ? `Too similar to ${closestBloc} (${Math.round(maxSimilarity * 100)}% overlap). Introduce a different scene purpose, different turning point, and different end state.`
-                : "Missing explicit progression cue. Add clear cause-and-effect transition words and a changed story state by scene end.";
-            }
-          } catch { /* next attempt */ }
+          } catch {
+            rejectionHint = "Previous attempt failed. Keep JSON strict and provide a concrete scene progression with named characters and outcomes.";
+          }
         }
 
         if (!blockBuilt) {
@@ -5535,55 +5509,6 @@ function NovelWorkspacePage() {
       }
 
       let finalizedBlocks = [...blocks];
-      try {
-        const sequenceInput = blocks.map((block, idx) => ({
-          index: idx + 1,
-          synopsis: block.synopsis,
-          openingLine: block.openingLine || "",
-          closingHook: block.closingHook || "",
-          emotionalArc: block.emotionalArc || "",
-          tension: block.tension ?? null,
-          focus: block.focus || "default",
-          wordTarget: block.wordTarget || 0,
-        }));
-        const continuityPrompt = [
-          "Polish this full chapter bloc sequence for continuity and uniqueness.",
-          `Return JSON only: { "blocs": [ { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } ] }`,
-          "- Keep the same number of blocs.",
-          "- Every bloc synopsis must be distinct in purpose and events.",
-          "- Ensure a clear start -> escalation -> payoff flow across the chapter.",
-          "- Every bloc after the first must include explicit progression/cause-and-effect cues.",
-          "- Bloc stages by order: first=setup, early-middle=development, late-middle=escalation, penultimate=climax, final=resolution.",
-          "- Every synopsis must contain at least 3 concrete action-consequence sentences.",
-          "- openingLine of bloc N should feel like a continuation of closingHook of bloc N-1.",
-          "- Keep all canon names and chapter intent intact.",
-          `Chapter title: ${activeChapter.title}`,
-          `Chapter synopsis: ${chapterSynopsis}`,
-          previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
-          nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
-          `Current bloc sequence JSON:\n${JSON.stringify(sequenceInput)}`,
-        ].filter(Boolean).join("\n");
-        const polished = await requestOpenRouterJson<{ blocs?: BlocEntry[]; blocks?: BlocEntry[]; sceneBlocks?: BlocEntry[] }>(
-          continuityPrompt,
-          1400,
-          { timeoutMs: 80000, systemMessage: "Return ONLY valid JSON." },
-        );
-        const polishedEntries = polished?.blocs ?? polished?.blocks ?? polished?.sceneBlocks ?? [];
-        if (Array.isArray(polishedEntries) && polishedEntries.length === blocks.length) {
-          const polishedBlocks = polishedEntries
-            .map((entry, idx) => toSceneBlock(entry, idx))
-            .filter((b): b is SceneBlock => Boolean(b))
-            .map((b) => ({ ...b, notes: chapterLevelBolton }));
-          if (polishedBlocks.length === blocks.length) {
-            const validation = validateSceneSequence(polishedBlocks);
-            if (validation.ok) {
-              finalizedBlocks = polishedBlocks;
-            }
-          }
-        }
-      } catch {
-        // Polishing pass is best-effort only; never block generation.
-      }
       finalizedBlocks = applyContinuityScaffold(finalizedBlocks);
       const finalValidation = validateSceneSequence(finalizedBlocks);
       if (!finalValidation.ok) {
