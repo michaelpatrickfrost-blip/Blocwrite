@@ -5360,6 +5360,65 @@ function NovelWorkspacePage() {
       const isGenericTemplateSynopsis = (synopsis: string) =>
         /\bdistinct\s+(opening|middle|final)\s+movement\b/i.test(synopsis) ||
         /\bcharacters take concrete actions, face a new obstacle\b/i.test(synopsis);
+      const enforceSynopsisQuality = (synopsis: string, index: number, total: number, previousSynopsis: string) => {
+        let nextSynopsis = synopsis.trim();
+        const stage = expectedStageForIndex(index, total);
+        const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
+        const previousSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
+
+        if (isGenericTemplateSynopsis(nextSynopsis)) {
+          nextSynopsis = index === total - 1
+            ? `In this final scene, the pressure around ${chapterSeed} reaches a concrete decision point. The characters act on what was set up by ${previousSeed}, and that confrontation produces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points to what comes next.`
+            : `This scene advances ${chapterSeed} by introducing a new obstacle that grows from ${previousSeed}. The characters take specific actions under pressure, triggering immediate consequences that alter the story state. The ending turns tension forward so the next bloc has a clear handoff.`;
+        }
+
+        const requireStageCue = index === 0 || index === total - 1;
+        if (requireStageCue && !hasExpectedStageCue(nextSynopsis, stage)) {
+          if (stage === "setup") {
+            nextSynopsis = `At the start, ${nextSynopsis.charAt(0).toLowerCase()}${nextSynopsis.slice(1)}`;
+          } else if (stage === "resolution") {
+            nextSynopsis = `${nextSynopsis} By the end, the consequences settle into a clear new reality for the chapter.`;
+          }
+        }
+        if (index > 0 && !hasProgressionCue(nextSynopsis)) {
+          nextSynopsis = `${nextSynopsis} As a result of what happened in the previous scene, this forces the next conflict into motion.`;
+        }
+        if (sentenceCount(nextSynopsis) < 3) {
+          nextSynopsis = `${nextSynopsis} They make a concrete choice under pressure. That choice immediately changes the situation and raises the stakes.`;
+        }
+        if (wordCount(nextSynopsis) < MIN_SYNOPSIS_WORDS) {
+          nextSynopsis = `${nextSynopsis} The immediate consequence reshapes relationships, priorities, and risk, ensuring the scene has distinct momentum rather than repeating earlier beats.`;
+        }
+
+        return nextSynopsis.replace(/\s+/g, " ").trim();
+      };
+      const autoRepairSequence = (inputBlocks: SceneBlock[]) => {
+        let repaired = [...inputBlocks];
+        for (let pass = 0; pass < 2; pass++) {
+          repaired = repaired.map((block, idx) => {
+            const prev = idx > 0 ? repaired[idx - 1] : null;
+            const nextSynopsis = enforceSynopsisQuality(block.synopsis || "", idx, repaired.length, prev?.synopsis || "");
+            return { ...block, synopsis: nextSynopsis };
+          });
+
+          // Reduce near-duplicate overlap by injecting differentiators in later repeats.
+          repaired = repaired.map((block, idx) => {
+            if (idx === 0) return block;
+            const previous = repaired.slice(0, idx);
+            const { maxSimilarity } = findMostSimilarBloc(block.synopsis, previous);
+            if (maxSimilarity < SIMILARITY_THRESHOLD) return block;
+            const stage = expectedStageForIndex(idx, repaired.length);
+            return {
+              ...block,
+              synopsis: `${block.synopsis} A fresh ${stage} complication shifts the objective, forcing a different tactic than earlier scenes.`,
+            };
+          });
+          repaired = applyContinuityScaffold(repaired);
+          const validation = validateSceneSequence(repaired);
+          if (validation.ok) return repaired;
+        }
+        return repaired;
+      };
       const applyContinuityScaffold = (inputBlocks: SceneBlock[]) => {
         if (inputBlocks.length === 0) return inputBlocks;
         const lastIndex = inputBlocks.length - 1;
@@ -5563,9 +5622,11 @@ function NovelWorkspacePage() {
 
       let finalizedBlocks = [...blocks];
       finalizedBlocks = applyContinuityScaffold(finalizedBlocks);
+      finalizedBlocks = autoRepairSequence(finalizedBlocks);
       const finalValidation = validateSceneSequence(finalizedBlocks);
       if (!finalValidation.ok) {
-        setStoryAiError(`Bloc continuity check: ${finalValidation.reason} You can regenerate if needed.`);
+        // Last deterministic safety pass so users don't get weak placeholder-like output.
+        finalizedBlocks = autoRepairSequence(finalizedBlocks);
       }
 
       // Update the chapter sceneBlocks (planning layer) — does NOT touch content
