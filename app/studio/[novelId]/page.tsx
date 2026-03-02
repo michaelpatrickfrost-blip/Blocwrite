@@ -3958,7 +3958,7 @@ function NovelWorkspacePage() {
     parts.push("");
     parts.push("CRITICAL RULES:");
     parts.push("- The beats above are the BACKBONE of this chapter. Every beat must be covered.");
-    parts.push("- Explicitly mention each assigned beat title in your blueprint so chapter-to-spine linkage is unambiguous.");
+    parts.push("- Weave assigned beats naturally into scene flow. Do NOT dump beat titles as labels unless needed for clarity.");
     parts.push("- Add connective tissue BETWEEN beats: transitions, emotional reactions, small moments of reflection, sensory detail.");
     parts.push("- Advance each active subplot — show its status changing.");
     parts.push("- If a character arc turning point falls in this chapter, make it a PIVOTAL moment.");
@@ -8486,6 +8486,21 @@ function NovelWorkspacePage() {
         if (index === total - 1) return "conclusion";
         return "middle";
       };
+      const synopsisCoversBeat = (synopsisText: string, beat: StoryBeat): boolean => {
+        const synopsisNorm = normalizeLookup(synopsisText);
+        const titleNorm = normalizeLookup(beat.title || "");
+        if (titleNorm && synopsisNorm.includes(titleNorm)) return true;
+        const beatText = normalizeLookup(`${beat.title || ""} ${beat.description || ""}`);
+        const stop = new Set(["the", "and", "for", "with", "that", "this", "from", "into", "over", "under", "after", "before", "while", "their", "there", "they", "then", "when", "where", "about", "have", "has", "had", "were", "was", "are", "but", "not", "you", "your", "his", "her", "she", "him", "our", "out", "off", "all", "any", "can", "will"]);
+        const beatTokens = beatText.split(/\s+/).filter((token) => token.length > 4 && !stop.has(token));
+        if (beatTokens.length === 0) return false;
+        let overlap = 0;
+        for (const token of beatTokens) {
+          if (synopsisNorm.includes(token)) overlap += 1;
+          if (overlap >= 2) return true;
+        }
+        return false;
+      };
       const hasOpeningSetupCue = (text: string) =>
         /\b(establishes|introduces|sets up|normal world|baseline|daily life|status quo|inciting pressure)\b/i.test(text);
       const hasChapterCarryoverCue = (text: string) =>
@@ -8630,6 +8645,7 @@ function NovelWorkspacePage() {
           "- Keep chapter order coherence: this chapter must directly continue from prior consequences.",
           index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
           chapterSubplotArcRule,
+          spineActive ? "- SPINE INTEGRATION: weave beats/subplots/arcs naturally into the chapter's events and dialogue beats (no list-like labeling)." : "",
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
@@ -8690,6 +8706,7 @@ function NovelWorkspacePage() {
           "- Keep chapter order coherence: continue directly from prior consequences and move the story state forward.",
           index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
           chapterSubplotArcRule,
+          spineActive ? "- SPINE INTEGRATION: weave beats/subplots/arcs naturally into the chapter's events and dialogue beats (no list-like labeling)." : "",
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
@@ -8775,12 +8792,13 @@ function NovelWorkspacePage() {
         } catch { /* AI call failed — will show placeholder */ }
 
         if (spineActive && synopsis && chapterSpineData) {
-          const synopsisLower = synopsis.toLowerCase();
-          const requiredBeatTitles = chapterSpineData.beatsForChapter.map((b) => b.title).filter(Boolean);
+          const requiredBeats = chapterSpineData.beatsForChapter;
+          const requiredBeatTitles = requiredBeats.map((b) => b.title).filter(Boolean);
           const requiredSubplotTitles = chapterSpineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
           const requiredArcNames = chapterSpineData.activeArcs.map((a) => a.characterName).filter(Boolean);
 
-          const missingBeats = requiredBeatTitles.filter((t) => !synopsisLower.includes(t.toLowerCase()));
+          const missingBeats = requiredBeats.filter((beat) => !synopsisCoversBeat(synopsis, beat)).map((beat) => beat.title);
+          const synopsisLower = synopsis.toLowerCase();
           const missingSubplots = requiredSubplotTitles.filter((t) => !synopsisLower.includes(t.toLowerCase()));
           const missingArcNames = requiredArcNames.filter((n) => !synopsisLower.includes(n.toLowerCase()));
 
@@ -8791,11 +8809,11 @@ function NovelWorkspacePage() {
                 "",
                 `Current synopsis:\n${synopsis}`,
                 "",
-                missingBeats.length > 0 ? `MISSING REQUIRED BEAT TITLES (must be explicitly mentioned): ${missingBeats.map((t) => `"${t}"`).join(", ")}` : "",
+                missingBeats.length > 0 ? `MISSING REQUIRED BEATS (cover these moments naturally in action/sequence): ${missingBeats.map((t) => `"${t}"`).join(", ")}` : "",
                 missingSubplots.length > 0 ? `MISSING REQUIRED SUBPLOT TITLES: ${missingSubplots.map((t) => `"${t}"`).join(", ")}` : "",
                 missingArcNames.length > 0 ? `MISSING ARC CHARACTERS: ${missingArcNames.map((n) => `"${n}"`).join(", ")}` : "",
                 "",
-                "Keep the same chapter direction and continuity, but add the missing spine-linked elements clearly.",
+                "Keep the same chapter direction and continuity, but add the missing spine-linked elements naturally inside scene progression (not as labels).",
                 "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
               ].filter(Boolean).join("\n");
               const repaired = await requestOpenRouterJson<{ synopsis?: string }>(repairPrompt, 2200, {
