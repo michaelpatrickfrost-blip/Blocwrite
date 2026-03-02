@@ -3890,6 +3890,23 @@ function NovelWorkspacePage() {
     return { beatsForChapter, activeSubplots, chapterSubplots, activeArcs };
   }
 
+  function normalizeUniqueBeatAssignments<T extends { beatIds?: string[]; subplotIds?: string[] }>(chapters: T[]): T[] {
+    const firstOwnerByBeatId = new Map<string, number>();
+    return chapters.map((chapter, idx) => {
+      const dedupedBeats: string[] = [];
+      for (const beatId of chapter.beatIds ?? []) {
+        const id = (beatId || "").trim();
+        if (!id) continue;
+        if (!firstOwnerByBeatId.has(id)) {
+          firstOwnerByBeatId.set(id, idx);
+          dedupedBeats.push(id);
+        }
+      }
+      const dedupedSubplots = Array.from(new Set((chapter.subplotIds ?? []).map((id) => (id || "").trim()).filter(Boolean)));
+      return { ...chapter, beatIds: dedupedBeats, subplotIds: dedupedSubplots };
+    });
+  }
+
   function buildPlotSpineChapterContext(chapterIndex: number, totalChapters: number): string {
     const spine = novel?.storyBible.plotSpine;
     if (!spine || spine.beats.length === 0) return "";
@@ -4112,6 +4129,14 @@ function NovelWorkspacePage() {
       ...characters.map((c) => c.name),
       ...locations.map((l) => l.name),
     ].filter(Boolean);
+    const previousChapterLastBloc =
+      chapterIndex > 0
+        ? (novel.chapters[chapterIndex - 1]?.sceneBlocks?.slice(-1)[0]?.synopsis || "")
+        : "";
+    const previousChapterLastHook =
+      chapterIndex > 0
+        ? (novel.chapters[chapterIndex - 1]?.sceneBlocks?.slice(-1)[0]?.closingHook || "")
+        : "";
 
     const contextParts = [
       storyLines,
@@ -4119,6 +4144,8 @@ function NovelWorkspacePage() {
       `Chapter ${chapterIndex + 1}: ${chapterTitle}`,
       chapterSummary ? `Brief: ${chapterSummary}` : "",
       prevSummary ? `Previous chapter: ${clampPromptText(prevSummary, 400)}` : "",
+      previousChapterLastBloc ? `Previous chapter final bloc: ${clampPromptText(previousChapterLastBloc, 280)}` : "",
+      previousChapterLastHook ? `Previous chapter final hook: ${clampPromptText(previousChapterLastHook, 180)}` : "",
       nextTitle ? `Next: ${nextTitle}` : "This is the final chapter.",
       charLines ? `Characters:\n${charLines}` : "",
       locLines ? `Locations: ${locLines}` : "",
@@ -4427,6 +4454,23 @@ function NovelWorkspacePage() {
     };
   }
 
+  function getAdjacentChapterBoundaryBeats(chapterId: string) {
+    if (!novel) return { previousChapterLastBlocSynopsis: "", previousChapterLastBlocHook: "", nextChapterFirstBlocSynopsis: "" };
+    const chapterIndex = novel.chapters.findIndex((chapter) => chapter.id === chapterId);
+    if (chapterIndex < 0) return { previousChapterLastBlocSynopsis: "", previousChapterLastBlocHook: "", nextChapterFirstBlocSynopsis: "" };
+    const previousChapter = chapterIndex > 0 ? novel.chapters[chapterIndex - 1] : null;
+    const nextChapter = chapterIndex + 1 < novel.chapters.length ? novel.chapters[chapterIndex + 1] : null;
+    const previousBlocks = previousChapter?.sceneBlocks ?? [];
+    const nextBlocks = nextChapter?.sceneBlocks ?? [];
+    const previousLast = previousBlocks.length > 0 ? previousBlocks[previousBlocks.length - 1] : null;
+    const nextFirst = nextBlocks.length > 0 ? nextBlocks[0] : null;
+    return {
+      previousChapterLastBlocSynopsis: (previousLast?.synopsis || "").trim(),
+      previousChapterLastBlocHook: (previousLast?.closingHook || "").trim(),
+      nextChapterFirstBlocSynopsis: (nextFirst?.synopsis || "").trim(),
+    };
+  }
+
   function getChapterStoryPosition(chapterId: string) {
     if (!novel) return { chapterIndex: -1, chapterNumber: 0, totalChapters: 0, arcGuidance: "" };
     const chapterIndex = novel.chapters.findIndex((chapter) => chapter.id === chapterId);
@@ -4526,6 +4570,7 @@ function NovelWorkspacePage() {
       subplotProgressRule,
       "Use one primary location for this chapter unless transition is absolutely story-critical.",
       settingAnchor ? `- SETTING CONTINUITY (CRITICAL): Story anchor location is "${settingAnchor}". Do not shift to a different city/location unless the synopsis explicitly includes a travel/relocation transition.` : "",
+      chapterIndex > 0 ? "- CHAPTER-TO-CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's end-state and consequences. Do NOT reset back to the novel opening setup. If a time jump is needed, make it explicit and causal." : "",
       "- Maintain continuity with previous and next chapters.",
       genreExecutionHint,
       pacingRule,
@@ -4566,6 +4611,14 @@ function NovelWorkspacePage() {
     const words = synopsis.split(/\s+/).filter(Boolean).length;
     const sentences = synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length;
     return words < 70 || sentences < 4;
+  }
+
+  function hasChapterCarryoverCue(text: string): boolean {
+    return /\b(after|following|in the wake of|in the aftermath|as a result|because of what happened|later that|the next (morning|day|night|week)|hours later|days later|weeks later|from that point)\b/i.test(text);
+  }
+
+  function hasChapterResetCue(text: string): boolean {
+    return /\b(the story opens|opens with|at the beginning|it begins with|introduces the protagonist)\b/i.test(text);
   }
 
   function buildNaturalChapterSynopsisFallback(args: {
@@ -4617,6 +4670,7 @@ function NovelWorkspacePage() {
     nextTitle: string;
     settingAnchor: string;
     chapterContext: string;
+    spineHint?: string;
   }): Promise<string> {
     let synopsis = (args.synopsis || "").trim();
     if (!isWeakOrPlaceholderChapterSynopsis(synopsis)) return synopsis;
@@ -4630,6 +4684,7 @@ function NovelWorkspacePage() {
         `Current weak synopsis:\n${synopsis || "(empty)"}`,
         args.previousSynopsis ? `Previous chapter synopsis:\n${args.previousSynopsis}` : "",
         args.nextTitle ? `Next chapter title: ${args.nextTitle}` : "Final chapter.",
+        args.spineHint ? `Spine targets for this chapter:\n${args.spineHint}` : "",
         "",
         `Canon context:\n${args.chapterContext}`,
         "",
@@ -5369,8 +5424,18 @@ function NovelWorkspacePage() {
     const targetChapterId = activeChapter.id;
     const chapterLevelBolton = chapterBoltonByChapterId[targetChapterId]?.trim() ?? "";
     const { previousChapterSynopsis, nextChapterSynopsis } = getAdjacentChapterSynopses(targetChapterId);
+    const { previousChapterLastBlocSynopsis, previousChapterLastBlocHook } = getAdjacentChapterBoundaryBeats(targetChapterId);
     const storyPosition = getChapterStoryPosition(targetChapterId);
     const planChapter = planChapters.find((p) => p.manuscriptChapterId === targetChapterId);
+    const firstOwnerByBeatId = new Map<string, string>();
+    for (const chapter of planChapters) {
+      for (const beatId of chapter.beatIds ?? []) {
+        const id = (beatId || "").trim();
+        if (!id) continue;
+        if (!firstOwnerByBeatId.has(id)) firstOwnerByBeatId.set(id, chapter.id);
+      }
+    }
+    const uniquePlanBeatIds = (planChapter?.beatIds ?? []).filter((id) => firstOwnerByBeatId.get(id) === planChapter?.id);
     const chapterSynopsis = (planChapter?.synopsis || activeChapter.subtitle || "").trim();
     if (!chapterSynopsis) {
       setStoryAiError("Add a chapter synopsis in the Book Plan first, or a subtitle above.");
@@ -5424,6 +5489,35 @@ function NovelWorkspacePage() {
     const allowedCharacterNames = rosterChars.map((c) => c.name).filter(Boolean).join(", ");
     const allowedLocationNames = rosterLocations.map((l) => l.name).filter(Boolean).join(", ");
     const shortChapterSynopsis = chapterSynopsis.split(/\s+/).filter(Boolean).length < 90;
+    const spine = novel.storyBible.plotSpine;
+    const chapterSpineDataForBlocs =
+      hasPlotSpine() && storyPosition.chapterIndex >= 0
+        ? getPlotSpineChapterData(storyPosition.chapterIndex, Math.max(1, storyPosition.totalChapters))
+        : null;
+    const taggedBeatIds = uniquePlanBeatIds.filter(Boolean);
+    const taggedSubplotIds = (planChapter?.subplotIds ?? []).filter(Boolean);
+    const taggedBeats = spine
+      ? (taggedBeatIds.length > 0
+        ? spine.beats.filter((b) => taggedBeatIds.includes(b.id))
+        : (chapterSpineDataForBlocs?.beatsForChapter ?? []))
+      : [];
+    const taggedSubplots = spine
+      ? (taggedSubplotIds.length > 0
+        ? spine.subplots.filter((s) => taggedSubplotIds.includes(s.id))
+        : (chapterSpineDataForBlocs?.chapterSubplots ?? []))
+      : [];
+    const taggedArcs = chapterSpineDataForBlocs?.activeArcs ?? [];
+    const beatCueForBloc = (idx: number) => {
+      if (taggedBeats.length === 0) return "";
+      const beat = taggedBeats[Math.min(idx, taggedBeats.length - 1)];
+      return beat ? `"${beat.title}" — ${clampPromptText(beat.description || "", 120)}` : "";
+    };
+    const subplotCue = taggedSubplots.length > 0
+      ? taggedSubplots.slice(0, 4).map((s) => `"${s.title}"`).join(", ")
+      : "";
+    const arcCue = taggedArcs.length > 0
+      ? taggedArcs.slice(0, 4).map((a) => a.characterName).filter(Boolean).join(", ")
+      : "";
 
     setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
@@ -5508,6 +5602,8 @@ function NovelWorkspacePage() {
       };
       const hasProgressionCue = (synopsis: string) =>
         /\b(then|after|later|by the end|therefore|as a result|forcing|which leads to|escalates|turning point|ultimately|until)\b/i.test(synopsis);
+      const hasCrossChapterCarryoverCue = (synopsis: string) =>
+        /\b(after|following|in the wake of|in the aftermath|later that|the next (morning|day|night|week)|hours later|days later|weeks later|from that point|because of what happened|as a consequence)\b/i.test(synopsis);
       const hasOpeningResetCue = (synopsis: string) =>
         /\b(at the start|at the beginning|opening scene|opens with|introduces|is introduced|wakes up|regains consciousness|first arrives|for the first time)\b/i.test(synopsis);
       const hasOpeningAnchor = (synopsis: string) => {
@@ -5566,6 +5662,9 @@ function NovelWorkspacePage() {
           }
           if (idx === 0 && !hasOpeningAnchor(synopsis)) {
             return { ok: false, reason: "Bloc 1 does not reflect the chapter opening setup." };
+          }
+          if (idx === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(synopsis)) {
+            return { ok: false, reason: "Bloc 1 does not carry over from previous chapter ending." };
           }
           if (idx > 0 && !hasProgressionCue(synopsis)) {
             return { ok: false, reason: `Bloc ${idx + 1} is missing explicit progression cues.` };
@@ -5729,6 +5828,7 @@ function NovelWorkspacePage() {
         const stage = expectedStageForIndex(idx, total);
         const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
         const prevSeed = firstSentence(previousSynopsis) || "the prior scene outcome";
+        const chapterBoundarySeed = firstSentence(previousChapterLastBlocHook || previousChapterLastBlocSynopsis || previousChapterSynopsis) || "";
         const nextSeed = nextChapterSynopsis ? firstSentence(nextChapterSynopsis) : "the next development";
         const seededSegment = fallbackSegmentForIndex(idx, total, previousSynopsis);
         const openingSeed = openingAnchor || seededSegment;
@@ -5736,6 +5836,9 @@ function NovelWorkspacePage() {
           return sanitizeSynopsisText(`${seededSegment} The chapter resolves pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`);
         }
         if (idx === 0) {
+          if (chapterBoundarySeed) {
+            return sanitizeSynopsisText(`Following ${chapterBoundarySeed}, this opening scene carries the aftermath into a new immediate objective without rewinding the story. The characters respond to fresh pressure, and if time has passed it is signaled explicitly through changed circumstances and consequences. The scene ends on a concrete turn that commits the chapter to new ground.`);
+          }
           return sanitizeSynopsisText(`${openingSeed} This opening scene establishes the chapter's baseline situation, key dynamics, and immediate pressure before escalation begins.`);
         }
         return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
@@ -5839,21 +5942,30 @@ function NovelWorkspacePage() {
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
             `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
+            taggedBeats.length > 0 ? "- SPINE TAGS (CRITICAL): this chapter has assigned beats/subplots. This bloc must advance its tagged beat context, not generic summary text." : "",
             "- Include explicit verbs for actions and consequences, not just mood or description.",
             "- Expand depth through motivation, subtext, and emotional reactions — avoid adding brand-new plotlines.",
             "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
             i > 0 ? "- CRITICAL: continue from the immediate aftermath of the previous bloc. Do NOT use opening/setup language again." : "",
             i === 0 && openingAnchor ? `- CRITICAL OPENING ANCHOR: Bloc 1 must explicitly cover this opening setup beat: "${clampPromptText(openingAnchor, 260)}"` : "",
+            i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis)
+              ? "- CRITICAL CHAPTER HANDOFF: Bloc 1 must pick up from the previous chapter's final outcome/hook. Do not rewind or restate earlier setup. If time has passed, signal the time jump explicitly and keep causal continuity."
+              : "",
             "",
             `CHARACTER ROSTER:\n  ${characterRoster}`,
             locationRoster ? `LOCATIONS:\n  ${locationRoster}` : "",
             "",
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
+            beatCueForBloc(i) ? `Tagged beat target for this bloc: ${beatCueForBloc(i)}` : "",
+            subplotCue ? `Tagged subplots in this chapter: ${subplotCue}` : "",
+            arcCue ? `Tagged character arcs active: ${arcCue}` : "",
             previousClosingHook && i > 0 ? `Immediate handoff from prior bloc: ${clampPromptText(previousClosingHook, 220)}` : "",
             previousTrajectory ? `Story trajectory so far: ${clampPromptText(previousTrajectory, 500)}` : "",
             recentSynopses ? `Most recent blocs (avoid repetition):\n${recentSynopses}` : "",
             previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
+            i === 0 && previousChapterLastBlocHook ? `Previous chapter final hook: ${clampPromptText(previousChapterLastBlocHook, 220)}` : "",
+            i === 0 && previousChapterLastBlocSynopsis ? `Previous chapter final bloc beat: ${clampPromptText(previousChapterLastBlocSynopsis, 260)}` : "",
             isLast ? "This is the FINAL bloc — close the chapter strongly." : `This bloc must advance beyond Bloc ${i}.`,
             nextChapterSynopsis ? `Next chapter will cover: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
             storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
@@ -5888,11 +6000,12 @@ function NovelWorkspacePage() {
               const requireStageCue = i === 0 || i === BLOC_COUNT - 1;
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
+              const missingCrossChapterCarryover = i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingCrossChapterCarryover && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -5907,6 +6020,8 @@ function NovelWorkspacePage() {
                     ? "Do not use template language. Replace placeholders with specific names, actions, settings, and consequences from this chapter."
                   : missingOpeningAnchor
                     ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
+                  : missingCrossChapterCarryover
+                    ? "Bloc 1 must clearly carry forward the previous chapter's ending (or explicit time-jump aftermath), not reset the story."
                   : openingReset
                     ? "Do not reopen the chapter premise. Continue directly from the previous bloc's consequence."
                 : stageMismatch
@@ -5930,6 +6045,7 @@ function NovelWorkspacePage() {
               "- Minimum: 4 sentences and 55 words.",
               "- Never use generic/template wording.",
               "- Use story logic: objective -> obstacle -> changed outcome.",
+              taggedBeats.length > 0 ? "- Keep spine alignment: this bloc must explicitly advance the tagged beat target for its slot." : "",
               shortChapterSynopsis ? "- The chapter synopsis is short: enrich with emotional texture and connective detail, but keep the same core events and direction." : "",
               allowedCharacterNames ? `- Do NOT add characters outside this list: ${allowedCharacterNames}.` : "",
               allowedLocationNames ? `- Do NOT change locations outside this list: ${allowedLocationNames}.` : "",
@@ -5937,6 +6053,9 @@ function NovelWorkspacePage() {
               `Expected stage: ${expectedStage}.`,
               `Chapter: ${activeChapter.title}`,
               `Chapter synopsis: ${chapterSynopsis}`,
+              beatCueForBloc(i) ? `Tagged beat target for this bloc: ${beatCueForBloc(i)}` : "",
+              subplotCue ? `Tagged subplots in this chapter: ${subplotCue}` : "",
+              arcCue ? `Tagged character arcs active: ${arcCue}` : "",
               previousSynopses ? `Previous blocs:\n${previousSynopses}` : "",
               nextChapterSynopsis ? `Next chapter direction: ${clampPromptText(nextChapterSynopsis, 220)}` : "",
               context,
@@ -5979,8 +6098,11 @@ function NovelWorkspacePage() {
         if (!blockBuilt) {
           const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
           const prevSeed = blocks.length > 0 ? firstSentence(blocks[blocks.length - 1].synopsis) : "the opening situation";
+          const chapterBoundarySeed = firstSentence(previousChapterLastBlocHook || previousChapterLastBlocSynopsis || previousChapterSynopsis) || "";
           const deterministicSynopsis = isLast
             ? `In this closing scene, the central conflict around ${chapterSeed} reaches a concrete decision point. The characters act on what was set in motion by ${prevSeed}, and the confrontation forces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points into the next chapter.`
+            : i === 0 && chapterBoundarySeed
+              ? `Following ${chapterBoundarySeed}, this opening scene picks up from the previous chapter's consequences rather than resetting the story. The characters face a new immediate objective under changed conditions, and their first decisions create a clear new trajectory for this chapter.`
             : `This scene advances the chapter conflict around ${chapterSeed} with a new obstacle that grows directly out of ${prevSeed}. The characters take specific actions under pressure, and those choices create immediate consequences that change the story state. The ending turns the tension forward so the next bloc has a clear handoff.`;
           blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: deterministicSynopsis, notes: chapterLevelBolton });
           updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
@@ -8364,6 +8486,10 @@ function NovelWorkspacePage() {
       };
       const hasOpeningSetupCue = (text: string) =>
         /\b(establishes|introduces|sets up|normal world|baseline|daily life|status quo|inciting pressure)\b/i.test(text);
+      const hasChapterCarryoverCue = (text: string) =>
+        /\b(after|following|in the wake of|in the aftermath|as a result|because of what happened|later that|the next (morning|day|night|week)|hours later|days later|weeks later|from that point)\b/i.test(text);
+      const hasChapterResetCue = (text: string) =>
+        /\b(the story opens|opens with|at the beginning|it begins with|introduces the protagonist)\b/i.test(text);
       const hasConclusionCue = (text: string) =>
         /\b(resolves|resolution|aftermath|final confrontation|closing image|new normal|ties up|concludes|by the end)\b/i.test(text);
       const looksLikePrematureConclusion = (text: string) =>
@@ -8412,6 +8538,19 @@ function NovelWorkspacePage() {
         const chapterRole = chapterRoleForIndex(index, allTitles.length);
         const structuralBeat = getStructuralBeat(index, allTitles.length);
         const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
+        const chapterSpineHint = chapterSpineData
+          ? [
+              chapterSpineData.beatsForChapter.length > 0
+                ? `Required beat titles: ${chapterSpineData.beatsForChapter.map((b) => `"${b.title}"`).join(", ")}`
+                : "",
+              chapterSpineData.chapterSubplots.length > 0
+                ? `Subplots to progress: ${chapterSpineData.chapterSubplots.map((s) => `"${s.title}"`).join(", ")}`
+                : "",
+              chapterSpineData.activeArcs.length > 0
+                ? `Character arcs in play: ${chapterSpineData.activeArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
+                : "",
+            ].filter(Boolean).join("\n")
+          : "";
         const chapterSubplotArcRule = (() => {
           if (chapterSpineData) {
             const subplotTitles = chapterSpineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
@@ -8441,6 +8580,9 @@ function NovelWorkspacePage() {
 
         const whatChangedLast = prevSynopsis
           ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-4).join(". "), 500)}`
+          : "";
+        const chapterHandoffSeed = prevSynopsis
+          ? clampPromptText(((prevSynopsis.split(/(?<=[.!?])\s+/).slice(-2).join(" ").match(/[^.!?]+[.!?]?/)?.[0] || prevSynopsis).trim()), 220)
           : "";
 
         const nfStoryCards = novel.storyBible.nonfiction?.storyCards ?? [];
@@ -8484,12 +8626,14 @@ function NovelWorkspacePage() {
           "- If a confrontation or revelation already happened, show the AFTERMATH or a NEW development.",
           "- Each chapter MUST introduce at least one new element: new information, new complication, shifted perspective, or changed dynamic.",
           "- Keep chapter order coherence: this chapter must directly continue from prior consequences.",
+          index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
           chapterSubplotArcRule,
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
           index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish the baseline world, key relationships, and central stakes before major escalation." : "",
           subplotArcHint ? `\n${subplotArcHint}` : "",
+          chapterSpineHint ? `\nPLOT SPINE TARGETS FOR THIS CHAPTER:\n${chapterSpineHint}` : "",
           "",
           "- ONE location only. Return a single place name string.",
           storySettingAnchor ? `- SETTING CONTINUITY (CRITICAL): This story's anchor location is "${storySettingAnchor}". Keep chapter setting consistent with this anchor unless there is an explicit travel/relocation transition.` : "",
@@ -8542,12 +8686,14 @@ function NovelWorkspacePage() {
           "- If the previous chapter ended with a revelation, this chapter must show characters ACTING on that revelation — not re-processing it.",
           "- Check the ALREADY HAPPENED section carefully. If a scene type (argument, chase, meeting, discovery) appeared before, this chapter must use a DIFFERENT type or dramatically escalate the stakes.",
           "- Keep chapter order coherence: continue directly from prior consequences and move the story state forward.",
+          index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
           chapterSubplotArcRule,
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
           index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish baseline world, key relationships, and central stakes before major escalation. Spend at least the first 2-3 beats on grounding before acceleration." : "",
           subplotArcHint ? `\n${subplotArcHint}` : "",
+          chapterSpineHint ? `\nPLOT SPINE TARGETS FOR THIS CHAPTER:\n${chapterSpineHint}` : "",
           "",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
@@ -8697,6 +8843,36 @@ function NovelWorkspacePage() {
         }
 
         // Role guardrails: opening should setup, middle should progress (not conclude), final should conclude.
+        if (synopsis && index > 0) {
+          const missingCarryover = !hasChapterCarryoverCue(synopsis);
+          const chapterReset = hasChapterResetCue(synopsis);
+          if (missingCarryover || chapterReset) {
+            try {
+              const carryoverRepairPrompt = [
+                `Revise Chapter ${index + 1} "${chapterTitle}" to ensure chapter-to-chapter continuity.`,
+                "The chapter currently feels reset/redundant instead of carrying forward consequences.",
+                "Rewrite as a true continuation from the previous chapter's ending.",
+                "If a time jump is needed, keep it explicit and causal (show what changed and why).",
+                "",
+                `Current synopsis:\n${synopsis}`,
+                prevSynopsis ? `Previous chapter synopsis:\n${clampPromptText(prevSynopsis, 700)}` : "",
+                nextTitle ? `Next chapter title: ${nextTitle}` : "",
+                "",
+                "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+              ].filter(Boolean).join("\n");
+              const carryoverRepaired = await requestOpenRouterJson<{ synopsis?: string }>(carryoverRepairPrompt, 2200, {
+                timeoutMs: 180000,
+                systemMessage: "Story architect. Preserve plot while enforcing chapter handoff continuity. Return valid JSON only.",
+              });
+              const repairedSynopsis = (carryoverRepaired?.synopsis ?? "").trim();
+              if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+            } catch {
+              // Continue with deterministic guards below.
+            }
+          }
+        }
+
+        // Role guardrails: opening should setup, middle should progress (not conclude), final should conclude.
         if (synopsis) {
           const needsOpeningRepair = chapterRole === "opening" && !hasOpeningSetupCue(synopsis);
           const needsConclusionRepair = chapterRole === "conclusion" && !hasConclusionCue(synopsis);
@@ -8741,6 +8917,7 @@ function NovelWorkspacePage() {
             nextTitle,
             settingAnchor: storySettingAnchor,
             chapterContext,
+            spineHint: chapterSpineHint,
           });
         }
         if (chapterRole === "opening" && !hasOpeningSetupCue(synopsis)) {
@@ -8820,11 +8997,12 @@ function NovelWorkspacePage() {
           mutateNovel((current) => {
             const plan = current.storyBible.bookPlan;
             if (!plan) return current;
-            const updatedPlanChapters = plan.chapters.map((ch, ci) => ({
+            const updatedPlanChaptersRaw = plan.chapters.map((ch, ci) => ({
               ...ch,
               beatIds: chapterBeatMap[ci] ?? [],
               subplotIds: chapterSubplotMap[ci] ?? [],
             }));
+            const updatedPlanChapters = normalizeUniqueBeatAssignments(updatedPlanChaptersRaw);
             return {
               ...current,
               storyBible: {
@@ -9252,6 +9430,23 @@ function NovelWorkspacePage() {
       const nextTitle = chapterIndex < allTitles.length - 1 ? allTitles[chapterIndex + 1] : "";
       const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
       const prompt = buildPhase2Prompt(chapterContext, chapterIndex, allTitles.length);
+      const regenSpineData =
+        hasPlotSpine() && chapterIndex >= 0
+          ? getPlotSpineChapterData(chapterIndex, allTitles.length)
+          : null;
+      const regenSpineHint = regenSpineData
+        ? [
+            regenSpineData.beatsForChapter.length > 0
+              ? `Required beat titles: ${regenSpineData.beatsForChapter.map((b) => `"${b.title}"`).join(", ")}`
+              : "",
+            regenSpineData.chapterSubplots.length > 0
+              ? `Subplots to progress: ${regenSpineData.chapterSubplots.map((s) => `"${s.title}"`).join(", ")}`
+              : "",
+            regenSpineData.activeArcs.length > 0
+              ? `Character arcs in play: ${regenSpineData.activeArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
+              : "",
+          ].filter(Boolean).join("\n")
+        : "";
 
       type Phase2Result = { synopsis?: string; characters?: string[]; location?: string; locations?: string[]; events?: string[]; lore?: string[] };
       let result: Phase2Result | null = null;
@@ -9330,6 +9525,33 @@ function NovelWorkspacePage() {
           // Keep existing synopsis if repair fails.
         }
       }
+      if (chapterIndex > 0 && (hasChapterResetCue(synopsis) || !hasChapterCarryoverCue(synopsis))) {
+        const previousChapterLastBloc = (novel.chapters[chapterIndex - 1]?.sceneBlocks?.slice(-1)[0]?.synopsis || "").trim();
+        const previousChapterLastHook = (novel.chapters[chapterIndex - 1]?.sceneBlocks?.slice(-1)[0]?.closingHook || "").trim();
+        try {
+          const handoffRepairPrompt = [
+            `Revise Chapter ${chapterIndex + 1} "${title}" so it clearly continues from Chapter ${chapterIndex}'s ending.`,
+            "Do not reset to opening setup language or replay earlier scenes.",
+            "If time has passed, state the time jump explicitly and preserve cause-and-effect continuity.",
+            "",
+            `Current synopsis:\n${synopsis}`,
+            prevSynopsis ? `Previous chapter synopsis:\n${clampPromptText(prevSynopsis, 700)}` : "",
+            previousChapterLastHook ? `Previous chapter final hook:\n${clampPromptText(previousChapterLastHook, 260)}` : "",
+            previousChapterLastBloc ? `Previous chapter final bloc:\n${clampPromptText(previousChapterLastBloc, 280)}` : "",
+            nextTitle ? `Next chapter title: ${nextTitle}` : "",
+            "",
+            "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+          ].filter(Boolean).join("\n");
+          const handoffRepaired = await requestOpenRouterJson<{ synopsis?: string }>(handoffRepairPrompt, 2000, {
+            timeoutMs: 180000,
+            systemMessage: "Story architect. Enforce chapter handoff continuity and non-repetition. Return valid JSON only.",
+          });
+          const repairedSynopsis = (handoffRepaired?.synopsis ?? "").trim();
+          if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+        } catch {
+          // keep existing synopsis if repair fails
+        }
+      }
       if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
         const chapterRole: "opening" | "middle" | "conclusion" =
           chapterIndex === 0 ? "opening" : chapterIndex === allTitles.length - 1 ? "conclusion" : "middle";
@@ -9343,6 +9565,7 @@ function NovelWorkspacePage() {
           nextTitle,
           settingAnchor,
           chapterContext,
+          spineHint: regenSpineHint,
         });
       }
       runLoreConsistencyCheck({
