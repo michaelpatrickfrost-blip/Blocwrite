@@ -7875,6 +7875,8 @@ function NovelWorkspacePage() {
       };
     });
     setActiveChapterId(null);
+    // "Clear all" must persist immediately so refresh cannot resurrect prior chapters.
+    flushServerSave();
   }
 
   function openPlanGenerationModal() {
@@ -14521,6 +14523,27 @@ function NovelWorkspacePage() {
                   {planChapters.map((plan, index) => {
                     const charCount = (plan.characterIds ?? []).length;
                     const locCount = (plan.locationIds ?? []).length;
+                    const spine = novel.storyBible.plotSpine;
+                    const beatTags = (plan.beatIds ?? [])
+                      .map((id) => spine?.beats.find((beat) => beat.id === id))
+                      .filter((beat): beat is StoryBeat => Boolean(beat));
+                    const subplotTags = (plan.subplotIds ?? [])
+                      .map((id) => spine?.subplots.find((subplot) => subplot.id === id))
+                      .filter((subplot): subplot is Subplot => Boolean(subplot));
+                    const beatIdSet = new Set(beatTags.map((beat) => beat.id));
+                    const beatCharacterIds = new Set(beatTags.flatMap((beat) => beat.characterIds ?? []));
+                    const arcTags = (spine?.characterArcs ?? [])
+                      .filter((arc) =>
+                        arc.turningPointBeatIds.some((beatId) => beatIdSet.has(beatId)) ||
+                        beatCharacterIds.has(arc.characterId),
+                      )
+                      .map((arc) => ({
+                        ...arc,
+                        characterName: storyCharacters.find((c) => c.id === arc.characterId)?.name || "",
+                      }));
+                    const beatCount = beatTags.length;
+                    const subplotCount = subplotTags.length;
+                    const arcCount = arcTags.length;
                     const isGenerating = storyAiBusyAction === "plan-generate";
                     const isFilled = !isGenerating || (planGenerateProgressIdx !== null && index <= planGenerateProgressIdx);
                     const isCurrentlyFilling = isGenerating && planGenerateProgressIdx === index;
@@ -14591,6 +14614,59 @@ function NovelWorkspacePage() {
                             placeholder="What happens in this chapter..."
                             onChange={(e) => updatePlanChapter(plan.id, { synopsis: e.target.value })}
                           />
+                          <div className="pw-plan-refs" style={{ marginTop: 8 }}>
+                            <div className="pw-plan-ref-group">
+                              <div className="pw-plan-ref-header">
+                                <span className="pw-plan-ref-icon">🎯</span>
+                                <span className="pw-plan-ref-label">Beats</span>
+                              </div>
+                              <div className="pw-plan-ref-tags">
+                                {beatCount === 0 ? (
+                                  <span className="pw-plan-ref-empty">No beat tags yet</span>
+                                ) : (
+                                  beatTags.map((beat) => (
+                                    <span key={`${plan.id}-beat-${beat.id}`} className="pw-plan-tag pw-plan-tag-char">
+                                      {beat.title || "Untitled Beat"}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                            <div className="pw-plan-ref-group">
+                              <div className="pw-plan-ref-header">
+                                <span className="pw-plan-ref-icon">🧵</span>
+                                <span className="pw-plan-ref-label">Subplots</span>
+                              </div>
+                              <div className="pw-plan-ref-tags">
+                                {subplotCount === 0 ? (
+                                  <span className="pw-plan-ref-empty">No subplot tags yet</span>
+                                ) : (
+                                  subplotTags.map((subplot) => (
+                                    <span key={`${plan.id}-subplot-${subplot.id}`} className="pw-plan-tag pw-plan-tag-loc">
+                                      {subplot.title || "Untitled Subplot"}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                            <div className="pw-plan-ref-group">
+                              <div className="pw-plan-ref-header">
+                                <span className="pw-plan-ref-icon">📈</span>
+                                <span className="pw-plan-ref-label">Arcs</span>
+                              </div>
+                              <div className="pw-plan-ref-tags">
+                                {arcCount === 0 ? (
+                                  <span className="pw-plan-ref-empty">No arc tags yet</span>
+                                ) : (
+                                  arcTags.map((arc) => (
+                                    <span key={`${plan.id}-arc-${arc.id}`} className="pw-plan-tag">
+                                      {arc.characterName || "Character"}: {arc.arcType || "Arc"}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
                           <div className="pw-plan-refs">
                             <div className="pw-plan-ref-group">
                               <div className="pw-plan-ref-header">
@@ -14680,6 +14756,9 @@ function NovelWorkspacePage() {
                           <div className="pw-plan-chapter-meta">
                             {charCount > 0 && <span>{charCount} character{charCount !== 1 ? "s" : ""}</span>}
                             {locCount > 0 && <span>{locCount} location{locCount !== 1 ? "s" : ""}</span>}
+                            {beatCount > 0 && <span>{beatCount} beat{beatCount !== 1 ? "s" : ""}</span>}
+                            {subplotCount > 0 && <span>{subplotCount} subplot{subplotCount !== 1 ? "s" : ""}</span>}
+                            {arcCount > 0 && <span>{arcCount} arc{arcCount !== 1 ? "s" : ""}</span>}
                           </div>
                         </div>
                       </div>
