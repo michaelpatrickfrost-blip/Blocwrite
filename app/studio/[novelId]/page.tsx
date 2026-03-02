@@ -5238,6 +5238,18 @@ function NovelWorkspacePage() {
     const rosterChars = planLinked.length > 0
       ? [...new Map([...planLinked, ...textMatched].map((c) => [c.id, c])).values()]
       : textMatched.length > 0 ? textMatched : allChars.slice(0, 6);
+    const allLocations = novel.storyBible.locations ?? [];
+    const planLocIds = planChapter?.locationIds ?? [];
+    const planLinkedLocations = planLocIds.length > 0
+      ? allLocations.filter((l) => planLocIds.includes(l.id))
+      : [];
+    const textMatchedLocations = allLocations.filter((l) => {
+      const name = (l.name || "").toLowerCase();
+      return name.length > 1 && synopsisSearch.includes(name);
+    });
+    const rosterLocations = planLinkedLocations.length > 0
+      ? [...new Map([...planLinkedLocations, ...textMatchedLocations].map((l) => [l.id, l])).values()]
+      : textMatchedLocations.length > 0 ? textMatchedLocations : allLocations.slice(0, 3);
     const characterRoster = rosterChars.slice(0, 8).map((c) => {
       const parts = [`${c.name} (${c.role || "Supporting"})`];
       if (c.pronouns) parts.push(`pronouns: ${c.pronouns}`);
@@ -5247,6 +5259,13 @@ function NovelWorkspacePage() {
       if (c.goals) parts.push(`goal: ${clampPromptText(c.goals, 40)}`);
       return parts.join(" — ");
     }).join("\n  ");
+    const locationRoster = rosterLocations.slice(0, 4).map((l) => {
+      const desc = l.description ? ` — ${clampPromptText(l.description, 60)}` : "";
+      return `${l.name}${l.type ? ` [${l.type}]` : ""}${desc}`;
+    }).join("\n  ");
+    const allowedCharacterNames = rosterChars.map((c) => c.name).filter(Boolean).join(", ");
+    const allowedLocationNames = rosterLocations.map((l) => l.name).filter(Boolean).join(", ");
+    const shortChapterSynopsis = chapterSynopsis.split(/\s+/).filter(Boolean).length < 90;
 
     setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
@@ -5281,6 +5300,7 @@ function NovelWorkspacePage() {
           .split(/(?<=[.!?])\s+/)
           .map((s) => s.trim())
           .filter(Boolean);
+      const openingAnchor = splitSentences(chapterSynopsis).slice(0, 2).join(" ").trim();
       const sanitizeSynopsisText = (text: string) =>
         text
           .replace(/\bBloc\s+\d+\s*(?:\([^)]+\))?\s*/gi, "")
@@ -5332,6 +5352,11 @@ function NovelWorkspacePage() {
         /\b(then|after|later|by the end|therefore|as a result|forcing|which leads to|escalates|turning point|ultimately|until)\b/i.test(synopsis);
       const hasOpeningResetCue = (synopsis: string) =>
         /\b(at the start|at the beginning|opening scene|opens with|introduces|is introduced|wakes up|regains consciousness|first arrives|for the first time)\b/i.test(synopsis);
+      const hasOpeningAnchor = (synopsis: string) => {
+        if (!openingAnchor) return true;
+        const score = synopsisSimilarity(synopsis, openingAnchor);
+        return score >= 0.18;
+      };
       const sentenceCount = (text: string) =>
         text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).length;
       const wordCount = (text: string) =>
@@ -5381,6 +5406,9 @@ function NovelWorkspacePage() {
           if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) {
             return { ok: false, reason: `Bloc ${idx + 1} does not read like ${expectedStage}.` };
           }
+          if (idx === 0 && !hasOpeningAnchor(synopsis)) {
+            return { ok: false, reason: "Bloc 1 does not reflect the chapter opening setup." };
+          }
           if (idx > 0 && !hasProgressionCue(synopsis)) {
             return { ok: false, reason: `Bloc ${idx + 1} is missing explicit progression cues.` };
           }
@@ -5417,6 +5445,9 @@ function NovelWorkspacePage() {
           nextSynopsis = index === total - 1
             ? `In this final scene, the pressure around ${chapterSeed} reaches a concrete decision point. The characters act on what was set up by ${previousSeed}, and that confrontation produces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points to what comes next.`
             : `This scene advances ${chapterSeed} by introducing a new obstacle that grows from ${previousSeed}. The characters take specific actions under pressure, triggering immediate consequences that alter the story state. The ending turns tension forward so the next bloc has a clear handoff.`;
+        }
+        if (index === 0 && openingAnchor && !hasOpeningAnchor(nextSynopsis)) {
+          nextSynopsis = `${openingAnchor} ${nextSynopsis}`;
         }
 
         const requireStageCue = index === 0 || index === total - 1;
@@ -5542,8 +5573,12 @@ function NovelWorkspacePage() {
         const prevSeed = firstSentence(previousSynopsis) || "the prior scene outcome";
         const nextSeed = nextChapterSynopsis ? firstSentence(nextChapterSynopsis) : "the next development";
         const seededSegment = fallbackSegmentForIndex(idx, total, previousSynopsis);
+        const openingSeed = openingAnchor || seededSegment;
         if (idx === total - 1) {
           return sanitizeSynopsisText(`${seededSegment} The chapter resolves pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`);
+        }
+        if (idx === 0) {
+          return sanitizeSynopsisText(`${openingSeed} This opening scene establishes the chapter's baseline situation, key dynamics, and immediate pressure before escalation begins.`);
         }
         return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
       };
@@ -5638,15 +5673,22 @@ function NovelWorkspacePage() {
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
             "- Write ONLY this bloc. Do not draft or summarize the remaining blocs.",
             "- synopsis must be detailed (4-8 sentences, minimum 45 words) and specific about what happens.",
+            "- Think in story logic for this scene: (1) immediate objective, (2) resistance/obstacle, (3) changed outcome that pushes the next scene.",
+            shortChapterSynopsis ? "- The chapter synopsis is brief: expand with plausible connective tissue (motives, reactions, subtext, sensory grounding) while staying faithful to the same events." : "",
             "- Use exact character names from the roster. Never use generic labels.",
+            allowedCharacterNames ? `- Do NOT introduce new characters. Allowed characters only: ${allowedCharacterNames}.` : "",
+            allowedLocationNames ? `- Do NOT change setting scope. Use only these locations: ${allowedLocationNames}.` : "",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
             `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
             "- Include explicit verbs for actions and consequences, not just mood or description.",
+            "- Expand depth through motivation, subtext, and emotional reactions — avoid adding brand-new plotlines.",
             "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
             i > 0 ? "- CRITICAL: continue from the immediate aftermath of the previous bloc. Do NOT use opening/setup language again." : "",
+            i === 0 && openingAnchor ? `- CRITICAL OPENING ANCHOR: Bloc 1 must explicitly cover this opening setup beat: "${clampPromptText(openingAnchor, 260)}"` : "",
             "",
             `CHARACTER ROSTER:\n  ${characterRoster}`,
+            locationRoster ? `LOCATIONS:\n  ${locationRoster}` : "",
             "",
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
@@ -5687,11 +5729,12 @@ function NovelWorkspacePage() {
               const hasMinWords = wordCount(built.synopsis) >= MIN_SYNOPSIS_WORDS;
               const requireStageCue = i === 0 || i === BLOC_COUNT - 1;
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
+              const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -5704,6 +5747,8 @@ function NovelWorkspacePage() {
                   ? "Synopsis lacks detail density. Expand to at least 45 words with concrete actions, reactions, and consequences."
                   : isGeneric
                     ? "Do not use template language. Replace placeholders with specific names, actions, settings, and consequences from this chapter."
+                  : missingOpeningAnchor
+                    ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
                   : openingReset
                     ? "Do not reopen the chapter premise. Continue directly from the previous bloc's consequence."
                 : stageMismatch
@@ -5726,6 +5771,10 @@ function NovelWorkspacePage() {
               "- Write a concrete, scene-specific synopsis with named characters, setting, actions, conflict, and outcome.",
               "- Minimum: 4 sentences and 55 words.",
               "- Never use generic/template wording.",
+              "- Use story logic: objective -> obstacle -> changed outcome.",
+              shortChapterSynopsis ? "- The chapter synopsis is short: enrich with emotional texture and connective detail, but keep the same core events and direction." : "",
+              allowedCharacterNames ? `- Do NOT add characters outside this list: ${allowedCharacterNames}.` : "",
+              allowedLocationNames ? `- Do NOT change locations outside this list: ${allowedLocationNames}.` : "",
               "- Must advance beyond previous blocs and remain consistent with chapter synopsis.",
               `Expected stage: ${expectedStage}.`,
               `Chapter: ${activeChapter.title}`,
