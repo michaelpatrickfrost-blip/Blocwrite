@@ -8336,6 +8336,7 @@ function NovelWorkspacePage() {
 
         const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
         const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
+        const chapterContext = buildPhase2ChapterContext(chapterTitle, "", index, allTitles, prevSynopsis, nextTitle);
 
         const blockedLocations = usedLocations.length > 0
           ? `LOCATIONS ALREADY USED (pick a DIFFERENT one): ${usedLocations.join(", ")}`
