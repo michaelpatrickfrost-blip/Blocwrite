@@ -88,7 +88,7 @@ type SummaryAiMenuTarget = "events";
 type EventsAiFocus = "balanced" | "character" | "twists" | "romance" | "mystery" | "action";
 type CharacterAiMode = "profile" | "voice" | "psyche";
 type PlanChapter = NonNullable<Novel["storyBible"]["bookPlan"]["chapters"][number]>;
-type PlanAiChapterTarget = number; // 1-15, user-selected
+type PlanAiChapterTarget = "auto" | number;
 type PlanChapterDraft = {
   title?: string;
   synopsis?: string;
@@ -356,6 +356,7 @@ const GENRE_OPTIONS_NF = [
 ] as const;
 const PLAN_CHAPTER_PRESETS = [3, 5, 8, 10, 12, 15] as const;
 const PLAN_CHAPTER_MAX = 40;
+const PLAN_FOCUS_LIMITS = { beats: 3, subplots: 2, arcs: 2 } as const;
 const BOLTON_LIBRARY_KEY = "pilotwriter.boltons.library.v1";
 
 function genreArcExamples(genres: string[]): string {
@@ -1542,6 +1543,7 @@ function NovelWorkspacePage() {
     });
   }
   const [planGenerateCustomCount, setPlanGenerateCustomCount] = useState("8");
+  const [planGenerateCountMode, setPlanGenerateCountMode] = useState<"manual" | "auto">("manual");
   const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
   const [planGenerateProgressIdx, setPlanGenerateProgressIdx] = useState<number | null>(null);
   const [planGenerateTotal, setPlanGenerateTotal] = useState(0);
@@ -2633,6 +2635,9 @@ function NovelWorkspacePage() {
       synopsis: clampText(planChapter.synopsis, synopsisClamp),
       characterIds: clampTextList(planChapter.characterIds, 40, 120),
       locationIds: clampTextList(planChapter.locationIds, 40, 120),
+      beatIds: clampTextList(planChapter.beatIds ?? [], 80, 120),
+      subplotIds: clampTextList(planChapter.subplotIds ?? [], 80, 120),
+      arcIds: clampTextList(planChapter.arcIds ?? [], 80, 120),
       manuscriptChapterId: clampText(planChapter.manuscriptChapterId ?? "", 120),
     };
   }
@@ -3680,7 +3685,7 @@ function NovelWorkspacePage() {
 
   function buildPlanGenerationPrompt(
     context: string,
-    planTarget: PlanAiChapterTarget,
+    planTarget: number,
     timelineNameList: string,
     isCompact: boolean,
   ) {
@@ -3887,10 +3892,35 @@ function NovelWorkspacePage() {
         characterName: chars.find((c) => c.id === arc.characterId)?.name || "",
         hasTurningPoint: arc.turningPointBeatIds.some((id) => chapterBeatIds.has(id)),
       }));
-    return { beatsForChapter, activeSubplots, chapterSubplots, activeArcs };
+    const focusedBeats = [...beatsForChapter]
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .slice(0, PLAN_FOCUS_LIMITS.beats);
+    const focusedBeatIds = new Set(focusedBeats.map((beat) => beat.id));
+    const focusedSubplots = chapterSubplots
+      .filter((subplot) => subplot.linkedBeatIds.some((beatId) => focusedBeatIds.has(beatId)))
+      .slice(0, PLAN_FOCUS_LIMITS.subplots);
+    const fallbackSubplots = focusedSubplots.length > 0
+      ? focusedSubplots
+      : chapterSubplots.slice(0, PLAN_FOCUS_LIMITS.subplots);
+    const focusedArcs = [...activeArcs]
+      .sort((a, b) => {
+        const turningDelta = Number(Boolean(b.hasTurningPoint)) - Number(Boolean(a.hasTurningPoint));
+        if (turningDelta !== 0) return turningDelta;
+        return (a.characterName || "").localeCompare(b.characterName || "");
+      })
+      .slice(0, PLAN_FOCUS_LIMITS.arcs);
+    return {
+      beatsForChapter,
+      activeSubplots,
+      chapterSubplots,
+      activeArcs,
+      focusedBeats,
+      focusedSubplots: fallbackSubplots,
+      focusedArcs,
+    };
   }
 
-  function normalizeUniqueBeatAssignments<T extends { beatIds?: string[]; subplotIds?: string[] }>(chapters: T[]): T[] {
+  function normalizeUniqueBeatAssignments<T extends { beatIds?: string[]; subplotIds?: string[]; arcIds?: string[] }>(chapters: T[]): T[] {
     const firstOwnerByBeatId = new Map<string, number>();
     return chapters.map((chapter, idx) => {
       const dedupedBeats: string[] = [];
@@ -3903,7 +3933,8 @@ function NovelWorkspacePage() {
         }
       }
       const dedupedSubplots = Array.from(new Set((chapter.subplotIds ?? []).map((id) => (id || "").trim()).filter(Boolean)));
-      return { ...chapter, beatIds: dedupedBeats, subplotIds: dedupedSubplots };
+      const dedupedArcs = Array.from(new Set((chapter.arcIds ?? []).map((id) => (id || "").trim()).filter(Boolean)));
+      return { ...chapter, beatIds: dedupedBeats, subplotIds: dedupedSubplots, arcIds: dedupedArcs };
     });
   }
 
@@ -3912,14 +3943,14 @@ function NovelWorkspacePage() {
     if (!spine || spine.beats.length === 0) return "";
     const chapterData = getPlotSpineChapterData(chapterIndex, totalChapters);
     if (!chapterData) return "";
-    const { beatsForChapter, activeSubplots, chapterSubplots, activeArcs } = chapterData;
+    const { beatsForChapter, activeSubplots, chapterSubplots, activeArcs, focusedBeats, focusedSubplots, focusedArcs } = chapterData;
     const chars = novel?.storyBible.characters ?? [];
 
     const parts: string[] = ["=== PLOT SPINE — THIS IS YOUR PRIMARY GUIDE ===", ""];
     parts.push(`CHAPTER LINK REQUIREMENTS: this chapter must explicitly include these beat titles: ${beatsForChapter.map((b) => `"${b.title}"`).join(", ")}.`);
     parts.push("");
-    parts.push("YOUR BEATS FOR THIS CHAPTER (you MUST cover all of these):");
-    for (const b of beatsForChapter) {
+    parts.push("FOCUSED BEATS FOR THIS CHAPTER (prioritize these first):");
+    for (const b of focusedBeats) {
       const charNames = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
       parts.push(`  Beat: "${b.title}" (tension: ${b.tension}/5)`);
       parts.push(`    ${b.description}`);
@@ -3928,21 +3959,25 @@ function NovelWorkspacePage() {
       }
       parts.push("");
     }
+    if (beatsForChapter.length > focusedBeats.length) {
+      parts.push(`Additional linked beats to weave in after the focused set: ${beatsForChapter.length - focusedBeats.length}.`);
+      parts.push("");
+    }
 
     if (activeSubplots.length > 0) {
       parts.push("ACTIVE SUBPLOTS AT THIS POINT:");
-      for (const sp of activeSubplots.slice(0, 8)) {
+      for (const sp of focusedSubplots) {
         const touchesThisChapter = chapterSubplots.some((csp) => csp.id === sp.id);
         parts.push(`  "${sp.title}" — STATUS: ${sp.status}${touchesThisChapter ? " (active in THIS chapter)" : ""}`);
         parts.push(`    ${sp.description.slice(0, 200)}`);
       }
-      if (activeSubplots.length > 8) parts.push(`  ... ${activeSubplots.length - 8} additional subplot thread(s) omitted for context budget.`);
+      if (activeSubplots.length > focusedSubplots.length) parts.push(`  ... ${activeSubplots.length - focusedSubplots.length} additional subplot thread(s) omitted to keep focus.`);
       parts.push("");
     }
 
     if (activeArcs.length > 0) {
       parts.push("CHARACTER ARC STATES FOR THIS CHAPTER:");
-      for (const arc of activeArcs.slice(0, 8)) {
+      for (const arc of focusedArcs) {
         const charName = arc.characterName || chars.find(c => c.id === arc.characterId)?.name || "?";
         const hasTurningPoint = arc.hasTurningPoint;
         parts.push(`  ${charName}: "${arc.startState}" → "${arc.endState}" (${arc.arcType})`);
@@ -3950,7 +3985,7 @@ function NovelWorkspacePage() {
           parts.push(`    ★ TURNING POINT IN THIS CHAPTER — show this shift happening as a pivotal moment.`);
         }
       }
-      if (activeArcs.length > 8) parts.push(`  ... ${activeArcs.length - 8} additional arc state(s) omitted for context budget.`);
+      if (activeArcs.length > focusedArcs.length) parts.push(`  ... ${activeArcs.length - focusedArcs.length} additional arc state(s) omitted to keep this chapter focused.`);
       parts.push("");
     }
 
@@ -3988,7 +4023,7 @@ function NovelWorkspacePage() {
     ].join("\n");
   }
 
-  function buildPhase1Prompt(planTarget: PlanAiChapterTarget): string {
+  function buildPhase1Prompt(planTarget: number): string {
     const context = buildPhase1OutlineContext();
     const genreExecutionHint = getCompactGenreExecutionHint();
     const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
@@ -5496,17 +5531,28 @@ function NovelWorkspacePage() {
         : null;
     const taggedBeatIds = uniquePlanBeatIds.filter(Boolean);
     const taggedSubplotIds = (planChapter?.subplotIds ?? []).filter(Boolean);
+    const taggedArcIds = (planChapter?.arcIds ?? []).filter(Boolean);
     const taggedBeats = spine
       ? (taggedBeatIds.length > 0
         ? spine.beats.filter((b) => taggedBeatIds.includes(b.id))
-        : (chapterSpineDataForBlocs?.beatsForChapter ?? []))
+        : (chapterSpineDataForBlocs?.focusedBeats ?? chapterSpineDataForBlocs?.beatsForChapter ?? []))
       : [];
     const taggedSubplots = spine
       ? (taggedSubplotIds.length > 0
         ? spine.subplots.filter((s) => taggedSubplotIds.includes(s.id))
-        : (chapterSpineDataForBlocs?.chapterSubplots ?? []))
+        : (chapterSpineDataForBlocs?.focusedSubplots ?? chapterSpineDataForBlocs?.chapterSubplots ?? []))
       : [];
-    const taggedArcs = chapterSpineDataForBlocs?.activeArcs ?? [];
+    const taggedArcs = spine
+      ? (taggedArcIds.length > 0
+        ? spine.characterArcs
+          .filter((arc) => taggedArcIds.includes(arc.id))
+          .map((arc) => ({
+            ...arc,
+            characterName: allChars.find((c) => c.id === arc.characterId)?.name || "",
+            hasTurningPoint: arc.turningPointBeatIds.some((id) => taggedBeatIds.includes(id)),
+          }))
+        : (chapterSpineDataForBlocs?.focusedArcs ?? chapterSpineDataForBlocs?.activeArcs ?? []))
+      : [];
     const beatCueForBloc = (idx: number) => {
       if (taggedBeats.length === 0) return "";
       const beat = taggedBeats[Math.min(idx, taggedBeats.length - 1)];
@@ -7754,6 +7800,9 @@ function NovelWorkspacePage() {
       characterIds: [],
       locationIds: [],
       loreIds: [],
+      beatIds: [],
+      subplotIds: [],
+      arcIds: [],
       manuscriptChapterId: chapter.id,
     };
   }
@@ -7850,11 +7899,46 @@ function NovelWorkspacePage() {
     };
   }
 
-  function normalizePlanTarget(value: unknown): PlanAiChapterTarget {
+  function normalizePlanTarget(value: unknown): number {
     if (typeof value === "number" && Number.isFinite(value)) {
       return Math.max(1, Math.min(PLAN_CHAPTER_MAX, Math.round(value)));
     }
     return 8;
+  }
+
+  function normalizePlanTargetSetting(value: unknown): PlanAiChapterTarget {
+    if (value === "auto") return "auto";
+    return normalizePlanTarget(value);
+  }
+
+  function estimateAutoChapterCount(sourceNovel: Novel): number {
+    const beatCount = Math.max(
+      0,
+      new Set((sourceNovel.storyBible.plotSpine?.beats ?? []).map((beat) => beat.id)).size,
+    );
+    const synopsisWordCount = (sourceNovel.storyBible.summary.synopsisShort || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+    let baseCount = 0;
+    if (beatCount > 0) {
+      // Keep one chapter per beat when there are many beats; otherwise floor at 8.
+      baseCount = Math.max(8, beatCount);
+    } else if (synopsisWordCount >= 520) {
+      baseCount = 16;
+    } else if (synopsisWordCount >= 360) {
+      baseCount = 14;
+    } else if (synopsisWordCount >= 220) {
+      baseCount = 12;
+    } else if (synopsisWordCount >= 120) {
+      baseCount = 10;
+    } else {
+      baseCount = 8;
+    }
+    const pacingMode = sourceNovel.storyBible.bookPlan?.pacingMode ?? "balanced";
+    if (pacingMode === "slow-burn") baseCount += 1;
+    if (pacingMode === "fast") baseCount -= 1;
+    return normalizePlanTarget(baseCount);
   }
 
   function clearAllPlanChapters() {
@@ -7881,30 +7965,36 @@ function NovelWorkspacePage() {
 
   function openPlanGenerationModal() {
     if (!novel) return;
-    const target = normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
+    const savedTarget = normalizePlanTargetSetting(novel.storyBible.bookPlan?.aiChapterTarget);
+    const target = savedTarget === "auto" ? estimateAutoChapterCount(novel) : normalizePlanTarget(savedTarget);
     setPlanGenerateCustomCount(String(target));
+    setPlanGenerateCountMode(savedTarget === "auto" ? "auto" : "manual");
     setPlanGeneratePacingMode(novel.storyBible.bookPlan?.pacingMode ?? "balanced");
     setShowPlanGenerateModal(true);
   }
 
   function confirmPlanGeneration() {
     if (!novel) return;
+    const isAuto = planGenerateCountMode === "auto";
     const manualCount = Number(planGenerateCustomCount);
-    const target = Number.isFinite(manualCount) ? normalizePlanTarget(manualCount) : null;
+    const target = isAuto
+      ? estimateAutoChapterCount(novel)
+      : (Number.isFinite(manualCount) ? normalizePlanTarget(manualCount) : null);
     if (target === null || target < 1) {
       setPlanError(`Enter a valid chapter count (1 to ${PLAN_CHAPTER_MAX}).`);
       return;
     }
+    const targetSetting: PlanAiChapterTarget = isAuto ? "auto" : target;
     if (planChapters.length > 0) {
       setShowPlanGenerateModal(false);
       setRegenConfirm({
         message: `This will replace your existing ${planChapters.length} chapter${planChapters.length === 1 ? "" : "s"} in the plan. Existing synopses will be overwritten.`,
-        onConfirm: () => { setRegenConfirm(null); updateBookPlan({ aiChapterTarget: target, pacingMode: planGeneratePacingMode }); void runGeneratePlan(target); },
+        onConfirm: () => { setRegenConfirm(null); updateBookPlan({ aiChapterTarget: targetSetting, pacingMode: planGeneratePacingMode }); void runGeneratePlan(target); },
       });
       return;
     }
     setShowPlanGenerateModal(false);
-    updateBookPlan({ aiChapterTarget: target, pacingMode: planGeneratePacingMode });
+    updateBookPlan({ aiChapterTarget: targetSetting, pacingMode: planGeneratePacingMode });
     void runGeneratePlan(target);
   }
 
@@ -8001,6 +8091,9 @@ function NovelWorkspacePage() {
         characterIds: [],
         locationIds: [],
         loreIds: [],
+        beatIds: [],
+        subplotIds: [],
+        arcIds: [],
         manuscriptChapterId: newChapter.id,
       };
       return {
@@ -8062,7 +8155,7 @@ function NovelWorkspacePage() {
 
   function togglePlanReference(
     chapterId: string,
-    key: "characterIds" | "locationIds",
+    key: "characterIds" | "locationIds" | "beatIds" | "subplotIds" | "arcIds",
     value: string,
   ) {
     if (!value) return;
@@ -8075,7 +8168,7 @@ function NovelWorkspacePage() {
     updatePlanChapter(chapterId, { [key]: nextList });
   }
 
-  async function runGeneratePlan(targetOverride?: PlanAiChapterTarget) {
+  async function runGeneratePlan(targetOverride?: number) {
     if (!novel || !ensureStoryAiReady()) return;
     if (!novel.storyBible.summary.synopsisShort.trim()) {
       setPlanError("Add a synopsis first so the assistant can plan your book.");
@@ -8090,7 +8183,8 @@ function NovelWorkspacePage() {
     let planGenFailed = false;
     let planNewCharIds: string[] = [];
     try {
-      const planTarget = targetOverride ?? normalizePlanTarget(novel.storyBible.bookPlan?.aiChapterTarget);
+      const rawTarget = targetOverride ?? novel.storyBible.bookPlan?.aiChapterTarget;
+      const planTarget = rawTarget === "auto" ? estimateAutoChapterCount(novel) : normalizePlanTarget(rawTarget);
       const spineActive = !isNF && hasPlotSpine();
       const planOutputProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
       const systemMsg = spineActive
@@ -8291,6 +8385,9 @@ function NovelWorkspacePage() {
         characterIds: [],
         locationIds: [],
         loreIds: [],
+        beatIds: [],
+        subplotIds: [],
+        arcIds: [],
         manuscriptChapterId: "",
       }));
       applyPlanToChapters(skeletonChapters, { activateFirst: true });
@@ -8557,21 +8654,21 @@ function NovelWorkspacePage() {
         const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
         const chapterSpineHint = chapterSpineData
           ? [
-              chapterSpineData.beatsForChapter.length > 0
-                ? `Required beat titles: ${chapterSpineData.beatsForChapter.map((b) => `"${b.title}"`).join(", ")}`
+              chapterSpineData.focusedBeats.length > 0
+                ? `Primary beat focus: ${chapterSpineData.focusedBeats.map((b) => `"${b.title}"`).join(", ")}`
                 : "",
-              chapterSpineData.chapterSubplots.length > 0
-                ? `Subplots to progress: ${chapterSpineData.chapterSubplots.map((s) => `"${s.title}"`).join(", ")}`
+              chapterSpineData.focusedSubplots.length > 0
+                ? `Subplots to progress: ${chapterSpineData.focusedSubplots.map((s) => `"${s.title}"`).join(", ")}`
                 : "",
-              chapterSpineData.activeArcs.length > 0
-                ? `Character arcs in play: ${chapterSpineData.activeArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
+              chapterSpineData.focusedArcs.length > 0
+                ? `Character arcs in play: ${chapterSpineData.focusedArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
                 : "",
             ].filter(Boolean).join("\n")
           : "";
         const chapterSubplotArcRule = (() => {
           if (chapterSpineData) {
-            const subplotTitles = chapterSpineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
-            const arcNames = chapterSpineData.activeArcs.map((arc) => arc.characterName).filter(Boolean);
+            const subplotTitles = chapterSpineData.focusedSubplots.map((sp) => sp.title).filter(Boolean);
+            const arcNames = chapterSpineData.focusedArcs.map((arc) => arc.characterName).filter(Boolean);
             const namedTargets = [
               subplotTitles.length > 0 ? `subplots ${subplotTitles.map((t) => `"${t}"`).join(", ")}` : "",
               arcNames.length > 0 ? `character arcs for ${arcNames.join(", ")}` : "",
@@ -8949,6 +9046,35 @@ function NovelWorkspacePage() {
         if (chapterRole === "conclusion" && !hasConclusionCue(synopsis)) {
           synopsis = `${synopsis} In the final movement, the central conflict resolves and the story closes on a definitive new normal.`;
         }
+        const inferenceSource = `${chapterTitle}\n${synopsis}`.trim();
+        const inferredCharacterIds = inferEntityIdsFromText(
+          inferenceSource,
+          mergedCharacters.map((character) => ({
+            id: character.id,
+            name: character.name || "",
+            aliases: (character.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
+          })),
+        );
+        const beatCharacterIds = chapterSpineData?.beatsForChapter.flatMap((beat) => beat.characterIds ?? []) ?? [];
+        chapterCharacterIds = mergeUniqueIds(chapterCharacterIds, beatCharacterIds, inferredCharacterIds).slice(0, 6);
+        const knownLocationNames = mergedLocations.map((location) => location.name).filter(Boolean);
+        const hintLocationNames = (chapterSpineData?.beatsForChapter ?? [])
+          .map((beat) => detectPrimaryKnownLocationName(beat.locationHint || "", knownLocationNames))
+          .filter(Boolean);
+        const inferredLocationIds = inferEntityIdsFromText(
+          inferenceSource,
+          mergedLocations.map((location) => ({ id: location.id, name: location.name || "" })),
+        );
+        chapterLocationIds = mergeUniqueIds(
+          chapterLocationIds,
+          hintLocationNames.map(ensureLocationId).filter(Boolean),
+          inferredLocationIds,
+        ).slice(0, 2);
+        if (chapterLocationIds.length === 0 && usedLocations.length > 0) {
+          const lastLocationName = usedLocations[usedLocations.length - 1];
+          const fallbackLocationId = ensureLocationId(lastLocationName);
+          if (fallbackLocationId) chapterLocationIds = [fallbackLocationId];
+        }
         runLoreConsistencyCheck({
           actionType: "chapter_synopsis_generation",
           content: synopsis,
@@ -8974,6 +9100,7 @@ function NovelWorkspacePage() {
               loreIds: chapterLoreIds,
               beatIds: chapterSpineData?.beatsForChapter.map((b) => b.id) ?? updatedPlanChapters[index].beatIds ?? [],
               subplotIds: chapterSpineData?.chapterSubplots.map((sp) => sp.id) ?? updatedPlanChapters[index].subplotIds ?? [],
+              arcIds: chapterSpineData?.activeArcs.map((arc) => arc.id) ?? updatedPlanChapters[index].arcIds ?? [],
             };
           }
           const updatedChapters = [...current.chapters];
@@ -9008,12 +9135,20 @@ function NovelWorkspacePage() {
           const { spine, chapterBeatMap, updatedBeats } = assignment;
 
           const chapterSubplotMap: string[][] = [];
+          const chapterArcMap: string[][] = [];
           for (let ci = 0; ci < totalCh; ci++) {
             const chBeatSet = new Set(chapterBeatMap[ci]);
             const spIds = spine.subplots
               .filter(sp => sp.linkedBeatIds.some(bid => chBeatSet.has(bid)))
               .map(sp => sp.id);
+            const arcIds = spine.characterArcs
+              .filter((arc) =>
+                arc.turningPointBeatIds.some((beatId) => chBeatSet.has(beatId)) ||
+                spine.beats.some((beat) => chBeatSet.has(beat.id) && beat.characterIds.includes(arc.characterId)),
+              )
+              .map((arc) => arc.id);
             chapterSubplotMap.push(spIds);
+            chapterArcMap.push(arcIds);
           }
 
           mutateNovel((current) => {
@@ -9047,6 +9182,7 @@ function NovelWorkspacePage() {
                 loreIds: mergeUniqueIds(ch.loreIds ?? [], inferredLoreIds),
                 beatIds: chapterBeatMap[ci] ?? [],
                 subplotIds: chapterSubplotMap[ci] ?? [],
+                arcIds: chapterArcMap[ci] ?? [],
               };
             });
             const updatedPlanChapters = normalizeUniqueBeatAssignments(updatedPlanChaptersRaw);
@@ -9483,14 +9619,14 @@ function NovelWorkspacePage() {
           : null;
       const regenSpineHint = regenSpineData
         ? [
-            regenSpineData.beatsForChapter.length > 0
-              ? `Required beat titles: ${regenSpineData.beatsForChapter.map((b) => `"${b.title}"`).join(", ")}`
+            regenSpineData.focusedBeats.length > 0
+              ? `Primary beat focus: ${regenSpineData.focusedBeats.map((b) => `"${b.title}"`).join(", ")}`
               : "",
-            regenSpineData.chapterSubplots.length > 0
-              ? `Subplots to progress: ${regenSpineData.chapterSubplots.map((s) => `"${s.title}"`).join(", ")}`
+            regenSpineData.focusedSubplots.length > 0
+              ? `Subplots to progress: ${regenSpineData.focusedSubplots.map((s) => `"${s.title}"`).join(", ")}`
               : "",
-            regenSpineData.activeArcs.length > 0
-              ? `Character arcs in play: ${regenSpineData.activeArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
+            regenSpineData.focusedArcs.length > 0
+              ? `Character arcs in play: ${regenSpineData.focusedArcs.map((a) => a.characterName).filter(Boolean).join(", ")}`
               : "",
           ].filter(Boolean).join("\n")
         : "";
@@ -10158,7 +10294,7 @@ function NovelWorkspacePage() {
       const nextBookPlan = mergedBookPlan
         ? {
             ...mergedBookPlan,
-            aiChapterTarget: normalizePlanTarget(mergedBookPlan.aiChapterTarget),
+            aiChapterTarget: normalizePlanTargetSetting(mergedBookPlan.aiChapterTarget),
             chapters: (mergedBookPlan.chapters ?? []).map(sanitizePlanChapterEntry),
             updatedAt: now,
           }
@@ -13044,9 +13180,21 @@ function NovelWorkspacePage() {
                     const pc = planChapters.find((p) => p.manuscriptChapterId === activeChapter.id) ?? planChapters[chIdx];
                     const charIds = pc?.characterIds ?? [];
                     const locIds = pc?.locationIds ?? [];
+                    const beatIds = pc?.beatIds ?? [];
+                    const subplotIds = pc?.subplotIds ?? [];
+                    const arcIds = pc?.arcIds ?? [];
+                    const spine = novel.storyBible.plotSpine;
                     const chars = charIds.map((id) => storyCharacters.find((c) => c.id === id)).filter(Boolean);
                     const locs = locIds.map((id) => storyLocations.find((l) => l.id === id)).filter(Boolean);
-                    if (chars.length === 0 && locs.length === 0) return null;
+                    const beats = beatIds.map((id) => spine?.beats.find((beat) => beat.id === id)).filter(Boolean);
+                    const subplots = subplotIds.map((id) => spine?.subplots.find((subplot) => subplot.id === id)).filter(Boolean);
+                    const arcs = (spine?.characterArcs ?? [])
+                      .filter((arc) => arcIds.includes(arc.id))
+                      .map((arc) => ({
+                        ...arc,
+                        characterName: storyCharacters.find((c) => c.id === arc.characterId)?.name || "Character",
+                      }));
+                    if (chars.length === 0 && locs.length === 0 && beats.length === 0 && subplots.length === 0 && arcs.length === 0) return null;
                     return (
                       <div className="pw-entity-bar">
                         {chars.length > 0 && (
@@ -13073,6 +13221,48 @@ function NovelWorkspacePage() {
                               {locs.map((l) => (
                                 <div key={l!.id} className="pw-entity-tip-row">
                                   <span className="pw-entity-tip-name">{l!.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {beats.length > 0 && (
+                          <div className="pw-entity-dot">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>
+                            <span className="pw-entity-dot-num">{beats.length}</span>
+                            <div className="pw-entity-tip">
+                              <div className="pw-entity-tip-head">Beats</div>
+                              {beats.map((beat) => (
+                                <div key={beat!.id} className="pw-entity-tip-row">
+                                  <span className="pw-entity-tip-name">{beat!.title || "Untitled Beat"}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {subplots.length > 0 && (
+                          <div className="pw-entity-dot">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 7a3 3 0 1 0-6 0v10a3 3 0 1 1-6 0"/><path d="M18 7a3 3 0 1 1 6 0v10a3 3 0 1 0 6 0" transform="translate(-6 0)"/></svg>
+                            <span className="pw-entity-dot-num">{subplots.length}</span>
+                            <div className="pw-entity-tip">
+                              <div className="pw-entity-tip-head">Subplots</div>
+                              {subplots.map((subplot) => (
+                                <div key={subplot!.id} className="pw-entity-tip-row">
+                                  <span className="pw-entity-tip-name">{subplot!.title || "Untitled Subplot"}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {arcs.length > 0 && (
+                          <div className="pw-entity-dot">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19h16"/><path d="M6 15l4-4 3 3 5-6"/></svg>
+                            <span className="pw-entity-dot-num">{arcs.length}</span>
+                            <div className="pw-entity-tip">
+                              <div className="pw-entity-tip-head">Arcs</div>
+                              {arcs.map((arc) => (
+                                <div key={arc.id} className="pw-entity-tip-row">
+                                  <span className="pw-entity-tip-name">{arc.characterName}: {arc.arcType || "Arc"}</span>
                                 </div>
                               ))}
                             </div>
@@ -14552,6 +14742,7 @@ function NovelWorkspacePage() {
                     const beatCharacterIds = new Set(beatTags.flatMap((beat) => beat.characterIds ?? []));
                     const arcTags = (spine?.characterArcs ?? [])
                       .filter((arc) =>
+                        (plan.arcIds ?? []).includes(arc.id) ||
                         arc.turningPointBeatIds.some((beatId) => beatIdSet.has(beatId)) ||
                         beatCharacterIds.has(arc.characterId),
                       )
@@ -14635,51 +14826,123 @@ function NovelWorkspacePage() {
                           <div className="pw-plan-refs" style={{ marginTop: 8 }}>
                             <div className="pw-plan-ref-group">
                               <div className="pw-plan-ref-header">
-                                <span className="pw-plan-ref-icon">🎯</span>
+                                <span className="pw-plan-ref-icon pw-plan-ref-icon-badge" aria-hidden="true">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>
+                                </span>
                                 <span className="pw-plan-ref-label">Beats</span>
+                                <select
+                                  className="pw-plan-ref-add"
+                                  value=""
+                                  onChange={(event) => {
+                                    if (!event.target.value) return;
+                                    togglePlanReference(plan.id, "beatIds", event.target.value);
+                                  }}
+                                >
+                                  <option value="">+ Add</option>
+                                  {(spine?.beats ?? []).map((beat) => (
+                                    <option key={beat.id} value={beat.id}>
+                                      {beat.title || "Untitled Beat"}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="pw-plan-ref-tags">
                                 {beatCount === 0 ? (
                                   <span className="pw-plan-ref-empty">No beat tags yet</span>
                                 ) : (
                                   beatTags.map((beat) => (
-                                    <span key={`${plan.id}-beat-${beat.id}`} className="pw-plan-tag pw-plan-tag-char">
+                                    <button
+                                      key={`${plan.id}-beat-${beat.id}`}
+                                      type="button"
+                                      className="pw-plan-tag pw-plan-tag-char"
+                                      onClick={() => togglePlanReference(plan.id, "beatIds", beat.id)}
+                                    >
                                       {beat.title || "Untitled Beat"}
-                                    </span>
+                                      <span className="pw-plan-tag-x">&times;</span>
+                                    </button>
                                   ))
                                 )}
                               </div>
                             </div>
                             <div className="pw-plan-ref-group">
                               <div className="pw-plan-ref-header">
-                                <span className="pw-plan-ref-icon">🧵</span>
+                                <span className="pw-plan-ref-icon pw-plan-ref-icon-badge" aria-hidden="true">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 7a3 3 0 1 0-6 0v10a3 3 0 1 1-6 0"/><path d="M18 7a3 3 0 1 1 6 0v10a3 3 0 1 0 6 0" transform="translate(-6 0)"/></svg>
+                                </span>
                                 <span className="pw-plan-ref-label">Subplots</span>
+                                <select
+                                  className="pw-plan-ref-add"
+                                  value=""
+                                  onChange={(event) => {
+                                    if (!event.target.value) return;
+                                    togglePlanReference(plan.id, "subplotIds", event.target.value);
+                                  }}
+                                >
+                                  <option value="">+ Add</option>
+                                  {(spine?.subplots ?? []).map((subplot) => (
+                                    <option key={subplot.id} value={subplot.id}>
+                                      {subplot.title || "Untitled Subplot"}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="pw-plan-ref-tags">
                                 {subplotCount === 0 ? (
                                   <span className="pw-plan-ref-empty">No subplot tags yet</span>
                                 ) : (
                                   subplotTags.map((subplot) => (
-                                    <span key={`${plan.id}-subplot-${subplot.id}`} className="pw-plan-tag pw-plan-tag-loc">
+                                    <button
+                                      key={`${plan.id}-subplot-${subplot.id}`}
+                                      type="button"
+                                      className="pw-plan-tag pw-plan-tag-loc"
+                                      onClick={() => togglePlanReference(plan.id, "subplotIds", subplot.id)}
+                                    >
                                       {subplot.title || "Untitled Subplot"}
-                                    </span>
+                                      <span className="pw-plan-tag-x">&times;</span>
+                                    </button>
                                   ))
                                 )}
                               </div>
                             </div>
                             <div className="pw-plan-ref-group">
                               <div className="pw-plan-ref-header">
-                                <span className="pw-plan-ref-icon">📈</span>
+                                <span className="pw-plan-ref-icon pw-plan-ref-icon-badge" aria-hidden="true">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19h16"/><path d="M6 15l4-4 3 3 5-6"/></svg>
+                                </span>
                                 <span className="pw-plan-ref-label">Arcs</span>
+                                <select
+                                  className="pw-plan-ref-add"
+                                  value=""
+                                  onChange={(event) => {
+                                    if (!event.target.value) return;
+                                    togglePlanReference(plan.id, "arcIds", event.target.value);
+                                  }}
+                                >
+                                  <option value="">+ Add</option>
+                                  {(spine?.characterArcs ?? []).map((arc) => {
+                                    const arcName = storyCharacters.find((c) => c.id === arc.characterId)?.name || "Character";
+                                    return (
+                                      <option key={arc.id} value={arc.id}>
+                                        {arcName}: {arc.arcType || "Arc"}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
                               </div>
                               <div className="pw-plan-ref-tags">
                                 {arcCount === 0 ? (
                                   <span className="pw-plan-ref-empty">No arc tags yet</span>
                                 ) : (
                                   arcTags.map((arc) => (
-                                    <span key={`${plan.id}-arc-${arc.id}`} className="pw-plan-tag">
+                                    <button
+                                      key={`${plan.id}-arc-${arc.id}`}
+                                      type="button"
+                                      className="pw-plan-tag"
+                                      onClick={() => togglePlanReference(plan.id, "arcIds", arc.id)}
+                                    >
                                       {arc.characterName || "Character"}: {arc.arcType || "Arc"}
-                                    </span>
+                                      <span className="pw-plan-tag-x">&times;</span>
+                                    </button>
                                   ))
                                 )}
                               </div>
@@ -22081,6 +22344,28 @@ function NovelWorkspacePage() {
               <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 6px" }}>
                 Pick a preset or type any number up to {PLAN_CHAPTER_MAX}.
               </p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className={`pw-plan-gen-preset-btn ${planGenerateCountMode === "auto" ? "active" : ""}`}
+                  onClick={() => setPlanGenerateCountMode("auto")}
+                  title={novel ? `Auto currently suggests ${estimateAutoChapterCount(novel)} chapters based on your spine/synopsis.` : "Auto pick chapter count"}
+                >
+                  Auto
+                </button>
+                <button
+                  type="button"
+                  className={`pw-plan-gen-preset-btn ${planGenerateCountMode === "manual" ? "active" : ""}`}
+                  onClick={() => setPlanGenerateCountMode("manual")}
+                >
+                  Manual
+                </button>
+              </div>
+              {planGenerateCountMode === "auto" && novel && (
+                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "0 0 8px" }}>
+                  Auto recommends <strong>{estimateAutoChapterCount(novel)}</strong> chapters from your plot beats and synopsis size.
+                </p>
+              )}
               <input
                 className="pw-plan-gen-number-input"
                 type="number"
@@ -22089,6 +22374,7 @@ function NovelWorkspacePage() {
                 value={planGenerateCustomCount}
                 onChange={(event) => setPlanGenerateCustomCount(event.target.value)}
                 placeholder="Chapters"
+                disabled={planGenerateCountMode === "auto"}
               />
               <div className="pw-plan-gen-presets">
                 {PLAN_CHAPTER_PRESETS.map((n) => (
@@ -22096,7 +22382,7 @@ function NovelWorkspacePage() {
                     key={`preset-${n}`}
                     type="button"
                     className={`pw-plan-gen-preset-btn ${planGenerateCustomCount === String(n) ? "active" : ""}`}
-                    onClick={() => setPlanGenerateCustomCount(String(n))}
+                    onClick={() => { setPlanGenerateCountMode("manual"); setPlanGenerateCustomCount(String(n)); }}
                   >
                     {n}
                   </button>
@@ -22143,7 +22429,7 @@ function NovelWorkspacePage() {
                 style={{ flex: 2 }}
                 onClick={confirmPlanGeneration}
               >
-                ✦ Generate Plan
+                ✦ Generate Plan {planGenerateCountMode === "auto" && novel ? `(${estimateAutoChapterCount(novel)} chapters)` : ""}
               </button>
             </div>
           </div>

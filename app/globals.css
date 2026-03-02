@@ -3868,6 +3868,16 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 .pw-plan-ref-group { display: flex; flex-direction: column; gap: 4px; }
 .pw-plan-ref-header { display: flex; align-items: center; gap: 6px; }
 .pw-plan-ref-icon { display: inline-flex; align-items: center; color: var(--pw-text-dim); }
+.pw-plan-ref-icon-badge {
+  width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 6px;
+  background: linear-gradient(145deg, rgba(var(--accent-rgb), 0.18), rgba(var(--accent-rgb), 0.08));
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  color: rgba(var(--accent-rgb), 1);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.18);
+}
 .pw-plan-ref-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--pw-text-dim); }
 
 .pw-plan-ref-add {
@@ -3895,6 +3905,7 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 .pw-plan-tag-char { background: var(--pw-accent-muted); border-color: rgba(var(--accent-rgb), 0.2); color: var(--pw-accent); }
 .pw-plan-tag-loc { background: var(--pw-tint-violet); border-color: var(--pw-border-light); color: var(--pw-text-muted); }
 .pw-plan-tag-event { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.18); color: #d97706; }
+.pw-plan-tag-muted { background: var(--pw-overlay-bg-hover); border-color: var(--pw-border-light); color: var(--pw-text-dim); cursor: default; }
 
 .pw-plan-chapter-meta { margin-top: 8px; display: flex; gap: 12px; font-size: 11px; color: var(--pw-text-dim); font-weight: 600; }
 

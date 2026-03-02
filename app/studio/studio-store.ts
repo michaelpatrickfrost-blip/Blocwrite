@@ -211,6 +211,7 @@ export type BookPlanChapter = {
   manuscriptChapterId?: string;
   beatIds?: string[];
   subplotIds?: string[];
+  arcIds?: string[];
 };
 
 /** Narrative structure analysis per plan */
@@ -927,6 +928,9 @@ function normalizeStoryBible(raw: unknown): StoryBible {
         locationIds: Array.isArray(obj.locationIds) ? (obj.locationIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
         loreIds: Array.isArray(obj.loreIds) ? (obj.loreIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
         manuscriptChapterId: typeof obj.manuscriptChapterId === "string" ? obj.manuscriptChapterId : "",
+        beatIds: Array.isArray(obj.beatIds) ? (obj.beatIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
+        subplotIds: Array.isArray(obj.subplotIds) ? (obj.subplotIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
+        arcIds: Array.isArray(obj.arcIds) ? (obj.arcIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
       };
     }),
     aiChapterTarget:
