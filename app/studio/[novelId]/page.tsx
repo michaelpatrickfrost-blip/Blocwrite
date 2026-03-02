@@ -5276,6 +5276,31 @@ function NovelWorkspacePage() {
         const union = new Set([...setA, ...setB]).size;
         return union === 0 ? 0 : 1 - intersection / union;
       };
+      const splitSentences = (text: string) =>
+        text
+          .split(/(?<=[.!?])\s+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      const sanitizeSynopsisText = (text: string) =>
+        text
+          .replace(/\bBloc\s+\d+\s*(?:\([^)]+\))?\s*/gi, "")
+          .replace(/A fresh [^.]*complication shifts the objective, forcing a different tactic than earlier scenes\.?/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      const chapterSentenceChunks = (() => {
+        const src = splitSentences(chapterSynopsis);
+        const chunkSize = Math.max(1, Math.ceil(src.length / Math.max(1, BLOC_COUNT)));
+        return Array.from({ length: BLOC_COUNT }, (_, i) => src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim());
+      })();
+      const fallbackSegmentForIndex = (index: number, total: number, previousSynopsis: string) => {
+        const fromChapter = chapterSentenceChunks[index] || "";
+        if (fromChapter) return sanitizeSynopsisText(fromChapter);
+        const prevSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
+        if (index === total - 1) {
+          return `The chapter reaches its final movement as consequences from ${prevSeed} force a decisive confrontation and a clear outcome that closes this chapter's central pressure.`;
+        }
+        return `The scene continues from ${prevSeed}, introducing a new complication that changes the immediate objective and creates a clear handoff into the next scene.`;
+      };
       const synopsisSimilarity = (a: string, b: string): number => {
         const na = normalizeSynopsis(a);
         const nb = normalizeSynopsis(b);
@@ -5379,9 +5404,11 @@ function NovelWorkspacePage() {
       };
       const isGenericTemplateSynopsis = (synopsis: string) =>
         /\bdistinct\s+(opening|middle|final)\s+movement\b/i.test(synopsis) ||
-        /\bcharacters take concrete actions, face a new obstacle\b/i.test(synopsis);
+        /\bcharacters take concrete actions, face a new obstacle\b/i.test(synopsis) ||
+        /\bbloc\s+\d+\b/i.test(synopsis) ||
+        /\ba fresh [^.]*complication shifts the objective\b/i.test(synopsis);
       const enforceSynopsisQuality = (synopsis: string, index: number, total: number, previousSynopsis: string) => {
-        let nextSynopsis = synopsis.trim();
+        let nextSynopsis = sanitizeSynopsisText(synopsis);
         const stage = expectedStageForIndex(index, total);
         const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
         const previousSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
@@ -5413,7 +5440,7 @@ function NovelWorkspacePage() {
           nextSynopsis = `${nextSynopsis} The immediate consequence reshapes relationships, priorities, and risk, ensuring the scene has distinct momentum rather than repeating earlier beats.`;
         }
 
-        return nextSynopsis.replace(/\s+/g, " ").trim();
+        return sanitizeSynopsisText(nextSynopsis.replace(/\s+/g, " ").trim());
       };
       const autoRepairSequence = (inputBlocks: SceneBlock[]) => {
         let repaired = [...inputBlocks];
@@ -5430,10 +5457,14 @@ function NovelWorkspacePage() {
             const previous = repaired.slice(0, idx);
             const { maxSimilarity } = findMostSimilarBloc(block.synopsis, previous);
             if (maxSimilarity < SIMILARITY_THRESHOLD) return block;
-            const stage = expectedStageForIndex(idx, repaired.length);
             return {
               ...block,
-              synopsis: `${block.synopsis} A fresh ${stage} complication shifts the objective, forcing a different tactic than earlier scenes.`,
+              synopsis: enforceSynopsisQuality(
+                `${fallbackSegmentForIndex(idx, repaired.length, repaired[idx - 1].synopsis || "")} As a result, this pushes the chapter into a distinct new turn.`,
+                idx,
+                repaired.length,
+                repaired[idx - 1].synopsis || "",
+              ),
             };
           });
           repaired = applyContinuityScaffold(repaired);
@@ -5471,7 +5502,7 @@ function NovelWorkspacePage() {
         });
       };
       const toSceneBlock = (entry: BlocEntry | null, index: number): SceneBlock | null => {
-        const synopsis = (entry?.synopsis || "").trim();
+        const synopsis = sanitizeSynopsisText((entry?.synopsis || "").trim());
         if (synopsis.length < 15) return null;
         const suggestedFocus = typeof entry?.focus === "string" && validFocusIds.includes(entry.focus) ? entry.focus : "default";
         const suggestedTarget = typeof entry?.wordTarget === "number" && validWordTargets.includes(entry.wordTarget) ? entry.wordTarget : 0;
@@ -5490,7 +5521,7 @@ function NovelWorkspacePage() {
         };
       };
       const findWeaknessForBloc = (candidateBlocks: SceneBlock[], idx: number) => {
-        const synopsis = (candidateBlocks[idx].synopsis || "").trim();
+        const synopsis = sanitizeSynopsisText((candidateBlocks[idx].synopsis || "").trim());
         if (synopsis.length < 15) return "synopsis too short";
         if (sentenceCount(synopsis) < 3) return "needs at least 3 concrete sentences";
         if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return "needs more concrete detail";
@@ -5510,10 +5541,11 @@ function NovelWorkspacePage() {
         const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
         const prevSeed = firstSentence(previousSynopsis) || "the prior scene outcome";
         const nextSeed = nextChapterSynopsis ? firstSentence(nextChapterSynopsis) : "the next development";
+        const seededSegment = fallbackSegmentForIndex(idx, total, previousSynopsis);
         if (idx === total - 1) {
-          return `Bloc ${idx + 1} resolves the chapter pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`;
+          return sanitizeSynopsisText(`${seededSegment} The chapter resolves pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`);
         }
-        return `Bloc ${idx + 1} (${stage}) pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next bloc.`;
+        return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
       };
       const repairWeakOrDuplicateBlocs = async (inputBlocks: SceneBlock[]) => {
         let repaired = [...inputBlocks];
@@ -7838,10 +7870,10 @@ function NovelWorkspacePage() {
       const getStructuralBeat = (chapterIndex: number, totalChapters: number): string => {
         const pos = (chapterIndex + 1) / totalChapters;
         const chNum = chapterIndex + 1;
-        if (chNum === 1) return "STRUCTURE: OPENING chapter. Hook the reader immediately. Introduce the protagonist in a SPECIFIC moment that defines them. End on a note that makes the reader need chapter 2.";
-        if (chNum === 2) return "STRUCTURE: Chapter 2 must show a DIFFERENT side of the story — new setting, new situation, or a time jump. Introduce a new element (character, threat, relationship, or mystery). DO NOT repeat the same scenario as Chapter 1.";
-        if (chNum === 3) return "STRUCTURE: Chapter 3 deepens the conflict. The protagonist faces a new challenge or complication that raises the stakes beyond what chapters 1-2 established.";
-        if (chNum === 4) return "STRUCTURE: Chapter 4 — the story is now in motion. Something happens that makes turning back impossible. A point of no return.";
+        if (chNum === 1) return "STRUCTURE: OPENING chapter. Prioritize grounded setup before acceleration: establish the protagonist's normal world, core relationships, tone, and central stakes. End with a clear inciting pressure that naturally launches Chapter 2 (do not skip setup).";
+        if (chNum === 2) return "STRUCTURE: Chapter 2 should continue directly from Chapter 1 consequences while broadening the world/conflict. Build momentum and introduce at least one subplot or arc turn without repeating Chapter 1 beats.";
+        if (chNum === 3) return "STRUCTURE: Chapter 3 deepens conflict and subplot pressure. The protagonist must face a new complication that escalates stakes and changes strategy.";
+        if (chNum === 4) return "STRUCTURE: Chapter 4 should convert rising pressure into a decisive turn that commits the story to the core arc.";
         if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident zone. The status quo shatters. The protagonist is thrust into the central conflict.";
         if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. New complications, new obstacles, deeper stakes. The protagonist is tested.";
         if (pos <= 0.55) return "STRUCTURE: MIDPOINT. A major twist, revelation, or reversal changes everything. The protagonist must fundamentally shift their approach.";
@@ -8103,6 +8135,39 @@ function NovelWorkspacePage() {
       const genreGuidance = getGenreGuidance();
       const detailedRangeSpine = planOutputProfile.highDetail ? "18-30" : planOutputProfile.smallModel ? "12-18" : "15-25";
       const detailedRangeRegular = planOutputProfile.highDetail ? "15-24" : planOutputProfile.smallModel ? "10-16" : "12-20";
+      const chapterRoleForIndex = (index: number, total: number): "opening" | "middle" | "conclusion" => {
+        if (index === 0) return "opening";
+        if (index === total - 1) return "conclusion";
+        return "middle";
+      };
+      const hasOpeningSetupCue = (text: string) =>
+        /\b(establishes|introduces|sets up|normal world|baseline|daily life|status quo|inciting pressure)\b/i.test(text);
+      const hasConclusionCue = (text: string) =>
+        /\b(resolves|resolution|aftermath|final confrontation|closing image|new normal|ties up|concludes|by the end)\b/i.test(text);
+      const looksLikePrematureConclusion = (text: string) =>
+        /\b(everything is resolved|nothing left|all conflicts resolved|final ending)\b/i.test(text);
+      const subplotArcHint = (() => {
+        const spine = novel.storyBible.plotSpine;
+        if (!spine) return "";
+        const subplotLines = (spine.subplots ?? [])
+          .slice(0, 6)
+          .map((sp) => `  - ${sp.title} (${sp.status}): ${clampPromptText(sp.description || "", 90)}`)
+          .join("\n");
+        const arcLines = (spine.characterArcs ?? [])
+          .slice(0, 6)
+          .map((arc) => {
+            const charName = mergedCharacters.find((c) => c.id === arc.characterId)?.name || "Character";
+            return `  - ${charName}: ${arc.arcType || "arc"} [${clampPromptText(arc.startState || "", 45)} -> ${clampPromptText(arc.endState || "", 45)}]`;
+          })
+          .join("\n");
+        if (!subplotLines && !arcLines) return "";
+        return [
+          "SUBPLOT / ARC CONTEXT (thread through chapter order):",
+          subplotLines ? `Subplots:\n${subplotLines}` : "",
+          arcLines ? `Character arcs:\n${arcLines}` : "",
+          "For each chapter, advance at least one subplot or arc state in a concrete way (not just mention it).",
+        ].filter(Boolean).join("\n");
+      })();
 
       const synopsisFormatGuide = [
         "FORMAT: Write a FULL CHAPTER BLUEPRINT — not prose, not a summary, but a dense beat-by-beat roadmap that an AI prose writer will follow exactly. Every detail you include here becomes a scene. Every detail you leave out becomes a gap the prose writer must invent. MORE DETAIL = BETTER PROSE.",
@@ -8122,6 +8187,7 @@ function NovelWorkspacePage() {
         setPlanGenerateProgressIdx(index);
 
         const chapterTitle = allTitles[index];
+        const chapterRole = chapterRoleForIndex(index, allTitles.length);
         const structuralBeat = getStructuralBeat(index, allTitles.length);
         const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
 
@@ -8151,6 +8217,7 @@ function NovelWorkspacePage() {
         const chapterPrompt = isNF ? [
           `Chapter ${index + 1} of ${allTitles.length}: "${chapterTitle}" — ${nfSubtypeLabel} book.`,
           `Return JSON: { "synopsis": "...", "characters": ["Person Name"], "location": "One Place Name", "events": ["key moment"] }`,
+          "- Generate ONLY this chapter. Do not draft other chapters.",
           "",
           synopsisFormatGuide,
           "",
@@ -8175,6 +8242,12 @@ function NovelWorkspacePage() {
           "- NEVER repeat narrative beats from previous chapters. Each chapter must cover NEW ground.",
           "- If a confrontation or revelation already happened, show the AFTERMATH or a NEW development.",
           "- Each chapter MUST introduce at least one new element: new information, new complication, shifted perspective, or changed dynamic.",
+          "- Keep chapter order coherence: this chapter must directly continue from prior consequences.",
+          chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
+          chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
+          chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
+          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish the baseline world, key relationships, and central stakes before major escalation." : "",
+          subplotArcHint ? `\n${subplotArcHint}` : "",
           "",
           "- ONE location only. Return a single place name string.",
           "- Only people who appear and act (2-4 typically).",
@@ -8190,6 +8263,7 @@ function NovelWorkspacePage() {
         ].filter(Boolean).join("\n") : [
           `Chapter ${index + 1} of ${allTitles.length}: "${chapterTitle}" — ${genreStr} novel.`,
           `Return JSON: { "synopsis": "...", "characters": ["First Last"], "location": "One Place Name", "events": ["key moment"] }`,
+          "- Generate ONLY this chapter. Do not draft or summarize other chapters.",
           "",
           synopsisFormatGuide,
           "",
@@ -8219,6 +8293,12 @@ function NovelWorkspacePage() {
           "- Each chapter MUST introduce at least one NEW element: a new piece of information, a new complication, a shifted alliance, a revealed secret, or a changed dynamic.",
           "- If the previous chapter ended with a revelation, this chapter must show characters ACTING on that revelation — not re-processing it.",
           "- Check the ALREADY HAPPENED section carefully. If a scene type (argument, chase, meeting, discovery) appeared before, this chapter must use a DIFFERENT type or dramatically escalate the stakes.",
+          "- Keep chapter order coherence: continue directly from prior consequences and move the story state forward.",
+          chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
+          chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
+          chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
+          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish baseline world, key relationships, and central stakes before major escalation." : "",
+          subplotArcHint ? `\n${subplotArcHint}` : "",
           "",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
@@ -8311,7 +8391,50 @@ function NovelWorkspacePage() {
           }
         }
 
+        // Role guardrails: opening should setup, middle should progress (not conclude), final should conclude.
+        if (synopsis) {
+          const needsOpeningRepair = chapterRole === "opening" && !hasOpeningSetupCue(synopsis);
+          const needsConclusionRepair = chapterRole === "conclusion" && !hasConclusionCue(synopsis);
+          const needsMiddleRepair = chapterRole === "middle" && looksLikePrematureConclusion(synopsis);
+          if (needsOpeningRepair || needsConclusionRepair || needsMiddleRepair) {
+            try {
+              const roleRepairPrompt = [
+                `Revise Chapter ${index + 1} "${chapterTitle}" so it matches its required role in the full novel arc.`,
+                `Role requirement: ${chapterRole.toUpperCase()}.`,
+                chapterRole === "opening"
+                  ? "Must strengthen setup/build-up: protagonist baseline, relationships, stakes, and inciting pressure."
+                  : chapterRole === "middle"
+                    ? "Must progress and escalate from previous chapters, but must NOT feel like a final ending."
+                    : "Must deliver a real conclusion: resolve the core conflict and land a clear ending.",
+                "",
+                `Current synopsis:\n${synopsis}`,
+                "",
+                storySoFar ? `Prior chapters context:\n${storySoFar}` : "",
+                nextTitle ? `Next chapter title: ${nextTitle}` : "No next chapter (this is the final chapter).",
+                "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+              ].filter(Boolean).join("\n");
+              const roleRepaired = await requestOpenRouterJson<{ synopsis?: string }>(roleRepairPrompt, 2200, {
+                timeoutMs: 180000,
+                systemMessage: "Story architect. Enforce chapter role in novel arc. Return valid JSON only.",
+              });
+              const repairedSynopsis = (roleRepaired?.synopsis ?? "").trim();
+              if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+            } catch {
+              // Fall through to deterministic reinforcement below.
+            }
+          }
+        }
+
         if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
+        if (chapterRole === "opening" && !hasOpeningSetupCue(synopsis)) {
+          synopsis = `${synopsis} The chapter grounds the protagonist's baseline world, key relationships, and stakes before forcing the first major shift.`;
+        }
+        if (chapterRole === "middle" && looksLikePrematureConclusion(synopsis)) {
+          synopsis = `${synopsis} This chapter is not the ending; it escalates unresolved pressures and carries momentum into the next stage.`;
+        }
+        if (chapterRole === "conclusion" && !hasConclusionCue(synopsis)) {
+          synopsis = `${synopsis} In the final movement, the central conflict resolves and the story closes on a definitive new normal.`;
+        }
         runLoreConsistencyCheck({
           actionType: "chapter_synopsis_generation",
           content: synopsis,
