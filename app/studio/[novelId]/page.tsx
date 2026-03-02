@@ -4467,6 +4467,22 @@ function NovelWorkspacePage() {
           : "- Pace this chapter with balanced progression: setup, development, and movement.";
     const arcGuidance = buildChapterArcGuidance(chapterIndex, totalChapters);
     const spineChapterCtx = !isNF && hasPlotSpine() ? buildPlotSpineChapterContext(chapterIndex, totalChapters) : "";
+    const subplotProgressRule = (() => {
+      if (!novel) return "- SUBPLOT PROGRESSION: carry at least one ongoing thread forward with a concrete state change.";
+      const spineData = !isNF && hasPlotSpine() ? getPlotSpineChapterData(chapterIndex, totalChapters) : null;
+      if (spineData) {
+        const subplotTitles = spineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
+        const arcNames = spineData.activeArcs.map((arc) => arc.characterName).filter(Boolean);
+        const namedTargets = [
+          subplotTitles.length > 0 ? `subplots ${subplotTitles.map((t) => `"${t}"`).join(", ")}` : "",
+          arcNames.length > 0 ? `character arcs for ${arcNames.join(", ")}` : "",
+        ].filter(Boolean).join(" and ");
+        return namedTargets
+          ? `- SUBPLOT/ARC PROGRESSION: advance ${namedTargets} with a visible change in status, leverage, trust, power, or risk by chapter end.`
+          : "- SUBPLOT/ARC PROGRESSION: advance at least one ongoing thread with a visible state change by chapter end.";
+      }
+      return "- SUBPLOT/ARC PROGRESSION: carry at least one ongoing relationship or conflict thread forward with a visible state change by chapter end.";
+    })();
     const sentTgt = spineChapterCtx ? "12-18" : "8-12";
     return [
       "Expand this chapter into a DETAILED INTERNAL WRITER BLUEPRINT used to generate scene blocs and prose. Use Canon names exactly.",
@@ -4480,6 +4496,8 @@ function NovelWorkspacePage() {
       "The synopsis is an internal production note for AI, not reader copy.",
       "Use explicit nouns and actions, not vague language.",
       "NEVER repeat scenes or emotional beats from adjacent chapters. Each chapter must cover genuinely NEW ground.",
+      "Use objective -> obstacle -> outcome logic for the chapter's main line of action.",
+      subplotProgressRule,
       "Use one primary location for this chapter unless transition is absolutely story-critical.",
       "- Maintain continuity with previous and next chapters.",
       pacingRule,
@@ -8239,6 +8257,20 @@ function NovelWorkspacePage() {
         const chapterRole = chapterRoleForIndex(index, allTitles.length);
         const structuralBeat = getStructuralBeat(index, allTitles.length);
         const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
+        const chapterSubplotArcRule = (() => {
+          if (chapterSpineData) {
+            const subplotTitles = chapterSpineData.chapterSubplots.map((sp) => sp.title).filter(Boolean);
+            const arcNames = chapterSpineData.activeArcs.map((arc) => arc.characterName).filter(Boolean);
+            const namedTargets = [
+              subplotTitles.length > 0 ? `subplots ${subplotTitles.map((t) => `"${t}"`).join(", ")}` : "",
+              arcNames.length > 0 ? `character arcs for ${arcNames.join(", ")}` : "",
+            ].filter(Boolean).join(" and ");
+            return namedTargets
+              ? `- SUBPLOT/ARC PROGRESSION (REQUIRED): advance ${namedTargets} with a concrete state change (trust, leverage, risk, alignment, or intent) by chapter end.`
+              : "- SUBPLOT/ARC PROGRESSION (REQUIRED): advance at least one ongoing thread with a concrete state change by chapter end.";
+          }
+          return "- SUBPLOT/ARC PROGRESSION: advance at least one ongoing thread with a concrete state change by chapter end.";
+        })();
 
         const storySoFar = generatedSynopses.length > 0
           ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 1000)}`).join("\n\n")
@@ -8284,6 +8316,7 @@ function NovelWorkspacePage() {
           "- OPENING: How does the chapter begin? What's the first image, action, or event? Where are we and who is present?",
           "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment: what triggers it, who's involved, what's discovered or decided, how people react, and what shifts as a result.",
           "- CLOSING: How does the chapter end? What moment or revelation carries into the next chapter?",
+          "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
           "- Be extremely specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
           "- If the author has placed Story Board cards in this chapter, use those as the primary content source.",
           "",
@@ -8292,6 +8325,7 @@ function NovelWorkspacePage() {
           "- If a confrontation or revelation already happened, show the AFTERMATH or a NEW development.",
           "- Each chapter MUST introduce at least one new element: new information, new complication, shifted perspective, or changed dynamic.",
           "- Keep chapter order coherence: this chapter must directly continue from prior consequences.",
+          chapterSubplotArcRule,
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
@@ -8331,6 +8365,7 @@ function NovelWorkspacePage() {
           "- DIALOGUE CUES: Note the key conversations that must happen — what's discussed, what's revealed, what subtext is running underneath.",
           "- EMOTIONAL THROUGHLINE: Track the POV character's emotional state from the start to end of the chapter. How does it shift and why?",
           "- CLOSING: How does the chapter end? What image, line, or moment carries the reader into the next chapter?",
+          "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
           "- SPECIFICITY: 'Elena confronts Marcus about the forged documents; he deflects by revealing her father was the original forger, which shatters Elena's belief that her father was innocent — she leaves the room mid-sentence, hands shaking' NOT 'they argue about the past'.",
           "- Every sentence must advance the story. No scene-setting filler, no describing weather or postures.",
           "- State WHO does WHAT, WHY, HOW others react, and what CHANGES as a result.",
@@ -8343,6 +8378,7 @@ function NovelWorkspacePage() {
           "- If the previous chapter ended with a revelation, this chapter must show characters ACTING on that revelation — not re-processing it.",
           "- Check the ALREADY HAPPENED section carefully. If a scene type (argument, chase, meeting, discovery) appeared before, this chapter must use a DIFFERENT type or dramatically escalate the stakes.",
           "- Keep chapter order coherence: continue directly from prior consequences and move the story state forward.",
+          chapterSubplotArcRule,
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
@@ -8791,6 +8827,8 @@ function NovelWorkspacePage() {
           "- ADD richness: deepen emotional reactions, sharpen character dynamics, add sensory detail, strengthen transitions between scenes, add internal conflict and subtext.",
           "- ADD connective tissue: smoother transitions between beats, foreshadowing, echoes of earlier chapters, thematic resonance.",
           "- ADD emotional depth: show how characters FEEL about what's happening, not just what they do. Layer in tension, doubt, hope, dread.",
+          "- Maintain objective -> obstacle -> outcome flow in each chapter so progression is explicit and cumulative.",
+          "- Every chapter must advance at least one active subplot thread or character arc with a concrete status change by chapter end.",
           "- The arc direction tells you the EMOTIONAL LENS — apply it as atmosphere, tone, and character interiority, not as plot changes.",
           "- Each synopsis MUST be at least 15-25 sentences. Always LONGER and RICHER than the original — never shorter.",
           "- Every character must have a proper human name (First Last). NEVER use role labels.",
@@ -8812,6 +8850,8 @@ function NovelWorkspacePage() {
           "- Each synopsis MUST be a detailed blueprint — at least 12-20 sentences per chapter.",
           "- Include specific character actions, emotional beats, key plot developments, character dynamics, and transitional moments.",
           "- Go beyond the outline: add middle beats, character reactions, emotional shifts, and cause-and-effect chains.",
+          "- Maintain objective -> obstacle -> outcome flow in each chapter so progression is explicit and cumulative.",
+          "- Every chapter must advance at least one active subplot thread or character arc with a concrete status change by chapter end.",
           "- Keep the same characters, world, and core events. Reshape the narrative arc, pacing, tension, and emotional journey.",
           "- Maintain or exceed the detail from the originals. Never shorten — expand and reshape.",
           "- Ensure continuity: each chapter leads naturally into the next.",
