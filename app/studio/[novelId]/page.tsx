@@ -7985,9 +7985,9 @@ function NovelWorkspacePage() {
       const getStructuralBeat = (chapterIndex: number, totalChapters: number): string => {
         const pos = (chapterIndex + 1) / totalChapters;
         const chNum = chapterIndex + 1;
-        if (chNum === 1) return "STRUCTURE: OPENING chapter. Prioritize grounded setup before acceleration: establish the protagonist's normal world, core relationships, tone, and central stakes. End with a clear inciting pressure that naturally launches Chapter 2 (do not skip setup).";
-        if (chNum === 2) return "STRUCTURE: Chapter 2 should continue directly from Chapter 1 consequences while broadening the world/conflict. Build momentum and introduce at least one subplot or arc turn without repeating Chapter 1 beats.";
-        if (chNum === 3) return "STRUCTURE: Chapter 3 deepens conflict and subplot pressure. The protagonist must face a new complication that escalates stakes and changes strategy.";
+        if (chNum === 1) return "STRUCTURE: OPENING chapter. Prioritize grounded setup before acceleration: establish the protagonist's normal world, core relationships, and stakes through concrete interaction beats. End with a clear inciting pressure that naturally launches Chapter 2 (do not skip setup).";
+        if (chNum === 2) return "STRUCTURE: Chapter 2 must move the story state forward from Chapter 1, not replay it. Show consequences in a new interaction context, advance at least one subplot/arc, and force a meaningful decision that changes what Chapter 3 can be.";
+        if (chNum === 3) return "STRUCTURE: Chapter 3 must escalate into a real turn. Introduce a fresh complication, shift relationship power/leverage, and commit the protagonist to a changed strategy with clear consequences.";
         if (chNum === 4) return "STRUCTURE: Chapter 4 should convert rising pressure into a decisive turn that commits the story to the core arc.";
         if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident zone. The status quo shatters. The protagonist is thrust into the central conflict.";
         if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. New complications, new obstacles, deeper stakes. The protagonist is tested.";
@@ -8372,9 +8372,12 @@ function NovelWorkspacePage() {
           nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
           "- Write 12-20 sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail here, the better the prose.",
           "- OPENING: How does the chapter begin? What's the first image, action, or event? Where are we and who is present?",
+          "- OPENING RUNWAY: Start with 1-2 grounding beats (context, motive, emotional state) before the main confrontation/escalation.",
+          "- EARLY-CHAPTER PACING (CRITICAL): Chapters 1-3 must each produce a concrete story-state change. Do not keep the same scene loop or venue dynamic across all three chapters.",
           "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment: what triggers it, who's involved, what's discovered or decided, how people react, and what shifts as a result.",
           "- CLOSING: How does the chapter end? What moment or revelation carries into the next chapter?",
           "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
+          "- PROFILE DEPTH (LIGHTWEIGHT): Use 1-2 character profile traits/goals/fears as action drivers in this chapter (show in behavior/choices, not exposition dumps).",
           "- Be extremely specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
           "- If the author has placed Story Board cards in this chapter, use those as the primary content source.",
           "",
@@ -8420,11 +8423,14 @@ function NovelWorkspacePage() {
             ? `- Write ${detailedRangeSpine} sentences of DETAILED CHAPTER BLUEPRINT. This is the primary instruction set for AI prose generation — the MORE detail you provide, the BETTER the prose will be. Cover every beat from the Plot Spine above and expand each with:`
             : `- Write ${detailedRangeRegular} sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail you provide here, the better the final prose will be.`,
           "- OPENING: How does the chapter begin? What's the first image, action, or line of dialogue? Where is the POV character and what are they doing/feeling?",
+          "- OPENING RUNWAY: Start with 1-2 grounding beats (context, motive, emotional state) before the main confrontation/escalation.",
+          "- EARLY-CHAPTER PACING (CRITICAL): Chapters 1-3 must each produce a concrete story-state change. Do not keep the same scene loop or venue dynamic across all three chapters.",
           "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment, describe: what triggers it, who's involved, what's said or done, how characters react emotionally and physically, and what shifts as a result.",
           "- DIALOGUE CUES: Note the key conversations that must happen — what's discussed, what's revealed, what subtext is running underneath.",
           "- EMOTIONAL THROUGHLINE: Track the POV character's emotional state from the start to end of the chapter. How does it shift and why?",
           "- CLOSING: How does the chapter end? What image, line, or moment carries the reader into the next chapter?",
           "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
+          "- PROFILE DEPTH (LIGHTWEIGHT): Use 1-2 character profile traits/goals/fears as action drivers in this chapter (show in behavior/choices, not exposition dumps).",
           "- SPECIFICITY: 'Elena confronts Marcus about the forged documents; he deflects by revealing her father was the original forger, which shatters Elena's belief that her father was innocent — she leaves the room mid-sentence, hands shaking' NOT 'they argue about the past'.",
           "- Every sentence must advance the story. No scene-setting filler, no describing weather or postures.",
           "- State WHO does WHAT, WHY, HOW others react, and what CHANGES as a result.",
@@ -8442,7 +8448,7 @@ function NovelWorkspacePage() {
           chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
           chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
           chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
-          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish baseline world, key relationships, and central stakes before major escalation." : "",
+          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish baseline world, key relationships, and central stakes before major escalation. Spend at least the first 2-3 beats on grounding before acceleration." : "",
           subplotArcHint ? `\n${subplotArcHint}` : "",
           "",
           "- Use existing Canon names. Never create duplicates.",
@@ -8472,9 +8478,29 @@ function NovelWorkspacePage() {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* skip */ }
           }
-          if (parsed?.synopsis && parsed.synopsis.trim().length > 40) {
-            synopsis = parsed.synopsis.trim();
-            const rawCharacterNames = parseStringList(parsed.characters);
+          let accepted: Phase2Result | null = null;
+          const quality = evaluateOperationalPlanResult(parsed ?? null);
+          if (quality.ok) {
+            accepted = parsed;
+          } else if (parsed?.synopsis) {
+            try {
+              const repaired = await repairPhase2ChapterResult(
+                chapterContext,
+                index,
+                allTitles.length,
+                parsed,
+                systemMsg,
+              );
+              if (evaluateOperationalPlanResult(repaired).ok) {
+                accepted = repaired;
+              }
+            } catch {
+              // keep original fallback behavior below
+            }
+          }
+          if (accepted?.synopsis && accepted.synopsis.trim().length > 40) {
+            synopsis = accepted.synopsis.trim();
+            const rawCharacterNames = parseStringList(accepted.characters);
             const resolvedCharacterIds = rawCharacterNames.map(ensureCharacterId).filter(Boolean);
             chapterCharacterIds = mergeUniqueIds(
               resolvedCharacterIds,
@@ -8484,8 +8510,8 @@ function NovelWorkspacePage() {
               }))),
             );
             // Enforce single location: prefer "location" string, fall back to first of "locations" array
-            const singleLocName = typeof parsed.location === "string" ? parsed.location.trim() : "";
-            const locNames = singleLocName ? [singleLocName] : parseStringList(parsed.locations).slice(0, 1);
+            const singleLocName = typeof accepted.location === "string" ? accepted.location.trim() : "";
+            const locNames = singleLocName ? [singleLocName] : parseStringList(accepted.locations).slice(0, 1);
             chapterLocationIds = mergeUniqueIds(
               locNames.map(ensureLocationId).filter(Boolean),
               inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLocations.map((l) => ({
@@ -8493,12 +8519,12 @@ function NovelWorkspacePage() {
               }))),
             ).slice(0, 1);
             chapterLoreIds = mergeUniqueIds(
-              parseStringList(parsed.events).map(resolveLoreId).filter(Boolean),
+              parseStringList(accepted.events).map(resolveLoreId).filter(Boolean),
               inferEntityIdsFromText(`${chapterTitle}\n${synopsis}`, mergedLore.map((e) => ({
                 id: e.id, name: e.title || "",
               }))),
             );
-            parseStringList(parsed.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
+            parseStringList(accepted.events).forEach((ev) => ensureEventId(ev, chapterTitle, synopsis, index));
           }
         } catch { /* AI call failed — will show placeholder */ }
 
