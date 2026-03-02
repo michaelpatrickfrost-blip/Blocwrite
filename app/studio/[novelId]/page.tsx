@@ -3973,6 +3973,7 @@ function NovelWorkspacePage() {
 
   function buildPhase1Prompt(planTarget: PlanAiChapterTarget): string {
     const context = buildPhase1OutlineContext();
+    const genreExecutionHint = getCompactGenreExecutionHint();
     const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
     const pacingRule =
       pacingMode === "slow-burn"
@@ -4033,6 +4034,7 @@ function NovelWorkspacePage() {
       "- Do NOT write teaser blurbs. State concrete story actions, character reactions, and outcomes clearly.",
       "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot.",
       "- ANTI-REPETITION: Each chapter must cover DIFFERENT ground. No two chapters should feature the same type of scene (argument, chase, discovery) unless dramatically escalated.",
+      genreExecutionHint,
       pacingRule,
       "- Early chapters must not rush to major payoffs. Build progression naturally like a published novel.",
       "- Weave in worldbuilding/lore naturally — if the Canon has magic systems, cultures, technology, etc., integrate them into the chapter flow.",
@@ -4457,8 +4459,32 @@ function NovelWorkspacePage() {
     return "- Arc stage: middle movement. Build complications, deepen consequences, and set up later payoffs.";
   }
 
+  function getCompactGenreExecutionHint(): string {
+    const genres = (novel?.storyBible.summary.genre ?? []).map((g) => g.toLowerCase());
+    if (genres.length === 0) return "";
+    if (genres.some((g) => g.includes("thriller") || g.includes("suspense"))) {
+      return "- GENRE PRESSURE: Thriller/Suspense tone is mandatory. Keep urgency high, escalate threat, add reversals, and end chapters with unresolved pressure.";
+    }
+    if (genres.some((g) => g.includes("mystery") || g.includes("crime") || g.includes("detective"))) {
+      return "- GENRE PRESSURE: Mystery/Crime tone is mandatory. Each chapter must shift what characters/readers believe through clues, uncertainty, or reveal.";
+    }
+    if (genres.some((g) => g.includes("romance"))) {
+      return "- GENRE PRESSURE: Romance tone is mandatory. Advance connection through conflict, vulnerability, and emotional consequence.";
+    }
+    if (genres.some((g) => g.includes("horror"))) {
+      return "- GENRE PRESSURE: Horror tone is mandatory. Increase dread and danger each chapter with concrete threat signals.";
+    }
+    return "- GENRE PRESSURE: Keep pacing, scene selection, and emotional texture faithful to the declared genre.";
+  }
+
   function buildPhase2Prompt(chapterContext: string, chapterIndex: number, totalChapters: number): string {
     const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const genreExecutionHint = getCompactGenreExecutionHint();
+    const knownLocations = (novel?.storyBible.locations ?? []).map((l) => l.name).filter(Boolean);
+    const synopsisSeed = `${novel?.storyBible.summary.synopsisShort || ""} ${novel?.synopsis || ""}`.trim();
+    const settingAnchor = synopsisSeed
+      ? (detectPrimaryKnownLocationName(synopsisSeed, knownLocations) || knownLocations[0] || "")
+      : (knownLocations[0] || "");
     const pacingRule =
       pacingMode === "slow-burn"
         ? "- Pace this chapter as slow-burn: deepen character motives and setting texture before major reveals."
@@ -4499,7 +4525,9 @@ function NovelWorkspacePage() {
       "Use objective -> obstacle -> outcome logic for the chapter's main line of action.",
       subplotProgressRule,
       "Use one primary location for this chapter unless transition is absolutely story-critical.",
+      settingAnchor ? `- SETTING CONTINUITY (CRITICAL): Story anchor location is "${settingAnchor}". Do not shift to a different city/location unless the synopsis explicitly includes a travel/relocation transition.` : "",
       "- Maintain continuity with previous and next chapters.",
+      genreExecutionHint,
       pacingRule,
       arcGuidance,
       "- Respect all worldbuilding constraints — if a lore entry has rules (e.g. \"magic costs life force\"), the synopsis must not violate them.",
@@ -4528,6 +4556,21 @@ function NovelWorkspacePage() {
       (characters.length >= 1 || locations.length >= 1) &&
       hasOutcomeCue;
     return { ok, synopsis, characters, locations, events, sentenceCount };
+  }
+
+  function hasTravelTransitionCue(text: string): boolean {
+    return /\b(travel(?:s|ed|ing)?|journey(?:s|ed|ing)?|drive(?:s|n|d)?|drove|train|flight|flies|flew|arrive(?:s|d)?|return(?:s|ed)?|heads? to|goes? to|went to|moves? to|relocat(?:e|ed|ing)|crosses into)\b/i.test(text);
+  }
+
+  function detectPrimaryKnownLocationName(text: string, knownLocationNames: string[]): string {
+    if (!text || knownLocationNames.length === 0) return "";
+    const lower = text.toLowerCase();
+    for (const name of knownLocationNames) {
+      const n = name.trim();
+      if (!n) continue;
+      if (lower.includes(n.toLowerCase())) return n;
+    }
+    return "";
   }
 
   function evaluateBlocSynopsisResult(
@@ -7845,6 +7888,11 @@ function NovelWorkspacePage() {
       const existingCharNames = (novel.storyBible.characters ?? []).map((c) => c.name).filter(Boolean);
       const existingLocNames = (novel.storyBible.locations ?? []).map((l) => l.name).filter(Boolean);
       const canonNames = [...existingCharNames, ...existingLocNames].join(", ");
+      const storySettingAnchor = (() => {
+        const synopsis = `${novel.storyBible.summary.synopsisShort || ""} ${novel.synopsis || ""}`.trim();
+        if (!synopsis) return existingLocNames[0] || "";
+        return detectPrimaryKnownLocationName(synopsis, existingLocNames) || existingLocNames[0] || "";
+      })();
 
       /* ══════════════════════════════════════════════════════════════
        * TWO-PHASE SEQUENTIAL PLAN GENERATION
@@ -7956,6 +8004,11 @@ function NovelWorkspacePage() {
         `Create exactly ${planTarget} chapter titles for this ${nfSubtypeLabel} book.`,
         `Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
         `Exactly ${planTarget} unique, evocative titles that map out the entire narrative arc from beginning to end.`,
+        "Title variety rules:",
+        "- Avoid repetitive title templates.",
+        "- Mix title rhythms across the list (some short, some longer), while keeping a coherent tone.",
+        "- Do not start many titles with the same opening word or phrase.",
+        "- Avoid repeated bigrams (same 2-word chunks) across titles.",
         nfSubtype === "true-crime" ? "Structure: the crime, the investigation, the pursuit, the resolution." : "",
         nfSubtype === "biography" ? "Structure: follow the subject's life arc through defining moments." : "",
         nfSubtype === "memoir" ? "Structure: follow a chronological or thematic arc through life events." : "",
@@ -7969,6 +8022,11 @@ function NovelWorkspacePage() {
         `Return JSON: { "titles": ["Title 1", "Title 2", ...] }`,
         `Exactly ${planTarget} unique titles that map out the ENTIRE story arc from opening hook to resolution.`,
         `A reader should sense the emotional journey of the novel just from reading the title sequence.`,
+        "Title variety rules:",
+        "- Avoid repetitive title templates.",
+        "- Mix title rhythms across the list (some short, some longer), while keeping a coherent tone.",
+        "- Do not start many titles with the same opening word or phrase.",
+        "- Avoid repeated bigrams (same 2-word chunks) across titles.",
         `Genre: ${genreStr}`,
         pacingHint,
         authorStyleHint,
@@ -8333,6 +8391,7 @@ function NovelWorkspacePage() {
           subplotArcHint ? `\n${subplotArcHint}` : "",
           "",
           "- ONE location only. Return a single place name string.",
+          storySettingAnchor ? `- SETTING CONTINUITY (CRITICAL): This story's anchor location is "${storySettingAnchor}". Keep chapter setting consistent with this anchor unless there is an explicit travel/relocation transition.` : "",
           "- Only people who appear and act (2-4 typically).",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
@@ -8370,6 +8429,7 @@ function NovelWorkspacePage() {
           "- Every sentence must advance the story. No scene-setting filler, no describing weather or postures.",
           "- State WHO does WHAT, WHY, HOW others react, and what CHANGES as a result.",
           "- ONE location only. Return a single place name string.",
+          storySettingAnchor ? `- SETTING CONTINUITY (CRITICAL): This story's anchor location is "${storySettingAnchor}". Keep chapter setting consistent with this anchor unless there is an explicit travel/relocation transition.` : "",
           "- Only characters who appear and act (2-5 typically). Proper names only.",
           "",
           "ANTI-REPETITION RULES (CRITICAL):",
@@ -8473,6 +8533,42 @@ function NovelWorkspacePage() {
               const repairedSynopsis = (repaired?.synopsis ?? "").trim();
               if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
             } catch { /* keep original synopsis if repair fails */ }
+          }
+        }
+
+        // Location continuity guard: prevent silent city/location drift unless transition is explicit.
+        if (synopsis) {
+          const previousLocationAnchor = index > 0
+            ? detectPrimaryKnownLocationName(generatedSynopses[index - 1] || "", existingLocNames)
+            : storySettingAnchor;
+          const currentLocationAnchor = detectPrimaryKnownLocationName(synopsis, existingLocNames);
+          const locationDriftWithoutTransition =
+            !!previousLocationAnchor &&
+            !!currentLocationAnchor &&
+            previousLocationAnchor.toLowerCase() !== currentLocationAnchor.toLowerCase() &&
+            !hasTravelTransitionCue(synopsis);
+          if (locationDriftWithoutTransition) {
+            try {
+              const continuityRepairPrompt = [
+                `Revise Chapter ${index + 1} "${chapterTitle}" to fix location continuity.`,
+                `Previous/anchor location: "${previousLocationAnchor}".`,
+                `Current synopsis currently drifts to "${currentLocationAnchor}" without an explicit travel transition.`,
+                "Keep all core events and character dynamics, but make location continuity explicit and coherent.",
+                "If the chapter truly changes location, include an explicit transition beat (travel/arrival) with cause and effect.",
+                "",
+                `Current synopsis:\n${synopsis}`,
+                "",
+                "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+              ].join("\n");
+              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(continuityRepairPrompt, 2200, {
+                timeoutMs: 180000,
+                systemMessage: "Story continuity editor. Preserve chapter events while fixing location consistency. Return valid JSON only.",
+              });
+              const repairedSynopsis = (repaired?.synopsis ?? "").trim();
+              if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+            } catch {
+              // Keep existing synopsis if repair fails.
+            }
           }
         }
 
@@ -9021,7 +9117,7 @@ function NovelWorkspacePage() {
       const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
       const prompt = buildPhase2Prompt(chapterContext, chapterIndex, allTitles.length);
 
-      type Phase2Result = { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[]; lore?: string[] };
+      type Phase2Result = { synopsis?: string; characters?: string[]; location?: string; locations?: string[]; events?: string[]; lore?: string[] };
       let result: Phase2Result | null = null;
         for (let attempt = 0; attempt < 4 && !result; attempt++) {
         try {
@@ -9057,14 +9153,51 @@ function NovelWorkspacePage() {
         return;
       }
 
-      const synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${title}.`;
+      const characters = novel.storyBible.characters ?? [];
+      const locations = novel.storyBible.locations ?? [];
+      const lore = novel.storyBible.lore ?? [];
+      let synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${title}.`;
+      const knownLocations = locations.map((l) => l.name || "").filter(Boolean);
+      const synopsisSeed = `${novel.storyBible.summary.synopsisShort || ""} ${novel.synopsis || ""}`.trim();
+      const settingAnchor = synopsisSeed
+        ? (detectPrimaryKnownLocationName(synopsisSeed, knownLocations) || knownLocations[0] || "")
+        : (knownLocations[0] || "");
+      const previousLocationAnchor = chapterIndex > 0
+        ? detectPrimaryKnownLocationName(prevSynopsis, knownLocations)
+        : settingAnchor;
+      const currentLocationAnchor = detectPrimaryKnownLocationName(synopsis, knownLocations);
+      const locationDriftWithoutTransition =
+        !!previousLocationAnchor &&
+        !!currentLocationAnchor &&
+        previousLocationAnchor.toLowerCase() !== currentLocationAnchor.toLowerCase() &&
+        !hasTravelTransitionCue(synopsis);
+      if (locationDriftWithoutTransition) {
+        try {
+          const continuityRepairPrompt = [
+            `Revise Chapter ${chapterIndex + 1} "${title}" to fix location continuity.`,
+            `Previous/anchor location: "${previousLocationAnchor}".`,
+            `Current synopsis drifts to "${currentLocationAnchor}" without an explicit travel transition.`,
+            "Keep core events and emotional beats intact, but make location continuity coherent.",
+            "If location changes, include an explicit travel/arrival beat and causal transition.",
+            "",
+            `Current synopsis:\n${synopsis}`,
+            "",
+            "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
+          ].join("\n");
+          const repaired = await requestOpenRouterJson<{ synopsis?: string }>(continuityRepairPrompt, 1800, {
+            timeoutMs: 180000,
+            systemMessage: "Story continuity editor. Preserve events while fixing location consistency. Return valid JSON only.",
+          });
+          const repairedSynopsis = (repaired?.synopsis ?? "").trim();
+          if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
+        } catch {
+          // Keep existing synopsis if repair fails.
+        }
+      }
       runLoreConsistencyCheck({
         actionType: "chapter_synopsis_regeneration",
         content: synopsis,
       });
-      const characters = novel.storyBible.characters ?? [];
-      const locations = novel.storyBible.locations ?? [];
-      const lore = novel.storyBible.lore ?? [];
 
       const charIds = mergeUniqueIds(
         parseStringList(result.characters).map((n) => {
@@ -9081,6 +9214,10 @@ function NovelWorkspacePage() {
         ),
       );
       const locIds = mergeUniqueIds(
+        (typeof result.location === "string" ? [result.location.trim()] : []).filter(Boolean).map((n) => {
+          const key = normalizeLookup(n);
+          return locations.find((l) => normalizeLookup(l.name || "") === key)?.id ?? "";
+        }).filter(Boolean),
         parseStringList(result.locations).map((n) => {
           const key = normalizeLookup(n);
           return locations.find((l) => normalizeLookup(l.name || "") === key)?.id ?? "";
