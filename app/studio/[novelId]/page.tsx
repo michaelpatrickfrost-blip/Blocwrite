@@ -1363,9 +1363,7 @@ function NovelWorkspacePage() {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingGoalWords, setEditingGoalWords] = useState<string | null>(null);
   const [hideBlocks, setHideBlocks] = useState(false);
-  const [blocCountMode, setBlocCountMode] = useState<"auto" | "custom">("auto");
-  const [customBlocCount, setCustomBlocCount] = useState(4);
-  const [lastAutoBlocCount, setLastAutoBlocCount] = useState<number | null>(null);
+  const GENERATED_BLOC_COUNT = 4;
   const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
   const [sidebarPinned, setSidebarPinned] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -5208,15 +5206,6 @@ function NovelWorkspacePage() {
 
   /* applyBlockFormatting removed — formatting now applies to chapter body textarea via applyRawFormatting */
 
-  function getPreferredBlocCount(chapterSynopsis: string, chapterGoalWords?: number) {
-    if (blocCountMode === "custom") {
-      return Math.max(2, Math.min(8, Number.isFinite(customBlocCount) ? customBlocCount : 4));
-    }
-    const autoCount = 4;
-    setLastAutoBlocCount(autoCount);
-    return autoCount;
-  }
-
   async function runGenerateChapterBlocks() {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
@@ -5230,7 +5219,7 @@ function NovelWorkspacePage() {
       return;
     }
 
-    const BLOC_COUNT = getPreferredBlocCount(chapterSynopsis, activeChapter.goalWords);
+    const BLOC_COUNT = GENERATED_BLOC_COUNT;
     const context = buildChapterBlocksContext(activeChapter.title, chapterSynopsis, planChapter?.characterIds, planChapter?.locationIds);
     const systemMsg = `You are a senior developmental editor and story architect. Build a detailed scene-by-scene writer's blueprint. Think deeply about narrative flow, emotional pacing, and sensory grounding. Write in ${profileLangLabel}. Return ONLY valid JSON.`;
 
@@ -5287,8 +5276,37 @@ function NovelWorkspacePage() {
         const union = new Set([...setA, ...setB]).size;
         return union === 0 ? 0 : 1 - intersection / union;
       };
+      const synopsisSimilarity = (a: string, b: string): number => {
+        const na = normalizeSynopsis(a);
+        const nb = normalizeSynopsis(b);
+        if (!na || !nb) return 0;
+        if (na === nb) return 1;
+        const wordsA = na.split(" ").filter(Boolean);
+        const wordsB = nb.split(" ").filter(Boolean);
+        const setA = new Set(wordsA);
+        const setB = new Set(wordsB);
+        const intersection = [...setA].filter((w) => setB.has(w)).length;
+        const union = new Set([...setA, ...setB]).size || 1;
+        const unigramJaccard = intersection / union;
+        const bi = (words: string[]) => {
+          const out: string[] = [];
+          for (let i = 0; i < words.length - 1; i++) out.push(`${words[i]} ${words[i + 1]}`);
+          return out;
+        };
+        const biA = bi(wordsA);
+        const biB = bi(wordsB);
+        if (biA.length === 0 || biB.length === 0) return unigramJaccard;
+        const biSetA = new Set(biA);
+        const biSetB = new Set(biB);
+        const biIntersection = [...biSetA].filter((w) => biSetB.has(w)).length;
+        const biUnion = new Set([...biSetA, ...biSetB]).size || 1;
+        const bigramJaccard = biIntersection / biUnion;
+        return Math.max(unigramJaccard, bigramJaccard);
+      };
       const hasProgressionCue = (synopsis: string) =>
         /\b(then|after|later|by the end|therefore|as a result|forcing|which leads to|escalates|turning point|ultimately|until)\b/i.test(synopsis);
+      const hasOpeningResetCue = (synopsis: string) =>
+        /\b(at the start|at the beginning|opening scene|opens with|introduces|is introduced|wakes up|regains consciousness|first arrives|for the first time)\b/i.test(synopsis);
       const sentenceCount = (text: string) =>
         text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).length;
       const wordCount = (text: string) =>
@@ -5313,8 +5331,7 @@ function NovelWorkspacePage() {
         let maxSimilarity = 0;
         let closestIndex = -1;
         for (let idx = 0; idx < existingBlocks.length; idx++) {
-          const diff = textDifference(candidateSynopsis, existingBlocks[idx].synopsis || "");
-          const similarity = 1 - diff;
+          const similarity = synopsisSimilarity(candidateSynopsis, existingBlocks[idx].synopsis || "");
           if (similarity > maxSimilarity) {
             maxSimilarity = similarity;
             closestIndex = idx;
@@ -5341,6 +5358,9 @@ function NovelWorkspacePage() {
           }
           if (idx > 0 && !hasProgressionCue(synopsis)) {
             return { ok: false, reason: `Bloc ${idx + 1} is missing explicit progression cues.` };
+          }
+          if (idx > 0 && hasOpeningResetCue(synopsis)) {
+            return { ok: false, reason: `Bloc ${idx + 1} resets the chapter opening instead of continuing.` };
           }
           const previous = candidateBlocks.slice(0, idx);
           const { maxSimilarity } = findMostSimilarBloc(synopsis, previous);
@@ -5382,6 +5402,9 @@ function NovelWorkspacePage() {
         }
         if (index > 0 && !hasProgressionCue(nextSynopsis)) {
           nextSynopsis = `${nextSynopsis} As a result of what happened in the previous scene, this forces the next conflict into motion.`;
+        }
+        if (index > 0 && hasOpeningResetCue(nextSynopsis)) {
+          nextSynopsis = `${nextSynopsis} This scene continues directly from the previous outcome rather than reintroducing the chapter opening premise.`;
         }
         if (sentenceCount(nextSynopsis) < 3) {
           nextSynopsis = `${nextSynopsis} They make a concrete choice under pressure. That choice immediately changes the situation and raises the stakes.`;
@@ -5473,6 +5496,7 @@ function NovelWorkspacePage() {
         if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return "needs more concrete detail";
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
+        if (idx > 0 && hasOpeningResetCue(synopsis)) return "resets chapter opening instead of continuing";
         const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
         const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
         if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) return `does not read like ${expectedStage}`;
@@ -5512,6 +5536,7 @@ function NovelWorkspacePage() {
                 "- Minimum: 4 sentences and 55 words.",
                 "- Never use generic/template wording.",
                 idx > 0 ? "- Include explicit progression cue words (then/after/as a result/therefore/forcing)." : "",
+                idx > 0 ? "- Continue from prior bloc aftermath; do NOT re-open the chapter with intro/setup language." : "",
                 `Required stage: ${expectedStage}.`,
                 `Chapter: ${activeChapter.title}`,
                 `Chapter synopsis: ${chapterSynopsis}`,
@@ -5563,6 +5588,9 @@ function NovelWorkspacePage() {
       for (let i = 0; i < BLOC_COUNT; i++) {
         const isLast = i === BLOC_COUNT - 1;
         const expectedStage = expectedStageForIndex(i, BLOC_COUNT);
+        const previousClosingHook = blocks.length > 0
+          ? ((blocks[blocks.length - 1].closingHook || "").trim() || firstSentence(blocks[blocks.length - 1].synopsis || ""))
+          : "";
         const previousTrajectory = blocks
           .map((b, idx) => `B${idx + 1}: ${firstSentence(b.synopsis)}`)
           .join(" | ");
@@ -5576,6 +5604,7 @@ function NovelWorkspacePage() {
           const oneBlocPrompt = [
             `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+            "- Write ONLY this bloc. Do not draft or summarize the remaining blocs.",
             "- synopsis must be detailed (4-8 sentences, minimum 45 words) and specific about what happens.",
             "- Use exact character names from the roster. Never use generic labels.",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
@@ -5583,11 +5612,13 @@ function NovelWorkspacePage() {
             `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
             "- Include explicit verbs for actions and consequences, not just mood or description.",
             "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
+            i > 0 ? "- CRITICAL: continue from the immediate aftermath of the previous bloc. Do NOT use opening/setup language again." : "",
             "",
             `CHARACTER ROSTER:\n  ${characterRoster}`,
             "",
             `Chapter: ${activeChapter.title}`,
             `Chapter synopsis: ${chapterSynopsis}`,
+            previousClosingHook && i > 0 ? `Immediate handoff from prior bloc: ${clampPromptText(previousClosingHook, 220)}` : "",
             previousTrajectory ? `Story trajectory so far: ${clampPromptText(previousTrajectory, 500)}` : "",
             recentSynopses ? `Most recent blocs (avoid repetition):\n${recentSynopses}` : "",
             previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
@@ -5625,9 +5656,10 @@ function NovelWorkspacePage() {
               const requireStageCue = i === 0 || i === BLOC_COUNT - 1;
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
+              const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -5640,6 +5672,8 @@ function NovelWorkspacePage() {
                   ? "Synopsis lacks detail density. Expand to at least 45 words with concrete actions, reactions, and consequences."
                   : isGeneric
                     ? "Do not use template language. Replace placeholders with specific names, actions, settings, and consequences from this chapter."
+                  : openingReset
+                    ? "Do not reopen the chapter premise. Continue directly from the previous bloc's consequence."
                 : stageMismatch
                   ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
                   : isTooSimilar
@@ -5687,7 +5721,12 @@ function NovelWorkspacePage() {
                 tension: repaired.tension,
               } : null);
             const rebuilt = toSceneBlock(fromRepair, i);
-            const rebuiltTooThin = !rebuilt || sentenceCount(rebuilt.synopsis) < 3 || wordCount(rebuilt.synopsis) < MIN_SYNOPSIS_WORDS || isGenericTemplateSynopsis(rebuilt.synopsis);
+            const rebuiltTooThin =
+              !rebuilt ||
+              sentenceCount(rebuilt.synopsis) < 3 ||
+              wordCount(rebuilt.synopsis) < MIN_SYNOPSIS_WORDS ||
+              isGenericTemplateSynopsis(rebuilt.synopsis) ||
+              (i > 0 && hasOpeningResetCue(rebuilt.synopsis));
             if (rebuilt && !rebuiltTooThin) {
               blocks.push(rebuilt);
               updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
@@ -12219,69 +12258,14 @@ function NovelWorkspacePage() {
                         border: "1px solid var(--pw-border-light)",
                         background: "var(--pw-surface-alt)",
                       }}
-                      title="Choose how many blocs to generate"
+                      title="Auto-generates 4 ordered blocs"
                     >
                       <span style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                         Blocs
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setBlocCountMode("auto")}
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "3px 8px",
-                          borderRadius: 999,
-                          border: blocCountMode === "auto" ? "1px solid rgba(var(--accent-rgb,124,92,252),0.25)" : "1px solid transparent",
-                          background: blocCountMode === "auto" ? "rgba(var(--accent-rgb,124,92,252),0.12)" : "transparent",
-                          color: blocCountMode === "auto" ? "var(--pw-accent)" : "var(--pw-text-dim)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Auto
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBlocCountMode("custom")}
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "3px 8px",
-                          borderRadius: 999,
-                          border: blocCountMode === "custom" ? "1px solid rgba(var(--accent-rgb,124,92,252),0.25)" : "1px solid transparent",
-                          background: blocCountMode === "custom" ? "rgba(var(--accent-rgb,124,92,252),0.12)" : "transparent",
-                          color: blocCountMode === "custom" ? "var(--pw-accent)" : "var(--pw-text-dim)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Custom
-                      </button>
-                      {blocCountMode === "custom" ? (
-                        <input
-                          type="number"
-                          min={2}
-                          max={8}
-                          value={customBlocCount}
-                          onChange={(e) => {
-                            const value = Number(e.target.value);
-                            setCustomBlocCount(Number.isFinite(value) ? Math.max(2, Math.min(8, value)) : 4);
-                          }}
-                          title="Custom bloc count (2-8)"
-                          style={{
-                            width: 46,
-                            fontSize: 11,
-                            padding: "3px 6px",
-                            borderRadius: 6,
-                            border: "1px solid var(--pw-border)",
-                            background: "var(--pw-surface)",
-                            color: "var(--pw-text)",
-                          }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: 11, color: "var(--pw-text-dim)", minWidth: 42, textAlign: "center" }}>
-                          {lastAutoBlocCount ?? 4}
-                        </span>
-                      )}
+                      <span style={{ fontSize: 11, color: "var(--pw-text)", minWidth: 42, textAlign: "center", fontWeight: 700 }}>
+                        {GENERATED_BLOC_COUNT}
+                      </span>
                     </div>
                   </div>
                   )}
