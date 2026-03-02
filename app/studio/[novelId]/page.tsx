@@ -4568,7 +4568,7 @@ function NovelWorkspacePage() {
     return words < 70 || sentences < 4;
   }
 
-  function buildDeterministicChapterSynopsisFallback(args: {
+  function buildNaturalChapterSynopsisFallback(args: {
     chapterTitle: string;
     chapterIndex: number;
     totalChapters: number;
@@ -4583,32 +4583,76 @@ function NovelWorkspacePage() {
       .filter(Boolean)
       .join(", ");
     const storySeed = clampPromptText((novel?.storyBible.summary.synopsisShort || novel?.synopsis || "").trim(), 320);
-    const prevTail = args.previousSynopsis
-      ? clampPromptText(args.previousSynopsis.split(/(?<=[.!?])\s+/).slice(-2).join(" "), 220)
-      : "";
+    const prevTail = args.previousSynopsis ? clampPromptText(args.previousSynopsis, 220) : "";
     const loc = args.settingAnchor || "the story setting";
     const chapterNo = args.chapterIndex + 1;
-    const total = Math.max(1, args.totalChapters);
     const openingLine = args.chapterRole === "opening"
-      ? `Chapter ${chapterNo} opens by grounding the protagonist in ${loc}, clarifying baseline pressures, relationships, and the immediate stakes that define their current world.`
-      : `Chapter ${chapterNo} opens from the consequences already in motion, with the protagonist recalibrating in ${loc} rather than repeating prior beats.`;
-    const setupLine = storySeed
-      ? `The chapter stays aligned with the novel premise (${storySeed}) and frames a concrete objective that must be pursued now, not later.`
-      : "The chapter establishes a concrete objective that advances the central conflict in actionable terms.";
-    const pressureLine = args.previousSynopsis
-      ? `Because of what happened previously (${prevTail}), the characters enter this chapter with changed leverage, sharper urgency, and less room for safe choices.`
-      : "Early movement shifts quickly from setup into pressure, so context and momentum coexist without dragging.";
+      ? `${args.chapterTitle} begins in ${loc}, establishing the social and emotional baseline before pressure starts to tighten around the protagonist.`
+      : `${args.chapterTitle} picks up in ${loc} with consequences already unfolding, so the characters cannot return to where they started.`;
+    const premiseLine = storySeed
+      ? `The chapter develops the novel's core line of conflict (${storySeed}) through concrete interactions, decisions, and shifting loyalties.`
+      : "The chapter advances the core conflict through concrete interactions, decisions, and shifting loyalties.";
+    const consequenceLine = prevTail
+      ? `What carried over from the prior chapter now becomes actionable pressure, forcing a new approach instead of repetition.`
+      : "Momentum comes from immediate cause-and-effect rather than recap, so each beat moves the state of play forward.";
     const characterLine = leadCharacters
-      ? `Character behavior is specific and motivated: ${leadCharacters} each reveal priorities through decisions, dialogue friction, and visible emotional reactions.`
-      : "Character behavior is specific and motivated, with decisions and dialogue creating visible emotional shifts.";
-    const progressionLine = args.chapterRole === "conclusion"
-      ? "Escalation converges into decisive resolution: the core conflict is confronted directly, major threads close, and the ending lands a clear new normal."
-      : "Escalation introduces a fresh complication that changes the tactical approach, ensuring this chapter moves to genuinely new story ground.";
-    const subplotLine = "At least one subplot or character arc changes state in concrete terms (trust, power, risk, alignment, or intent), not just in description.";
+      ? `${leadCharacters} reveal priorities through specific choices, emotional reactions, and dialogue tension that alters their relationship dynamics.`
+      : "Key characters reveal priorities through specific choices, emotional reactions, and dialogue tension that alters relationship dynamics.";
+    const turnLine = args.chapterRole === "conclusion"
+      ? "The chapter drives toward resolution, confronting the main conflict directly and landing the emotional and plot consequences."
+      : "A fresh complication changes leverage between characters, raises risk, and commits the story to a new trajectory.";
     const closeLine = args.nextTitle
-      ? `The closing beat locks in irreversible consequences and points naturally toward "${args.nextTitle}" with a specific unanswered pressure.`
-      : "The closing beat crystallizes consequences and leaves the narrative in a coherent, fully earned end state.";
-    return [openingLine, setupLine, pressureLine, characterLine, progressionLine, subplotLine, closeLine].join(" ");
+      ? `By the end, the chapter leaves a clear unresolved pressure that naturally leads into ${args.nextTitle}.`
+      : "By the end, the chapter resolves major threads and leaves the story in a coherent final state.";
+    return [openingLine, premiseLine, consequenceLine, characterLine, turnLine, closeLine].join(" ");
+  }
+
+  async function ensureRichChapterSynopsis(args: {
+    synopsis: string;
+    chapterTitle: string;
+    chapterIndex: number;
+    totalChapters: number;
+    chapterRole: "opening" | "middle" | "conclusion";
+    previousSynopsis: string;
+    nextTitle: string;
+    settingAnchor: string;
+    chapterContext: string;
+  }): Promise<string> {
+    let synopsis = (args.synopsis || "").trim();
+    if (!isWeakOrPlaceholderChapterSynopsis(synopsis)) return synopsis;
+    try {
+      const rewritePrompt = [
+        `Rewrite Chapter ${args.chapterIndex + 1} "${args.chapterTitle}" as a real story synopsis.`,
+        "Do NOT write template/meta language. Do NOT describe writing rules. Write concrete narrative beats only.",
+        "Use 8-14 sentences with specific actions, motivations, character reactions, and consequences.",
+        "Keep continuity with previous/next chapter context and maintain location consistency unless travel is explicit.",
+        "",
+        `Current weak synopsis:\n${synopsis || "(empty)"}`,
+        args.previousSynopsis ? `Previous chapter synopsis:\n${args.previousSynopsis}` : "",
+        args.nextTitle ? `Next chapter title: ${args.nextTitle}` : "Final chapter.",
+        "",
+        `Canon context:\n${args.chapterContext}`,
+        "",
+        "Return JSON only: { \"synopsis\": \"rewritten synopsis\" }",
+      ].filter(Boolean).join("\n");
+      const rewritten = await requestOpenRouterJson<{ synopsis?: string }>(rewritePrompt, 2200, {
+        timeoutMs: 180000,
+        systemMessage: "Novel outliner. Write concrete chapter synopses only. No meta text. Return valid JSON.",
+      });
+      const candidate = (rewritten?.synopsis ?? "").trim();
+      if (!isWeakOrPlaceholderChapterSynopsis(candidate)) return candidate;
+    } catch {
+      // Fall through to deterministic natural fallback.
+    }
+    return buildNaturalChapterSynopsisFallback({
+      chapterTitle: args.chapterTitle,
+      chapterIndex: args.chapterIndex,
+      totalChapters: args.totalChapters,
+      chapterRole: args.chapterRole,
+      previousSynopsis: args.previousSynopsis,
+      nextTitle: args.nextTitle,
+      settingAnchor: args.settingAnchor,
+    });
   }
 
   function hasTravelTransitionCue(text: string): boolean {
@@ -8687,7 +8731,8 @@ function NovelWorkspacePage() {
         }
 
         if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
-          synopsis = buildDeterministicChapterSynopsisFallback({
+          synopsis = await ensureRichChapterSynopsis({
+            synopsis,
             chapterTitle,
             chapterIndex: index,
             totalChapters: allTitles.length,
@@ -8695,6 +8740,7 @@ function NovelWorkspacePage() {
             previousSynopsis: prevSynopsis,
             nextTitle,
             settingAnchor: storySettingAnchor,
+            chapterContext,
           });
         }
         if (chapterRole === "opening" && !hasOpeningSetupCue(synopsis)) {
@@ -9287,7 +9333,8 @@ function NovelWorkspacePage() {
       if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
         const chapterRole: "opening" | "middle" | "conclusion" =
           chapterIndex === 0 ? "opening" : chapterIndex === allTitles.length - 1 ? "conclusion" : "middle";
-        synopsis = buildDeterministicChapterSynopsisFallback({
+        synopsis = await ensureRichChapterSynopsis({
+          synopsis,
           chapterTitle: title,
           chapterIndex,
           totalChapters: allTitles.length,
@@ -9295,6 +9342,7 @@ function NovelWorkspacePage() {
           previousSynopsis: prevSynopsis,
           nextTitle,
           settingAnchor,
+          chapterContext,
         });
       }
       runLoreConsistencyCheck({
