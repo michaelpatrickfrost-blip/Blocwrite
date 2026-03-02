@@ -8952,6 +8952,8 @@ function NovelWorkspacePage() {
               characterIds: chapterCharacterIds,
               locationIds: chapterLocationIds,
               loreIds: chapterLoreIds,
+              beatIds: chapterSpineData?.beatsForChapter.map((b) => b.id) ?? updatedPlanChapters[index].beatIds ?? [],
+              subplotIds: chapterSpineData?.chapterSubplots.map((sp) => sp.id) ?? updatedPlanChapters[index].subplotIds ?? [],
             };
           }
           const updatedChapters = [...current.chapters];
@@ -8997,11 +8999,36 @@ function NovelWorkspacePage() {
           mutateNovel((current) => {
             const plan = current.storyBible.bookPlan;
             if (!plan) return current;
-            const updatedPlanChaptersRaw = plan.chapters.map((ch, ci) => ({
-              ...ch,
-              beatIds: chapterBeatMap[ci] ?? [],
-              subplotIds: chapterSubplotMap[ci] ?? [],
-            }));
+            const allCharsForInference = current.storyBible.characters ?? [];
+            const allLocsForInference = current.storyBible.locations ?? [];
+            const allLoreForInference = current.storyBible.lore ?? [];
+            const updatedPlanChaptersRaw = plan.chapters.map((ch, ci) => {
+              const chapterSynopsisText = ch.synopsis || current.chapters[ci]?.subtitle || "";
+              const inferredCharacterIds = inferEntityIdsFromText(
+                `${ch.title}\n${chapterSynopsisText}`,
+                allCharsForInference.map((c) => ({
+                  id: c.id,
+                  name: c.name || "",
+                  aliases: (c.otherNames || "").split(/[;,]/).map((a) => a.trim()).filter(Boolean),
+                })),
+              );
+              const inferredLocationIds = inferEntityIdsFromText(
+                `${ch.title}\n${chapterSynopsisText}`,
+                allLocsForInference.map((l) => ({ id: l.id, name: l.name || "" })),
+              );
+              const inferredLoreIds = inferEntityIdsFromText(
+                `${ch.title}\n${chapterSynopsisText}`,
+                allLoreForInference.map((e) => ({ id: e.id, name: e.title || "" })),
+              );
+              return {
+                ...ch,
+                characterIds: mergeUniqueIds(ch.characterIds ?? [], inferredCharacterIds),
+                locationIds: mergeUniqueIds(ch.locationIds ?? [], inferredLocationIds),
+                loreIds: mergeUniqueIds(ch.loreIds ?? [], inferredLoreIds),
+                beatIds: chapterBeatMap[ci] ?? [],
+                subplotIds: chapterSubplotMap[ci] ?? [],
+              };
+            });
             const updatedPlanChapters = normalizeUniqueBeatAssignments(updatedPlanChaptersRaw);
             return {
               ...current,
