@@ -4558,6 +4558,59 @@ function NovelWorkspacePage() {
     return { ok, synopsis, characters, locations, events, sentenceCount };
   }
 
+  function isWeakOrPlaceholderChapterSynopsis(text: string): boolean {
+    const synopsis = (text || "").trim();
+    if (!synopsis) return true;
+    if (/^outline for\s+/i.test(synopsis)) return true;
+    if (/^chapter\s+\d+\s*[:\-]/i.test(synopsis) && synopsis.length < 180) return true;
+    const words = synopsis.split(/\s+/).filter(Boolean).length;
+    const sentences = synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length;
+    return words < 70 || sentences < 4;
+  }
+
+  function buildDeterministicChapterSynopsisFallback(args: {
+    chapterTitle: string;
+    chapterIndex: number;
+    totalChapters: number;
+    chapterRole: "opening" | "middle" | "conclusion";
+    previousSynopsis: string;
+    nextTitle: string;
+    settingAnchor: string;
+  }): string {
+    const leadCharacters = (novel?.storyBible.characters ?? [])
+      .slice(0, 3)
+      .map((c) => c.name)
+      .filter(Boolean)
+      .join(", ");
+    const storySeed = clampPromptText((novel?.storyBible.summary.synopsisShort || novel?.synopsis || "").trim(), 320);
+    const prevTail = args.previousSynopsis
+      ? clampPromptText(args.previousSynopsis.split(/(?<=[.!?])\s+/).slice(-2).join(" "), 220)
+      : "";
+    const loc = args.settingAnchor || "the story setting";
+    const chapterNo = args.chapterIndex + 1;
+    const total = Math.max(1, args.totalChapters);
+    const openingLine = args.chapterRole === "opening"
+      ? `Chapter ${chapterNo} opens by grounding the protagonist in ${loc}, clarifying baseline pressures, relationships, and the immediate stakes that define their current world.`
+      : `Chapter ${chapterNo} opens from the consequences already in motion, with the protagonist recalibrating in ${loc} rather than repeating prior beats.`;
+    const setupLine = storySeed
+      ? `The chapter stays aligned with the novel premise (${storySeed}) and frames a concrete objective that must be pursued now, not later.`
+      : "The chapter establishes a concrete objective that advances the central conflict in actionable terms.";
+    const pressureLine = args.previousSynopsis
+      ? `Because of what happened previously (${prevTail}), the characters enter this chapter with changed leverage, sharper urgency, and less room for safe choices.`
+      : "Early movement shifts quickly from setup into pressure, so context and momentum coexist without dragging.";
+    const characterLine = leadCharacters
+      ? `Character behavior is specific and motivated: ${leadCharacters} each reveal priorities through decisions, dialogue friction, and visible emotional reactions.`
+      : "Character behavior is specific and motivated, with decisions and dialogue creating visible emotional shifts.";
+    const progressionLine = args.chapterRole === "conclusion"
+      ? "Escalation converges into decisive resolution: the core conflict is confronted directly, major threads close, and the ending lands a clear new normal."
+      : "Escalation introduces a fresh complication that changes the tactical approach, ensuring this chapter moves to genuinely new story ground.";
+    const subplotLine = "At least one subplot or character arc changes state in concrete terms (trust, power, risk, alignment, or intent), not just in description.";
+    const closeLine = args.nextTitle
+      ? `The closing beat locks in irreversible consequences and points naturally toward "${args.nextTitle}" with a specific unanswered pressure.`
+      : "The closing beat crystallizes consequences and leaves the narrative in a coherent, fully earned end state.";
+    return [openingLine, setupLine, pressureLine, characterLine, progressionLine, subplotLine, closeLine].join(" ");
+  }
+
   function hasTravelTransitionCue(text: string): boolean {
     return /\b(travel(?:s|ed|ing)?|journey(?:s|ed|ing)?|drive(?:s|n|d)?|drove|train|flight|flies|flew|arrive(?:s|d)?|return(?:s|ed)?|heads? to|goes? to|went to|moves? to|relocat(?:e|ed|ing)|crosses into)\b/i.test(text);
   }
@@ -8633,7 +8686,17 @@ function NovelWorkspacePage() {
           }
         }
 
-        if (!synopsis) synopsis = `Outline for ${chapterTitle}.`;
+        if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
+          synopsis = buildDeterministicChapterSynopsisFallback({
+            chapterTitle,
+            chapterIndex: index,
+            totalChapters: allTitles.length,
+            chapterRole,
+            previousSynopsis: prevSynopsis,
+            nextTitle,
+            settingAnchor: storySettingAnchor,
+          });
+        }
         if (chapterRole === "opening" && !hasOpeningSetupCue(synopsis)) {
           synopsis = `${synopsis} The chapter grounds the protagonist's baseline world, key relationships, and stakes before forcing the first major shift.`;
         }
@@ -9183,7 +9246,7 @@ function NovelWorkspacePage() {
       const characters = novel.storyBible.characters ?? [];
       const locations = novel.storyBible.locations ?? [];
       const lore = novel.storyBible.lore ?? [];
-      let synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "") || `Outline for ${title}.`;
+      let synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "");
       const knownLocations = locations.map((l) => l.name || "").filter(Boolean);
       const synopsisSeed = `${novel.storyBible.summary.synopsisShort || ""} ${novel.synopsis || ""}`.trim();
       const settingAnchor = synopsisSeed
@@ -9220,6 +9283,19 @@ function NovelWorkspacePage() {
         } catch {
           // Keep existing synopsis if repair fails.
         }
+      }
+      if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
+        const chapterRole: "opening" | "middle" | "conclusion" =
+          chapterIndex === 0 ? "opening" : chapterIndex === allTitles.length - 1 ? "conclusion" : "middle";
+        synopsis = buildDeterministicChapterSynopsisFallback({
+          chapterTitle: title,
+          chapterIndex,
+          totalChapters: allTitles.length,
+          chapterRole,
+          previousSynopsis: prevSynopsis,
+          nextTitle,
+          settingAnchor,
+        });
       }
       runLoreConsistencyCheck({
         actionType: "chapter_synopsis_regeneration",
