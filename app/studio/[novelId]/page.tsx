@@ -5740,6 +5740,11 @@ function NovelWorkspacePage() {
         const chunkSize = Math.max(1, Math.ceil(src.length / Math.max(1, BLOC_COUNT)));
         return Array.from({ length: BLOC_COUNT }, (_, i) => src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim());
       })();
+      const chunkSimilarityForIndex = (synopsis: string, index: number) => {
+        const chunk = chapterSentenceChunks[index] || "";
+        if (!chunk.trim()) return 1;
+        return synopsisSimilarity(synopsis, chunk);
+      };
       const fallbackSegmentForIndex = (index: number, total: number, previousSynopsis: string) => {
         const fromChapter = chapterSentenceChunks[index] || "";
         if (fromChapter) return sanitizeSynopsisText(fromChapter);
@@ -6159,6 +6164,28 @@ function NovelWorkspacePage() {
         }
         return applyContinuityScaffold(fullyDeterministic);
       };
+      const enforceChapterAnchoredFlow = (inputBlocks: SceneBlock[]) => {
+        let repaired = [...inputBlocks];
+        for (let idx = 0; idx < repaired.length; idx++) {
+          const synopsis = (repaired[idx].synopsis || "").trim();
+          const similarityToChunk = chunkSimilarityForIndex(synopsis, idx);
+          const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
+          const lacksChapterAnchor = !hasChapterAnchorCarryover(synopsis);
+          const lacksFlowCarryover = idx > 0 && !hasEntityCarryover(repaired[idx - 1].synopsis || "", synopsis);
+          const missingProgression = idx > 0 && !hasProgressionCue(synopsis);
+          const weakByLength = wordCount(synopsis) < MIN_SYNOPSIS_WORDS || sentenceCount(synopsis) < 3;
+          const isOffTrack = similarityToChunk < 0.14 || disallowedCharacter || lacksChapterAnchor || lacksFlowCarryover || missingProgression || weakByLength;
+          if (!isOffTrack) continue;
+          const prevSeed = idx > 0 ? repaired[idx - 1].synopsis : "";
+          repaired[idx] = {
+            ...repaired[idx],
+            synopsis: buildDeterministicUniqueSynopsis(idx, repaired.length, prevSeed),
+          };
+        }
+        repaired = applyContinuityScaffold(repaired);
+        repaired = enforceNeverDuplicateBlocs(repaired);
+        return repaired;
+      };
       const repairWeakOrDuplicateBlocs = async (inputBlocks: SceneBlock[]) => {
         let repaired = [...inputBlocks];
         for (let pass = 0; pass < 2; pass++) {
@@ -6447,12 +6474,14 @@ function NovelWorkspacePage() {
       finalizedBlocks = autoRepairSequence(finalizedBlocks);
       finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
       finalizedBlocks = enforceNeverDuplicateBlocs(finalizedBlocks);
+      finalizedBlocks = enforceChapterAnchoredFlow(finalizedBlocks);
       const finalValidation = validateSceneSequence(finalizedBlocks);
       if (!finalValidation.ok) {
         // Last deterministic safety pass so users don't get weak placeholder-like output.
         finalizedBlocks = autoRepairSequence(finalizedBlocks);
         finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
         finalizedBlocks = enforceNeverDuplicateBlocs(finalizedBlocks);
+        finalizedBlocks = enforceChapterAnchoredFlow(finalizedBlocks);
       }
 
       // Update the chapter sceneBlocks (planning layer) — does NOT touch content
