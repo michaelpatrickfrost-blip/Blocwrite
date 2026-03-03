@@ -62,21 +62,23 @@ export async function POST(request: Request) {
     await writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2), "utf-8");
 
     // Try to send contact email to support inbox.
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = process.env.SMTP_PORT;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
+    const smtpHost = process.env.SMTP_HOST?.trim();
+    const smtpPort = process.env.SMTP_PORT?.trim();
+    const smtpUser = process.env.SMTP_USER?.trim();
+    const smtpPass = process.env.SMTP_PASS?.trim();
     const smtpFrom = process.env.SMTP_FROM || "noreply@blocwrite.com";
     let emailSent = false;
+    let emailError: string | null = null;
 
-    if (smtpHost && smtpUser && smtpPass) {
+    if (smtpHost) {
       try {
         const nodemailer = await import("nodemailer");
+        const useAuth = Boolean(smtpUser && smtpPass);
         const transporter = nodemailer.createTransport({
           host: smtpHost,
           port: parseInt(smtpPort || "587", 10),
           secure: smtpPort === "465",
-          auth: { user: smtpUser, pass: smtpPass },
+          ...(useAuth ? { auth: { user: smtpUser!, pass: smtpPass! } } : {}),
         });
 
         const subject = `New Contact Form Message - ${name}`;
@@ -110,14 +112,27 @@ ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
         emailSent = true;
       } catch (emailErr) {
         console.error("[Contact] Email send failed:", emailErr);
+        emailError = emailErr instanceof Error ? emailErr.message : "unknown email error";
       }
     } else {
-      console.warn("[Contact] SMTP not configured; contact message email not sent.");
+      emailError = "SMTP host is not configured";
+      console.warn("[Contact] SMTP host missing; contact message email not sent.");
     }
 
     // Log to server console so it's visible in PM2 logs, including mail outcome.
     console.log(`[Contact] New message from ${name} <${email}>: ${message.slice(0, 100)}...`);
     console.log(`[Contact] Routed to ${CONTACT_TO_EMAIL}. emailSent=${emailSent}`);
+
+    if (!emailSent) {
+      return NextResponse.json(
+        {
+          error:
+            "We received your message but could not deliver it right now. Please try again in a moment.",
+          detail: emailError || "delivery unavailable",
+        },
+        { status: 503 },
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
