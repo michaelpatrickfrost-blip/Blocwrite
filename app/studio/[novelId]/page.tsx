@@ -4471,6 +4471,32 @@ function NovelWorkspacePage() {
     return { characterIds, locationIds, loreIds };
   }
 
+  function inferCharacterIdsFromSpineContext(spineData: ReturnType<typeof getPlotSpineChapterData> | null, characters: Character[]) {
+    if (!spineData || characters.length === 0) return [] as string[];
+    const directCharacterIds = mergeUniqueIds(
+      spineData.beatsForChapter.flatMap((beat) => beat.characterIds ?? []),
+      spineData.chapterSubplots.flatMap((subplot) => subplot.characterIds ?? []),
+      spineData.activeArcs.map((arc) => arc.characterId).filter(Boolean),
+    );
+    const spineTextSource = [
+      ...spineData.beatsForChapter.map((beat) => `${beat.title} ${beat.description || ""} ${beat.locationHint || ""}`),
+      ...spineData.chapterSubplots.map((subplot) => `${subplot.title} ${subplot.description || ""}`),
+      ...spineData.activeArcs.map((arc) => `${arc.characterName || ""} ${arc.arcType || ""} ${arc.startState || ""} ${arc.endState || ""}`),
+    ]
+      .join("\n")
+      .trim();
+    if (!spineTextSource) return directCharacterIds;
+    const inferredFromSpineText = inferEntityIdsFromText(
+      spineTextSource,
+      characters.map((character) => ({
+        id: character.id,
+        name: character.name || "",
+        aliases: (character.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
+      })),
+    );
+    return mergeUniqueIds(directCharacterIds, inferredFromSpineText);
+  }
+
   function getAdjacentChapterSynopses(chapterId: string) {
     if (!novel) return { previousChapterSynopsis: "", nextChapterSynopsis: "" };
     const chapterIndex = novel.chapters.findIndex((chapter) => chapter.id === chapterId);
@@ -5740,6 +5766,33 @@ function NovelWorkspacePage() {
         const chunkSize = Math.max(1, Math.ceil(src.length / Math.max(1, BLOC_COUNT)));
         return Array.from({ length: BLOC_COUNT }, (_, i) => src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim());
       })();
+      const chapterCharacterTerms = new Set(
+        rosterChars
+          .flatMap((c) => (c.name || "").split(/\s+/))
+          .map((w) => normalizeSynopsis(w).trim())
+          .filter(Boolean),
+      );
+      const chunkAnchorTermsByIndex = chapterSentenceChunks.map((chunk) =>
+        new Set(
+          contentTerms(chunk)
+            .map((w) => normalizeSynopsis(w).trim())
+            .filter((w) => w.length >= 4 && !chapterCharacterTerms.has(w)),
+        ),
+      );
+      const hasChunkAnchorCarryover = (synopsis: string, index: number) => {
+        const terms = chunkAnchorTermsByIndex[index];
+        if (!terms || terms.size === 0) return true;
+        const synopsisTerms = new Set(contentTerms(synopsis).map((w) => normalizeSynopsis(w).trim()).filter(Boolean));
+        for (const term of terms) {
+          if (synopsisTerms.has(term)) return true;
+        }
+        return false;
+      };
+      const chunkAnchorSnippetForBloc = (index: number) => {
+        const chunk = (chapterSentenceChunks[index] || "").trim();
+        if (!chunk) return "";
+        return clampPromptText(chunk, 260);
+      };
       const chunkSimilarityForIndex = (synopsis: string, index: number) => {
         const chunk = chapterSentenceChunks[index] || "";
         if (!chunk.trim()) return 1;
@@ -5870,6 +5923,7 @@ function NovelWorkspacePage() {
           const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
           if (disallowedCharacter) return { ok: false, reason: `Bloc ${idx + 1} introduces non-chapter character "${disallowedCharacter}".` };
           if (!hasChapterAnchorCarryover(synopsis)) return { ok: false, reason: `Bloc ${idx + 1} has drifted away from chapter synopsis details.` };
+          if (!hasChunkAnchorCarryover(synopsis, idx)) return { ok: false, reason: `Bloc ${idx + 1} has drifted from its chapter segment anchor.` };
           const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
           const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
           if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) {
@@ -5929,6 +5983,9 @@ function NovelWorkspacePage() {
           nextSynopsis = `${openingAnchor} ${nextSynopsis}`;
         }
         if (!hasChapterAnchorCarryover(nextSynopsis)) {
+          nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
+        }
+        if (!hasChunkAnchorCarryover(nextSynopsis, index)) {
           nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
         }
 
@@ -6041,6 +6098,7 @@ function NovelWorkspacePage() {
         const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
         if (disallowedCharacter) return `introduces non-chapter character "${disallowedCharacter}"`;
         if (!hasChapterAnchorCarryover(synopsis)) return "drifts away from chapter synopsis details";
+        if (!hasChunkAnchorCarryover(synopsis, idx)) return "drifts from this bloc's chapter segment anchor";
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
         if (idx > 0 && hasOpeningResetCue(synopsis)) return "resets chapter opening instead of continuing";
@@ -6289,6 +6347,7 @@ function NovelWorkspacePage() {
             allowedLocationNames ? `- Do NOT change setting scope. Use only these locations: ${allowedLocationNames}.` : "",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
+            chunkAnchorSnippetForBloc(i) ? `- CRITICAL CHAPTER-SEGMENT ANCHOR: this bloc must stay grounded in this specific chapter segment: "${chunkAnchorSnippetForBloc(i)}"` : "",
             `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
             taggedBeats.length > 0 ? "- SPINE TAGS (CRITICAL): this chapter has assigned beats/subplots. This bloc must advance its tagged beat context, not generic summary text." : "",
             "- Include explicit verbs for actions and consequences, not just mood or description.",
@@ -6351,13 +6410,14 @@ function NovelWorkspacePage() {
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
               const missingChapterAnchor = !hasChapterAnchorCarryover(built.synopsis);
+              const missingChunkAnchor = !hasChunkAnchorCarryover(built.synopsis, i);
               const disallowedCharacter = findDisallowedCanonicalCharacter(built.synopsis);
               const missingCrossChapterCarryover = i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingCrossChapterCarryover && !disallowedCharacter && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingChunkAnchor && !missingCrossChapterCarryover && !disallowedCharacter && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -6374,6 +6434,8 @@ function NovelWorkspacePage() {
                     ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
                   : missingChapterAnchor
                     ? "This bloc drifts from chapter synopsis details. Keep the same core people/place/conflict and continue those exact chapter events."
+                  : missingChunkAnchor
+                    ? "This bloc drifts from its assigned chapter segment. Re-anchor to the specific chapter moments expected at this bloc position."
                   : disallowedCharacter
                     ? `Do not introduce ${disallowedCharacter} here. Keep only chapter-linked characters for this chapter bloc set.`
                   : missingCrossChapterCarryover
@@ -9382,8 +9444,9 @@ function NovelWorkspacePage() {
             aliases: (character.otherNames || "").split(/[;,]/).map((alias) => alias.trim()).filter(Boolean),
           })),
         );
+        const spineContextCharacterIds = inferCharacterIdsFromSpineContext(chapterSpineData, mergedCharacters);
         const beatCharacterIds = chapterSpineData?.beatsForChapter.flatMap((beat) => beat.characterIds ?? []) ?? [];
-        chapterCharacterIds = mergeUniqueIds(chapterCharacterIds, beatCharacterIds, inferredCharacterIds).slice(0, 6);
+        chapterCharacterIds = mergeUniqueIds(chapterCharacterIds, beatCharacterIds, spineContextCharacterIds, inferredCharacterIds).slice(0, 6);
         const knownLocationNames = mergedLocations.map((location) => location.name).filter(Boolean);
         const hintLocationNames = (chapterSpineData?.beatsForChapter ?? [])
           .map((beat) => detectPrimaryKnownLocationName(beat.locationHint || "", knownLocationNames))
@@ -10104,6 +10167,7 @@ function NovelWorkspacePage() {
           const key = normalizeLookup(n);
           return characters.find((c) => normalizeLookup(c.name || "") === key)?.id ?? "";
         }).filter(Boolean),
+        inferCharacterIdsFromSpineContext(regenSpineData, characters),
         inferEntityIdsFromText(
           `${title}\n${synopsis}`,
           characters.map((c) => ({
