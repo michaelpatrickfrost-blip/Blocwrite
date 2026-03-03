@@ -164,6 +164,12 @@ const LORE_LOCK_CONTRADICTION_CUES = [
   "despite",
 ];
 
+const LORE_LOCK_SOFT_CONTRADICTION_CUES = [
+  "despite",
+  "can now",
+  "no longer",
+];
+
 const LORE_LOCK_REQUIREMENT_CUES = [
   "must",
   "always",
@@ -3454,6 +3460,16 @@ function NovelWorkspacePage() {
     return quoted?.[1]?.trim() || "";
   }
 
+  function hasMeaningfulRewrite(before: string, after: string) {
+    const a = normalizeForOverlap(before);
+    const b = normalizeForOverlap(after);
+    if (!a || !b) return false;
+    if (a === b) return false;
+    const repeatCheck = detectProseRepetition(after, before);
+    if (!repeatCheck.repeating) return true;
+    return repeatCheck.windowOverlapRatio < 0.7;
+  }
+
   function proseQualitySignals(text: string) {
     const cleaned = cleanProseOutput(text);
     const words = normalizeForOverlap(cleaned).split(" ").filter(Boolean);
@@ -4464,26 +4480,37 @@ function NovelWorkspacePage() {
         if (issues.length >= 6) break;
         const mentionsTitle = entry.title && haystack.includes(entry.title.toLowerCase());
         const keywordHits = entry.keywords.filter((keyword) => haystack.includes(keyword));
-        if (!mentionsTitle && keywordHits.length < 2) continue;
+        if (!mentionsTitle && keywordHits.length < 3) continue;
 
         const conflictCue = LORE_LOCK_CONTRADICTION_CUES.find((cue) => haystack.includes(cue));
         if (!conflictCue) continue;
 
-        const matchedConstraint = entry.constraints.find((constraint) => {
-          const lower = constraint.toLowerCase();
-          const requiresRule = LORE_LOCK_REQUIREMENT_CUES.some((token) => lower.includes(token));
-          if (!requiresRule) return false;
-          const anchorWords = getLoreLockWords(lower).slice(0, 6);
-          return anchorWords.some((word) => haystack.includes(word));
-        }) ?? entry.constraints[0];
-
+        const matchedConstraint = entry.constraints
+          .map((constraint) => {
+            const lower = constraint.toLowerCase();
+            const requiresRule = LORE_LOCK_REQUIREMENT_CUES.some((token) => lower.includes(token));
+            if (!requiresRule) return null;
+            const anchorWords = getLoreLockWords(lower).slice(0, 7);
+            const anchorHitCount = anchorWords.filter((word) => haystack.includes(word)).length;
+            if (anchorHitCount < 2) return null;
+            return { constraint, anchorHitCount };
+          })
+          .filter((item): item is { constraint: string; anchorHitCount: number } => Boolean(item))
+          .sort((a, b) => b.anchorHitCount - a.anchorHitCount)[0] ?? null;
         if (!matchedConstraint) continue;
+        const relevanceScore =
+          (mentionsTitle ? 2 : 0) +
+          Math.min(keywordHits.length, 3) +
+          matchedConstraint.anchorHitCount;
+        const isSoftCue = LORE_LOCK_SOFT_CONTRADICTION_CUES.includes(conflictCue);
+        if (relevanceScore < 5) continue;
+        if (isSoftCue && relevanceScore < 6) continue;
         issues.push({
           id: `lore-${Date.now()}-${issues.length}`,
           severity: "warning",
           actionType: args.actionType,
           loreTitle: entry.title,
-          rule: matchedConstraint,
+          rule: matchedConstraint.constraint,
           conflict: `Possible contradiction: generated text contains "${conflictCue}" near lore-linked content.`,
           suggestion: "Review this section and keep the outcome within established lore constraints.",
         });
@@ -6723,9 +6750,20 @@ function NovelWorkspacePage() {
 
     const issue = loreLockIssues[0];
     const cue = extractLoreConflictCue(issue.conflict).toLowerCase();
+    const issueTitleTokens = getLoreLockWords(issue.loreTitle.toLowerCase()).slice(0, 5);
+    const issueRuleTokens = getLoreLockWords(issue.rule.toLowerCase()).slice(0, 8);
     let blockIndex = cue
       ? blocks.findIndex((b) => (b.prose || "").toLowerCase().includes(cue))
       : -1;
+    if (blockIndex < 0) {
+      blockIndex = blocks.findIndex((b) => {
+        const proseLower = (b.prose || "").toLowerCase();
+        if (!proseLower) return false;
+        const titleHits = issueTitleTokens.filter((token) => proseLower.includes(token)).length;
+        const ruleHits = issueRuleTokens.filter((token) => proseLower.includes(token)).length;
+        return titleHits >= 1 && ruleHits >= 2;
+      });
+    }
     if (blockIndex < 0) {
       blockIndex = blocks.reduce((last, b, idx) => ((b.prose?.trim() || "").length > 0 ? idx : last), -1);
     }
@@ -6803,6 +6841,31 @@ function NovelWorkspacePage() {
       if (!rewritten) {
         throw new Error("AI could not rewrite the flagged prose. Please try again.");
       }
+      if (!hasMeaningfulRewrite(currentProse, rewritten)) {
+        const enforceChangePrompt = [
+          `Your previous rewrite for Scene ${blockIndex + 1} was too close to the original.`,
+          "Rewrite this scene again and materially rephrase the contradiction area while preserving plot continuity.",
+          "",
+          `Lore warning: ${issue.conflict}`,
+          `Rule to satisfy: ${issue.rule}`,
+          "MUST CHANGE REQUIREMENT:",
+          "- Change multiple sentence constructions around the contradiction area.",
+          "- Keep the same scene events and outcome.",
+          "- Keep POV, tense, and voice.",
+          "- Return only the revised prose.",
+          "",
+          `Original scene:\n"""\n${currentProse}\n"""`,
+          `Too-similar rewrite:\n"""\n${rewritten}\n"""`,
+        ].join("\n");
+        const enforced = cleanProseOutput(await requestOpenRouterText(
+          enforceChangePrompt,
+          tokenTarget,
+          180000,
+          "Continuity editor. Produce a materially revised scene while preserving events. Return prose only.",
+          false,
+        ));
+        if (enforced) rewritten = enforced;
+      }
 
       if (priorProseForComparison) {
         const openingEcho = detectOpeningEcho(rewritten, priorProseForComparison);
@@ -6828,6 +6891,10 @@ function NovelWorkspacePage() {
       }
 
       const nextBlocks = [...blocks];
+      if (!hasMeaningfulRewrite(currentProse, rewritten)) {
+        setStoryAiError("AI fix was too similar to the original. Please run Fix again or edit manually.");
+        return;
+      }
       nextBlocks[blockIndex] = { ...nextBlocks[blockIndex], prose: rewritten };
       updateSceneBlocks(targetChapterId, nextBlocks, true);
       syncChapterContentFromBlocks(targetChapterId, nextBlocks);
@@ -6902,6 +6969,8 @@ function NovelWorkspacePage() {
       const fullContext = buildChapterBlocksContext(activeChapter.title, planChapter?.synopsis || activeChapter.subtitle || "", planCharIds, planLocIds);
       const summary = novel.storyBible.summary;
       const sv = novel.storyBible.styleVoice;
+      const proseLatencyProfile = getAiLatencyProfile(openRouterModel, assistantProvider);
+      const isSlowProseModel = proseLatencyProfile.timeoutMultiplier >= 1.5;
       const styleSection = [
         summary.genre?.length ? `Genre: ${summary.genre.slice(0, 10).join(", ")}` : "",
         summary.tone?.length ? `Tone: ${summary.tone.slice(0, 10).join(", ")}` : "",
@@ -7078,7 +7147,7 @@ function NovelWorkspacePage() {
         earlierBlocContext ? `EARLIER SCENES IN THIS CHAPTER (for narrative awareness):\n${earlierBlocContext}` : "",
         "",
         immediatePrevProse
-          ? `THE SCENE IMMEDIATELY BEFORE YOURS — FULL PROSE (this is what the reader just read — your scene MUST continue seamlessly from the END of this text. Track where characters ARE and what just happened):\n"""\n${immediatePrevProse.slice(0, 5000)}\n"""`
+          ? `THE SCENE IMMEDIATELY BEFORE YOURS — FULL PROSE (this is what the reader just read — your scene MUST continue seamlessly from the END of this text. Track where characters ARE and what just happened):\n"""\n${immediatePrevProse.slice(0, 3200)}\n"""`
           : prevChapterEnding
             ? `PROSE FROM END OF PREVIOUS CHAPTER (your scene continues from here):\n"""${prevChapterEnding}"""`
             : "",
@@ -7172,7 +7241,7 @@ function NovelWorkspacePage() {
                 ? `Previous chapter ending (continue from this):\n"""\n${prevChapterEnding.slice(-2400)}\n"""`
                 : "",
             followingProse ? `Following prose (avoid contradicting/repeating):\n"""\n${followingProse.slice(0, 2000)}\n"""` : "",
-            `Earlier prose to avoid repeating:\n"""\n${priorProseForComparison.slice(-5000)}\n"""`,
+            `Earlier prose to avoid repeating:\n"""\n${priorProseForComparison.slice(-3600)}\n"""`,
             "",
             `Current draft to rewrite:\n"""\n${prose}\n"""`,
           ].filter(Boolean).join("\n");
@@ -7198,7 +7267,8 @@ function NovelWorkspacePage() {
         }
 
         const openingEcho = detectOpeningEcho(prose, priorProseForComparison);
-        if (openingEcho.repeating) {
+        const shouldRunOpeningReplayRepair = openingEcho.repeating && (!isSlowProseModel || openingEcho.openingSentence.split(" ").length >= 10);
+        if (shouldRunOpeningReplayRepair) {
           const antiOpeningReplayPrompt = [
             `Scene ${blockIndex + 1} opening is replaying prose that already happened (${openingEcho.reason}).`,
             "Rewrite this scene so the FIRST paragraph starts from the immediate aftermath, not from repeated wording/action.",
@@ -7215,7 +7285,7 @@ function NovelWorkspacePage() {
               : prevChapterEnding
                 ? `Previous chapter ending:\n"""\n${prevChapterEnding.slice(-2200)}\n"""`
                 : "",
-            `Earlier prose to avoid replaying:\n"""\n${priorProseForComparison.slice(-4200)}\n"""`,
+            `Earlier prose to avoid replaying:\n"""\n${priorProseForComparison.slice(-3000)}\n"""`,
             `Current scene draft:\n"""\n${prose}\n"""`,
           ].filter(Boolean).join("\n");
           let openingFixed = await requestOpenRouterText(
@@ -7235,7 +7305,11 @@ function NovelWorkspacePage() {
         }
 
         const qualityWeaknesses = getProseQualityWeaknesses(prose, effectiveTarget, isBestFit);
-        if (qualityWeaknesses.length > 0) {
+        const severeWeakness =
+          qualityWeaknesses.length >= 2 ||
+          qualityWeaknesses.includes("phrasing is too repetitive/generic");
+        const shouldRunQualityPolish = qualityWeaknesses.length > 0 && (!isSlowProseModel || severeWeakness);
+        if (shouldRunQualityPolish) {
           const qualityPrompt = [
             `Polish Scene ${blockIndex + 1} into richer, publication-quality prose while keeping the same events and continuity.`,
             "Do NOT change scene order, canon facts, POV, or tense.",
