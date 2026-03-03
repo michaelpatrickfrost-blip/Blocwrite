@@ -5984,6 +5984,56 @@ function NovelWorkspacePage() {
         }
         return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
       };
+      const duplicateBlocIndex = (candidateBlocks: SceneBlock[], threshold = SIMILARITY_THRESHOLD) => {
+        for (let idx = 1; idx < candidateBlocks.length; idx++) {
+          const synopsis = (candidateBlocks[idx].synopsis || "").trim();
+          if (!synopsis) continue;
+          const { maxSimilarity } = findMostSimilarBloc(synopsis, candidateBlocks.slice(0, idx));
+          if (maxSimilarity >= threshold) return idx;
+        }
+        return -1;
+      };
+      const enforceNeverDuplicateBlocs = (inputBlocks: SceneBlock[]) => {
+        let repaired = [...inputBlocks];
+        const strictThreshold = Math.max(0.5, SIMILARITY_THRESHOLD - 0.1);
+        for (let pass = 0; pass < 3; pass++) {
+          for (let idx = 1; idx < repaired.length; idx++) {
+            const synopsis = (repaired[idx].synopsis || "").trim();
+            if (!synopsis) continue;
+            const previousBlocks = repaired.slice(0, idx);
+            const { maxSimilarity } = findMostSimilarBloc(synopsis, previousBlocks);
+            if (maxSimilarity < strictThreshold) continue;
+            const prevSeed = idx > 0 ? repaired[idx - 1].synopsis : "";
+            const stage = expectedStageForIndex(idx, repaired.length);
+            const deterministic = buildDeterministicUniqueSynopsis(idx, repaired.length, prevSeed);
+            const differentiator =
+              stage === "development"
+                ? "This development beat introduces a different tactic and a new resistance point, so it cannot mirror any earlier bloc."
+                : stage === "climax"
+                  ? "This climax beat forces a decisive confrontation with different stakes and a changed power balance from earlier blocs."
+                  : "This scene shifts consequences into a new state that did not exist in any previous bloc.";
+            repaired[idx] = {
+              ...repaired[idx],
+              synopsis: sanitizeSynopsisText(`${deterministic} ${differentiator}`),
+            };
+          }
+          repaired = applyContinuityScaffold(repaired);
+          const validation = validateSceneSequence(repaired);
+          if (validation.ok && duplicateBlocIndex(repaired, strictThreshold) < 0) {
+            return repaired;
+          }
+        }
+        // Absolute final fallback: regenerate all bloc synopses deterministically in sequence.
+        const fullyDeterministic = repaired.map((block, idx) => ({
+          ...block,
+          synopsis: buildDeterministicUniqueSynopsis(
+            idx,
+            repaired.length,
+            idx > 0 ? repaired[idx - 1].synopsis : "",
+          ),
+        }));
+        return applyContinuityScaffold(fullyDeterministic);
+      };
       const repairWeakOrDuplicateBlocs = async (inputBlocks: SceneBlock[]) => {
         let repaired = [...inputBlocks];
         for (let pass = 0; pass < 2; pass++) {
@@ -6258,11 +6308,13 @@ function NovelWorkspacePage() {
       finalizedBlocks = applyContinuityScaffold(finalizedBlocks);
       finalizedBlocks = autoRepairSequence(finalizedBlocks);
       finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
+      finalizedBlocks = enforceNeverDuplicateBlocs(finalizedBlocks);
       const finalValidation = validateSceneSequence(finalizedBlocks);
       if (!finalValidation.ok) {
         // Last deterministic safety pass so users don't get weak placeholder-like output.
         finalizedBlocks = autoRepairSequence(finalizedBlocks);
         finalizedBlocks = await repairWeakOrDuplicateBlocs(finalizedBlocks);
+        finalizedBlocks = enforceNeverDuplicateBlocs(finalizedBlocks);
       }
 
       // Update the chapter sceneBlocks (planning layer) — does NOT touch content
