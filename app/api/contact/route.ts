@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 const DATA_DIR = join(process.cwd(), "data");
 const MESSAGES_FILE = join(DATA_DIR, "contact-messages.json");
+const CONTACT_TO_EMAIL = "customerservice@blocwrite.com";
 
 type ContactMessage = {
   id: string;
@@ -60,8 +61,63 @@ export async function POST(request: Request) {
     messages.push(newMessage);
     await writeFile(MESSAGES_FILE, JSON.stringify(messages, null, 2), "utf-8");
 
-    // Log to server console so it's visible in PM2 logs
+    // Try to send contact email to support inbox.
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = process.env.SMTP_PORT;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const smtpFrom = process.env.SMTP_FROM || "noreply@blocwrite.com";
+    let emailSent = false;
+
+    if (smtpHost && smtpUser && smtpPass) {
+      try {
+        const nodemailer = await import("nodemailer");
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: parseInt(smtpPort || "587", 10),
+          secure: smtpPort === "465",
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+
+        const subject = `New Contact Form Message - ${name}`;
+        const text = [
+          "A new contact form message was received.",
+          "",
+          `From: ${name} <${email}>`,
+          `Date: ${newMessage.createdAt}`,
+          "",
+          "Message:",
+          message,
+        ].join("\n");
+
+        await transporter.sendMail({
+          from: `"Blocwrite Contact" <${smtpFrom}>`,
+          to: CONTACT_TO_EMAIL,
+          replyTo: email,
+          subject,
+          text,
+          html: `
+            <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px 0;">
+              <h2 style="font-size: 20px; color: #1a1a2e; margin: 0 0 14px;">New contact form message</h2>
+              <p style="font-size: 14px; color: #444; margin: 0 0 6px;"><strong>From:</strong> ${name} &lt;${email}&gt;</p>
+              <p style="font-size: 14px; color: #444; margin: 0 0 18px;"><strong>Date:</strong> ${newMessage.createdAt}</p>
+              <div style="font-size: 14px; line-height: 1.65; color: #222; white-space: pre-wrap; border: 1px solid #e5e6ea; border-radius: 10px; padding: 14px 16px; background: #fafafb;">
+${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+              </div>
+            </div>
+          `,
+        });
+        emailSent = true;
+      } catch (emailErr) {
+        console.error("[Contact] Email send failed:", emailErr);
+      }
+    } else {
+      console.warn("[Contact] SMTP not configured; contact message email not sent.");
+    }
+
+    // Log to server console so it's visible in PM2 logs, including mail outcome.
     console.log(`[Contact] New message from ${name} <${email}>: ${message.slice(0, 100)}...`);
+    console.log(`[Contact] Routed to ${CONTACT_TO_EMAIL}. emailSent=${emailSent}`);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

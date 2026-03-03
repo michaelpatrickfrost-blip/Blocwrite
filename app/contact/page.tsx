@@ -82,10 +82,6 @@ export default function ContactPage() {
         </h1>
         <p style={{ fontSize: 16, lineHeight: 1.6, color: C.textSoft, marginBottom: 40 }}>
           Have a question, suggestion, or need help? Send us a message and we will get back to you.
-          You can also email us directly at{" "}
-          <a href="mailto:customerservice@blocwrite.com" style={{ color: C.text, fontWeight: 600 }}>
-            customerservice@blocwrite.com
-          </a>.
         </p>
 
         {status === "sent" ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -9,7 +9,6 @@ import { Suspense } from "react";
 type Mode = "login" | "register";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode = searchParams.get("mode") === "register" ? "register" : "login";
 
@@ -66,7 +65,7 @@ function LoginForm() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; redirectTo?: string; error?: string } | null;
       if (res.ok && data?.ok) {
-        router.push(data.redirectTo || "/studio");
+        window.location.assign(data.redirectTo || "/studio");
       } else {
         setTrialError(data?.error || "Invalid code or password.");
       }
@@ -102,7 +101,7 @@ function LoginForm() {
         } | null;
 
         if (res.ok && data?.ok) {
-          router.push(data.redirectTo || "/subscribe");
+          window.location.assign(data.redirectTo || "/subscribe");
         } else {
           setError(data?.error || "Registration failed.");
         }
@@ -121,7 +120,7 @@ function LoginForm() {
         } | null;
 
         if (res.ok && data?.ok) {
-          router.push(data.redirectTo || "/studio");
+          window.location.assign(data.redirectTo || "/studio");
         } else {
           setError(data?.error || "Invalid email or password.");
         }
