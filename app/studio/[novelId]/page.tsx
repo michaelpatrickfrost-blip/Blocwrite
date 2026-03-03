@@ -5985,11 +5985,32 @@ function NovelWorkspacePage() {
         return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
       };
       const duplicateBlocIndex = (candidateBlocks: SceneBlock[], threshold = SIMILARITY_THRESHOLD) => {
+        const hasSharedWordWindow = (a: string, b: string, windowSize = 8) => {
+          const toWords = (text: string) =>
+            normalizeSynopsis(text)
+              .split(" ")
+              .map((w) => w.trim())
+              .filter(Boolean);
+          const aWords = toWords(a);
+          const bWords = toWords(b);
+          if (aWords.length < windowSize || bWords.length < windowSize) return false;
+          const windows = new Set<string>();
+          for (let i = 0; i <= aWords.length - windowSize; i++) {
+            windows.add(aWords.slice(i, i + windowSize).join(" "));
+          }
+          for (let i = 0; i <= bWords.length - windowSize; i++) {
+            if (windows.has(bWords.slice(i, i + windowSize).join(" "))) return true;
+          }
+          return false;
+        };
         for (let idx = 1; idx < candidateBlocks.length; idx++) {
           const synopsis = (candidateBlocks[idx].synopsis || "").trim();
           if (!synopsis) continue;
-          const { maxSimilarity } = findMostSimilarBloc(synopsis, candidateBlocks.slice(0, idx));
+          const previousBlocks = candidateBlocks.slice(0, idx);
+          const { maxSimilarity } = findMostSimilarBloc(synopsis, previousBlocks);
           if (maxSimilarity >= threshold) return idx;
+          const sharedWindow = previousBlocks.some((prev) => hasSharedWordWindow(synopsis, prev.synopsis || ""));
+          if (sharedWindow) return idx;
         }
         return -1;
       };
@@ -6023,8 +6044,9 @@ function NovelWorkspacePage() {
             return repaired;
           }
         }
-        // Absolute final fallback: regenerate all bloc synopses deterministically in sequence.
-        const fullyDeterministic = repaired.map((block, idx) => ({
+        // Absolute final fallback: regenerate all bloc synopses deterministically in sequence,
+        // then enforce one more hard uniqueness pass.
+        let fullyDeterministic = repaired.map((block, idx) => ({
           ...block,
           synopsis: buildDeterministicUniqueSynopsis(
             idx,
@@ -6032,6 +6054,26 @@ function NovelWorkspacePage() {
             idx > 0 ? repaired[idx - 1].synopsis : "",
           ),
         }));
+        const distinctMovements = [
+          "The objective shifts from survival to leverage, changing how every decision is weighed.",
+          "The pressure pivots from hidden risk to open confrontation, forcing a new tactic.",
+          "Control of the situation flips, and the characters must improvise under immediate consequence.",
+          "The emotional center moves from doubt to commitment, raising the cost of retreat.",
+          "A practical setback becomes a strategic turning point that reorders priorities.",
+          "The scene converts private tension into public stakes that cannot be ignored.",
+        ];
+        for (let pass = 0; pass < 4; pass++) {
+          const duplicateIdx = duplicateBlocIndex(fullyDeterministic, strictThreshold);
+          if (duplicateIdx < 0) break;
+          const movementCue = distinctMovements[(duplicateIdx + pass) % distinctMovements.length];
+          const prevSeed = duplicateIdx > 0 ? fullyDeterministic[duplicateIdx - 1].synopsis : "";
+          fullyDeterministic[duplicateIdx] = {
+            ...fullyDeterministic[duplicateIdx],
+            synopsis: sanitizeSynopsisText(
+              `${buildDeterministicUniqueSynopsis(duplicateIdx, fullyDeterministic.length, prevSeed)} ${movementCue}`,
+            ),
+          };
+        }
         return applyContinuityScaffold(fullyDeterministic);
       };
       const repairWeakOrDuplicateBlocs = async (inputBlocks: SceneBlock[]) => {
