@@ -47,22 +47,40 @@ export async function GET() {
 
   try {
     // ── DB stats ──
-    const [userCount, activeSubCount, trialSubCount, guestCount] = await Promise.all([
+    const [totalUserCount, guestCount, stripeCustomers, activeOrTrialSubs] = await Promise.all([
       prisma.user.count(),
-      prisma.subscription.count({ where: { status: "active" } }),
-      prisma.subscription.count({ where: { status: "trialing" } }),
       prisma.guestAccess.count(),
+      prisma.stripeCustomer.findMany({
+        select: { userId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.subscription.findMany({
+        where: { status: { in: ["active", "trialing"] } },
+        select: { userId: true, status: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      }),
     ]);
 
-    // User signups by month (last 12 months)
-    const users = await prisma.user.findMany({
-      select: { createdAt: true },
-      orderBy: { createdAt: "asc" },
-    });
+    // Stripe-linked signups by month (source of truth for paid/trial funnel)
+    const activeUserIds = new Set<string>();
+    const trialUserIds = new Set<string>();
+    const seenUsers = new Set<string>();
+    for (const row of activeOrTrialSubs) {
+      const userId = row.userId;
+      if (!userId || seenUsers.has(userId)) continue;
+      seenUsers.add(userId);
+      if (row.status === "active") activeUserIds.add(userId);
+      else if (row.status === "trialing") trialUserIds.add(userId);
+    }
+    const activeSubCount = activeUserIds.size;
+    const trialSubCount = [...trialUserIds].filter((userId) => !activeUserIds.has(userId)).length;
+
+    // Keep `userCount` stripe-linked so admin dashboard ties to Stripe data.
+    const userCount = new Set(stripeCustomers.map((c) => c.userId)).size;
 
     const signupsByMonth: Record<string, number> = {};
-    for (const u of users) {
-      const key = `${u.createdAt.getFullYear()}-${String(u.createdAt.getMonth() + 1).padStart(2, "0")}`;
+    for (const customer of stripeCustomers) {
+      const key = `${customer.createdAt.getFullYear()}-${String(customer.createdAt.getMonth() + 1).padStart(2, "0")}`;
       signupsByMonth[key] = (signupsByMonth[key] || 0) + 1;
     }
 
@@ -147,6 +165,7 @@ export async function GET() {
 
     return NextResponse.json({
       userCount,
+      totalUserCount,
       activeSubCount,
       trialSubCount,
       guestCount,

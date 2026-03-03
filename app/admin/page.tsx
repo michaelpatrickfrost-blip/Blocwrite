@@ -16,6 +16,7 @@ type Guest = {
 
 type Stats = {
   userCount: number;
+  totalUserCount?: number;
   activeSubCount: number;
   trialSubCount: number;
   guestCount: number;
@@ -286,9 +287,9 @@ export default function AdminPage() {
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
                   {[
-                    { label: "Registered Users", value: stats.userCount, icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
-                    { label: "Active Subscriptions", value: stats.activeSubCount + stats.trialSubCount, icon: "M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" },
-                    { label: "Guest Users", value: stats.guestCount, icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4-4v2M12 7a4 4 0 100-8 4 4 0 000 8z" },
+                    { label: "Stripe Customers", value: stats.userCount, icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 7a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
+                    { label: "Live Stripe Subs", value: stats.activeSubCount + stats.trialSubCount, icon: "M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" },
+                    { label: "Guest Access", value: stats.guestCount, icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4-4v2M12 7a4 4 0 100-8 4 4 0 000 8z" },
                     { label: "Total Novels", value: stats.totalNovels, icon: "M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" },
                     { label: "Total Words", value: formatNumber(stats.totalWords), icon: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" },
                     { label: "Avg Novels/User", value: stats.avgNovelsPerUser, icon: "M18 20V10M12 20V4M6 20v-6" },
@@ -519,9 +520,10 @@ export default function AdminPage() {
                     {[
                       { label: "Active novels", value: stats.activeNovels },
                       { label: "Archived novels", value: stats.archivedNovels },
+                      { label: "Total app users", value: stats.totalUserCount ?? stats.userCount },
                       { label: "Paying subscribers", value: stats.activeSubCount },
                       { label: "On trial", value: stats.trialSubCount },
-                      { label: "Guest users", value: stats.guestCount },
+                      { label: "Guest access", value: stats.guestCount },
                     ].map((row) => (
                       <div key={row.label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                         <span style={{ color: C.dim }}>{row.label}</span>
@@ -531,7 +533,7 @@ export default function AdminPage() {
                     {Object.keys(stats.signupsByMonth).length > 0 && (
                       <>
                         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700 }}>User Signups</span>
+                          <span style={{ fontSize: 12, fontWeight: 700 }}>Stripe Customer Signups</span>
                         </div>
                         {Object.entries(stats.signupsByMonth).slice(-6).map(([month, count]) => (
                           <div key={month} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
