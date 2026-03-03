@@ -17,6 +17,7 @@ type Guest = {
 type Stats = {
   userCount: number;
   totalUserCount?: number;
+  onlineUserCount?: number;
   activeSubCount: number;
   trialSubCount: number;
   guestCount: number;
@@ -521,6 +522,7 @@ export default function AdminPage() {
                       { label: "Active novels", value: stats.activeNovels },
                       { label: "Archived novels", value: stats.archivedNovels },
                       { label: "Total app users", value: stats.totalUserCount ?? stats.userCount },
+                      { label: "Users logged in now", value: stats.onlineUserCount ?? 0 },
                       { label: "Paying subscribers", value: stats.activeSubCount },
                       { label: "On trial", value: stats.trialSubCount },
                       { label: "Guest access", value: stats.guestCount },

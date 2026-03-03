@@ -3,10 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminApiAccess } from "@/lib/admin-auth";
 import { readdir, readFile } from "fs/promises";
 import { join } from "path";
+import Stripe from "stripe";
+import { getResolvedStripeConfig } from "@/lib/admin-config";
 
 export const runtime = "nodejs";
 
 const DATA_DIR = join(process.cwd(), "data");
+
+type BillingSnapshot = {
+  stripeCustomerCount: number;
+  activeSubscriberCount: number;
+  trialSubscriberCount: number;
+  signupsByMonth: Record<string, number>;
+  source: "stripe" | "database";
+};
 
 /**
  * Count words in a string (simple whitespace split).
@@ -47,7 +57,7 @@ export async function GET() {
 
   try {
     // ── DB stats ──
-    const [totalUserCount, guestCount, stripeCustomers, activeOrTrialSubs] = await Promise.all([
+    const [totalUserCount, guestCount, stripeCustomers, activeOrTrialSubs, onlineUserCount] = await Promise.all([
       prisma.user.count(),
       prisma.guestAccess.count(),
       prisma.stripeCustomer.findMany({
@@ -59,29 +69,90 @@ export async function GET() {
         select: { userId: true, status: true, updatedAt: true },
         orderBy: { updatedAt: "desc" },
       }),
+      prisma.user.count({ where: { sessionNonce: { not: null } } }),
     ]);
 
-    // Stripe-linked signups by month (source of truth for paid/trial funnel)
-    const activeUserIds = new Set<string>();
-    const trialUserIds = new Set<string>();
-    const seenUsers = new Set<string>();
-    for (const row of activeOrTrialSubs) {
-      const userId = row.userId;
-      if (!userId || seenUsers.has(userId)) continue;
-      seenUsers.add(userId);
-      if (row.status === "active") activeUserIds.add(userId);
-      else if (row.status === "trialing") trialUserIds.add(userId);
-    }
-    const activeSubCount = activeUserIds.size;
-    const trialSubCount = [...trialUserIds].filter((userId) => !activeUserIds.has(userId)).length;
+    const buildDbBillingSnapshot = (): BillingSnapshot => {
+      const activeUserIds = new Set<string>();
+      const trialUserIds = new Set<string>();
+      const seenUsers = new Set<string>();
+      for (const row of activeOrTrialSubs) {
+        const userId = row.userId;
+        if (!userId || seenUsers.has(userId)) continue;
+        seenUsers.add(userId);
+        if (row.status === "active") activeUserIds.add(userId);
+        else if (row.status === "trialing") trialUserIds.add(userId);
+      }
+      const signupsByMonth: Record<string, number> = {};
+      for (const customer of stripeCustomers) {
+        const key = `${customer.createdAt.getFullYear()}-${String(customer.createdAt.getMonth() + 1).padStart(2, "0")}`;
+        signupsByMonth[key] = (signupsByMonth[key] || 0) + 1;
+      }
+      return {
+        stripeCustomerCount: new Set(stripeCustomers.map((c) => c.userId)).size,
+        activeSubscriberCount: activeUserIds.size,
+        trialSubscriberCount: [...trialUserIds].filter((userId) => !activeUserIds.has(userId)).length,
+        signupsByMonth,
+        source: "database",
+      };
+    };
 
-    // Keep `userCount` stripe-linked so admin dashboard ties to Stripe data.
-    const userCount = new Set(stripeCustomers.map((c) => c.userId)).size;
+    const fetchStripeBillingSnapshot = async (): Promise<BillingSnapshot> => {
+      const cfg = await getResolvedStripeConfig();
+      if (!cfg.secretKey) throw new Error("Stripe secret key missing.");
+      const stripe = new Stripe(cfg.secretKey);
 
-    const signupsByMonth: Record<string, number> = {};
-    for (const customer of stripeCustomers) {
-      const key = `${customer.createdAt.getFullYear()}-${String(customer.createdAt.getMonth() + 1).padStart(2, "0")}`;
-      signupsByMonth[key] = (signupsByMonth[key] || 0) + 1;
+      const signupsByMonth: Record<string, number> = {};
+      let stripeCustomerCount = 0;
+      let customerCursor: string | undefined = undefined;
+      for (;;) {
+        const page: Stripe.ApiList<Stripe.Customer> = await stripe.customers.list({
+          limit: 100,
+          ...(customerCursor ? { starting_after: customerCursor } : {}),
+        });
+        stripeCustomerCount += page.data.length;
+        for (const customer of page.data) {
+          const createdAt = new Date((customer.created || 0) * 1000);
+          const key = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, "0")}`;
+          signupsByMonth[key] = (signupsByMonth[key] || 0) + 1;
+        }
+        if (!page.has_more || page.data.length === 0) break;
+        customerCursor = page.data[page.data.length - 1].id;
+      }
+
+      const activeCustomerIds = new Set<string>();
+      const trialCustomerIds = new Set<string>();
+      let subCursor: string | undefined = undefined;
+      for (;;) {
+        const page: Stripe.ApiList<Stripe.Subscription> = await stripe.subscriptions.list({
+          status: "all",
+          limit: 100,
+          ...(subCursor ? { starting_after: subCursor } : {}),
+        });
+        for (const sub of page.data) {
+          const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+          if (!customerId) continue;
+          if (sub.status === "active") activeCustomerIds.add(customerId);
+          if (sub.status === "trialing") trialCustomerIds.add(customerId);
+        }
+        if (!page.has_more || page.data.length === 0) break;
+        subCursor = page.data[page.data.length - 1].id;
+      }
+
+      return {
+        stripeCustomerCount,
+        activeSubscriberCount: activeCustomerIds.size,
+        trialSubscriberCount: [...trialCustomerIds].filter((id) => !activeCustomerIds.has(id)).length,
+        signupsByMonth,
+        source: "stripe",
+      };
+    };
+
+    let billingSnapshot = buildDbBillingSnapshot();
+    try {
+      billingSnapshot = await fetchStripeBillingSnapshot();
+    } catch {
+      // Keep DB fallback if Stripe API is unavailable.
     }
 
     // ── Novel file stats ──
@@ -164,10 +235,11 @@ export async function GET() {
     const topUsers = userNovelCounts.sort((a, b) => b.count - a.count).slice(0, 10);
 
     return NextResponse.json({
-      userCount,
+      userCount: billingSnapshot.stripeCustomerCount,
       totalUserCount,
-      activeSubCount,
-      trialSubCount,
+      onlineUserCount,
+      activeSubCount: billingSnapshot.activeSubscriberCount,
+      trialSubCount: billingSnapshot.trialSubscriberCount,
       guestCount,
       totalNovels,
       totalWords,
@@ -175,7 +247,8 @@ export async function GET() {
       activeNovels: totalNovels - archivedNovels,
       genreBreakdown,
       topUsers,
-      signupsByMonth,
+      signupsByMonth: billingSnapshot.signupsByMonth,
+      billingSource: billingSnapshot.source,
       avgNovelsPerUser: userNovelCounts.length > 0
         ? Math.round((totalNovels / userNovelCounts.length) * 10) / 10
         : 0,
