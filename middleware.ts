@@ -164,9 +164,9 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // ── Redirect logged-in users away from login page ──
-  // Skip this redirect if there's a "reason" param (e.g. session-expired) —
-  // the user was kicked from the studio and needs to re-authenticate.
+  // ── Login page behavior ──
+  // Always allow /login to render so users can intentionally switch accounts
+  // without being bounced to /studio or /subscribe by an existing session.
   if (pathname === "/login") {
     const reason = request.nextUrl.searchParams.get("reason");
     if (reason) {
@@ -175,23 +175,7 @@ export async function middleware(request: NextRequest) {
       response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
       return response;
     }
-    const secret = process.env.BW_SESSION_SECRET;
-    if (secret) {
-      const token = request.cookies.get(COOKIE_NAME)?.value;
-      if (token) {
-        const email = await verifyToken(token, secret);
-        if (email) {
-          const validSession = await isSessionCurrent(request);
-          if (!validSession) {
-            const response = NextResponse.next();
-            response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
-            return response;
-          }
-          // Already logged in — send to studio
-          return NextResponse.redirect(new URL("/studio", request.url));
-        }
-      }
-    }
+    return NextResponse.next();
   }
 
   return NextResponse.next();
