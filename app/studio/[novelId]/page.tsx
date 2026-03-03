@@ -5747,6 +5747,37 @@ function NovelWorkspacePage() {
         /\b(after|following|in the wake of|in the aftermath|later that|the next (morning|day|night|week)|hours later|days later|weeks later|from that point|because of what happened|as a consequence)\b/i.test(synopsis);
       const hasOpeningResetCue = (synopsis: string) =>
         /\b(at the start|at the beginning|opening scene|opens with|introduces|is introduced|wakes up|regains consciousness|first arrives|for the first time)\b/i.test(synopsis);
+      const carryoverNames = Array.from(
+        new Set([
+          ...rosterChars.map((c) => (c.name || "").trim()).filter(Boolean),
+          ...rosterLocations.map((l) => (l.name || "").trim()).filter(Boolean),
+        ]),
+      );
+      const normalizedWordSet = (text: string) =>
+        new Set(
+          normalizeSynopsis(text)
+            .split(" ")
+            .map((w) => w.trim())
+            .filter((w) => w.length >= 5),
+        );
+      const hasEntityCarryover = (previousText: string, currentText: string) => {
+        if (!previousText.trim() || !currentText.trim()) return false;
+        const prevLower = previousText.toLowerCase();
+        const curLower = currentText.toLowerCase();
+        const sharedNamedEntity = carryoverNames.some((name) => {
+          const n = name.toLowerCase();
+          return n.length > 1 && prevLower.includes(n) && curLower.includes(n);
+        });
+        if (sharedNamedEntity) return true;
+        const prevWords = normalizedWordSet(previousText);
+        const curWords = normalizedWordSet(currentText);
+        let overlap = 0;
+        for (const w of prevWords) {
+          if (curWords.has(w)) overlap++;
+          if (overlap >= 2) return true;
+        }
+        return false;
+      };
       const hasOpeningAnchor = (synopsis: string) => {
         if (!openingAnchor) return true;
         const score = synopsisSimilarity(synopsis, openingAnchor);
@@ -5804,14 +5835,21 @@ function NovelWorkspacePage() {
           if (idx === 0 && !hasOpeningAnchor(synopsis)) {
             return { ok: false, reason: "Bloc 1 does not reflect the chapter opening setup." };
           }
-          if (idx === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(synopsis)) {
-            return { ok: false, reason: "Bloc 1 does not carry over from previous chapter ending." };
+          if (idx === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis)) {
+            const boundarySeed = `${previousChapterLastBlocHook} ${previousChapterLastBlocSynopsis}`.trim();
+            const hasBoundaryCarryover = hasCrossChapterCarryoverCue(synopsis) || hasEntityCarryover(boundarySeed, synopsis);
+            if (!hasBoundaryCarryover) {
+              return { ok: false, reason: "Bloc 1 does not carry over from previous chapter ending." };
+            }
           }
           if (idx > 0 && !hasProgressionCue(synopsis)) {
             return { ok: false, reason: `Bloc ${idx + 1} is missing explicit progression cues.` };
           }
           if (idx > 0 && hasOpeningResetCue(synopsis)) {
             return { ok: false, reason: `Bloc ${idx + 1} resets the chapter opening instead of continuing.` };
+          }
+          if (idx > 0 && !hasEntityCarryover(candidateBlocks[idx - 1].synopsis || "", synopsis)) {
+            return { ok: false, reason: `Bloc ${idx + 1} does not carry over concrete state from Bloc ${idx}.` };
           }
           const previous = candidateBlocks.slice(0, idx);
           const { maxSimilarity } = findMostSimilarBloc(synopsis, previous);
@@ -5957,6 +5995,7 @@ function NovelWorkspacePage() {
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
         if (idx > 0 && hasOpeningResetCue(synopsis)) return "resets chapter opening instead of continuing";
+        if (idx > 0 && !hasEntityCarryover(candidateBlocks[idx - 1].synopsis || "", synopsis)) return "missing carryover from prior bloc state";
         const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
         const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
         if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) return `does not read like ${expectedStage}`;
@@ -5982,7 +6021,7 @@ function NovelWorkspacePage() {
           }
           return sanitizeSynopsisText(`${openingSeed} This opening scene establishes the chapter's baseline situation, key dynamics, and immediate pressure before escalation begins.`);
         }
-        return sanitizeSynopsisText(`${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. Building from ${prevSeed}, the characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
+        return sanitizeSynopsisText(`Immediately after ${prevSeed}, ${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. The characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
       };
       const duplicateBlocIndex = (candidateBlocks: SceneBlock[], threshold = SIMILARITY_THRESHOLD) => {
         const hasSharedWordWindow = (a: string, b: string, windowSize = 8) => {
@@ -6152,6 +6191,9 @@ function NovelWorkspacePage() {
         const previousClosingHook = blocks.length > 0
           ? ((blocks[blocks.length - 1].closingHook || "").trim() || firstSentence(blocks[blocks.length - 1].synopsis || ""))
           : "";
+        const previousBlocSynopsis = blocks.length > 0
+          ? (blocks[blocks.length - 1].synopsis || "").trim()
+          : "";
         const previousTrajectory = blocks
           .map((b, idx) => `B${idx + 1}: ${firstSentence(b.synopsis)}`)
           .join(" | ");
@@ -6180,6 +6222,7 @@ function NovelWorkspacePage() {
             "- Expand depth through motivation, subtext, and emotional reactions — avoid adding brand-new plotlines.",
             "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
             i > 0 ? "- CRITICAL: continue from the immediate aftermath of the previous bloc. Do NOT use opening/setup language again." : "",
+            i > 0 ? "- CRITICAL: carry over at least one concrete state element from the previous bloc (same character/location/active problem), then escalate it." : "",
             i === 0 && openingAnchor ? `- CRITICAL OPENING ANCHOR: Bloc 1 must explicitly cover this opening setup beat: "${clampPromptText(openingAnchor, 260)}"` : "",
             i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis)
               ? "- CRITICAL CHAPTER HANDOFF: Bloc 1 must pick up from the previous chapter's final outcome/hook. Do not rewind or restate earlier setup. If time has passed, signal the time jump explicitly and keep causal continuity."
@@ -6194,6 +6237,7 @@ function NovelWorkspacePage() {
             subplotCue ? `Tagged subplots in this chapter: ${subplotCue}` : "",
             arcCue ? `Tagged character arcs active: ${arcCue}` : "",
             previousClosingHook && i > 0 ? `Immediate handoff from prior bloc: ${clampPromptText(previousClosingHook, 220)}` : "",
+            previousBlocSynopsis && i > 0 ? `Previous bloc synopsis (must continue this state): ${clampPromptText(previousBlocSynopsis, 500)}` : "",
             previousTrajectory ? `Story trajectory so far: ${clampPromptText(previousTrajectory, 500)}` : "",
             recentSynopses ? `Most recent blocs (avoid repetition):\n${recentSynopses}` : "",
             previousChapterSynopsis ? `Previous chapter ended with: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
