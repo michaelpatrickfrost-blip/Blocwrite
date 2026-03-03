@@ -61,17 +61,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    // ── Single-session check ──
-    // If the user already has an active session (nonce set) and force isn't true,
-    // warn them instead of silently overriding the other session.
-    if (user.sessionNonce && !force) {
-      return NextResponse.json({
-        activeSession: true,
-        message: "You're already logged in on another device or browser. Continuing will log you out of the other session.",
-      }, { status: 200 });
-    }
-
-    // Generate nonce — invalidates any previous session
+    // Always rotate nonce on successful login — newest session wins and
+    // prior devices are transparently signed out.
     const nonce = generateSessionNonce();
     await prisma.user.update({
       where: { id: user.id },

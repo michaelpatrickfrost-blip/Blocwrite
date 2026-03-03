@@ -23,7 +23,6 @@ function LoginForm() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotStatus, setForgotStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [forgotMsg, setForgotMsg] = useState("");
-  const [activeSessionWarning, setActiveSessionWarning] = useState(false);
   const [trialMode, setTrialMode] = useState(false);
   const [trialCode, setTrialCode] = useState("");
   const [trialPassword, setTrialPassword] = useState("");
@@ -119,13 +118,9 @@ function LoginForm() {
           ok?: boolean;
           redirectTo?: string;
           error?: string;
-          activeSession?: boolean;
         } | null;
 
-        if (data?.activeSession) {
-          // User is already logged in elsewhere — show the warning prompt
-          setActiveSessionWarning(true);
-        } else if (res.ok && data?.ok) {
+        if (res.ok && data?.ok) {
           router.push(data.redirectTo || "/studio");
         } else {
           setError(data?.error || "Invalid email or password.");
@@ -138,32 +133,6 @@ function LoginForm() {
     }
   }
 
-  async function handleForceLogin() {
-    setError("");
-    setLoading(true);
-    setActiveSessionWarning(false);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password, force: true }),
-      });
-      const data = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        redirectTo?: string;
-        error?: string;
-      } | null;
-      if (res.ok && data?.ok) {
-        router.push(data.redirectTo || "/studio");
-      } else {
-        setError(data?.error || "Login failed.");
-      }
-    } catch {
-      setError("Connection failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -592,75 +561,6 @@ function LoginForm() {
         <p style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginTop: 16, textAlign: "center" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
       </div>
 
-      {/* ── Active session warning overlay ── */}
-      {activeSessionWarning && (
-        <div
-          style={{
-            position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 24,
-          }}
-        >
-          <div
-            style={{
-              width: "100%", maxWidth: 400, borderRadius: 20,
-              background: "#18181b", border: "1px solid rgba(255,255,255,0.08)",
-              padding: "32px 28px", textAlign: "center",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
-            }}
-          >
-            {/* Icon */}
-            <div style={{
-              width: 56, height: 56, borderRadius: 14, margin: "0 auto 20px",
-              background: "rgba(255,169,77,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffa94d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/>
-                <line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-            </div>
-
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 8px", color: "#fff" }}>
-              Already logged in elsewhere
-            </h2>
-            <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.5)", margin: "0 0 24px" }}>
-              Your account is currently active on another device or browser.
-              Continuing here will log you out of that session.
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button
-                type="button"
-                onClick={handleForceLogin}
-                disabled={loading}
-                style={{
-                  width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                  borderRadius: 10, border: "none", background: "#7c5cfc", color: "#ffffff",
-                  cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1,
-                  transition: "opacity 0.15s", letterSpacing: "0.02em",
-                }}
-              >
-                {loading ? "Logging in..." : "Log out other session & continue"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSessionWarning(false)}
-                disabled={loading}
-                style={{
-                  width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 600,
-                  borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)",
-                  background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.6)",
-                  cursor: "pointer", transition: "background 0.15s",
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
