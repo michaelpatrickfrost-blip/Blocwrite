@@ -4745,6 +4745,101 @@ function NovelWorkspacePage() {
     });
   }
 
+  function detectChapterSynopsisDuplication(
+    candidate: string,
+    previousSynopses: string[],
+  ): { repeating: boolean; againstIndex: number; reason: string } {
+    const source = (candidate || "").trim();
+    if (!source) return { repeating: false, againstIndex: -1, reason: "" };
+    const normalizedSource = normalizeForOverlap(source);
+    let strongest = { repeating: false, againstIndex: -1, reason: "", score: 0 };
+    for (let idx = 0; idx < previousSynopses.length; idx++) {
+      const previous = (previousSynopses[idx] || "").trim();
+      if (!previous) continue;
+      const normalizedPrevious = normalizeForOverlap(previous);
+      if (!normalizedPrevious) continue;
+      const directRepeat =
+        normalizedSource === normalizedPrevious ||
+        normalizedSource.includes(normalizedPrevious) ||
+        normalizedPrevious.includes(normalizedSource);
+      const repeatCheck = detectProseRepetition(source, previous);
+      const repeating = directRepeat || repeatCheck.repeating;
+      const score = (directRepeat ? 1 : 0) + repeatCheck.windowOverlapRatio + repeatCheck.exactSentenceMatches * 0.2;
+      if (repeating && score > strongest.score) {
+        strongest = {
+          repeating: true,
+          againstIndex: idx,
+          reason: directRepeat ? "direct repeat" : repeatCheck.reason,
+          score,
+        };
+      }
+    }
+    return { repeating: strongest.repeating, againstIndex: strongest.againstIndex, reason: strongest.reason };
+  }
+
+  async function ensureDistinctChapterSynopsis(args: {
+    synopsis: string;
+    chapterTitle: string;
+    chapterIndex: number;
+    totalChapters: number;
+    chapterRole: "opening" | "middle" | "conclusion";
+    previousSynopsis: string;
+    nextTitle: string;
+    settingAnchor: string;
+    chapterContext: string;
+    priorSynopses: string[];
+    spineHint?: string;
+  }): Promise<string> {
+    let synopsis = (args.synopsis || "").trim();
+    const initialCheck = detectChapterSynopsisDuplication(synopsis, args.priorSynopses);
+    if (!initialCheck.repeating) return synopsis;
+    try {
+      const nearby = args.priorSynopses
+        .slice(Math.max(0, initialCheck.againstIndex - 1), initialCheck.againstIndex + 2)
+        .filter(Boolean)
+        .map((item, idx) => `Reference ${idx + 1}: ${clampPromptText(item, 900)}`)
+        .join("\n\n");
+      const rewritePrompt = [
+        `Rewrite Chapter ${args.chapterIndex + 1} "${args.chapterTitle}" so it is clearly distinct from earlier chapters.`,
+        `Issue detected: repeated/near-repeated synopsis (${initialCheck.reason}).`,
+        "Keep continuity and canon, but produce NEW chapter-level actions, new decisions, and fresh consequences.",
+        "Do not reuse sentence fragments from reference chapters. No recap language.",
+        "",
+        `Current synopsis:\n${synopsis}`,
+        nearby ? `Reference chapters to avoid repeating:\n${nearby}` : "",
+        args.previousSynopsis ? `Previous chapter synopsis:\n${clampPromptText(args.previousSynopsis, 900)}` : "",
+        args.nextTitle ? `Next chapter title: ${args.nextTitle}` : "Final chapter.",
+        args.spineHint ? `Spine targets:\n${args.spineHint}` : "",
+        "",
+        "Return JSON only: { \"synopsis\": \"rewritten synopsis\" }",
+      ].filter(Boolean).join("\n");
+      const rewritten = await requestOpenRouterJson<{ synopsis?: string }>(rewritePrompt, 2200, {
+        timeoutMs: 180000,
+        systemMessage: "Novel outliner. Remove chapter repetition while preserving continuity. Return valid JSON only.",
+      });
+      const candidate = (rewritten?.synopsis ?? "").trim();
+      if (candidate) synopsis = candidate;
+    } catch {
+      // Fall through to deterministic non-repeat fallback below.
+    }
+    const afterRewriteCheck = detectChapterSynopsisDuplication(synopsis, args.priorSynopses);
+    if (!afterRewriteCheck.repeating) return synopsis;
+    synopsis = buildNaturalChapterSynopsisFallback({
+      chapterTitle: args.chapterTitle,
+      chapterIndex: args.chapterIndex,
+      totalChapters: args.totalChapters,
+      chapterRole: args.chapterRole,
+      previousSynopsis: args.previousSynopsis,
+      nextTitle: args.nextTitle,
+      settingAnchor: args.settingAnchor,
+    });
+    const afterFallbackCheck = detectChapterSynopsisDuplication(synopsis, args.priorSynopses);
+    if (afterFallbackCheck.repeating) {
+      synopsis = `${synopsis} Chapter ${args.chapterIndex + 1} introduces a chapter-specific strategic shift that changes leverage and direction from all prior chapters.`;
+    }
+    return synopsis;
+  }
+
   function hasTravelTransitionCue(text: string): boolean {
     return /\b(travel(?:s|ed|ing)?|journey(?:s|ed|ing)?|drive(?:s|n|d)?|drove|train|flight|flies|flew|arrive(?:s|d)?|return(?:s|ed)?|heads? to|goes? to|went to|moves? to|relocat(?:e|ed|ing)|crosses into)\b/i.test(text);
   }
@@ -9046,6 +9141,19 @@ function NovelWorkspacePage() {
         if (chapterRole === "conclusion" && !hasConclusionCue(synopsis)) {
           synopsis = `${synopsis} In the final movement, the central conflict resolves and the story closes on a definitive new normal.`;
         }
+        synopsis = await ensureDistinctChapterSynopsis({
+          synopsis,
+          chapterTitle,
+          chapterIndex: index,
+          totalChapters: allTitles.length,
+          chapterRole,
+          previousSynopsis: prevSynopsis,
+          nextTitle,
+          settingAnchor: storySettingAnchor,
+          chapterContext,
+          priorSynopses: generatedSynopses,
+          spineHint: chapterSpineHint,
+        });
         const inferenceSource = `${chapterTitle}\n${synopsis}`.trim();
         const inferredCharacterIds = inferEntityIdsFromText(
           inferenceSource,
@@ -9612,6 +9720,8 @@ function NovelWorkspacePage() {
       const prevSynopsis = chapterIndex > 0 ? (plan.chapters[chapterIndex - 1]?.synopsis ?? "") : "";
       const nextTitle = chapterIndex < allTitles.length - 1 ? allTitles[chapterIndex + 1] : "";
       const chapterContext = buildPhase2ChapterContext(title, "", chapterIndex, allTitles, prevSynopsis, nextTitle);
+      const chapterRole: "opening" | "middle" | "conclusion" =
+        chapterIndex === 0 ? "opening" : chapterIndex === allTitles.length - 1 ? "conclusion" : "middle";
       const prompt = buildPhase2Prompt(chapterContext, chapterIndex, allTitles.length);
       const regenSpineData =
         hasPlotSpine() && chapterIndex >= 0
@@ -9736,8 +9846,6 @@ function NovelWorkspacePage() {
         }
       }
       if (isWeakOrPlaceholderChapterSynopsis(synopsis)) {
-        const chapterRole: "opening" | "middle" | "conclusion" =
-          chapterIndex === 0 ? "opening" : chapterIndex === allTitles.length - 1 ? "conclusion" : "middle";
         synopsis = await ensureRichChapterSynopsis({
           synopsis,
           chapterTitle: title,
@@ -9751,6 +9859,22 @@ function NovelWorkspacePage() {
           spineHint: regenSpineHint,
         });
       }
+      const priorSynopses = plan.chapters
+        .map((ch, idx) => (idx === chapterIndex ? "" : (ch.synopsis || "").trim()))
+        .filter(Boolean);
+      synopsis = await ensureDistinctChapterSynopsis({
+        synopsis,
+        chapterTitle: title,
+        chapterIndex,
+        totalChapters: allTitles.length,
+        chapterRole,
+        previousSynopsis: prevSynopsis,
+        nextTitle,
+        settingAnchor,
+        chapterContext,
+        priorSynopses,
+        spineHint: regenSpineHint,
+      });
       runLoreConsistencyCheck({
         actionType: "chapter_synopsis_regeneration",
         content: synopsis,
