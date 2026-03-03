@@ -5693,7 +5693,30 @@ function NovelWorkspacePage() {
           .split(/(?<=[.!?])\s+/)
           .map((s) => s.trim())
           .filter(Boolean);
+      const STOP_WORDS = new Set([
+        "the", "and", "for", "with", "that", "this", "from", "into", "over", "under", "their", "there", "where",
+        "when", "while", "they", "them", "then", "than", "just", "have", "has", "had", "been", "were", "was", "are",
+        "his", "her", "him", "she", "he", "you", "your", "but", "not", "out", "off", "all", "any", "who", "what",
+        "why", "how", "can", "could", "would", "should", "will", "about", "after", "before", "again", "more", "most",
+      ]);
+      const contentTerms = (text: string) =>
+        normalizeSynopsis(text)
+          .split(" ")
+          .map((w) => w.trim())
+          .filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
       const openingAnchor = splitSentences(chapterSynopsis).slice(0, 2).join(" ").trim();
+      const chapterAnchorTerms = new Set(contentTerms(chapterSynopsis));
+      const hasChapterAnchorCarryover = (synopsis: string) => {
+        if (!synopsis.trim()) return false;
+        if (chapterAnchorTerms.size === 0) return true;
+        const synopsisTerms = new Set(contentTerms(synopsis));
+        let overlap = 0;
+        for (const term of chapterAnchorTerms) {
+          if (synopsisTerms.has(term)) overlap++;
+          if (overlap >= 2) return true;
+        }
+        return false;
+      };
       const sanitizeSynopsisText = (text: string) =>
         text
           .replace(/\bBloc\s+\d+\s*(?:\([^)]+\))?\s*/gi, "")
@@ -5827,6 +5850,7 @@ function NovelWorkspacePage() {
           if (synopsis.length < 15) return { ok: false, reason: `Bloc ${idx + 1} synopsis too short.` };
           if (sentenceCount(synopsis) < 3) return { ok: false, reason: `Bloc ${idx + 1} needs at least 3 concrete sentences.` };
           if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return { ok: false, reason: `Bloc ${idx + 1} needs more concrete detail.` };
+          if (!hasChapterAnchorCarryover(synopsis)) return { ok: false, reason: `Bloc ${idx + 1} has drifted away from chapter synopsis details.` };
           const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
           const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
           if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) {
@@ -5884,6 +5908,9 @@ function NovelWorkspacePage() {
         }
         if (index === 0 && openingAnchor && !hasOpeningAnchor(nextSynopsis)) {
           nextSynopsis = `${openingAnchor} ${nextSynopsis}`;
+        }
+        if (!hasChapterAnchorCarryover(nextSynopsis)) {
+          nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
         }
 
         const requireStageCue = index === 0 || index === total - 1;
@@ -5992,6 +6019,7 @@ function NovelWorkspacePage() {
         if (synopsis.length < 15) return "synopsis too short";
         if (sentenceCount(synopsis) < 3) return "needs at least 3 concrete sentences";
         if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return "needs more concrete detail";
+        if (!hasChapterAnchorCarryover(synopsis)) return "drifts away from chapter synopsis details";
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
         if (idx > 0 && hasOpeningResetCue(synopsis)) return "resets chapter opening instead of continuing";
@@ -6277,12 +6305,13 @@ function NovelWorkspacePage() {
               const requireStageCue = i === 0 || i === BLOC_COUNT - 1;
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
+              const missingChapterAnchor = !hasChapterAnchorCarryover(built.synopsis);
               const missingCrossChapterCarryover = i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingCrossChapterCarryover && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingCrossChapterCarryover && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -6297,6 +6326,8 @@ function NovelWorkspacePage() {
                     ? "Do not use template language. Replace placeholders with specific names, actions, settings, and consequences from this chapter."
                   : missingOpeningAnchor
                     ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
+                  : missingChapterAnchor
+                    ? "This bloc drifts from chapter synopsis details. Keep the same core people/place/conflict and continue those exact chapter events."
                   : missingCrossChapterCarryover
                     ? "Bloc 1 must clearly carry forward the previous chapter's ending (or explicit time-jump aftermath), not reset the story."
                   : openingReset
