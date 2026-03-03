@@ -3427,6 +3427,61 @@ function NovelWorkspacePage() {
     };
   }
 
+  function getOpeningSentence(text: string) {
+    const cleaned = cleanProseOutput(text);
+    if (!cleaned) return "";
+    const firstParagraph = cleaned.split(/\n{2,}/).find((part) => part.trim()) || cleaned;
+    const firstSentence = (firstParagraph.match(/[^.!?]+[.!?]?/)?.[0] || firstParagraph).trim();
+    return firstSentence;
+  }
+
+  function detectOpeningEcho(candidate: string, previousText: string) {
+    const opening = normalizeForOverlap(getOpeningSentence(candidate));
+    if (!opening || opening.split(" ").length < 6) {
+      return { repeating: false, reason: "", openingSentence: "" };
+    }
+    const previous = normalizeForOverlap(previousText);
+    const repeating = previous.includes(opening);
+    return {
+      repeating,
+      reason: repeating ? `opening repeats prior phrasing: "${opening.slice(0, 120)}"` : "",
+      openingSentence: opening,
+    };
+  }
+
+  function extractLoreConflictCue(conflict: string) {
+    const quoted = conflict.match(/"([^"]{3,120})"/);
+    return quoted?.[1]?.trim() || "";
+  }
+
+  function proseQualitySignals(text: string) {
+    const cleaned = cleanProseOutput(text);
+    const words = normalizeForOverlap(cleaned).split(" ").filter(Boolean);
+    const sentences = cleaned
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const paragraphs = cleaned.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    const uniqueWords = new Set(words);
+    return {
+      wordCount: words.length,
+      sentenceCount: sentences.length,
+      paragraphCount: paragraphs.length,
+      lexicalDiversity: words.length > 0 ? uniqueWords.size / words.length : 0,
+    };
+  }
+
+  function getProseQualityWeaknesses(text: string, targetWordCount: number, isBestFit: boolean) {
+    const stats = proseQualitySignals(text);
+    const weaknesses: string[] = [];
+    const minWords = isBestFit ? 220 : Math.max(220, Math.round(targetWordCount * 0.65));
+    if (stats.wordCount < minWords) weaknesses.push("too short to feel fully developed");
+    if (stats.sentenceCount < 5) weaknesses.push("too few sentence beats");
+    if (stats.paragraphCount < 2 && stats.wordCount >= 260) weaknesses.push("reads as one dense block instead of flowing prose");
+    if (stats.wordCount >= 180 && stats.lexicalDiversity < 0.34) weaknesses.push("phrasing is too repetitive/generic");
+    return weaknesses;
+  }
+
   function buildBoundedSection<T>(
     title: string,
     items: T[],
@@ -6656,6 +6711,140 @@ function NovelWorkspacePage() {
     updateSceneBlocks(chapterId, updated);
   }
 
+  async function runFixLoreWarningProse() {
+    if (!novel || !activeChapter || !ensureStoryAiReady()) return;
+    if (!loreLockIssues.length) return;
+    const targetChapterId = activeChapter.id;
+    const blocks = getSceneBlocks(activeChapter);
+    if (!blocks.length) {
+      setStoryAiError("No scene blocks found for this chapter.");
+      return;
+    }
+
+    const issue = loreLockIssues[0];
+    const cue = extractLoreConflictCue(issue.conflict).toLowerCase();
+    let blockIndex = cue
+      ? blocks.findIndex((b) => (b.prose || "").toLowerCase().includes(cue))
+      : -1;
+    if (blockIndex < 0) {
+      blockIndex = blocks.reduce((last, b, idx) => ((b.prose?.trim() || "").length > 0 ? idx : last), -1);
+    }
+    if (blockIndex < 0) {
+      setStoryAiError("Write prose first, then use Fix to rewrite the flagged section.");
+      return;
+    }
+
+    const block = blocks[blockIndex];
+    const currentProse = (block.prose || "").trim();
+    if (!currentProse) {
+      setStoryAiError("The flagged scene has no prose yet.");
+      return;
+    }
+
+    const immediatePrevProse = blockIndex > 0 ? (blocks[blockIndex - 1]?.prose || "").trim() : "";
+    const followingProse = blocks.slice(blockIndex + 1).map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
+    const priorProseForComparison = blocks
+      .slice(0, blockIndex)
+      .map((b) => b.prose?.trim() || "")
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(-10000);
+    const summary = novel.storyBible.summary;
+    const sv = novel.storyBible.styleVoice;
+    const styleSection = [
+      summary.genre?.length ? `Genre: ${summary.genre.slice(0, 8).join(", ")}` : "",
+      summary.tone?.length ? `Tone: ${summary.tone.slice(0, 8).join(", ")}` : "",
+      sv?.pov ? `POV: ${sv.pov}` : "",
+      sv?.tense ? `Tense: ${sv.tense}` : "",
+      sv?.voiceRules ? `Voice rules: ${(sv.voiceRules ?? "").slice(0, 900)}` : "",
+    ].filter(Boolean).join("\n");
+
+    setStoryAiBusyAction(`block-fix-warning-${blockIndex}`);
+    setStoryAiError(null);
+    try {
+      const fixPrompt = [
+        `Rewrite ONLY Scene ${blockIndex + 1} prose to resolve this lore warning while preserving chapter continuity.`,
+        "Do not rewrite the full chapter and do not change scene order.",
+        "",
+        `Warning to fix: ${issue.conflict}`,
+        `Lore rule: ${issue.rule}`,
+        `Suggestion: ${issue.suggestion}`,
+        "",
+        block.synopsis?.trim() ? `Scene synopsis (must remain true): ${block.synopsis.trim()}` : "",
+        "",
+        styleSection ? `STYLE TO PRESERVE:\n${styleSection}` : "",
+        immediatePrevProse
+          ? `PREVIOUS SCENE PROSE (continue from this ending, do not replay it):\n"""\n${immediatePrevProse.slice(-2600)}\n"""`
+          : "",
+        followingProse
+          ? `FOLLOWING PROSE (your ending must flow into this, no contradictions):\n"""\n${followingProse.slice(0, 1800)}\n"""`
+          : "",
+        "",
+        "RULES:",
+        "- Preserve POV, tense, and character voice.",
+        "- Keep all core events of this scene, but rephrase or adjust the contradictory section.",
+        "- Do NOT repeat the previous scene's final action in your opening lines.",
+        "- Start from the immediate aftermath of the previous prose state.",
+        "- Keep this as one cohesive scene that can be read seamlessly with adjacent scenes.",
+        "- Return prose only.",
+        "",
+        `CURRENT SCENE PROSE TO REWRITE:\n"""\n${currentProse}\n"""`,
+      ].filter(Boolean).join("\n");
+
+      const tokenTarget = Math.min(4200, Math.max(1400, Math.round(countWords(currentProse) * 2.1)));
+      let rewritten = await requestOpenRouterText(
+        fixPrompt,
+        tokenTarget,
+        180000,
+        "You are a professional novelist and continuity editor. Rewrite only the provided scene prose. Return prose only.",
+        false,
+      );
+      rewritten = cleanProseOutput(rewritten);
+      if (!rewritten) {
+        throw new Error("AI could not rewrite the flagged prose. Please try again.");
+      }
+
+      if (priorProseForComparison) {
+        const openingEcho = detectOpeningEcho(rewritten, priorProseForComparison);
+        if (openingEcho.repeating) {
+          const openingFixPrompt = [
+            "Your rewritten scene opener repeats wording from earlier prose.",
+            "Rewrite ONLY the opening 2-3 sentences so this scene starts after the previous action instead of replaying it.",
+            "Keep the rest of the scene intent and style the same.",
+            "",
+            `Prior prose context:\n"""\n${priorProseForComparison.slice(-2200)}\n"""`,
+            `Scene draft:\n"""\n${rewritten}\n"""`,
+            "Return only the full revised scene prose.",
+          ].join("\n");
+          const openingFixed = cleanProseOutput(await requestOpenRouterText(
+            openingFixPrompt,
+            tokenTarget,
+            180000,
+            "Novel continuity editor. Remove opening replay and keep seamless progression. Return prose only.",
+            false,
+          ));
+          if (openingFixed) rewritten = openingFixed;
+        }
+      }
+
+      const nextBlocks = [...blocks];
+      nextBlocks[blockIndex] = { ...nextBlocks[blockIndex], prose: rewritten };
+      updateSceneBlocks(targetChapterId, nextBlocks, true);
+      syncChapterContentFromBlocks(targetChapterId, nextBlocks);
+      runLoreConsistencyCheck({
+        actionType: "selection_rewrite",
+        content: nextBlocks.map((scene) => scene.prose?.trim() || "").filter(Boolean).join("\n\n"),
+      });
+      setLoreLockShowDetails(true);
+      setLoreLockDismissed(false);
+    } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
+      setStoryAiError(error instanceof Error ? error.message : "Could not fix this lore warning automatically.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
   async function runGenerateBlockProse(blockIndex: number) {
     if (!novel || !activeChapter || !ensureStoryAiReady()) return;
     const targetChapterId = activeChapter.id;
@@ -6906,6 +7095,8 @@ function NovelWorkspacePage() {
         "RULES:",
         `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
         "- THE BLUEPRINT ABOVE IS YOUR PRIMARY INSTRUCTION SET. Follow the opening instruction, emotional arc, sensory palette, dialogue notes, pacing guidance, and closing instruction precisely.",
+        "- NOVEL-QUALITY PROSE: write with specific action, specific sensory detail, and emotional movement in every paragraph. Avoid generic filler lines.",
+        boltonDirective ? "- ACTIVE BOLTON IS MANDATORY: make the active bolton influence clearly visible in wording, rhythm, and scene choices." : "",
         "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. Track where every character IS at the end of the previous scene and continue from THAT state.",
         "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
         "- Your opening lines must continue from the latest state of the prior scene/chapter. Do not reset context or replay the same moment.",
@@ -7002,6 +7193,89 @@ function NovelWorkspacePage() {
               improvedCheck.exactSentenceMatches < repeatCheck.exactSentenceMatches
             ) {
               prose = deRepeated;
+            }
+          }
+        }
+
+        const openingEcho = detectOpeningEcho(prose, priorProseForComparison);
+        if (openingEcho.repeating) {
+          const antiOpeningReplayPrompt = [
+            `Scene ${blockIndex + 1} opening is replaying prose that already happened (${openingEcho.reason}).`,
+            "Rewrite this scene so the FIRST paragraph starts from the immediate aftermath, not from repeated wording/action.",
+            "",
+            "HARD RULES:",
+            "- Keep same POV, tense, and style.",
+            "- Keep the same scene objective from the synopsis.",
+            "- Do NOT repeat or paraphrase the previous scene's ending in the opening sentence.",
+            "- Ensure a smooth handoff from previous prose into this scene's new progression.",
+            "- Return prose only.",
+            "",
+            immediatePrevProse
+              ? `Immediately previous scene prose:\n"""\n${immediatePrevProse.slice(-2600)}\n"""`
+              : prevChapterEnding
+                ? `Previous chapter ending:\n"""\n${prevChapterEnding.slice(-2200)}\n"""`
+                : "",
+            `Earlier prose to avoid replaying:\n"""\n${priorProseForComparison.slice(-4200)}\n"""`,
+            `Current scene draft:\n"""\n${prose}\n"""`,
+          ].filter(Boolean).join("\n");
+          let openingFixed = await requestOpenRouterText(
+            antiOpeningReplayPrompt,
+            Math.min(6000, Math.round((isBestFit ? 1000 : block.wordTarget || 900) * 2.1)),
+            180000,
+            systemMsg,
+            false,
+          );
+          openingFixed = cleanProseOutput(openingFixed);
+          if (openingFixed) {
+            const improvedOpening = detectOpeningEcho(openingFixed, priorProseForComparison);
+            if (!improvedOpening.repeating) {
+              prose = openingFixed;
+            }
+          }
+        }
+
+        const qualityWeaknesses = getProseQualityWeaknesses(prose, effectiveTarget, isBestFit);
+        if (qualityWeaknesses.length > 0) {
+          const qualityPrompt = [
+            `Polish Scene ${blockIndex + 1} into richer, publication-quality prose while keeping the same events and continuity.`,
+            "Do NOT change scene order, canon facts, POV, or tense.",
+            "",
+            `Detected weaknesses: ${qualityWeaknesses.join("; ")}.`,
+            `Scene intent from synopsis: ${block.synopsis}`,
+            styleSection ? `STYLE TO PRESERVE:\n${styleSection}` : "",
+            boltonDirective ? `ACTIVE BOLTON (must remain clear): ${boltonDirective}` : "",
+            immediatePrevProse
+              ? `Previous scene end-state to continue from:\n"""\n${immediatePrevProse.slice(-2200)}\n"""`
+              : "",
+            followingProse
+              ? `Following prose to flow into:\n"""\n${followingProse.slice(0, 1200)}\n"""`
+              : "",
+            "",
+            "POLISH RULES:",
+            "- Keep all core beats from the draft; enrich execution, not plot scope.",
+            "- Increase concrete specificity: actions, physical detail, and subtext in dialogue/interaction.",
+            "- Keep the chapter voice cohesive with previous prose.",
+            "- Remove generic or repetitive phrasing.",
+            "- Return prose only.",
+            "",
+            `Current draft:\n"""\n${prose}\n"""`,
+          ].filter(Boolean).join("\n");
+
+          let polished = await requestOpenRouterText(
+            qualityPrompt,
+            Math.min(4200, Math.round((isBestFit ? 900 : Math.max(700, effectiveTarget)) * 2.0)),
+            160000,
+            systemMsg,
+            false,
+          );
+          polished = cleanProseOutput(polished);
+          if (polished) {
+            const polishedWeaknesses = getProseQualityWeaknesses(polished, effectiveTarget, isBestFit);
+            const polishedOpeningEcho = priorProseForComparison
+              ? detectOpeningEcho(polished, priorProseForComparison)
+              : { repeating: false };
+            if (polishedWeaknesses.length <= qualityWeaknesses.length && !polishedOpeningEcho.repeating) {
+              prose = polished;
             }
           }
         }
@@ -13456,6 +13730,16 @@ function NovelWorkspacePage() {
                       onClick={() => setLoreLockShowDetails((prev) => !prev)}
                     >
                       {loreLockShowDetails ? "Hide details" : "Details"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ fontSize: 11, padding: "4px 8px" }}
+                      onClick={() => void runFixLoreWarningProse()}
+                      disabled={Boolean(storyAiBusyAction)}
+                      title="Rewrite the flagged scene prose to resolve this warning"
+                    >
+                      {storyAiBusyAction?.startsWith("block-fix-warning-") ? "Fixing..." : "Fix with AI"}
                     </button>
                     <button
                       type="button"
