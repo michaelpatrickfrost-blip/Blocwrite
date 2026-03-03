@@ -67,6 +67,27 @@ function isPublicApi(pathname: string): boolean {
   return false;
 }
 
+async function isSessionCurrent(request: NextRequest): Promise<boolean> {
+  const cookieHeader = request.headers.get("cookie");
+  if (!cookieHeader) return false;
+  try {
+    const url = new URL("/api/auth/validate-session", request.url);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        cookie: cookieHeader,
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return true;
+    const data = (await res.json().catch(() => null)) as { valid?: boolean } | null;
+    return Boolean(data?.valid);
+  } catch {
+    // Fail open on network/runtime errors to avoid locking everyone out.
+    return true;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith("/api/");
@@ -112,6 +133,16 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
+    const validSession = await isSessionCurrent(request);
+    if (!validSession) {
+      if (isApiRoute) {
+        return NextResponse.json({ error: "Session expired. Please log in again." }, { status: 401 });
+      }
+      const response = NextResponse.redirect(new URL("/login?reason=session-expired", request.url));
+      response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
+      return response;
+    }
+
     // Admin-only routes
     if (pathname.startsWith("/admin") && email.toLowerCase() !== ADMIN_EMAIL) {
       return isApiRoute
@@ -150,6 +181,12 @@ export async function middleware(request: NextRequest) {
       if (token) {
         const email = await verifyToken(token, secret);
         if (email) {
+          const validSession = await isSessionCurrent(request);
+          if (!validSession) {
+            const response = NextResponse.next();
+            response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
+            return response;
+          }
           // Already logged in — send to studio
           return NextResponse.redirect(new URL("/studio", request.url));
         }

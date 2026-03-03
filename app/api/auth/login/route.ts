@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
 import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
+import { hasActiveSubscription } from "@/lib/subscription-gate";
 
 // Admin credentials (preserved — admin always logs in with this password)
 const ADMIN_EMAIL = "kickablur@icloud.com";
@@ -71,9 +72,14 @@ export async function POST(request: Request) {
     // Create session with nonce
     const token = createSessionToken(normalizedEmail, nonce);
 
-    // Always send logins to /studio. Subscription access is enforced in the
-    // studio server gate so users are not misrouted by transient checks here.
-    const response = NextResponse.json({ ok: true, redirectTo: "/studio", mustChangePassword: !!user.mustChangePassword });
+    // Route users based on live access status:
+    // active/trial/guest -> studio, otherwise paywall.
+    const hasSub = await hasActiveSubscription(normalizedEmail);
+    const response = NextResponse.json({
+      ok: true,
+      redirectTo: hasSub ? "/studio" : "/subscribe",
+      mustChangePassword: !!user.mustChangePassword,
+    });
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
