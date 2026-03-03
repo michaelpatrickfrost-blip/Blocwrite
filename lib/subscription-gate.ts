@@ -9,6 +9,8 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { COOKIE_NAME, extractSessionPayload } from "@/lib/bw-auth";
+import Stripe from "stripe";
+import { getResolvedStripeConfig } from "@/lib/admin-config";
 
 const ADMIN_EMAIL = "kickablur@icloud.com";
 
@@ -20,6 +22,78 @@ export type GateResult = {
   subscriptionStatus: string | null;
   sessionStale?: boolean;
 };
+
+function toDate(value: number | null | undefined) {
+  if (!value) return null;
+  return new Date(value * 1000);
+}
+
+async function syncStripeSubscriptionAccess(
+  userId: string,
+  email: string,
+  existingStripeCustomerId?: string | null,
+): Promise<{ authorized: boolean; status: string | null }> {
+  try {
+    const config = await getResolvedStripeConfig();
+    if (!config.secretKey) return { authorized: false, status: null };
+    const stripe = new Stripe(config.secretKey);
+
+    let stripeCustomerId = (existingStripeCustomerId || "").trim();
+    if (!stripeCustomerId) {
+      const customers = await stripe.customers.list({ email, limit: 1 });
+      if (!customers.data.length) return { authorized: false, status: null };
+      stripeCustomerId = customers.data[0].id;
+    }
+
+    await prisma.stripeCustomer.upsert({
+      where: { userId },
+      update: { stripeCustomerId },
+      create: { userId, stripeCustomerId },
+    });
+
+    const subscriptions = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: "all",
+      limit: 100,
+    });
+
+    for (const sub of subscriptions.data) {
+      const firstItem = sub.items.data[0];
+      const stripePriceId = firstItem?.price?.id || "";
+      if (!stripePriceId) continue;
+      await prisma.subscription.upsert({
+        where: { stripeSubscriptionId: sub.id },
+        update: {
+          userId,
+          stripeCustomerId,
+          stripePriceId,
+          status: sub.status,
+          currentPeriodEnd: toDate((sub as { current_period_end?: number | null }).current_period_end),
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          trialEnd: toDate(sub.trial_end),
+        },
+        create: {
+          userId,
+          stripeCustomerId,
+          stripeSubscriptionId: sub.id,
+          stripePriceId,
+          status: sub.status,
+          currentPeriodEnd: toDate((sub as { current_period_end?: number | null }).current_period_end),
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          trialEnd: toDate(sub.trial_end),
+        },
+      });
+    }
+
+    const hasActive = subscriptions.data.some((sub) => sub.status === "active");
+    const hasTrial = subscriptions.data.some((sub) => sub.status === "trialing");
+    if (hasActive) return { authorized: true, status: "active" };
+    if (hasTrial) return { authorized: true, status: "trialing" };
+    return { authorized: false, status: null };
+  } catch {
+    return { authorized: false, status: null };
+  }
+}
 
 /** Check if the current user has an active subscription or is the admin. */
 export async function checkSubscriptionGate(): Promise<GateResult> {
@@ -68,6 +142,9 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
       guestAccess: {
         select: { expiresAt: true, duration: true },
       },
+      stripeCustomer: {
+        select: { stripeCustomerId: true },
+      },
     },
   });
 
@@ -115,6 +192,23 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
     }
   }
 
+  // Last-chance Stripe reconciliation to prevent false paywall redirects
+  // when webhook sync lags behind a successful checkout.
+  const stripeGate = await syncStripeSubscriptionAccess(
+    user.id,
+    normalizedEmail,
+    user.stripeCustomer?.stripeCustomerId,
+  );
+  if (stripeGate.authorized) {
+    return {
+      authorized: true,
+      isAdmin: false,
+      email: normalizedEmail,
+      userId: user.id,
+      subscriptionStatus: stripeGate.status,
+    };
+  }
+
   return {
     authorized: false,
     isAdmin: false,
@@ -132,6 +226,7 @@ export async function hasActiveSubscription(email: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     select: {
+      id: true,
       subscriptions: {
         where: { status: { in: ["active", "trialing"] } },
         take: 1,
@@ -139,6 +234,9 @@ export async function hasActiveSubscription(email: string): Promise<boolean> {
       },
       guestAccess: {
         select: { expiresAt: true, duration: true },
+      },
+      stripeCustomer: {
+        select: { stripeCustomerId: true },
       },
     },
   });
@@ -151,6 +249,15 @@ export async function hasActiveSubscription(email: string): Promise<boolean> {
     if (ga.duration === "forever" || !ga.expiresAt || new Date(ga.expiresAt) > new Date()) {
       return true;
     }
+  }
+
+  if (user?.id) {
+    const stripeGate = await syncStripeSubscriptionAccess(
+      user.id,
+      normalizedEmail,
+      user.stripeCustomer?.stripeCustomerId,
+    );
+    if (stripeGate.authorized) return true;
   }
 
   return false;
