@@ -5584,7 +5584,6 @@ function NovelWorkspacePage() {
       : [];
     const synopsisSearch = `${chapterSynopsis} ${activeChapter.title}`.toLowerCase();
     const textMatched = allChars.filter((c) => {
-      if (c.role === "Protagonist" || c.role === "Antagonist") return true;
       const name = (c.name || "").toLowerCase();
       return name.length > 1 && synopsisSearch.includes(name);
     });
@@ -5618,6 +5617,16 @@ function NovelWorkspacePage() {
     }).join("\n  ");
     const allowedCharacterNames = rosterChars.map((c) => c.name).filter(Boolean).join(", ");
     const allowedLocationNames = rosterLocations.map((l) => l.name).filter(Boolean).join(", ");
+      const allowedCharacterIdSet = new Set(rosterChars.map((c) => c.id));
+      const findDisallowedCanonicalCharacter = (synopsis: string) => {
+        const lower = synopsis.toLowerCase();
+        const disallowed = allChars.find((c) => {
+          const nm = (c.name || "").trim();
+          if (!nm || allowedCharacterIdSet.has(c.id)) return false;
+          return lower.includes(nm.toLowerCase());
+        });
+        return disallowed?.name || null;
+      };
     const shortChapterSynopsis = chapterSynopsis.split(/\s+/).filter(Boolean).length < 90;
     const spine = novel.storyBible.plotSpine;
     const chapterSpineDataForBlocs =
@@ -5670,6 +5679,9 @@ function NovelWorkspacePage() {
       const validWordTargets = WORD_TARGET_OPTIONS.map((o) => o.value);
       const SIMILARITY_THRESHOLD = 0.62;
       const MIN_SYNOPSIS_WORDS = 45;
+      const PER_BLOC_ATTEMPTS = 2;
+      const AI_REPAIR_BUDGET = 2;
+      let aiRepairsUsed = 0;
       const blocks: SceneBlock[] = [];
       const normalizeSynopsis = (value: string) =>
         value
@@ -5850,6 +5862,8 @@ function NovelWorkspacePage() {
           if (synopsis.length < 15) return { ok: false, reason: `Bloc ${idx + 1} synopsis too short.` };
           if (sentenceCount(synopsis) < 3) return { ok: false, reason: `Bloc ${idx + 1} needs at least 3 concrete sentences.` };
           if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return { ok: false, reason: `Bloc ${idx + 1} needs more concrete detail.` };
+          const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
+          if (disallowedCharacter) return { ok: false, reason: `Bloc ${idx + 1} introduces non-chapter character "${disallowedCharacter}".` };
           if (!hasChapterAnchorCarryover(synopsis)) return { ok: false, reason: `Bloc ${idx + 1} has drifted away from chapter synopsis details.` };
           const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
           const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
@@ -6019,6 +6033,8 @@ function NovelWorkspacePage() {
         if (synopsis.length < 15) return "synopsis too short";
         if (sentenceCount(synopsis) < 3) return "needs at least 3 concrete sentences";
         if (wordCount(synopsis) < MIN_SYNOPSIS_WORDS) return "needs more concrete detail";
+        const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
+        if (disallowedCharacter) return `introduces non-chapter character "${disallowedCharacter}"`;
         if (!hasChapterAnchorCarryover(synopsis)) return "drifts away from chapter synopsis details";
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
@@ -6154,7 +6170,8 @@ function NovelWorkspacePage() {
               .map((b, i) => (i === idx ? null : `Bloc ${i + 1}: ${b.synopsis}`))
               .filter(Boolean)
               .join("\n");
-            try {
+            const canUseAiRepair = aiRepairsUsed < AI_REPAIR_BUDGET;
+            if (canUseAiRepair) try {
               const repairPrompt = [
                 `Rewrite ONLY bloc ${idx + 1} of ${repaired.length}.`,
                 `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
@@ -6177,6 +6194,7 @@ function NovelWorkspacePage() {
                 950,
                 { timeoutMs: 90000, systemMessage: "Return ONLY valid JSON." },
               );
+              aiRepairsUsed += 1;
               const fromRegenerated = regenerated?.bloc
                 ?? regenerated?.scene
                 ?? (regenerated?.synopsis ? {
@@ -6231,7 +6249,7 @@ function NovelWorkspacePage() {
           .join("\n");
         let blockBuilt = false;
         let rejectionHint = "";
-        for (let attempt = 0; attempt < 3 && !blockBuilt; attempt++) {
+        for (let attempt = 0; attempt < PER_BLOC_ATTEMPTS && !blockBuilt; attempt++) {
           const oneBlocPrompt = [
             `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
@@ -6281,8 +6299,8 @@ function NovelWorkspacePage() {
           try {
             const jsonResult = await requestOpenRouterJson<{ bloc?: BlocEntry; scene?: BlocEntry; synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number }>(
               oneBlocPrompt,
-              700,
-              { timeoutMs: 60000, systemMessage: "Return ONLY valid JSON." },
+              560,
+              { timeoutMs: 45000, systemMessage: "Return ONLY valid JSON." },
             );
             const fromJson = jsonResult?.bloc
               ?? jsonResult?.scene
@@ -6306,12 +6324,13 @@ function NovelWorkspacePage() {
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
               const missingChapterAnchor = !hasChapterAnchorCarryover(built.synopsis);
+              const disallowedCharacter = findDisallowedCanonicalCharacter(built.synopsis);
               const missingCrossChapterCarryover = i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingCrossChapterCarryover && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingCrossChapterCarryover && !disallowedCharacter && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
                 blocks.push(built);
                 updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
                 blockBuilt = true;
@@ -6328,6 +6347,8 @@ function NovelWorkspacePage() {
                     ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
                   : missingChapterAnchor
                     ? "This bloc drifts from chapter synopsis details. Keep the same core people/place/conflict and continue those exact chapter events."
+                  : disallowedCharacter
+                    ? `Do not introduce ${disallowedCharacter} here. Keep only chapter-linked characters for this chapter bloc set.`
                   : missingCrossChapterCarryover
                     ? "Bloc 1 must clearly carry forward the previous chapter's ending (or explicit time-jump aftermath), not reset the story."
                   : openingReset
