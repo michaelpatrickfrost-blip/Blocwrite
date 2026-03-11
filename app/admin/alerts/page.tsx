@@ -718,7 +718,7 @@ export default function AdminAlertsPage() {
           padding: "24px 0 12px",
         }}
       >
-        &copy; {new Date().getFullYear()} Blocwrite. All rights reserved.
+        © 2026 Blocwrite. All rights reserved.
       </p>
     </div>
   );

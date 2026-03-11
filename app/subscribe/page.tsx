@@ -55,8 +55,8 @@ export default function SubscribePage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#0c0c1d",
-        color: "#f0f0f0",
+        background: "#fafaf9",
+        color: "#1c1917",
       }}
     >
       <div
@@ -72,7 +72,7 @@ export default function SubscribePage() {
         {/* Logo */}
         <Link href="/" style={{ textDecoration: "none" }}>
           <Image
-            src="/blocwrite-logo-white.png"
+            src="/blocwrite-logo-black.png"
             alt="Blocwrite"
             width={180}
             height={54}
@@ -85,7 +85,7 @@ export default function SubscribePage() {
           <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
             Choose your plan
           </h1>
-          <p style={{ fontSize: 15, color: "rgba(255,255,255,0.45)" }}>
+          <p style={{ fontSize: 15, color: "#57534e" }}>
             Start with a 7-day free trial. Cancel anytime.
           </p>
         </div>
@@ -103,8 +103,8 @@ export default function SubscribePage() {
           <div
             style={{
               borderRadius: 16,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(0,0,0,0.08)",
+              background: "#ffffff",
               padding: "32px 28px",
               display: "flex",
               flexDirection: "column",
@@ -114,7 +114,7 @@ export default function SubscribePage() {
               style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: "rgba(255,255,255,0.5)",
+                color: "#57534e",
                 marginBottom: 8,
               }}
             >
@@ -137,7 +137,7 @@ export default function SubscribePage() {
               >
                 &pound;12.99
               </span>
-              <span style={{ fontSize: 15, color: "rgba(255,255,255,0.4)" }}>
+              <span style={{ fontSize: 15, color: "#57534e" }}>
                 /month
               </span>
             </div>
@@ -146,8 +146,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(124,92,252,0.1)",
-                color: "#7c5cfc",
+                background: "rgba(30,58,95,0.08)",
+                color: "#1e3a5f",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -171,7 +171,7 @@ export default function SubscribePage() {
                   key={f}
                   style={{
                     fontSize: 13,
-                    color: "rgba(255,255,255,0.6)",
+                    color: "#44403c",
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
@@ -179,7 +179,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#7c5cfc",
+                      color: "#1e3a5f",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -201,9 +201,9 @@ export default function SubscribePage() {
                 fontSize: 14,
                 fontWeight: 700,
                 borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.15)",
+                border: "1px solid rgba(0,0,0,0.12)",
                 background: "transparent",
-                color: "#f0f0f0",
+                color: "#1c1917",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading === "annual" ? 0.4 : 1,
                 transition: "opacity 0.15s",
@@ -217,8 +217,8 @@ export default function SubscribePage() {
           <div
             style={{
               borderRadius: 16,
-              border: "1px solid rgba(124,92,252,0.3)",
-              background: "rgba(124,92,252,0.04)",
+              border: "1px solid rgba(30,58,95,0.2)",
+              background: "rgba(30,58,95,0.04)",
               padding: "32px 28px",
               display: "flex",
               flexDirection: "column",
@@ -232,7 +232,7 @@ export default function SubscribePage() {
                 right: 20,
                 padding: "4px 14px",
                 borderRadius: 8,
-                background: "#7c5cfc",
+                background: "#1e3a5f",
                 color: "#ffffff",
                 fontSize: 11,
                 fontWeight: 700,
@@ -245,7 +245,7 @@ export default function SubscribePage() {
               style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: "rgba(255,255,255,0.5)",
+                color: "#57534e",
                 marginBottom: 8,
               }}
             >
@@ -268,7 +268,7 @@ export default function SubscribePage() {
               >
                 &pound;99
               </span>
-              <span style={{ fontSize: 15, color: "rgba(255,255,255,0.4)" }}>
+              <span style={{ fontSize: 15, color: "#57534e" }}>
                 /year
               </span>
             </div>
@@ -277,8 +277,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(124,92,252,0.1)",
-                color: "#7c5cfc",
+                background: "rgba(30,58,95,0.08)",
+                color: "#1e3a5f",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -302,7 +302,7 @@ export default function SubscribePage() {
                   key={f}
                   style={{
                     fontSize: 13,
-                    color: "rgba(255,255,255,0.6)",
+                    color: "#44403c",
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
@@ -310,7 +310,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#7c5cfc",
+                      color: "#1e3a5f",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -333,7 +333,7 @@ export default function SubscribePage() {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "#7c5cfc",
+                background: "#1e3a5f",
                 color: "#ffffff",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading === "monthly" ? 0.4 : 1,
@@ -361,10 +361,10 @@ export default function SubscribePage() {
           </p>
         )}
 
-        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
+        <p style={{ fontSize: 12, color: "#57534e", textAlign: "center" }}>
           Secure payment via Stripe. Cancel anytime during your trial — no charge.
         </p>
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.12)", textAlign: "center", marginTop: 20 }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
+        <p style={{ fontSize: 10, color: "#57534e", textAlign: "center", marginTop: 20 }}>© 2026 Blocwrite. All rights reserved.</p>
       </div>
     </main>
   );

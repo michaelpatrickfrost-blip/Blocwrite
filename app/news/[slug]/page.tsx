@@ -14,15 +14,15 @@ type Post = {
 };
 
 const C = {
-  bg: "#ffffff",
-  bgSoft: "#f8f8fa",
-  bgDark: "#0c0c1d",
-  text: "#111114",
-  textSoft: "#4a4d56",
-  textMuted: "#8c8f98",
-  border: "#e8e9ed",
-  accent: "#7c5cfc",
-  accentText: "#5c46c9",
+  bg: "#fafaf9",
+  bgSoft: "#f5f5f4",
+  bgDark: "#1e3a5f",
+  text: "#1c1917",
+  textSoft: "#44403c",
+  textMuted: "#57534e",
+  border: "#e7e5e4",
+  accent: "#1e3a5f",
+  accentText: "#1e3a5f",
 };
 
 function formatDate(iso: string) {
@@ -83,12 +83,12 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
       {/* ── Nav (matches main site exactly) ── */}
       <nav style={{
         position: "sticky", top: 0, zIndex: 50,
-        background: "rgba(12,12,29,0.97)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+        borderBottom: "1px solid rgba(0,0,0,0.08)",
       }}>
         <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
             <div style={{ display: "flex", gap: 32 }} className="post-nav-links">
@@ -102,21 +102,21 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
                 <Link
                   key={l.href}
                   href={l.href}
-                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
+                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#1c1917" : "#44403c", textDecoration: "none", transition: "color 0.15s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#1c1917"; }}
+                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "#44403c"; }}
                 >
                   {l.label}
                 </Link>
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <Link href="/login" className="post-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>Log in</Link>
+              <Link href="/login" className="post-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>Log in</Link>
               <Link href="/subscribe" style={{
                 display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
                 fontSize: 13, fontWeight: 600, borderRadius: 10,
-                background: "linear-gradient(135deg, #7c5cfc 0%, #6246ea 100%)", color: "#fff", textDecoration: "none",
-                boxShadow: "0 2px 12px rgba(124,92,252,0.3)",
+                background: "linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%)", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
                 transition: "transform 0.15s, box-shadow 0.15s",
               }}>
                 Start Free Trial
@@ -222,7 +222,7 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              &copy; {new Date().getFullYear()} Blocwrite
+              © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

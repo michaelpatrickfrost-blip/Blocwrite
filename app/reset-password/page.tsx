@@ -23,9 +23,9 @@ function ResetPasswordForm() {
     padding: "11px 14px",
     fontSize: 14,
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.04)",
-    color: "#f0f0f0",
+    border: "1px solid rgba(0,0,0,0.1)",
+    background: "#ffffff",
+    color: "#1c1917",
     outline: "none",
     transition: "border-color 0.15s",
     boxSizing: "border-box",
@@ -80,12 +80,12 @@ function ResetPasswordForm() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          background: "#0c0c1d",
+          background: "#fafaf9",
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           <Link href="/" style={{ textDecoration: "none" }}>
-            <Image src="/blocwrite-logo-white.png" alt="Blocwrite" width={200} height={60} priority />
+            <Image src="/blocwrite-logo-black.png" alt="Blocwrite" width={200} height={60} priority />
           </Link>
           <p style={{ color: "#ff6b6b", marginTop: 24, fontSize: 14 }}>
             Invalid reset link. Please request a new password reset from the login page.
@@ -96,7 +96,7 @@ function ResetPasswordForm() {
               display: "inline-block",
               marginTop: 16,
               padding: "10px 24px",
-              background: "#7c5cfc",
+              background: "#1e3a5f",
               color: "#ffffff",
               borderRadius: 8,
               fontWeight: 600,
@@ -119,7 +119,7 @@ function ResetPasswordForm() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#0c0c1d",
+        background: "#fafaf9",
       }}
     >
       <div
@@ -133,15 +133,15 @@ function ResetPasswordForm() {
         }}
       >
         <Link href="/" style={{ textDecoration: "none" }}>
-          <Image src="/blocwrite-logo-white.png" alt="Blocwrite" width={200} height={60} priority />
+          <Image src="/blocwrite-logo-black.png" alt="Blocwrite" width={200} height={60} priority />
         </Link>
 
         <div
           style={{
             width: "100%",
             borderRadius: 16,
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            background: "#ffffff",
             padding: "32px 28px",
           }}
         >
@@ -151,7 +151,7 @@ function ResetPasswordForm() {
           <p
             style={{
               fontSize: 13,
-              color: "rgba(255,255,255,0.4)",
+              color: "#57534e",
               textAlign: "center",
               marginBottom: 24,
             }}
@@ -179,7 +179,7 @@ function ResetPasswordForm() {
               <div>
                 <label
                   htmlFor="new-password"
-                  style={{ display: "block", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.4)", marginBottom: 6 }}
+                  style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#57534e", marginBottom: 6 }}
                 >
                   New password
                 </label>
@@ -194,15 +194,15 @@ function ResetPasswordForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 6 characters"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#1e3a5f")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="confirm-password"
-                  style={{ display: "block", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.4)", marginBottom: 6 }}
+                  style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#57534e", marginBottom: 6 }}
                 >
                   Confirm password
                 </label>
@@ -216,8 +216,8 @@ function ResetPasswordForm() {
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="Re-enter password"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#7c5cfc")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#1e3a5f")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
                 />
               </div>
 
@@ -249,7 +249,7 @@ function ResetPasswordForm() {
                   fontWeight: 700,
                   borderRadius: 10,
                   border: "none",
-                  background: "#7c5cfc",
+                  background: "#1e3a5f",
                   color: "#ffffff",
                   cursor: loading ? "wait" : "pointer",
                   opacity: loading ? 0.6 : 1,
@@ -265,11 +265,11 @@ function ResetPasswordForm() {
 
         <Link
           href="/login"
-          style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", textDecoration: "none" }}
+          style={{ fontSize: 12, color: "#57534e", textDecoration: "none" }}
         >
           &larr; Back to sign in
         </Link>
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginTop: 16, textAlign: "center" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
+        <p style={{ fontSize: 10, color: "#57534e", marginTop: 16, textAlign: "center" }}>© 2026 Blocwrite. All rights reserved.</p>
       </div>
     </main>
   );

@@ -600,7 +600,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      <p style={{ fontSize: 10, color: "rgba(0,0,0,0.2)", textAlign: "center", padding: "24px 0 12px" }}>&copy; {new Date().getFullYear()} Blocwrite. All rights reserved.</p>
+      <p style={{ fontSize: 10, color: "rgba(0,0,0,0.2)", textAlign: "center", padding: "24px 0 12px" }}>© 2026 Blocwrite. All rights reserved.</p>
     </div>
   );
 }

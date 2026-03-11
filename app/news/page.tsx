@@ -59,7 +59,7 @@ export default function NewsPage() {
         .news-post-body li { font-size: 16.5px; line-height: 1.85; margin-bottom: 4px; color: #3a3a42; }
         .news-post-body blockquote {
           margin: 20px 0; padding: 16px 22px;
-          border-left: 4px solid #7c5cfc;
+          border-left: 4px solid #1e3a5f;
           background: #f8f8fa; border-radius: 0 12px 12px 0;
           font-style: italic; color: #4a4d56;
         }
@@ -68,7 +68,7 @@ export default function NewsPage() {
           max-width: 100%; height: auto; border-radius: 12px;
           margin: 20px 0; border: 1px solid #e8e9ed;
         }
-        .news-post-body a { color: #5c46c9; text-decoration: underline; text-underline-offset: 3px; }
+        .news-post-body a { color: #1e3a5f; text-decoration: underline; text-underline-offset: 3px; }
         .news-post-body a:hover { color: #111; }
         .news-post-body strong { font-weight: 700; color: #111114; }
 
@@ -85,12 +85,12 @@ export default function NewsPage() {
       {/* ── Nav (matches main site exactly) ── */}
       <nav style={{
         position: "sticky", top: 0, zIndex: 50,
-        background: "rgba(12,12,29,0.97)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+        borderBottom: "1px solid rgba(0,0,0,0.08)",
       }}>
         <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
             <div style={{ display: "flex", gap: 32 }} className="news-nav-links">
@@ -104,21 +104,21 @@ export default function NewsPage() {
                 <Link
                   key={l.href}
                   href={l.href}
-                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#fff" : "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
+                  style={{ fontSize: 14, fontWeight: 500, color: l.href === "/news" ? "#1c1917" : "#44403c", textDecoration: "none", transition: "color 0.15s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#1c1917"; }}
+                  onMouseLeave={(e) => { if (l.href !== "/news") e.currentTarget.style.color = "#44403c"; }}
                 >
                   {l.label}
                 </Link>
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <Link href="/login" className="news-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.55)", textDecoration: "none" }}>Log in</Link>
+              <Link href="/login" className="news-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>Log in</Link>
               <Link href="/subscribe" style={{
                 display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
                 fontSize: 13, fontWeight: 600, borderRadius: 10,
-                background: "linear-gradient(135deg, #7c5cfc 0%, #6246ea 100%)", color: "#fff", textDecoration: "none",
-                boxShadow: "0 2px 12px rgba(124,92,252,0.3)",
+                background: "linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%)", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
                 transition: "transform 0.15s, box-shadow 0.15s",
               }}>
                 Start Free Trial
@@ -130,15 +130,15 @@ export default function NewsPage() {
 
       {/* ── Hero ── */}
       <section className="news-hero" style={{
-        background: "#0c0c1d", color: "#fff",
+        background: "#fafaf9", color: "#1c1917",
         padding: "72px 28px 64px", textAlign: "center",
       }}>
         <div style={{ maxWidth: 660, margin: "0 auto" }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 99,
-            background: "rgba(124,92,252,0.08)", border: "1px solid rgba(124,92,252,0.15)",
-            fontSize: 13, fontWeight: 600, color: "#b8a4ff", marginBottom: 20,
+            background: "rgba(30,58,95,0.08)", border: "1px solid rgba(30,58,95,0.15)",
+            fontSize: 13, fontWeight: 600, color: "#1e3a5f", marginBottom: 20,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Blocwrite Blog
@@ -146,7 +146,7 @@ export default function NewsPage() {
           <h1 style={{ fontSize: 46, fontWeight: 800, margin: "0 0 14px", letterSpacing: "-0.03em", lineHeight: 1.15 }}>
             News &amp; Updates
           </h1>
-          <p style={{ fontSize: 17, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, margin: 0 }}>
+          <p style={{ fontSize: 17, color: "#57534e", lineHeight: 1.6, margin: 0 }}>
             Product updates, writing tips, and insights from the Blocwrite team.
           </p>
         </div>
@@ -253,12 +253,12 @@ export default function NewsPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "52px 0 44px", background: "#0c0c1d", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <footer style={{ padding: "52px 0 44px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              &copy; {new Date().getFullYear()} Blocwrite
+              © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

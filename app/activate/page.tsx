@@ -178,7 +178,7 @@ export default function ActivatePage() {
         </button>
 
         <p className="pw-activate-footer">
-          &copy; {new Date().getFullYear()} Blocwrite. All rights reserved.
+          © 2026 Blocwrite. All rights reserved.
         </p>
       </div>
     </div>

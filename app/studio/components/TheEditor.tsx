@@ -452,12 +452,7 @@ export function TheEditor({
               background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
               fontSize: 13, color: "#f87171",
             }}>
-              <p style={{ margin: "0 0 4px" }}>{error}</p>
-              {(error.toLowerCase().includes("timeout") || error.toLowerCase().includes("timed out") || error.toLowerCase().includes("slow")) && (
-                <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
-                  Tip: Slower models can take longer. Try running again, or switch to a faster model in your settings.
-                </p>
-              )}
+              <p style={{ margin: 0 }}>{error}</p>
             </div>
           )}
 

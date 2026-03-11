@@ -176,8 +176,6 @@ export async function POST(request: Request) {
 
       payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
       if (response.ok) break;
-
-      const upstream = extractUpstreamError(payload);
       break;
     }
 

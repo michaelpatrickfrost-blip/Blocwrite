@@ -4,6 +4,7 @@ export type SceneBlock = {
   focus: string;          // "default" | "dialogue" | "action" | "introspection" | "atmosphere"
   notes: string;          // optional user notes
   prose: string;          // generated / manually edited prose for this scene
+  beatLabel?: string;     // narrative stage label (e.g. "Opening", "Complication") from chapter beat map
   openingLine?: string;   // how this scene should open — first-line guidance
   closingHook?: string;   // how this scene should end and bridge into the next
   emotionalArc?: string;  // emotional journey within this scene (e.g. "anxious → resolved")
@@ -39,7 +40,11 @@ export type StoryCharacter = {
 
 export type SummarySection = {
   premise: string;
-  synopsisShort: string;
+  synopsisShort: string; // legacy/fallback — full synopsis when acts not used
+  /** Structured 3-act plot. The Architect and beat generation use these. */
+  synopsisAct1?: string;
+  synopsisAct2?: string;
+  synopsisAct3?: string;
   themes: string[];
   genre: string[];
   tone: string[];
@@ -56,6 +61,7 @@ export type Character = {
   id: string;
   name: string;
   role: "Protagonist" | "Antagonist" | "Supporting" | "Minor" | "Love Interest" | "Custom" | "Type";
+  age?: string;
   logline: string;
   appearance?: string;
   personality?: string;
@@ -156,6 +162,18 @@ export type PlotSpine = {
   subplots: Subplot[];
   characterArcs: CharacterArc[];
   generatedAt?: string;
+  /** Optional flashback chapters (0 = off, 1-3 = how many chapters to reserve). */
+  flashbackSlots?: number;
+  /** Beats that take place in the past — assigned to flashback chapters during plan generation. */
+  flashbackBeats?: StoryBeat[];
+  /** Subplot emphasis: light (2-3), standard (3-4), rich (4-5). */
+  subplotEmphasis?: "light" | "standard" | "rich";
+  /** Beat density: lean, standard, or detailed (affects beats per act). */
+  beatDensity?: "lean" | "standard" | "detailed";
+  /** Character arc depth: brief, standard, or rich. */
+  arcDepth?: "brief" | "standard" | "rich";
+  /** Midpoint emphasis in Act 2: subtle, clear, or dramatic. */
+  midpointEmphasis?: "subtle" | "clear" | "dramatic";
 };
 
 export type GlossaryTerm = {
@@ -259,6 +277,12 @@ export type BookPlan = {
   chapters: BookPlanChapter[];
   aiChapterTarget: "auto" | number;
   pacingMode?: "balanced" | "slow-burn" | "fast";
+  setupIntensity?: "light" | "standard" | "deep";
+  revealCadence?: "early" | "mid" | "late";
+  chapterOpenerStyle?: "grounding-first" | "cold-open" | "mixed";
+  continuityMode?: "standard" | "strict";
+  repetitionGuard?: "standard" | "aggressive";
+  canonTagDepth?: "focused" | "comprehensive";
   arcAnalysis?: ArcAnalysis | null;
   updatedAt: string;
 };
@@ -681,6 +705,9 @@ function normalizeStoryBible(raw: unknown): StoryBible {
     premise: coerce("premise", summaryRecord) || coerce("premise") || coerce("braindump") || "",
     synopsisShort:
       coerce("synopsisShort", summaryRecord) || coerce("synopsisShort") || coerce("synopsis") || "",
+    synopsisAct1: coerce("synopsisAct1", summaryRecord) || "",
+    synopsisAct2: coerce("synopsisAct2", summaryRecord) || "",
+    synopsisAct3: coerce("synopsisAct3", summaryRecord) || "",
     themes: Array.isArray(summaryRecord?.themes)
       ? (summaryRecord?.themes as unknown[]).filter((x): x is string => typeof x === "string")
       : Array.isArray(record.themes)
@@ -743,6 +770,7 @@ function normalizeStoryBible(raw: unknown): StoryBible {
         typeof obj.role === "string" && obj.role
           ? (obj.role as Character["role"])
           : "Type",
+      age: typeof obj.age === "string" ? obj.age : "",
       logline: typeof obj.logline === "string" ? obj.logline : "",
       appearance: typeof obj.appearance === "string" ? obj.appearance : "",
       personality: typeof obj.personality === "string" ? obj.personality : "",
@@ -947,6 +975,48 @@ function normalizeStoryBible(raw: unknown): StoryBible {
       ["balanced", "slow-burn", "fast"].includes(String((record.bookPlan as Record<string, unknown>).pacingMode))
         ? ((record.bookPlan as Record<string, unknown>).pacingMode as BookPlan["pacingMode"])
         : "balanced",
+    setupIntensity:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).setupIntensity &&
+      ["light", "standard", "deep"].includes(String((record.bookPlan as Record<string, unknown>).setupIntensity))
+        ? ((record.bookPlan as Record<string, unknown>).setupIntensity as BookPlan["setupIntensity"])
+        : "standard",
+    revealCadence:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).revealCadence &&
+      ["early", "mid", "late"].includes(String((record.bookPlan as Record<string, unknown>).revealCadence))
+        ? ((record.bookPlan as Record<string, unknown>).revealCadence as BookPlan["revealCadence"])
+        : "mid",
+    chapterOpenerStyle:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).chapterOpenerStyle &&
+      ["grounding-first", "cold-open", "mixed"].includes(String((record.bookPlan as Record<string, unknown>).chapterOpenerStyle))
+        ? ((record.bookPlan as Record<string, unknown>).chapterOpenerStyle as BookPlan["chapterOpenerStyle"])
+        : "grounding-first",
+    continuityMode:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).continuityMode &&
+      ["standard", "strict"].includes(String((record.bookPlan as Record<string, unknown>).continuityMode))
+        ? ((record.bookPlan as Record<string, unknown>).continuityMode as BookPlan["continuityMode"])
+        : "strict",
+    repetitionGuard:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).repetitionGuard &&
+      ["standard", "aggressive"].includes(String((record.bookPlan as Record<string, unknown>).repetitionGuard))
+        ? ((record.bookPlan as Record<string, unknown>).repetitionGuard as BookPlan["repetitionGuard"])
+        : "aggressive",
+    canonTagDepth:
+      record.bookPlan &&
+      typeof record.bookPlan === "object" &&
+      (record.bookPlan as Record<string, unknown>).canonTagDepth &&
+      ["focused", "comprehensive"].includes(String((record.bookPlan as Record<string, unknown>).canonTagDepth))
+        ? ((record.bookPlan as Record<string, unknown>).canonTagDepth as BookPlan["canonTagDepth"])
+        : "comprehensive",
     updatedAt:
       record.bookPlan && typeof record.bookPlan === "object" && typeof (record.bookPlan as Record<string, unknown>).updatedAt === "string"
         ? ((record.bookPlan as Record<string, unknown>).updatedAt as string)
@@ -962,6 +1032,7 @@ function normalizeStoryBible(raw: unknown): StoryBible {
       ? legacyCharactersList.map((c) => ({
           id: c.id,
           name: c.name,
+          age: "",
           role: (["Protagonist", "Antagonist", "Supporting", "Minor"].includes(c.role)
             ? c.role
             : "Type") as Character["role"],
@@ -1054,12 +1125,26 @@ function normalizeStoryBible(raw: unknown): StoryBible {
         endState: typeof a.endState === "string" ? a.endState : "",
         turningPointBeatIds: Array.isArray(a.turningPointBeatIds) ? (a.turningPointBeatIds as unknown[]).filter((x): x is string => typeof x === "string") : [],
       })) : [];
-      if (beats.length === 0 && subplots.length === 0 && characterArcs.length === 0) return undefined;
+      const flashbackBeats: StoryBeat[] = Array.isArray(ps.flashbackBeats) ? (ps.flashbackBeats as Record<string, unknown>[]).map((b, i) => ({
+        id: typeof b.id === "string" && b.id ? b.id : `fb-${i}`,
+        title: typeof b.title === "string" ? b.title : "",
+        description: typeof b.description === "string" ? b.description : "",
+        act: ([1, 2, 3].includes(Number(b.act)) ? Number(b.act) : 2) as 1 | 2 | 3,
+        chapterHint: -1,
+        characterIds: Array.isArray(b.characterIds) ? (b.characterIds as unknown[]).filter((s): s is string => typeof s === "string") : [],
+        locationHint: typeof b.locationHint === "string" ? b.locationHint : "",
+        tension: ([1, 2, 3, 4, 5].includes(Number(b.tension)) ? Number(b.tension) : 3) as 1 | 2 | 3 | 4 | 5,
+        sortOrder: typeof b.sortOrder === "number" ? b.sortOrder : i,
+      })) : [];
+      const flashbackSlots = typeof ps.flashbackSlots === "number" && ps.flashbackSlots >= 0 && ps.flashbackSlots <= 3 ? ps.flashbackSlots : undefined;
+      if (beats.length === 0 && subplots.length === 0 && characterArcs.length === 0 && flashbackBeats.length === 0) return undefined;
       return {
         beats,
         subplots,
         characterArcs,
         generatedAt: typeof ps.generatedAt === "string" ? ps.generatedAt : undefined,
+        ...(flashbackBeats.length > 0 ? { flashbackBeats } : {}),
+        ...(flashbackSlots !== undefined ? { flashbackSlots } : {}),
       };
     })(),
     ...(record.nonfiction && typeof record.nonfiction === "object" ? {
@@ -1503,6 +1588,9 @@ export function createNovel(title: string, coverImage: string | null = null, nov
       summary: {
         premise: "",
         synopsisShort: "",
+        synopsisAct1: "",
+        synopsisAct2: "",
+        synopsisAct3: "",
         themes: [],
         genre: isNF ? ["Memoir"] : [],
         tone: [],
@@ -1520,6 +1608,12 @@ export function createNovel(title: string, coverImage: string | null = null, nov
         chapters: [],
         aiChapterTarget: "auto",
         pacingMode: "balanced",
+        setupIntensity: "standard",
+        revealCadence: "mid",
+        chapterOpenerStyle: "grounding-first",
+        continuityMode: "strict",
+        repetitionGuard: "aggressive",
+        canonTagDepth: "comprehensive",
         updatedAt: now,
       },
       characters: [],

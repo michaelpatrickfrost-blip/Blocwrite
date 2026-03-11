@@ -88,14 +88,14 @@ const DARK = {
 };
 
 const LIGHT = {
-  bg: "#f8f8f6",
+  bg: "#fafaf9",
   surface: "#ffffff",
-  surfaceAlt: "#f2f1ef",
-  border: "#e0dfdb",
+  surfaceAlt: "#f5f5f4",
+  border: "#e7e5e4",
   borderLight: "#eae9e6",
-  text: "#1a1a1a",
-  textMuted: "#6b6b6b",
-  textDim: "#999",
+  text: "#1c1917",
+  textMuted: "#44403c",
+  textDim: "#57534e",
   accent: "#5538d4",
   accentMuted: "rgba(98,70,234,0.06)",
   prose: "#374151",
@@ -1289,7 +1289,7 @@ export default function ShareReaderPage() {
               {/* Footer */}
               <div style={{ textAlign: "center", padding: "56px 0 24px" }}>
                 <img src={C.logo} alt="Blocwrite" style={{ height: 14, opacity: 0.15 }} />
-                <p style={{ fontSize: 10, color: C.borderLight, marginTop: 8 }}>&copy; {new Date().getFullYear()} Blocwrite</p>
+                <p style={{ fontSize: 10, color: C.borderLight, marginTop: 8 }}>© 2026 Blocwrite. All rights reserved.</p>
               </div>
             </>
           ) : (

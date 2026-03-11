@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   countChapterWords,
   countNovelWords,
@@ -89,6 +90,12 @@ type EventsAiFocus = "balanced" | "character" | "twists" | "romance" | "mystery"
 type CharacterAiMode = "profile" | "voice" | "psyche";
 type PlanChapter = NonNullable<Novel["storyBible"]["bookPlan"]["chapters"][number]>;
 type PlanAiChapterTarget = "auto" | number;
+type PlanSetupIntensity = "light" | "standard" | "deep";
+type PlanRevealCadence = "early" | "mid" | "late";
+type PlanChapterOpenerStyle = "grounding-first" | "cold-open" | "mixed";
+type PlanContinuityMode = "standard" | "strict";
+type PlanRepetitionGuard = "standard" | "aggressive";
+type PlanCanonTagDepth = "focused" | "comprehensive";
 type PlanChapterDraft = {
   title?: string;
   synopsis?: string;
@@ -274,12 +281,13 @@ const NF_ROLE_LABELS: Record<CharacterRole, string> = {
   Custom: "Other",
 };
 const POV_OPTIONS = [
-  { value: "first", label: "First person (I)" },
-  { value: "first-multiple", label: "First person, multiple narrators" },
-  { value: "third-limited", label: "Third person limited" },
-  { value: "third-omniscient", label: "Third person omniscient" },
-  { value: "second", label: "Second person (you)" },
-  { value: "epistolary", label: "Epistolary / documents" },
+  { value: "first", label: "First person (I)", single: true },
+  { value: "first-multiple", label: "First person (multiple POVs)", single: false },
+  { value: "third-limited", label: "Third limited (one character)", single: true },
+  { value: "third-omniscient", label: "Third omniscient", single: true },
+  { value: "third-multiple", label: "Third (multiple POVs)", single: false },
+  { value: "second", label: "Second person (you)", single: true },
+  { value: "epistolary", label: "Epistolary (letters, documents)", single: true },
 ];
 const POV_OPTIONS_BIO = [
   { value: "first", label: "First person (I) — telling my own story" },
@@ -845,16 +853,16 @@ function normalizeClientApiKey(raw: string) {
 }
 const CHARACTER_AI_MODE_COPY: Record<CharacterAiMode, { label: string; description: string }> = {
   profile: {
-    label: "Full Profile",
-    description: "Builds appearance, personality, goals, fears, and backstory from your Canon.",
+    label: "Who They Are",
+    description: "Builds personality, appearance, and background from your Canon.",
   },
   voice: {
-    label: "Voice & Style",
-    description: "Crafts how they speak — accent, rhythm, vocabulary — matched to your author style.",
+    label: "How They Speak",
+    description: "Accent, rhythm, and vocabulary — matched to your author style.",
   },
   psyche: {
-    label: "Inner World",
-    description: "Deepens their psychology — hidden secrets, stress reactions, and subtle reader foreshadowing.",
+    label: "Motivation",
+    description: "Goals, fears, and how they react under pressure.",
   },
 };
 // ── Common English words that should NEVER be treated as character names ──
@@ -903,33 +911,16 @@ const SUMMARY_NAME_BLOCKLIST = new Set([
   "mountain","valley","coast","harbour","harbor","port",
 ]);
 const CHARACTER_SURNAME_FALLBACKS = [
-  "Hale",
-  "Mercer",
-  "Quinn",
-  "Bennett",
-  "Rowan",
-  "Harper",
-  "Hayes",
-  "Calloway",
-  "Sinclair",
-  "Monroe",
-  "Keating",
-  "West",
+  "Hale", "Mercer", "Quinn", "Bennett", "Rowan", "Hayes", "Calloway", "Sinclair",
+  "Monroe", "Keating", "Walsh", "O'Brien", "Brookes", "Holland", "Sutton",
+  "Reynolds", "Foster", "Ellis", "Shaw", "Palmer", "Cross", "Reed",
 ] as const;
 const CHARACTER_GIVEN_NAME_FALLBACKS = [
-  "Alex",
-  "Jordan",
-  "Casey",
-  "Taylor",
-  "Morgan",
-  "Riley",
-  "Jamie",
-  "Avery",
-  "Cameron",
-  "Harper",
-  "Drew",
-  "Reese",
+  "Ben", "Adam", "Will", "Tom", "Sarah", "James", "Emily", "Jack",
+  "George", "Hannah", "Kate", "Daniel", "Ruth", "Oliver", "Alice",
+  "Henry", "Grace", "Thomas", "Charlotte", "Joseph", "Lucy",
 ] as const;
+const OVERUSED_FIRST_NAMES = new Set(["ethan", "emma", "liam", "olivia", "noah", "mason", "sophia", "jackson", "aiden", "luna", "alex", "maya", "emily", "james", "sarah", "michael", "jessica", "david", "jennifer", "john"]);
 
 const ROLE_ALIAS_TOKENS = [
   "anonymous", "stranger", "blackmailer", "killer", "informant", "witness",
@@ -1004,9 +995,12 @@ const PROOFREAD_CATEGORIES: ProofreadCategory[] = [
 
 const STORY_BIBLE_LIMITS = {
   summary: {
-    premise: 1200,
-    synopsisShort: 8000,
-    stakes: 1200,
+    premise: 2400,
+    synopsisShort: 6000, // fallback/legacy full synopsis (manual paste)
+    synopsisAct1: 1800, // Act 1 — Setup
+    synopsisAct2: 2400, // Act 2 — Confrontation (longest)
+    synopsisAct3: 1800, // Act 3 — Resolution
+    stakes: 2400,
     listItem: 48,
     listCount: 16,
   },
@@ -1022,6 +1016,7 @@ const STORY_BIBLE_LIMITS = {
   character: {
     name: 80,
     role: 24,
+    age: 24,
     pronouns: 40,
     groups: 140,
     otherNames: 220,
@@ -1217,7 +1212,7 @@ function NovelWorkspacePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showStoryBibleModal, setShowStoryBibleModal] = useState(false);
   const [bibleSection, setBibleSection] = useState<
-    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "plotSpine" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
+    "summary" | "characters" | "locations" | "worldbuilding" | "styleVoice" | "boltons" | "knowledge" | "plotSpine" | "visualMap" | "nf-about" | "nf-events" | "nf-interview" | "nf-timeline" | "nf-relationships" | "nf-scrapbook" | "nf-storyboard" | "nf-researcher" | "nf-research-notes"
   >(
     "summary",
   );
@@ -1228,9 +1223,13 @@ function NovelWorkspacePage() {
     addedCharacterIds?: string[];
   } | null>(null);
   const [profileGenProgress, setProfileGenProgress] = useState<{ current: number; total: number; name: string; done: number } | null>(null);
-  const [batchProfileQueue, setBatchProfileQueue] = useState<string[]>([]);
-  const batchProfileTotalRef = useRef(0);
-  const batchProfileAllIdsRef = useRef<string[]>([]);
+  const [locationGenProgress, setLocationGenProgress] = useState<
+    | { phase: "names" }
+    | { phase: "profile"; current: number; total: number; name: string; done: number }
+    | null
+  >(null);
+  const [genProgressBar, setGenProgressBar] = useState<{ type: "locations" | "worldbuilding" } | null>(null);
+  const [chapterBlocksGenProgress, setChapterBlocksGenProgress] = useState<{ current: number; total: number; beatLabel?: string } | null>(null);
   const [newCharPopup, setNewCharPopup] = useState<{
     charId: string;
     description: string;
@@ -1240,6 +1239,11 @@ function NovelWorkspacePage() {
   const [synopsisOptions, setSynopsisOptions] = useState<Array<{ label: string; text: string }>>([]);
   // Global AI abort controller — closing any modal/menu aborts in-flight AI requests
   const aiAbortRef = useRef<AbortController | null>(null);
+  const biblePanelRef = useRef<HTMLElement | null>(null);
+  const planControlsOverrideRef = useRef<{
+    pacingMode?: string; setupIntensity?: string; revealCadence?: string;
+    chapterOpenerStyle?: string; continuityMode?: string; repetitionGuard?: string; canonTagDepth?: string;
+  } | null>(null);
   const [storyAiBusyElapsedSec, setStoryAiBusyElapsedSec] = useState(0);
   const [boltonCategoryFilter, setBoltonCategoryFilter] = useState<"all" | BoltonCategory>("all");
   const [boltonLibraryCount, setBoltonLibraryCount] = useState(0);
@@ -1253,6 +1257,7 @@ function NovelWorkspacePage() {
   const [knowledgeScanBusy, setKnowledgeScanBusy] = useState(false);
   const [knowledgeScanError, setKnowledgeScanError] = useState<string | null>(null);
   const [storyAiError, setStoryAiError] = useState<string | null>(null);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [loreLockEnabled, setLoreLockEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
@@ -1309,6 +1314,9 @@ function NovelWorkspacePage() {
   const [spineSuggestedChars, setSpineSuggestedChars] = useState<Array<{ name: string; role: string; logline: string }> | null>(null);
   const [spineArcChoice, setSpineArcChoice] = useState<string | null>(null);
   const [spineShowArcPicker, setSpineShowArcPicker] = useState(false);
+  const [spineShowAdvancedOptions, setSpineShowAdvancedOptions] = useState(false);
+  const [spineShowArcModePopup, setSpineShowArcModePopup] = useState(false);
+  const [spineArcMode, setSpineArcMode] = useState<"ai" | "custom" | "skip" | null>(null);
   const [spineArcDynamicOptions, setSpineArcDynamicOptions] = useState<Array<{ id: string; name: string; description: string; rationale?: string }> | null>(null);
   const [spineArcDynamicLoading, setSpineArcDynamicLoading] = useState(false);
   const sessionRef = useRef<{ startTime: number; startWords: number; initialized: boolean }>({ startTime: Date.now(), startWords: 0, initialized: false });
@@ -1366,6 +1374,10 @@ function NovelWorkspacePage() {
     at?: string;
   }>({ status: "idle", message: "" });
   const [planError, setPlanError] = useState<string | null>(null);
+  const [chapterDoctorResult, setChapterDoctorResult] = useState<{ issues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }>; score: number; summary: string } | null>(null);
+  const [chapterDoctorBusy, setChapterDoctorBusy] = useState(false);
+  const [chapterDoctorFixProgress, setChapterDoctorFixProgress] = useState<{ current: number; total: number; done: number; label?: string } | null>(null);
+  const [chapterDoctorFixesApplied, setChapterDoctorFixesApplied] = useState(false);
   const [showPlanGenerateModal, setShowPlanGenerateModal] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingGoalWords, setEditingGoalWords] = useState<string | null>(null);
@@ -1377,7 +1389,7 @@ function NovelWorkspacePage() {
     try { return window.localStorage.getItem("pilotwriter.sidebar.pinned") === "true"; } catch { return false; }
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => !sidebarPinned);
-  const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
+  const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("light");
   const [navigatingAway, setNavigatingAway] = useState(false);
   const sidebarHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1447,61 +1459,6 @@ function NovelWorkspacePage() {
     setLoreLockShowDetails(false);
   }, [loreLockEnabled]);
 
-  // Process batch profile queue one character at a time.
-  // Each iteration runs after a React re-render, so all closures are FRESH —
-  // exactly like the user manually pressing the "Full profile" button.
-  useEffect(() => {
-    if (batchProfileQueue.length === 0) return;
-
-    const charId = batchProfileQueue[0];
-    const character = storyCharacters.find((c) => c.id === charId);
-    const total = batchProfileTotalRef.current;
-    const done = total - batchProfileQueue.length;
-
-    if (!character) {
-      // Skip missing character, move to next
-      setBatchProfileQueue((q) => q.slice(1));
-      return;
-    }
-
-    setProfileGenProgress({ current: done + 1, total, name: character.name, done });
-
-    let cancelled = false;
-
-    const run = async () => {
-      // Small delay between characters (skip for first one)
-      if (done > 0) await new Promise((r) => setTimeout(r, 3000));
-      if (cancelled) return;
-
-      try {
-        await runCharacterAiForSelected(charId, "profile");
-      } catch (err) {
-        if (isCancelledError(err)) { setBatchProfileQueue([]); return; }
-        console.error("Batch profile failed for", charId, err);
-      }
-
-      if (cancelled) return;
-
-      // Remove this character from queue → triggers re-render → next iteration
-      setBatchProfileQueue((q) => q.slice(1));
-    };
-
-    void run();
-
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchProfileQueue]);
-
-  // When queue empties, clear progress — done
-  useEffect(() => {
-    if (batchProfileQueue.length === 0 && batchProfileTotalRef.current > 0) {
-      setProfileGenProgress(null);
-      setStoryAiBusyAction(null);
-      batchProfileTotalRef.current = 0;
-      batchProfileAllIdsRef.current = [];
-    }
-  }, [batchProfileQueue]);
-
   useEffect(() => {
     if (!showStoryBibleModal || bibleSection !== "boltons") return;
     setBoltonLibraryCount(readBoltonLibrary().length);
@@ -1551,6 +1508,12 @@ function NovelWorkspacePage() {
   const [planGenerateCustomCount, setPlanGenerateCustomCount] = useState("8");
   const [planGenerateCountMode, setPlanGenerateCountMode] = useState<"manual" | "auto">("manual");
   const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
+  const [planGenerateSetupIntensity, setPlanGenerateSetupIntensity] = useState<PlanSetupIntensity>("standard");
+  const [planGenerateRevealCadence, setPlanGenerateRevealCadence] = useState<PlanRevealCadence>("mid");
+  const [planGenerateChapterOpenerStyle, setPlanGenerateChapterOpenerStyle] = useState<PlanChapterOpenerStyle>("grounding-first");
+  const [planGenerateContinuityMode, setPlanGenerateContinuityMode] = useState<PlanContinuityMode>("strict");
+  const [planGenerateRepetitionGuard, setPlanGenerateRepetitionGuard] = useState<PlanRepetitionGuard>("aggressive");
+  const [planGenerateCanonTagDepth, setPlanGenerateCanonTagDepth] = useState<PlanCanonTagDepth>("comprehensive");
   const [planGenerateProgressIdx, setPlanGenerateProgressIdx] = useState<number | null>(null);
   const [planGenerateTotal, setPlanGenerateTotal] = useState(0);
   const [showArcOfferPopup, setShowArcOfferPopup] = useState(false);
@@ -1627,8 +1590,13 @@ function NovelWorkspacePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, language: grammarLocale }),
       });
-      if (!res.ok) throw new Error(`Status ${res.status}`);
       const data = await res.json();
+      if (!res.ok) {
+        const msg = (data && typeof data === "object" && typeof (data as { error?: string }).error === "string")
+          ? (data as { error: string }).error
+          : `Status ${res.status}`;
+        throw new Error(msg);
+      }
       setGrammarMatches(Array.isArray(data.matches) ? data.matches : []);
       setLastCheckedContent(text);
       setProofreadOpen(true);
@@ -1676,7 +1644,8 @@ function NovelWorkspacePage() {
   const hasSummaryForCharacterAi = useMemo(() => {
     if (!novel) return false;
     const summary = novel.storyBible.summary;
-    return Boolean(summary.synopsisShort.trim() || summary.stakes.trim());
+    const hasActs = Boolean((summary.synopsisAct1 ?? "").trim() || (summary.synopsisAct2 ?? "").trim() || (summary.synopsisAct3 ?? "").trim());
+    return hasActs || Boolean(summary.synopsisShort?.trim() || summary.stakes.trim());
   }, [novel]);
   const filteredOpenRouterModels = useMemo(() => {
     const query = openRouterModelSearch.trim().toLowerCase();
@@ -2394,6 +2363,17 @@ function NovelWorkspacePage() {
   }, [bibleSection, showStoryBibleModal, novelId, novels]);
 
   useEffect(() => {
+    if (bibleSection === "worldbuilding") {
+      const el = biblePanelRef.current;
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTop = 0;
+        });
+      }
+    }
+  }, [bibleSection]);
+
+  useEffect(() => {
     if (!openSummaryAiMenu) return;
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
@@ -2512,7 +2492,10 @@ function NovelWorkspacePage() {
   function sanitizeSummarySection(summary: Novel["storyBible"]["summary"]): Novel["storyBible"]["summary"] {
     return {
       premise: clampText(summary.premise, STORY_BIBLE_LIMITS.summary.premise),
-      synopsisShort: clampText(summary.synopsisShort, STORY_BIBLE_LIMITS.summary.synopsisShort),
+      synopsisShort: clampText(summary.synopsisShort ?? "", STORY_BIBLE_LIMITS.summary.synopsisShort),
+      synopsisAct1: clampText(summary.synopsisAct1 ?? "", STORY_BIBLE_LIMITS.summary.synopsisAct1),
+      synopsisAct2: clampText(summary.synopsisAct2 ?? "", STORY_BIBLE_LIMITS.summary.synopsisAct2),
+      synopsisAct3: clampText(summary.synopsisAct3 ?? "", STORY_BIBLE_LIMITS.summary.synopsisAct3),
       themes: clampTextList(
         summary.themes,
         STORY_BIBLE_LIMITS.summary.listCount,
@@ -2573,6 +2556,7 @@ function NovelWorkspacePage() {
       ...character,
       name: clampText(character.name, STORY_BIBLE_LIMITS.character.name),
       role: normalizedRole,
+      age: clampText(character.age ?? "", STORY_BIBLE_LIMITS.character.age),
       pronouns: clampText(character.pronouns ?? "", STORY_BIBLE_LIMITS.character.pronouns),
       groups: clampText(character.groups ?? "", STORY_BIBLE_LIMITS.character.groups),
       otherNames: clampText(character.otherNames ?? "", STORY_BIBLE_LIMITS.character.otherNames),
@@ -3170,6 +3154,10 @@ function NovelWorkspacePage() {
       .replace(/^[^A-Za-z]+|[^A-Za-z-]+$/g, "");
     if (!cleaned) return "";
     const parts = cleaned.split(" ").filter(Boolean);
+    const firstLower = parts[0]?.toLowerCase() ?? "";
+    if (OVERUSED_FIRST_NAMES.has(firstLower)) {
+      return makeFallbackHumanName(`${rawName}-${fallbackSeed}`, fallbackSeed);
+    }
     if (parts.length >= 2) {
       return `${parts[0]} ${parts.slice(1).join(" ")}`.slice(0, STORY_BIBLE_LIMITS.character.name);
     }
@@ -3221,7 +3209,7 @@ function NovelWorkspacePage() {
 
   function extractSummaryNameHints() {
     if (!novel) return [] as string[];
-    const source = [novel.storyBible.summary.synopsisShort, novel.storyBible.summary.stakes]
+    const source = [getCombinedSynopsis(), novel.storyBible.summary.stakes]
       .filter(Boolean)
       .join("\n");
     if (!source.trim()) return [] as string[];
@@ -3292,6 +3280,99 @@ function NovelWorkspacePage() {
     return `${clean.slice(0, Math.max(0, maxChars - 1)).trimEnd()}...`;
   }
 
+  /** Act-specific synopsis for The Architect. Falls back to combined or legacy synopsisShort. */
+  function getSynopsisForAct(act: 1 | 2 | 3): string {
+    const s = novel?.storyBible.summary;
+    if (!s) return "";
+    const a1 = (s.synopsisAct1 ?? "").trim();
+    const a2 = (s.synopsisAct2 ?? "").trim();
+    const a3 = (s.synopsisAct3 ?? "").trim();
+    if (act === 1 && a1) return a1;
+    if (act === 2 && a2) return a2;
+    if (act === 3 && a3) return a3;
+    const combined = [a1, a2, a3].filter(Boolean).join("\n\n");
+    if (combined) return clampPromptText(combined, 800);
+    return clampPromptText((s.synopsisShort ?? "").trim(), 800);
+  }
+
+  /** Combined synopsis for context consumers. Acts take priority. */
+  function getCombinedSynopsis(): string {
+    const s = novel?.storyBible.summary;
+    if (!s) return "";
+    const a1 = (s.synopsisAct1 ?? "").trim();
+    const a2 = (s.synopsisAct2 ?? "").trim();
+    const a3 = (s.synopsisAct3 ?? "").trim();
+    if (a1 || a2 || a3) return [a1, a2, a3].filter(Boolean).join("\n\n");
+    return (s.synopsisShort ?? "").trim();
+  }
+
+  /** Infer regional name hint from locations and synopsis for character naming. */
+  function getRegionalNameHint(): string {
+    const locs = (novel?.storyBible.locations ?? []).map((l) => (l.name ?? "").toLowerCase()).join(" ");
+    const syn = (getCombinedSynopsis() || "").toLowerCase();
+    const combined = `${locs} ${syn}`;
+    const noForeign = " Do NOT use names from other cultures (Priya, Marcus, Dmitri, Yuki, Inez, Santiago, etc.) — only regional names unless a character is explicitly described as foreign in the synopsis.";
+    if (/\byorkshire\b|harrogate|leeds|sheffield|bradford|hull|york\b|northern england|north yorkshire/i.test(combined)) {
+      return `Setting is Yorkshire/Northern England. Use ONLY regional names: Ben, Adam, Will, Tom, Sarah, James, Emily, Jack, George, Hannah, etc. British surnames.${noForeign}`;
+    }
+    if (/\blondon\b|manchester|liverpool|birmingham|bristol|edinburgh|glasgow|britain|british|uk\b|england\b|scotland|wales\b/i.test(combined)) {
+      return `Setting is UK/Britain. Use ONLY British names appropriate to region.${noForeign}`;
+    }
+    if (/\bireland\b|dublin|cork|galway|irish/i.test(combined)) {
+      return `Setting is Ireland. Use ONLY Irish names: Liam, Seán, Ciarán, Niamh, Siobhan, Aoife, etc.${noForeign}`;
+    }
+    if (/\bamerica\b|usa\b|u\.s\.|california|texas|new york|chicago|american/i.test(combined)) {
+      return `Setting is US. Use ONLY American names appropriate to region.${noForeign}`;
+    }
+    return `Use names that fit the setting. Yorkshire = Ben, Adam, Will, Tom. London = British. US = American.${noForeign}`;
+  }
+
+  /** Genre- and region-aware place-name hints for location generation. Physical places only — no archives. */
+  function getLocationNamingHint(): string {
+    const genre = (novel?.storyBible.summary?.genre ?? []).slice(0, 4).join(", ").toLowerCase();
+    const locs = (novel?.storyBible.locations ?? []).map((l) => (l.name ?? "").toLowerCase()).join(" ");
+    const syn = (getCombinedSynopsis() || "").toLowerCase();
+    const combined = `${locs} ${syn}`;
+    const noArchive = " NEVER 'archive' or 'archives' — not places. Use Records Office, County Hall, Library instead.";
+
+    // Fantasy: invented names — cities, towers, forests, keeps
+    if (/\bfantasy|epic fantasy|high fantasy|dark fantasy|sword and sorcery|mytholog|magical|magic system\b/i.test(genre) || (/\bfantasy|magic|kingdom|realm|dragon|elf|orc|wizard|witch|enchanted\b/i.test(combined) && !/sci-fi|science fiction|space|alien|planet\b/i.test(genre))) {
+      return `Fantasy setting: INVENTED place names — e.g. Eldenmere, Thornwood, The Broken Tower, Shadowkeep, Silvermarch, Riversong, Frosthall. Towns, fortresses, forests, temples. Invent names that feel cohesive.${noArchive}`;
+    }
+    // Sci-fi: planets, stations, ships, districts, sectors
+    if (/\bsci-fi|science fiction|space opera|space|dystopi|post.?apocalyptic|cyberpunk|steampunk\b/i.test(genre) || /\bspace|planet|station|ship|colony|sector|orbital|galaxy\b/i.test(combined)) {
+      return `Sci-fi setting: use names that fit the world — planets (e.g. Nova Prime, Cygnus VII), stations (Orbital Nine, Deep Run), ships, districts, colonies. Invent or use plausible sci-fi names.${noArchive}`;
+    }
+    // Horror/gothic: atmospheric invented or period-appropriate
+    if (/\bhorror|gothic|dark|occult|supernatural|paranormal\b/i.test(genre)) {
+      return `Horror/gothic setting: atmospheric place names — mansions, estates, asylums, woods, abandoned sites. Invent names (Blackwood Manor, Ashford Asylum) or use period-appropriate real names.${noArchive}`;
+    }
+    // Historical: period-accurate real regional names
+    if (/\bhistoric|historical|period|regency|medieval|ancient|wwii|victorian|edwardian\b/i.test(genre)) {
+      if (/\byorkshire\b|harrogate|leeds|northern england|north yorkshire|dales\b/i.test(combined)) {
+        return `Historical Yorkshire: use real or plausible period names — Harrogate, Kettlewell, Ripon, Malham, The Old Mill, St Wilfrid's Church.${noArchive}`;
+      }
+      if (/\blondon\b|britain|british|uk\b|england\b|scotland|wales\b/i.test(combined)) {
+        return `Historical UK: use period-appropriate British place names.${noArchive}`;
+      }
+      return `Historical setting: use period-appropriate place names for the era and region.${noArchive}`;
+    }
+    // Contemporary/realistic: real regional names
+    if (/\byorkshire\b|harrogate|leeds|sheffield|bradford|hull|york\b|northern england|north yorkshire|dales|kettlewell|malham|ripon|knaresborough/i.test(combined)) {
+      return `Yorkshire setting: use SPECIFIC place names — Harrogate, Kettlewell, Knaresborough, Ripon, Malham, The Old Mill, St Wilfrid's Church.${noArchive}`;
+    }
+    if (/\blondon\b|manchester|liverpool|birmingham|bristol|edinburgh|glasgow|britain|british|uk\b|england\b|scotland|wales\b/i.test(combined)) {
+      return `UK setting: use SPECIFIC place names for towns, buildings, streets, landmarks.${noArchive}`;
+    }
+    if (/\bireland\b|dublin|cork|galway|irish/i.test(combined)) {
+      return `Irish setting: use SPECIFIC place names.${noArchive}`;
+    }
+    if (/\bamerica\b|usa\b|u\.s\.|california|texas|new york|chicago|american/i.test(combined)) {
+      return `US setting: use SPECIFIC place names appropriate to region.${noArchive}`;
+    }
+    return `Use SPECIFIC place names: towns, buildings, streets, landmarks.${noArchive}`;
+  }
+
   function normalizeBoltonCategory(value: unknown): BoltonCategory {
     const valid = new Set<string>(BOLTON_PLUGIN_CATEGORIES.map((category) => category.id));
     if (typeof value !== "string" || !valid.has(value)) return "custom";
@@ -3307,7 +3388,8 @@ function NovelWorkspacePage() {
     return clampPromptText(raw, 500);
   }
 
-  function readBoltonLibrary(): Array<Pick<Bolton, "title" | "description" | "prompt" | "category">> {
+  type LibraryBolton = { title: string; description: string; prompt: string; category: BoltonCategory; favourite?: boolean };
+  function readBoltonLibrary(): LibraryBolton[] {
     if (typeof window === "undefined") return [];
     try {
       const raw = window.localStorage.getItem(BOLTON_LIBRARY_KEY);
@@ -3327,9 +3409,10 @@ function NovelWorkspacePage() {
             description,
             prompt,
             category: normalizeBoltonCategory(record.category),
+            favourite: record.favourite === true,
           };
         })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
+        .filter((item): item is LibraryBolton => item !== null);
     } catch {
       return [];
     }
@@ -3550,9 +3633,9 @@ function NovelWorkspacePage() {
     const characters = novel.storyBible.characters ?? [];
     const locations = novel.storyBible.locations ?? [];
     const lore = novel.storyBible.lore ?? [];
-    const povCharacterName =
-      styleVoice.povCharacterId &&
-      characters.find((c) => c.id === styleVoice.povCharacterId)?.name;
+    const povCharacterName = styleVoice.povCharacterId
+      ? styleVoice.povCharacterId.split(",").map((id) => characters.find((c) => c.id === id.trim())?.name).filter(Boolean).join(", ")
+      : undefined;
 
     const limits =
       mode === "micro"
@@ -3706,9 +3789,10 @@ function NovelWorkspacePage() {
       },
     );
 
+    const synopsisForContext = getCombinedSynopsis();
     const sections = [
       `Novel title: ${novel.title || "Untitled Novel"}`,
-      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, limits.synopsisChars)}` : "",
+      synopsisForContext ? `Synopsis: ${clampPromptText(synopsisForContext, limits.synopsisChars)}` : "",
       summary.genre.length ? `Genre: ${summary.genre.slice(0, 10).join(", ")}` : "",
       summary.tone.length ? `Tone: ${summary.tone.slice(0, 10).join(", ")}` : "",
       summary.themes.length ? `Themes: ${summary.themes.slice(0, 12).join(", ")}` : "",
@@ -3828,7 +3912,7 @@ function NovelWorkspacePage() {
     const lore = sb.lore ?? [];
     const timeline = sb.timeline ?? [];
     const povName = styleVoice.povCharacterId
-      ? characters.find((c) => c.id === styleVoice.povCharacterId)?.name
+      ? styleVoice.povCharacterId.split(",").map((id) => characters.find((c) => c.id === id.trim())?.name).filter(Boolean).join(", ")
       : undefined;
     // Compact character list: Name (Role) — logline
     const charList = characters.slice(0, 10)
@@ -3844,15 +3928,21 @@ function NovelWorkspacePage() {
     const eventList = timeline.slice(0, 8)
       .map((e) => `${e.name}${e.when ? ` (${e.when})` : ""}`)
       .join("; ");
+    const synopsisText = getCombinedSynopsis();
     const contextParts = [
       `Title: ${novel.title || "Untitled"}`,
-      summary.synopsisShort ? `Synopsis: ${clampPromptText(summary.synopsisShort, 1500)}` : "",
+      synopsisText ? `Story anchor: ${clampPromptText(synopsisText, 900)}` : "",
       summary.genre.length ? `Genre: ${summary.genre.join(", ")}` : "",
+      summary.tone.length ? `Tone: ${summary.tone.join(", ")}` : "",
+      summary.themes.length ? `Themes: ${summary.themes.join(", ")}` : "",
       summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 150)}` : "",
       styleVoice.pov ? `POV: ${styleVoice.pov}${povName ? ` (${povName})` : ""}` : "",
+      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
+      styleVoice.voiceRules ? `Voice rules: ${clampPromptText(styleVoice.voiceRules, 220)}` : "",
       charList ? `Characters: ${charList}` : "",
       locList ? `Locations: ${locList}` : "",
       loreList ? `Lore: ${loreList}` : "",
+      sb.worldbuilding ? `World constraints: ${clampPromptText(sb.worldbuilding, 260)}` : "",
       eventList ? `Events: ${eventList}` : "",
     ].filter(Boolean).join("\n");
 
@@ -3867,30 +3957,50 @@ function NovelWorkspacePage() {
     spine: PlotSpine;
     chapterBeatMap: string[][];
     updatedBeats: StoryBeat[];
+    flashbackChapterIndices?: Set<number>;
   } | null {
     const spine = novel?.storyBible.plotSpine;
-    if (!spine || spine.beats.length === 0 || totalChapters <= 0) return null;
+    if (!spine || (spine.beats.length === 0 && (spine.flashbackBeats?.length ?? 0) === 0) || totalChapters <= 0) return null;
     const updatedBeats = [...spine.beats];
     const chapterBeatMap: string[][] = Array.from({ length: totalChapters }, () => []);
+    const flashbackChapterIndices = new Set<number>();
+
     const pushBeatToChapter = (chapterIdx: number, beatId: string) => {
       const safeIdx = Math.min(Math.max(chapterIdx, 0), totalChapters - 1);
       const arr = chapterBeatMap[safeIdx];
       if (!arr.includes(beatId)) arr.push(beatId);
     };
 
-    // Keep explicit user assignments exactly.
+    // Reserve flashback chapter slots (spread across the book) and assign flashback beats.
+    const fbSlots = spine.flashbackSlots ?? 0;
+    const fbBeats = spine.flashbackBeats ?? [];
+    if (fbSlots >= 1 && fbBeats.length > 0 && totalChapters > fbSlots) {
+      const step = (totalChapters - 1) / (fbSlots + 1);
+      for (let s = 0; s < fbSlots; s++) {
+        flashbackChapterIndices.add(Math.min(Math.floor(step * (s + 1)), totalChapters - 1));
+      }
+      const sortedFb = [...flashbackChapterIndices].sort((a, b) => a - b);
+      fbBeats.forEach((b, i) => {
+        const slotIdx = Math.min(i % sortedFb.length, sortedFb.length - 1);
+        pushBeatToChapter(sortedFb[slotIdx]!, b.id);
+      });
+    }
+
+    if (spine.beats.length === 0) return { spine, chapterBeatMap, updatedBeats, flashbackChapterIndices };
+
+    // Keep explicit user assignments exactly (skip flashback chapters).
     for (const beat of updatedBeats) {
-      if (beat.chapterHint >= 0 && beat.chapterHint < totalChapters) {
+      if (beat.chapterHint >= 0 && beat.chapterHint < totalChapters && !flashbackChapterIndices.has(beat.chapterHint)) {
         pushBeatToChapter(beat.chapterHint, beat.id);
       }
     }
 
-    const unassignedBeats = updatedBeats.filter((b) => b.chapterHint < 0 || b.chapterHint >= totalChapters);
+    const unassignedBeats = updatedBeats.filter((b) => b.chapterHint < 0 || b.chapterHint >= totalChapters || flashbackChapterIndices.has(b.chapterHint));
     if (unassignedBeats.length === 0) {
-      return { spine, chapterBeatMap, updatedBeats };
+      return { spine, chapterBeatMap, updatedBeats, flashbackChapterIndices };
     }
 
-    // Act-aware chapter windows (roughly 25/50/25), adjusted for small chapter counts.
+    // Act-aware chapter windows (roughly 25/50/25), excluding flashback chapters.
     let act1Count = Math.max(1, Math.round(totalChapters * 0.25));
     let act3Count = Math.max(1, Math.round(totalChapters * 0.25));
     let act2Count = totalChapters - act1Count - act3Count;
@@ -3922,28 +4032,31 @@ function NovelWorkspacePage() {
 
     for (const [actKey, beats] of grouped.entries()) {
       const [start, end] = getRangeForAct(actKey);
-      const window = Math.max(1, end - start + 1);
+      const validIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i).filter((i) => !flashbackChapterIndices.has(i));
+      const window = Math.max(1, validIndices.length);
       const count = beats.length;
       for (let i = 0; i < count; i++) {
         const beat = beats[i];
         const slot = Math.min(window - 1, Math.floor((i * window) / Math.max(1, count)));
-        const chapterIdx = start + slot;
+        const chapterIdx = validIndices[slot] ?? start + slot;
         pushBeatToChapter(chapterIdx, beat.id);
         const bIdx = updatedBeats.findIndex((b) => b.id === beat.id);
         if (bIdx >= 0) updatedBeats[bIdx] = { ...updatedBeats[bIdx], chapterHint: chapterIdx };
       }
     }
 
-    return { spine, chapterBeatMap, updatedBeats };
+    return { spine, chapterBeatMap, updatedBeats, flashbackChapterIndices };
   }
 
   function getPlotSpineChapterData(chapterIndex: number, totalChapters: number) {
     const assignment = getPlotSpineBeatAssignment(totalChapters);
     if (!assignment) return null;
-    const { spine, chapterBeatMap } = assignment;
+    const { spine, chapterBeatMap, flashbackChapterIndices } = assignment;
     const chars = novel?.storyBible.characters ?? [];
     const beatIdSet = new Set(chapterBeatMap[chapterIndex] ?? []);
-    const beatsForChapter = spine.beats.filter((b) => beatIdSet.has(b.id));
+    const allBeats = [...spine.beats, ...(spine.flashbackBeats ?? [])];
+    const beatsForChapter = allBeats.filter((b) => beatIdSet.has(b.id));
+    const isFlashback = (flashbackChapterIndices?.has(chapterIndex) ?? false) && beatsForChapter.some((b) => spine.flashbackBeats?.some((fb) => fb.id === b.id));
     if (beatsForChapter.length === 0) return null;
     const chapterBeatIds = new Set(beatsForChapter.map((b) => b.id));
     const allPriorBeatIds = new Set<string>();
@@ -3988,6 +4101,7 @@ function NovelWorkspacePage() {
       focusedBeats,
       focusedSubplots: fallbackSubplots,
       focusedArcs,
+      isFlashback,
     };
   }
 
@@ -4009,15 +4123,19 @@ function NovelWorkspacePage() {
     });
   }
 
+  /** Full Architect context (used by regen, repair). */
   function buildPlotSpineChapterContext(chapterIndex: number, totalChapters: number): string {
     const spine = novel?.storyBible.plotSpine;
-    if (!spine || spine.beats.length === 0) return "";
+    if (!spine || (spine.beats.length === 0 && (spine.flashbackBeats?.length ?? 0) === 0)) return "";
     const chapterData = getPlotSpineChapterData(chapterIndex, totalChapters);
     if (!chapterData) return "";
-    const { beatsForChapter, activeSubplots, chapterSubplots, activeArcs, focusedBeats, focusedSubplots, focusedArcs } = chapterData;
+    const { beatsForChapter, activeSubplots, chapterSubplots, activeArcs, focusedBeats, focusedSubplots, focusedArcs, isFlashback } = chapterData;
     const chars = novel?.storyBible.characters ?? [];
 
-    const parts: string[] = ["=== PLOT SPINE — THIS IS YOUR PRIMARY GUIDE ===", ""];
+    const parts: string[] = ["=== THE ARCHITECT (STRUCTURAL GUIDE) ===", ""];
+    if (isFlashback) {
+      parts.push("FLASHBACK CHAPTER: This chapter takes place in the past. Establish when and where. Cover the past-event beats below. End with a bridge back to the present or a clear connection to the main storyline.", "");
+    }
     parts.push(`CHAPTER LINK REQUIREMENTS: this chapter must explicitly include these beat titles: ${beatsForChapter.map((b) => `"${b.title}"`).join(", ")}.`);
     parts.push("");
     parts.push("FOCUSED BEATS FOR THIS CHAPTER (prioritize these first):");
@@ -4060,16 +4178,55 @@ function NovelWorkspacePage() {
       parts.push("");
     }
 
-    parts.push("=== END PLOT SPINE ===");
+    parts.push("=== END THE ARCHITECT ===");
     parts.push("");
-    parts.push("CRITICAL RULES:");
-    parts.push("- The beats above are the BACKBONE of this chapter. Every beat must be covered.");
-    parts.push("- Weave assigned beats naturally into scene flow. Do NOT dump beat titles as labels unless needed for clarity.");
-    parts.push("- Add connective tissue BETWEEN beats: transitions, emotional reactions, small moments of reflection, sensory detail.");
-    parts.push("- Advance each active subplot — show its status changing.");
-    parts.push("- If a character arc turning point falls in this chapter, make it a PIVOTAL moment.");
-    parts.push("- Do NOT invent new major plot points that contradict the spine.");
-    parts.push("- You CAN add minor texture: a phone call, a memory, a physical detail, a secondary character reaction — as long as it serves the beats.");
+    parts.push("ARCHITECT ALIGNMENT RULES:");
+    parts.push("- Cover each assigned beat, but integrate them through natural scene causality.");
+    parts.push("- Add connective tissue between beats: transitions, emotional reaction, and consequence.");
+    parts.push("- Advance assigned subplots/arcs with visible state change.");
+    parts.push("- If a turning point is flagged, stage it as a pivotal choice/reveal.");
+    parts.push("- Do NOT contradict The Architect or replace it with unrelated major plot turns.");
+    parts.push("- You may add texture and intermediate actions when they strengthen continuity.");
+    return parts.join("\n");
+  }
+
+  /** Map-first: compact Story Map summary for this chapter only. Uses acts → beats → chapter assignment. */
+  function buildMapBasedChapterSummary(chapterIndex: number, totalChapters: number): string {
+    const chapterData = getPlotSpineChapterData(chapterIndex, totalChapters);
+    if (!chapterData) return "";
+    const { beatsForChapter, chapterSubplots, focusedArcs, isFlashback } = chapterData;
+    const chars = novel?.storyBible.characters ?? [];
+    const sortedBeats = [...beatsForChapter].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+    const beatBlocks = sortedBeats.map((b) => {
+      const charNames = b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean);
+      const loc = b.locationHint || "";
+      return `• "${b.title}": ${clampPromptText(b.description || "", 100)}${charNames.length ? ` [${charNames.join(", ")}]` : ""}${loc ? ` @ ${loc}` : ""}`;
+    });
+    const subplotTitles = chapterSubplots.map((sp) => sp.title).filter(Boolean);
+    const arcLines = focusedArcs.map((arc) => {
+      const name = arc.characterName || chars.find(c => c.id === arc.characterId)?.name || "?";
+      return arc.hasTurningPoint ? `${name} (TURNING POINT)` : name;
+    });
+    const charNames = [...new Set(sortedBeats.flatMap((b) => b.characterIds.map(id => chars.find(c => c.id === id)?.name).filter(Boolean)))];
+    const locations = sortedBeats.map((b) => b.locationHint).filter(Boolean);
+    const uniqueLocs = [...new Set(locations)];
+    const sceneFlow = uniqueLocs.length > 1
+      ? `SCENE FLOW: Play beats in order. ${uniqueLocs.join(" → ")}. Do not ping-pong between locations — once you leave, you do not return this chapter.`
+      : uniqueLocs.length === 1
+        ? `PRIMARY LOCATION: ${uniqueLocs[0]}. Stay here. All beats unfold in this place.`
+        : "";
+
+    const parts: string[] = [
+      isFlashback ? "FLASHBACK CHAPTER: This chapter takes place in the past. Establish when and where. Cover the beats below. Bridge back to the present or connect clearly to the main storyline." : "CRITICAL: This chapter MUST cover these beats IN ORDER. One scene = one location. Play Beat 1 fully, then Beat 2, then Beat 3. No jumping back.",
+      "",
+      ...beatBlocks,
+      "",
+      sceneFlow,
+      subplotTitles.length ? `Subplots: ${subplotTitles.join(", ")}` : "",
+      arcLines.length ? `Arcs: ${arcLines.join(", ")}` : "",
+      charNames.length ? `Characters: ${charNames.join(", ")}` : "",
+    ].filter(Boolean);
     return parts.join("\n");
   }
 
@@ -4097,18 +4254,22 @@ function NovelWorkspacePage() {
   function buildPhase1Prompt(planTarget: number): string {
     const context = buildPhase1OutlineContext();
     const genreExecutionHint = getCompactGenreExecutionHint();
-    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const controls = getPlanGenerationControls();
+    const pacingMode = controls.pacingMode;
     const pacingRule =
       pacingMode === "slow-burn"
         ? "- Pacing: slow-burn. Let early chapters build character, atmosphere, and stakes gradually before major escalations."
         : pacingMode === "fast"
           ? "- Pacing: fast. Start with a strong hook and keep momentum high while preserving clarity."
           : "- Pacing: balanced. Begin with grounded setup and tension-building before larger turns.";
+    const setupRule = `- Setup depth: ${controls.setupIntensity}.`;
+    const revealRule = `- Reveal cadence: ${controls.revealCadence}.`;
+    const openerRule = `- Chapter opener style preference: ${controls.chapterOpenerStyle}.`;
     const spineCtx = (() => {
       const spine = novel?.storyBible.plotSpine;
       if (!spine || spine.beats.length === 0) return "";
       const chars = novel?.storyBible.characters ?? [];
-      const lines: string[] = ["=== PLOT SPINE (distribute these beats across chapters) ==="];
+      const lines: string[] = ["=== THE ARCHITECT (distribute these beats across chapters) ==="];
       for (const act of [1, 2, 3] as const) {
         const actBeats = spine.beats.filter(b => b.act === act);
         if (actBeats.length === 0) continue;
@@ -4129,7 +4290,7 @@ function NovelWorkspacePage() {
           lines.push(`  ${charName}: "${a.startState}" → "${a.endState}" (${a.arcType})`);
         }
       }
-      lines.push("=== END PLOT SPINE ===");
+      lines.push("=== END THE ARCHITECT ===");
       return lines.join("\n");
     })();
     const hasSpine = spineCtx.length > 0;
@@ -4141,7 +4302,8 @@ function NovelWorkspacePage() {
       `{ "chapters": [{ "title": "string", "summary": "${sentenceTarget} sentence detailed chapter blueprint" }] }`,
       "",
       ...(hasSpine ? [
-        "IMPORTANT: A Plot Spine has been provided. You MUST distribute ALL story beats across the chapters. Every beat must appear in at least one chapter. Subplots must be woven through the appropriate chapters. Character arcs must progress across the chapters with turning points placed where indicated.",
+        "IMPORTANT: The Architect has been provided. Distribute ALL story beats across chapters. Every beat must appear in at least one chapter. Subplots and character arcs must progress where indicated.",
+        "Do this while preserving non-Architect canon: summary intent, style/voice, character continuity, locations, and world/lore constraints.",
         "",
         spineCtx,
         "",
@@ -4152,13 +4314,17 @@ function NovelWorkspacePage() {
       "- Titles must be unique.",
       `- Summaries must be ${sentenceTarget} sentences of DETAILED plot blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.`,
       "- Include: opening beat, middle development (transitional moments, emotional dynamics, character interactions), and closing beat for each chapter.",
-      "- Go beyond the synopsis — add the connective tissue between major plot points. Think of what a novelist needs to write the actual scenes.",
+      "- Novelist lens: what a writer needs to write the scenes — cause-and-effect, forward momentum, concrete beats. Not marketing copy.",
       "- Summaries must mention character names, locations, and key events by name so they can be cross-referenced.",
       "- Do NOT write teaser blurbs. State concrete story actions, character reactions, and outcomes clearly.",
       "- LOCATION RULE: Each chapter should use only ONE primary location unless absolutely necessary for the plot.",
       "- ANTI-REPETITION: Each chapter must cover DIFFERENT ground. No two chapters should feature the same type of scene (argument, chase, discovery) unless dramatically escalated.",
       genreExecutionHint,
       pacingRule,
+      setupRule,
+      revealRule,
+      openerRule,
+      ...buildCanonBalanceContractLines(),
       "- Early chapters must not rush to major payoffs. Build progression naturally like a published novel.",
       "- Weave in worldbuilding/lore naturally — if the Canon has magic systems, cultures, technology, etc., integrate them into the chapter flow.",
       "- Maintain cause-and-effect between chapters.",
@@ -4179,6 +4345,7 @@ function NovelWorkspacePage() {
     if (!novel) return "";
     const sb = novel.storyBible;
     const summary = sb.summary;
+    const styleVoice = sb.styleVoice;
     const characters = sb.characters ?? [];
     const locations = sb.locations ?? [];
     const lore = sb.lore ?? [];
@@ -4186,9 +4353,15 @@ function NovelWorkspacePage() {
 
     // Compact story header — genre/tone/stakes on one line each
     const storyLines = [
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 600)}` : "",
+      (getCombinedSynopsis()) ? `Story: ${clampPromptText(getCombinedSynopsis(), 600)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
+      summary.tone?.length ? `Tone: ${summary.tone.slice(0, 5).join(", ")}` : "",
       summary.stakes ? `Stakes: ${clampPromptText(summary.stakes, 120)}` : "",
+      styleVoice.pov ? `POV: ${styleVoice.pov}` : "",
+      styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
+      styleVoice.voiceRules ? `Voice rules: ${clampPromptText(styleVoice.voiceRules, 220)}` : "",
+      styleVoice.bannedWords?.length ? `Avoid phrases: ${styleVoice.bannedWords.slice(0, 8).join(", ")}` : "",
+      sb.worldbuilding ? `World constraints: ${clampPromptText(sb.worldbuilding, 220)}` : "",
     ].filter(Boolean).join("\n");
 
     // Relevant characters — compact format, one line each
@@ -4330,7 +4503,7 @@ function NovelWorkspacePage() {
 
     const parts = [
       `Novel: ${novel.title || "Untitled"}`,
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 500)}` : "",
+      (getCombinedSynopsis()) ? `Story: ${clampPromptText(getCombinedSynopsis(), 500)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 5).join(", ")}` : "",
       summary.tone?.length ? `Tone: ${summary.tone.slice(0, 5).join(", ")}` : "",
       charList ? `Characters:\n  ${charList}` : "",
@@ -4427,7 +4600,7 @@ function NovelWorkspacePage() {
       .join("\n  ");
 
     const povCharName = styleVoice.povCharacterId
-      ? characters.find((c) => c.id === styleVoice.povCharacterId)?.name
+      ? styleVoice.povCharacterId.split(",").map((id) => characters.find((c) => c.id === id.trim())?.name).filter(Boolean).join(", ")
       : undefined;
     const povLine = styleVoice.pov && povCharName
       ? `POV: ${styleVoice.pov} — narrate from ${povCharName}'s perspective`
@@ -4439,12 +4612,12 @@ function NovelWorkspacePage() {
 
     const parts = [
       `Language: ${profileLangLabel} (spelling, grammar, punctuation)`,
-      summary.synopsisShort ? `Story: ${clampPromptText(summary.synopsisShort, 400)}` : "",
+      (getCombinedSynopsis()) ? `Story: ${clampPromptText(getCombinedSynopsis(), 400)}` : "",
       summary.genre?.length ? `Genre: ${summary.genre.slice(0, 4).join(", ")}` : "",
       povLine,
       styleVoice.tense ? `Tense: ${styleVoice.tense}` : "",
       styleVoice.comps?.length ? `Style: ${styleVoice.comps.slice(0, 3).join(", ")}` : "",
-      styleVoice.voiceRules ? `Voice: ${clampPromptText(styleVoice.voiceRules, 300)}` : "",
+      styleVoice.voiceRules ? `Voice (MANDATORY — match this exactly): ${clampPromptText(styleVoice.voiceRules, 500)}` : "",
       styleVoice.bannedWords?.length ? `Never use: ${styleVoice.bannedWords.slice(0, 10).join(", ")}` : "",
       charList ? `Characters:\n  ${charList}` : "",
       locList ? `Locations:\n  ${locList}` : "",
@@ -4630,30 +4803,121 @@ function NovelWorkspacePage() {
   }
 
 
-  function buildChapterArcGuidance(chapterIndex: number, totalChapters: number) {
-    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+  function getPlanGenerationControls() {
+    const override = planControlsOverrideRef.current;
+    if (override) {
+      const plan = novel?.storyBible.bookPlan;
+      return {
+        pacingMode: (override.pacingMode ?? plan?.pacingMode ?? "balanced") as "balanced" | "slow-burn" | "fast",
+        setupIntensity: (override.setupIntensity ?? plan?.setupIntensity ?? "standard") as "light" | "standard" | "deep",
+        revealCadence: (override.revealCadence ?? plan?.revealCadence ?? "mid") as "early" | "mid" | "late",
+        chapterOpenerStyle: (override.chapterOpenerStyle ?? plan?.chapterOpenerStyle ?? "grounding-first") as "grounding-first" | "cold-open" | "mixed",
+        continuityMode: (override.continuityMode ?? plan?.continuityMode ?? "strict") as "standard" | "strict",
+        repetitionGuard: (override.repetitionGuard ?? plan?.repetitionGuard ?? "aggressive") as "standard" | "aggressive",
+        canonTagDepth: (override.canonTagDepth ?? plan?.canonTagDepth ?? "comprehensive") as "selective" | "comprehensive",
+      } as const;
+    }
+    const plan = novel?.storyBible.bookPlan;
+    return {
+      pacingMode: plan?.pacingMode ?? "balanced",
+      setupIntensity: plan?.setupIntensity ?? "standard",
+      revealCadence: plan?.revealCadence ?? "mid",
+      chapterOpenerStyle: plan?.chapterOpenerStyle ?? "grounding-first",
+      continuityMode: plan?.continuityMode ?? "strict",
+      repetitionGuard: plan?.repetitionGuard ?? "aggressive",
+      canonTagDepth: plan?.canonTagDepth ?? "comprehensive",
+    } as const;
+  }
+
+  /** Compact one-line advanced hints for plan generation. */
+  function buildCompactAdvancedHints(chapterIndex: number, totalChapters: number): string {
+    const c = getPlanGenerationControls();
+    const profile = getChapterPlanningProfile(chapterIndex, totalChapters);
+    const parts: string[] = [];
+    if (c.pacingMode !== "balanced") parts.push(`Pacing: ${c.pacingMode}`);
+    if (profile.role === "opening" && c.setupIntensity !== "standard") parts.push(`Setup: ${c.setupIntensity}`);
+    if (c.revealCadence !== "mid") parts.push(`Reveal: ${c.revealCadence}`);
+    if (c.chapterOpenerStyle !== "grounding-first") parts.push(`Opener: ${c.chapterOpenerStyle}`);
+    if (c.continuityMode !== "standard") parts.push(`Continuity: ${c.continuityMode}`);
+    if (c.repetitionGuard !== "standard") parts.push(`No repeat: ${c.repetitionGuard}`);
+    return parts.length ? parts.join(". ") : "";
+  }
+
+  function getChapterPlanningProfile(chapterIndex: number, totalChapters: number) {
+    const controls = getPlanGenerationControls();
     const chapterNumber = chapterIndex + 1;
-    const openingCut = Math.max(2, Math.ceil(totalChapters * 0.25));
-    const endingCut = Math.max(openingCut + 1, totalChapters - Math.max(2, Math.ceil(totalChapters * 0.2)));
-    if (chapterNumber <= openingCut) {
-      return pacingMode === "fast"
-        ? "- Arc stage: opening. Hook quickly, but do NOT spend major endgame reveals yet."
-        : "- Arc stage: opening. Establish character, stakes, and world with controlled escalation. Do NOT jump to endgame beats.";
+    const setupRatio = controls.setupIntensity === "deep" ? 0.4 : controls.setupIntensity === "light" ? 0.2 : 0.3;
+    const openingCut = Math.max(2, Math.min(totalChapters - 2, Math.ceil(totalChapters * setupRatio)));
+    const revealRatio = controls.revealCadence === "early" ? 0.7 : controls.revealCadence === "late" ? 0.9 : 0.8;
+    const endingCut = Math.max(openingCut + 1, Math.min(totalChapters, Math.ceil(totalChapters * revealRatio)));
+    const role: "opening" | "middle" | "conclusion" =
+      chapterNumber <= openingCut
+        ? "opening"
+        : chapterNumber >= endingCut
+          ? "conclusion"
+          : "middle";
+    return { role, openingCut, endingCut, controls };
+  }
+
+  function buildCanonBalanceContractLines() {
+    const controls = getPlanGenerationControls();
+    const tagRule =
+      controls.canonTagDepth === "comprehensive"
+        ? "  6) Tag canon references comprehensively: include relevant character/location/lore/event anchors in each chapter."
+        : "  6) Tag canon references selectively: include the most relevant character/location/lore/event anchors.";
+    return [
+      "- CANON BALANCE CONTRACT (REQUIRED):",
+      "  1) Align with The Architect beats/subplots/arcs if provided.",
+      "  2) Preserve Summary intent (genre, tone, stakes, themes).",
+      "  3) Preserve character continuity (motives, relationships, emotional carryover).",
+      "  4) Preserve style voice (POV/tense/voice rules).",
+      "  5) Preserve world/lore constraints and setting logic.",
+      tagRule,
+    ];
+  }
+
+  function buildChapterArcGuidance(chapterIndex: number, totalChapters: number) {
+    const profile = getChapterPlanningProfile(chapterIndex, totalChapters);
+    const { pacingMode, setupIntensity, revealCadence, chapterOpenerStyle } = profile.controls;
+    const openerRule =
+      chapterOpenerStyle === "cold-open"
+        ? "Use a hook-first opener, then quickly ground motive and stakes."
+        : chapterOpenerStyle === "mixed"
+          ? "Mix opener styles across chapters, but keep continuity explicit."
+          : "Open with grounding context before the chapter's main confrontation.";
+    if (profile.role === "opening") {
+      return [
+        `- Arc stage: opening movement (through chapter ${profile.openingCut}).`,
+        `- Setup depth: ${setupIntensity}. Prioritize baseline world, relationships, and motive before major escalation.`,
+        `- Opener style: ${openerRule}`,
+        pacingMode === "fast"
+          ? "- Pacing note: keep momentum high but do not skip setup causality."
+          : "- Pacing note: preserve setup runway and clear cause-and-effect.",
+        `- Reveal cadence: ${revealCadence}. Avoid major endgame reveals this early unless explicitly required by The Architect.`,
+      ].join("\n");
     }
-    if (chapterNumber >= endingCut) {
-      return "- Arc stage: closing movement. Escalate toward resolution while paying off earlier setups.";
+    if (profile.role === "conclusion") {
+      return [
+        `- Arc stage: convergence/payoff (from chapter ${profile.endingCut}).`,
+        "- Escalate toward decisive confrontation and paid-off consequences.",
+        "- Resolve major open threads while preserving character and world logic.",
+      ].join("\n");
     }
-    return "- Arc stage: middle movement. Build complications, deepen consequences, and set up later payoffs.";
+    return [
+      `- Arc stage: middle escalation (chapters ${profile.openingCut + 1}-${Math.max(profile.endingCut - 1, profile.openingCut + 1)}).`,
+      "- Build pressure through complication, consequence, and changed strategy.",
+      `- Reveal cadence: ${revealCadence}. Time key revelations to avoid premature finale energy.`,
+    ].join("\n");
   }
 
   function getCompactGenreExecutionHint(): string {
     const genres = (novel?.storyBible.summary.genre ?? []).map((g) => g.toLowerCase());
     if (genres.length === 0) return "";
     if (genres.some((g) => g.includes("thriller") || g.includes("suspense"))) {
-      return "- GENRE PRESSURE: Thriller/Suspense tone is mandatory. Keep urgency high, escalate threat, add reversals, and end chapters with unresolved pressure.";
+      return "- GENRE: Thriller — urgency, escalation, reversals. Each chapter = distinct beat (arrival, discovery, confrontation, reveal). No filler, no repeated 'walking the street'.";
     }
     if (genres.some((g) => g.includes("mystery") || g.includes("crime") || g.includes("detective"))) {
-      return "- GENRE PRESSURE: Mystery/Crime tone is mandatory. Each chapter must shift what characters/readers believe through clues, uncertainty, or reveal.";
+      return "- GENRE: Mystery — each chapter shifts belief. Clues, discoveries, reveals. Distinct beat per chapter (interview, clue, confrontation). No filler.";
     }
     if (genres.some((g) => g.includes("romance"))) {
       return "- GENRE PRESSURE: Romance tone is mandatory. Advance connection through conflict, vulnerability, and emotional consequence.";
@@ -4664,11 +4928,20 @@ function NovelWorkspacePage() {
     return "- GENRE PRESSURE: Keep pacing, scene selection, and emotional texture faithful to the declared genre.";
   }
 
+  function buildChapterBlueprintContract(chapterIndex: number, totalChapters: number, settingAnchor: string) {
+    return [
+      "ANTI-REPETITION (CRITICAL): Never repeat scenes, confrontations, or beats from prior chapters. Each chapter covers NEW ground. Aftermath or new development only. No recycled scenes.",
+      chapterIndex > 0 ? "HANDOFF: Start from prior chapter end-state. Do NOT reset to novel opening." : "",
+      settingAnchor ? `LOCATION: "${settingAnchor}" unless plot requires explicit travel. One primary location per chapter — no ping-pong.` : "LOCATION: One primary location per chapter. Do not jump between places within the same chapter.",
+    ].filter(Boolean);
+  }
+
   function buildPhase2Prompt(chapterContext: string, chapterIndex: number, totalChapters: number): string {
-    const pacingMode = novel?.storyBible.bookPlan?.pacingMode ?? "balanced";
+    const profile = getChapterPlanningProfile(chapterIndex, totalChapters);
+    const { pacingMode } = profile.controls;
     const genreExecutionHint = getCompactGenreExecutionHint();
     const knownLocations = (novel?.storyBible.locations ?? []).map((l) => l.name).filter(Boolean);
-    const synopsisSeed = `${novel?.storyBible.summary.synopsisShort || ""} ${novel?.synopsis || ""}`.trim();
+    const synopsisSeed = `${getCombinedSynopsis()} ${novel?.synopsis || ""}`.trim();
     const settingAnchor = synopsisSeed
       ? (detectPrimaryKnownLocationName(synopsisSeed, knownLocations) || knownLocations[0] || "")
       : (knownLocations[0] || "");
@@ -4702,19 +4975,9 @@ function NovelWorkspacePage() {
       "This is NOT reader-facing copy. Do not write teaser blurbs or marketing language.",
       `Return JSON: { "synopsis": "${sentTgt} sentences with concrete events, character dynamics, and emotional beats", "characters": ["names"], "locations": ["names"], "events": ["key moments"], "lore": ["relevant lore titles"] }`,
       ...(spineChapterCtx ? [spineChapterCtx, ""] : []),
-      "Synopsis must be a DETAILED blueprint — not just what happens, but HOW it happens, WHO reacts, and what CHANGES.",
-      "Include: opening beat, middle development (transitional moments, character reactions, emotional shifts), and closing beat.",
-      "Go beyond the outline — add the connective tissue between major plot points that a prose writer needs.",
-      "Include concrete beats: setup, goal, conflict/escalation, turning point, character dynamics, and chapter outcome.",
+      ...buildChapterBlueprintContract(chapterIndex, totalChapters, settingAnchor),
       "The synopsis is an internal production note for AI, not reader copy.",
-      "Use explicit nouns and actions, not vague language.",
-      "NEVER repeat scenes or emotional beats from adjacent chapters. Each chapter must cover genuinely NEW ground.",
-      "Use objective -> obstacle -> outcome logic for the chapter's main line of action.",
       subplotProgressRule,
-      "Use one primary location for this chapter unless transition is absolutely story-critical.",
-      settingAnchor ? `- SETTING CONTINUITY (CRITICAL): Story anchor location is "${settingAnchor}". Do not shift to a different city/location unless the synopsis explicitly includes a travel/relocation transition.` : "",
-      chapterIndex > 0 ? "- CHAPTER-TO-CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's end-state and consequences. Do NOT reset back to the novel opening setup. If a time jump is needed, make it explicit and causal." : "",
-      "- Maintain continuity with previous and next chapters.",
       genreExecutionHint,
       pacingRule,
       arcGuidance,
@@ -4730,6 +4993,7 @@ function NovelWorkspacePage() {
 
   function evaluateOperationalPlanResult(
     result: { synopsis?: string; characters?: string[]; locations?: string[]; events?: string[] } | null,
+    options?: { chapterIndex?: number; totalChapters?: number },
   ) {
     const synopsis = typeof result?.synopsis === "string" ? result.synopsis.trim() : "";
     const characters = parseStringList(result?.characters);
@@ -4737,12 +5001,49 @@ function NovelWorkspacePage() {
     const events = parseStringList(result?.events);
     const sentenceCount = synopsis ? synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length : 0;
     const hasOutcomeCue = /\b(therefore|as a result|by the end|ultimately|forcing|which leads to|sets up|reveals|discovers|realizes|decides|confronts|shifts|changes|escalates)\b/i.test(synopsis);
+    const profile =
+      typeof options?.chapterIndex === "number" && typeof options?.totalChapters === "number"
+        ? getChapterPlanningProfile(options.chapterIndex, options.totalChapters)
+        : null;
+    const setupSignalCount = [
+      /\b(establish|baseline|normal world|daily life|status quo|routine|context)\b/i,
+      /\b(goal|wants|intends|tries to|decides to|plans to)\b/i,
+      /\b(relationship|trust|conflict with|bond|alliance|family|friend)\b/i,
+      /\b(inciting|pressure|disruption|threat|problem|complication)\b/i,
+    ].reduce((count, regex) => count + Number(regex.test(synopsis)), 0);
+    const hasPrematureFinality = /\b(all conflicts resolved|everything is resolved|final ending|case closed|nothing left to fight)\b/i.test(synopsis);
+    const setupGuardOk =
+      !profile || profile.role !== "opening"
+        ? true
+        : setupSignalCount >= 2 && !hasPrematureFinality;
+    const continuityGuardOk =
+      !profile || profile.role === "opening"
+        ? true
+        : profile.controls.continuityMode === "strict"
+          ? hasChapterCarryoverCue(synopsis) && !hasChapterResetCue(synopsis)
+          : hasChapterCarryoverCue(synopsis) || !hasChapterResetCue(synopsis);
+    const revealCadenceGuardOk =
+      !profile || profile.controls.revealCadence !== "late" || profile.role !== "opening"
+        ? true
+        : !/\b(mastermind revealed|killer revealed|final truth exposed|all secrets exposed)\b/i.test(synopsis);
+    const canonAnchorCount = Number(characters.length > 0) + Number(locations.length > 0) + Number(events.length > 0);
+    const canonAnchorRequired =
+      profile?.controls.canonTagDepth === "comprehensive" ? 3 : 2;
+    const repetitionGuardOk =
+      !profile || profile.controls.repetitionGuard !== "aggressive"
+        ? true
+        : events.length >= 2 && sentenceCount >= 7;
     const ok =
       synopsis.length >= 350 &&
       sentenceCount >= 6 &&
       events.length >= 1 &&
       (characters.length >= 1 || locations.length >= 1) &&
-      hasOutcomeCue;
+      hasOutcomeCue &&
+      canonAnchorCount >= canonAnchorRequired &&
+      setupGuardOk &&
+      continuityGuardOk &&
+      revealCadenceGuardOk &&
+      repetitionGuardOk;
     return { ok, synopsis, characters, locations, events, sentenceCount };
   }
 
@@ -4750,10 +5051,11 @@ function NovelWorkspacePage() {
     const synopsis = (text || "").trim();
     if (!synopsis) return true;
     if (/^outline for\s+/i.test(synopsis)) return true;
-    if (/^chapter\s+\d+\s*[:\-]/i.test(synopsis) && synopsis.length < 180) return true;
+    if (/^chapter\s+\d+\s*[:\-]/i.test(synopsis) && synopsis.length < 100) return true;
     const words = synopsis.split(/\s+/).filter(Boolean).length;
     const sentences = synopsis.split(/(?<=[.!?])\s+/).filter(Boolean).length;
-    return words < 70 || sentences < 4;
+    /* Only treat as weak if very short — avoid replacing real AI output with generic template. */
+    return words < 35 || sentences < 2;
   }
 
   function hasChapterCarryoverCue(text: string): boolean {
@@ -4762,6 +5064,95 @@ function NovelWorkspacePage() {
 
   function hasChapterResetCue(text: string): boolean {
     return /\b(the story opens|opens with|at the beginning|it begins with|introduces the protagonist)\b/i.test(text);
+  }
+
+  function getOpeningRunwayScore(text: string): number {
+    const source = (text || "").trim();
+    if (!source) return 0;
+    const checks = [
+      /\b(establish|baseline|normal world|daily life|status quo|routine|context)\b/i,
+      /\b(goal|wants|intends|tries to|plans to|needs to|decision)\b/i,
+      /\b(relationship|family|friend|ally|rival|trust|conflict with)\b/i,
+      /\b(pressure|problem|threat|complication|inciting|disruption)\b/i,
+    ];
+    return checks.reduce((score, regex) => score + Number(regex.test(source)), 0);
+  }
+
+  function hasOpeningRunway(text: string, setupIntensity: PlanSetupIntensity): boolean {
+    const score = getOpeningRunwayScore(text);
+    const threshold = setupIntensity === "deep" ? 3 : setupIntensity === "light" ? 1 : 2;
+    return score >= threshold;
+  }
+
+  function looksLikeDullChapterOpening(text: string): boolean {
+    const firstSentence = (text || "").trim().split(/(?<=[.!?])\s+/).filter(Boolean)[0] || "";
+    if (!firstSentence) return true;
+    return /\b(the chapter (opens|begins)|it begins|the story opens|in this chapter|chapter \d+|we see)\b/i.test(firstSentence);
+  }
+
+  function buildOpeningSparkLine(args: {
+    chapterTitle: string;
+    chapterRole: "opening" | "middle" | "conclusion";
+    settingAnchor: string;
+    previousSynopsis: string;
+  }): string {
+    const anchor = args.settingAnchor || "the story setting";
+    const carry = args.previousSynopsis
+      ? "with the previous chapter's consequences still active"
+      : "as pressure quietly begins to rise";
+    if (args.chapterRole === "opening") {
+      return `${args.chapterTitle} opens in ${anchor} with a concrete disruption that exposes the protagonist's immediate want, emotional faultline, and what can be lost if they misread the moment.`;
+    }
+    if (args.chapterRole === "conclusion") {
+      return `${args.chapterTitle} opens in ${anchor} ${carry}, with unresolved tensions colliding into the decisive movement toward payoff.`;
+    }
+    return `${args.chapterTitle} opens in ${anchor} ${carry}, forcing a fresh choice that changes leverage before the chapter's first turn.`;
+  }
+
+  function strengthenChapterOpeningIfNeeded(args: {
+    synopsis: string;
+    chapterTitle: string;
+    chapterRole: "opening" | "middle" | "conclusion";
+    settingAnchor: string;
+    previousSynopsis: string;
+  }): string {
+    const synopsis = (args.synopsis || "").trim();
+    if (!synopsis) return synopsis;
+    if (!looksLikeDullChapterOpening(synopsis)) return synopsis;
+    const spark = buildOpeningSparkLine(args);
+    return `${spark} ${synopsis}`;
+  }
+
+  function buildRollingPlanContext(args: {
+    allTitles: string[];
+    generatedSynopses: string[];
+    chapterIndex: number;
+  }): string {
+    const { allTitles, generatedSynopses, chapterIndex } = args;
+    if (generatedSynopses.length === 0) return "";
+    const recentStart = Math.max(0, generatedSynopses.length - 2);
+    const recent = generatedSynopses
+      .slice(recentStart)
+      .map((synopsis, offset) => {
+        const idx = recentStart + offset;
+        return `Ch ${idx + 1} "${allTitles[idx]}": ${clampPromptText(synopsis, 420)}`;
+      })
+      .join("\n\n");
+    const arcTrail = generatedSynopses
+      .slice(Math.max(0, generatedSynopses.length - 4))
+      .map((synopsis, idx) => {
+        const chapterNo = Math.max(1, chapterIndex - (generatedSynopses.length - 1 - (Math.max(0, generatedSynopses.length - 4) + idx)));
+        const tail = synopsis.split(/(?<=[.!?])\s+/).slice(-1)[0] || synopsis;
+        return `End-state Ch ${chapterNo}: ${clampPromptText(tail, 200)}`;
+      })
+      .join("\n");
+    return [
+      "RECENT CHAPTER CONTINUITY (highest priority):",
+      recent,
+      "",
+      "RUNNING STORY STATE:",
+      arcTrail,
+    ].filter(Boolean).join("\n");
   }
 
   function buildNaturalChapterSynopsisFallback(args: {
@@ -4778,7 +5169,7 @@ function NovelWorkspacePage() {
       .map((c) => c.name)
       .filter(Boolean)
       .join(", ");
-    const storySeed = clampPromptText((novel?.storyBible.summary.synopsisShort || novel?.synopsis || "").trim(), 320);
+    const storySeed = clampPromptText((getCombinedSynopsis() || novel?.synopsis || "").trim(), 320);
     const prevTail = args.previousSynopsis ? clampPromptText(args.previousSynopsis, 220) : "";
     const loc = args.settingAnchor || "the story setting";
     const chapterNo = args.chapterIndex + 1;
@@ -4816,6 +5207,7 @@ function NovelWorkspacePage() {
     spineHint?: string;
   }): Promise<string> {
     let synopsis = (args.synopsis || "").trim();
+    let candidate = "";
     if (!isWeakOrPlaceholderChapterSynopsis(synopsis)) return synopsis;
     try {
       const rewritePrompt = [
@@ -4827,7 +5219,7 @@ function NovelWorkspacePage() {
         `Current weak synopsis:\n${synopsis || "(empty)"}`,
         args.previousSynopsis ? `Previous chapter synopsis:\n${args.previousSynopsis}` : "",
         args.nextTitle ? `Next chapter title: ${args.nextTitle}` : "Final chapter.",
-        args.spineHint ? `Spine targets for this chapter:\n${args.spineHint}` : "",
+        args.spineHint ? `The Architect targets for this chapter:\n${args.spineHint}` : "",
         "",
         `Canon context:\n${args.chapterContext}`,
         "",
@@ -4837,20 +5229,13 @@ function NovelWorkspacePage() {
         timeoutMs: 180000,
         systemMessage: "Novel outliner. Write concrete chapter synopses only. No meta text. Return valid JSON.",
       });
-      const candidate = (rewritten?.synopsis ?? "").trim();
+      candidate = (rewritten?.synopsis ?? "").trim();
       if (!isWeakOrPlaceholderChapterSynopsis(candidate)) return candidate;
     } catch {
-      // Fall through to deterministic natural fallback.
+      // API rewrite failed.
     }
-    return buildNaturalChapterSynopsisFallback({
-      chapterTitle: args.chapterTitle,
-      chapterIndex: args.chapterIndex,
-      totalChapters: args.totalChapters,
-      chapterRole: args.chapterRole,
-      previousSynopsis: args.previousSynopsis,
-      nextTitle: args.nextTitle,
-      settingAnchor: args.settingAnchor,
-    });
+    /* Prefer original or rewrite. Never use generic template fallback — it adds same boilerplate to every chapter. */
+    return candidate || args.synopsis;
   }
 
   function detectChapterSynopsisDuplication(
@@ -4917,7 +5302,7 @@ function NovelWorkspacePage() {
         nearby ? `Reference chapters to avoid repeating:\n${nearby}` : "",
         args.previousSynopsis ? `Previous chapter synopsis:\n${clampPromptText(args.previousSynopsis, 900)}` : "",
         args.nextTitle ? `Next chapter title: ${args.nextTitle}` : "Final chapter.",
-        args.spineHint ? `Spine targets:\n${args.spineHint}` : "",
+        args.spineHint ? `The Architect targets:\n${args.spineHint}` : "",
         "",
         "Return JSON only: { \"synopsis\": \"rewritten synopsis\" }",
       ].filter(Boolean).join("\n");
@@ -4932,19 +5317,7 @@ function NovelWorkspacePage() {
     }
     const afterRewriteCheck = detectChapterSynopsisDuplication(synopsis, args.priorSynopses);
     if (!afterRewriteCheck.repeating) return synopsis;
-    synopsis = buildNaturalChapterSynopsisFallback({
-      chapterTitle: args.chapterTitle,
-      chapterIndex: args.chapterIndex,
-      totalChapters: args.totalChapters,
-      chapterRole: args.chapterRole,
-      previousSynopsis: args.previousSynopsis,
-      nextTitle: args.nextTitle,
-      settingAnchor: args.settingAnchor,
-    });
-    const afterFallbackCheck = detectChapterSynopsisDuplication(synopsis, args.priorSynopses);
-    if (afterFallbackCheck.repeating) {
-      synopsis = `${synopsis} Chapter ${args.chapterIndex + 1} introduces a chapter-specific strategic shift that changes leverage and direction from all prior chapters.`;
-    }
+    /* Keep AI output; generic fallback adds identical template to every chapter. */
     return synopsis;
   }
 
@@ -5035,13 +5408,11 @@ function NovelWorkspacePage() {
     };
 
     const systemMsg = [
-      `You are a prose editor working on a ${novelGenre} novel.`,
-      `CRITICAL: You MUST produce a genuinely DIFFERENT version of the text. Do NOT return the original text or something nearly identical. Change sentence structures, word choices, and phrasing.`,
-      `You MUST return ONLY the replacement prose — nothing else. No quotes, no labels, no "Here is the rewritten text:", no explanations.`,
-      `NEVER include your thinking, notes, word counts, or meta-commentary.`,
-      `The replacement must flow naturally with the text before and after it.`,
-      `Avoid AI writing patterns: no excessive em dashes (—), no "a testament to", "the weight of", "couldn't help but", "sent a shiver", "a sense of". Write like a human author.`,
-      `Match the voice, tense, POV, and style of the surrounding prose exactly.`,
+      `You are a prose editor working on a ${novelGenre} novel. AUTHOR'S LENS: Match the author's voice and style exactly.`,
+      `CRITICAL: Produce a genuinely DIFFERENT version. Change sentence structures, word choices, phrasing. Do NOT return near-identical text.`,
+      `Return ONLY the replacement prose. No quotes, labels, or meta-commentary.`,
+      `The replacement must flow with the surrounding text. Match voice, tense, POV, and style precisely.`,
+      `AVOID AI patterns: no em dashes, no "a testament to", "the weight of", "couldn't help but", "a sense of", "sent a shiver". Write like a human author.`,
     ].join(" ");
 
     const prompt = [
@@ -5496,6 +5867,89 @@ function NovelWorkspacePage() {
     return results;
   }
 
+  /** Chapter Doctor: analyses chapter plan for beat coverage, forward momentum, genre delivery, consistency. */
+  async function runChapterDoctor() {
+    if (!novel || chapterDoctorBusy) return;
+    const chapters = novel.storyBible.bookPlan?.chapters ?? [];
+    if (chapters.length < 2) {
+      setPlanError("Add at least 2 chapters with synopses before running Chapter Doctor.");
+      return;
+    }
+    const withSynopsis = chapters.filter((c) => (c.synopsis ?? "").trim().length >= 50);
+    if (withSynopsis.length < 2) {
+      setPlanError("Chapters need synopses before Chapter Doctor can analyse them.");
+      return;
+    }
+    setChapterDoctorBusy(true);
+    setChapterDoctorResult(null);
+    setChapterDoctorFixesApplied(false);
+    setPlanError(null);
+    try {
+      const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+      const genreLower = genre.toLowerCase();
+      const genreLens = (() => {
+        if (/\bthriller|suspense\b/.test(genreLower)) return "Thriller/Suspense: Is there enough tension, urgency, reversals, stakes? Each chapter should escalate.";
+        if (/\bmystery|crime|detective\b/.test(genreLower)) return "Mystery/Crime: Are clues, reveals, and misdirection present? Does each chapter shift what the reader believes?";
+        if (/\bromance\b/.test(genreLower)) return "Romance: Is the relationship advancing? Conflict, vulnerability, emotional beats?";
+        if (/\bhorror\b/.test(genreLower)) return "Horror: Is dread escalating? Concrete threat signals? Atmosphere?";
+        if (/\bfantasy|sci-fi|science fiction\b/.test(genreLower)) return "Speculative: Is worldbuilding woven in? Rules respected? Stakes clear?";
+        return `Genre: ${genre}. Does the plan deliver what readers expect from this genre?`;
+      })();
+      const spine = novel.storyBible.plotSpine;
+      const beatAssignment = spine?.beats?.length ? getPlotSpineBeatAssignment(chapters.length) : null;
+      const beatCtx = beatAssignment
+        ? beatAssignment.chapterBeatMap.map((beatIds, ci) => {
+            const beatTitles = (beatIds ?? [])
+              .map((id) => spine!.beats.find((b) => b.id === id)?.title)
+              .filter(Boolean);
+            return `Ch${ci + 1}: [${beatTitles.join(", ") || "no beats"}]`;
+          }).join("\n")
+        : "No Architect beats — analyse structure and momentum only.";
+      const storyAnchor = (getCombinedSynopsis() ?? "").trim().slice(0, 500);
+      const characterNames = (novel.storyBible.characters ?? []).slice(0, 8).map((c) => c.name).filter(Boolean).join(", ");
+      const chapterList = chapters.map((c, i) => `Ch${i + 1} "${c.title || `Chapter ${i + 1}`}":\n${(c.synopsis ?? "").trim().slice(0, 380)}${(c.synopsis ?? "").length > 380 ? "…" : ""}`).join("\n\n");
+      const prompt = [
+        "You are a senior story editor. Do one rigorous editorial pass on this chapter plan. List every issue you find — do not cap the list.",
+        "",
+        "CHECK ALL OF THESE:",
+        "- Beat coverage (if Architect present): each assigned beat reflected in the right chapter.",
+        "- Forward momentum: cause-and-effect, no stagnant or filler chapters, each chapter changes the story state.",
+        "- Genre delivery: the plan delivers what the genre promises (see GENRE LENS).",
+        "- Overlap/repetition: no repeated scene types (e.g. multiple 'character examines documents alone'), no recycled beats across chapters.",
+        "- Pacing variety: tension curve (not flat), mix of action/reaction, no long runs of same energy.",
+        "- Structure: chapters don't all follow the same pattern (arrive → discover → leave). Variety in openings and closings.",
+        "- Character agency: protagonists and key characters drive choices; plot doesn't just happen to them.",
+        "- Hooks: chapter openings pull the reader in; chapter endings create forward pull where appropriate.",
+        "- Consistency: tone, stakes, and story logic hold across chapters.",
+        "",
+        "Order issues by severity: critical first, then warning, then tip. Reference chapter numbers and titles. Be specific. A thorough draft often has 5–15 issues.",
+        storyAnchor ? `\nSTORY PREMISE (plan must align):\n${storyAnchor}` : "",
+        characterNames ? `\nKEY CHARACTERS (consider presence/agency): ${characterNames}` : "",
+        `\nGENRE: ${genre}`,
+        `GENRE LENS: ${genreLens}`,
+        `\nBEAT ASSIGNMENT (if present):\n${beatCtx}`,
+        `\nCHAPTER SYNOPSES:\n${chapterList}`,
+        `\nReturn JSON: { "score": 1-100, "summary": "2-3 sentence overall assessment with one concrete strength and one priority fix", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "beats|momentum|genre|overlap|consistency|pacing|structure|agency|hooks", "message": "what's wrong", "suggestion": "how to fix it" }] }`,
+      ].filter(Boolean).join("\n");
+      const raw = await requestOpenRouterText(prompt, 6500, 180000, "You are a senior story editor. Audit the chapter plan rigorously. List every issue. Be specific. Return only valid JSON.", false, 0.2);
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      let aiIssues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }> = [];
+      let aiScore = 50;
+      let aiSummary = "";
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { score?: number; summary?: string; issues?: typeof aiIssues };
+        aiIssues = parsed.issues ?? [];
+        aiScore = parsed.score ?? 50;
+        aiSummary = parsed.summary ?? "";
+      }
+      setChapterDoctorResult({ issues: aiIssues, score: aiScore, summary: aiSummary });
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : "Chapter Doctor failed. Try again.");
+    } finally {
+      setChapterDoctorBusy(false);
+    }
+  }
+
   /* ─── End two-phase helpers ─── */
 
   /** Trims character data to only the fields relevant for the AI mode to save tokens. */
@@ -5548,6 +6002,7 @@ function NovelWorkspacePage() {
     aiAbortRef.current?.abort();
     aiAbortRef.current = null;
     setStoryAiBusyAction(null);
+    setProfileGenProgress(null);
     setEditorLoadingPhase(null);
     setFeedbackReviewApplying(false);
     setFbPreviewGenerating(false);
@@ -5779,6 +6234,7 @@ function NovelWorkspacePage() {
 
     setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
+    setChapterBlocksGenProgress({ current: 0, total: GENERATED_BLOC_COUNT, beatLabel: "Extracting beats…" });
 
     try {
       type BlocEntry = { synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number };
@@ -5843,26 +6299,61 @@ function NovelWorkspacePage() {
           .replace(/A fresh [^.]*complication shifts the objective, forcing a different tactic than earlier scenes\.?/gi, "")
           .replace(/\s+/g, " ")
           .trim();
-      const chapterSentenceChunks = (() => {
+      type ChapterBeat = { label: string; description: string };
+      let chapterBeats: ChapterBeat[] = [];
+      try {
+        setStoryAiError("Extracting chapter beats...");
+        const beatPrompt = [
+          `Extract exactly ${BLOC_COUNT} narrative beats from this chapter synopsis. Each beat is one distinct scene/development.`,
+          `Return JSON: { "beats": [{ "label": "short label (e.g. Opening, Complication)", "description": "2-4 sentence summary of what happens in this beat" }] }`,
+          "Labels: Opening, Setup, Complication, Turn, Climax, Resolution — adapt to fit the chapter. Each beat must map to a specific part of the synopsis.",
+          "Descriptions must be concrete: who does what, what changes, what the beat covers.",
+          "",
+          `Chapter: ${activeChapter.title}`,
+          `Chapter synopsis:\n${chapterSynopsis}`,
+        ].join("\n");
+        const beatResult = await requestOpenRouterJson<{ beats?: ChapterBeat[] }>(beatPrompt, 800, {
+          timeoutMs: 45000,
+          systemMessage: "Return only valid JSON with a 'beats' array of objects with 'label' and 'description'.",
+        });
+        const rawBeats = Array.isArray(beatResult?.beats) ? beatResult.beats : [];
+        if (rawBeats.length >= BLOC_COUNT) {
+          chapterBeats = rawBeats.slice(0, BLOC_COUNT);
+        } else {
+          const src = splitSentences(chapterSynopsis);
+          const chunkSize = Math.max(1, Math.ceil(src.length / Math.max(1, BLOC_COUNT)));
+          const labels = ["Opening", "Development", "Complication", "Resolution"].slice(0, BLOC_COUNT);
+          chapterBeats = Array.from({ length: BLOC_COUNT }, (_, i) => ({
+            label: labels[i] || `Beat ${i + 1}`,
+            description: src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim() || chapterSynopsis.slice(0, 180),
+          }));
+        }
+        setStoryAiError(null);
+      } catch {
         const src = splitSentences(chapterSynopsis);
         const chunkSize = Math.max(1, Math.ceil(src.length / Math.max(1, BLOC_COUNT)));
-        return Array.from({ length: BLOC_COUNT }, (_, i) => src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim());
-      })();
+        const labels = ["Opening", "Development", "Complication", "Resolution"].slice(0, BLOC_COUNT);
+        chapterBeats = Array.from({ length: BLOC_COUNT }, (_, i) => ({
+          label: labels[i] || `Beat ${i + 1}`,
+          description: src.slice(i * chunkSize, (i + 1) * chunkSize).join(" ").trim() || chapterSynopsis.slice(0, 180),
+        }));
+        setStoryAiError(null);
+      }
       const chapterCharacterTerms = new Set(
         rosterChars
           .flatMap((c) => (c.name || "").split(/\s+/))
           .map((w) => normalizeSynopsis(w).trim())
           .filter(Boolean),
       );
-      const chunkAnchorTermsByIndex = chapterSentenceChunks.map((chunk) =>
+      const beatAnchorTermsByIndex = chapterBeats.map((beat) =>
         new Set(
-          contentTerms(chunk)
+          contentTerms(`${beat.label} ${beat.description}`)
             .map((w) => normalizeSynopsis(w).trim())
             .filter((w) => w.length >= 4 && !chapterCharacterTerms.has(w)),
         ),
       );
-      const hasChunkAnchorCarryover = (synopsis: string, index: number) => {
-        const terms = chunkAnchorTermsByIndex[index];
+      const hasBeatAnchorCarryover = (synopsis: string, index: number) => {
+        const terms = beatAnchorTermsByIndex[index];
         if (!terms || terms.size === 0) return true;
         const synopsisTerms = new Set(contentTerms(synopsis).map((w) => normalizeSynopsis(w).trim()).filter(Boolean));
         for (const term of terms) {
@@ -5870,18 +6361,18 @@ function NovelWorkspacePage() {
         }
         return false;
       };
-      const chunkAnchorSnippetForBloc = (index: number) => {
-        const chunk = (chapterSentenceChunks[index] || "").trim();
-        if (!chunk) return "";
-        return clampPromptText(chunk, 260);
+      const beatAnchorSnippetForBloc = (index: number) => {
+        const beat = chapterBeats[index];
+        if (!beat) return "";
+        return clampPromptText(`${beat.label}: ${beat.description}`, 280);
       };
       const chunkSimilarityForIndex = (synopsis: string, index: number) => {
-        const chunk = chapterSentenceChunks[index] || "";
+        const chunk = (chapterBeats[index]?.description ?? "").trim();
         if (!chunk.trim()) return 1;
         return synopsisSimilarity(synopsis, chunk);
       };
       const fallbackSegmentForIndex = (index: number, total: number, previousSynopsis: string) => {
-        const fromChapter = chapterSentenceChunks[index] || "";
+        const fromChapter = (chapterBeats[index]?.description ?? "").trim();
         if (fromChapter) return sanitizeSynopsisText(fromChapter);
         const prevSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
         if (index === total - 1) {
@@ -6005,7 +6496,7 @@ function NovelWorkspacePage() {
           const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
           if (disallowedCharacter) return { ok: false, reason: `Bloc ${idx + 1} introduces non-chapter character "${disallowedCharacter}".` };
           if (!hasChapterAnchorCarryover(synopsis)) return { ok: false, reason: `Bloc ${idx + 1} has drifted away from chapter synopsis details.` };
-          if (!hasChunkAnchorCarryover(synopsis, idx)) return { ok: false, reason: `Bloc ${idx + 1} has drifted from its chapter segment anchor.` };
+          if (!hasBeatAnchorCarryover(synopsis, idx)) return { ok: false, reason: `Bloc ${idx + 1} has drifted from its assigned beat.` };
           const expectedStage = expectedStageForIndex(idx, candidateBlocks.length);
           const requireStageCue = idx === 0 || idx === candidateBlocks.length - 1;
           if (requireStageCue && !hasExpectedStageCue(synopsis, expectedStage)) {
@@ -6067,7 +6558,7 @@ function NovelWorkspacePage() {
         if (!hasChapterAnchorCarryover(nextSynopsis)) {
           nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
         }
-        if (!hasChunkAnchorCarryover(nextSynopsis, index)) {
+        if (!hasBeatAnchorCarryover(nextSynopsis, index)) {
           nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
         }
 
@@ -6180,7 +6671,7 @@ function NovelWorkspacePage() {
         const disallowedCharacter = findDisallowedCanonicalCharacter(synopsis);
         if (disallowedCharacter) return `introduces non-chapter character "${disallowedCharacter}"`;
         if (!hasChapterAnchorCarryover(synopsis)) return "drifts away from chapter synopsis details";
-        if (!hasChunkAnchorCarryover(synopsis, idx)) return "drifts from this bloc's chapter segment anchor";
+        if (!hasBeatAnchorCarryover(synopsis, idx)) return "drifts from its assigned beat";
         if (isGenericTemplateSynopsis(synopsis)) return "contains generic template wording";
         if (idx > 0 && !hasProgressionCue(synopsis)) return "missing explicit progression cue";
         if (idx > 0 && hasOpeningResetCue(synopsis)) return "resets chapter opening instead of continuing";
@@ -6399,6 +6890,7 @@ function NovelWorkspacePage() {
       };
 
       for (let i = 0; i < BLOC_COUNT; i++) {
+        setChapterBlocksGenProgress({ current: i + 1, total: BLOC_COUNT, beatLabel: chapterBeats[i]?.label });
         const isLast = i === BLOC_COUNT - 1;
         const expectedStage = expectedStageForIndex(i, BLOC_COUNT);
         const previousClosingHook = blocks.length > 0
@@ -6418,7 +6910,7 @@ function NovelWorkspacePage() {
         let rejectionHint = "";
         for (let attempt = 0; attempt < PER_BLOC_ATTEMPTS && !blockBuilt; attempt++) {
           const oneBlocPrompt = [
-            `Write scene bloc ${i + 1} of ${BLOC_COUNT} for this chapter.`,
+            `Write scene bloc ${i + 1} of ${BLOC_COUNT}: "${chapterBeats[i]?.label ?? `Beat ${i + 1}`}".`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
             "- Write ONLY this bloc. Do not draft or summarize the remaining blocs.",
             "- synopsis must be detailed (4-8 sentences, minimum 45 words) and specific about what happens.",
@@ -6426,12 +6918,12 @@ function NovelWorkspacePage() {
             shortChapterSynopsis ? "- The chapter synopsis is brief: expand with plausible connective tissue (motives, reactions, subtext, sensory grounding) while staying faithful to the same events." : "",
             "- Use exact character names from the roster. Never use generic labels.",
             allowedCharacterNames ? `- Do NOT introduce new characters. Allowed characters only: ${allowedCharacterNames}.` : "",
-            allowedLocationNames ? `- Do NOT change setting scope. Use only these locations: ${allowedLocationNames}.` : "",
+            allowedLocationNames ? `- LOCATION: Use only: ${allowedLocationNames}. Stay in the current location until the synopsis shows explicit travel. Do not hop locations mid-chapter.` : "- LOCATION: Stay in the same location as prior blocs unless the chapter synopsis shows explicit travel. No location hopping.",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
-            chunkAnchorSnippetForBloc(i) ? `- CRITICAL CHAPTER-SEGMENT ANCHOR: this bloc must stay grounded in this specific chapter segment: "${chunkAnchorSnippetForBloc(i)}"` : "",
+            beatAnchorSnippetForBloc(i) ? `- CRITICAL BEAT ANCHOR: this bloc must cover this beat: "${beatAnchorSnippetForBloc(i)}"` : "",
             `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
-            taggedBeats.length > 0 ? "- SPINE TAGS (CRITICAL): this chapter has assigned beats/subplots. This bloc must advance its tagged beat context, not generic summary text." : "",
+            taggedBeats.length > 0 ? "- THE ARCHITECT TAGS (CRITICAL): this chapter has assigned beats/subplots. This bloc must advance its tagged beat context, not generic summary text." : "",
             "- Include explicit verbs for actions and consequences, not just mood or description.",
             "- Expand depth through motivation, subtext, and emotional reactions — avoid adding brand-new plotlines.",
             "- Make the ending of this bloc flow naturally into the next one via cause-and-effect.",
@@ -6445,8 +6937,9 @@ function NovelWorkspacePage() {
             `CHARACTER ROSTER:\n  ${characterRoster}`,
             locationRoster ? `LOCATIONS:\n  ${locationRoster}` : "",
             "",
+            "FULL CHAPTER (read entirely — your bloc must fit within this narrative):",
             `Chapter: ${activeChapter.title}`,
-            `Chapter synopsis: ${chapterSynopsis}`,
+            `Chapter synopsis:\n${chapterSynopsis}`,
             beatCueForBloc(i) ? `Tagged beat target for this bloc: ${beatCueForBloc(i)}` : "",
             subplotCue ? `Tagged subplots in this chapter: ${subplotCue}` : "",
             arcCue ? `Tagged character arcs active: ${arcCue}` : "",
@@ -6492,16 +6985,16 @@ function NovelWorkspacePage() {
               const stageMismatch = requireStageCue && !hasExpectedStageCue(built.synopsis, expectedStage);
               const missingOpeningAnchor = i === 0 && !hasOpeningAnchor(built.synopsis);
               const missingChapterAnchor = !hasChapterAnchorCarryover(built.synopsis);
-              const missingChunkAnchor = !hasChunkAnchorCarryover(built.synopsis, i);
+              const missingBeatAnchor = !hasBeatAnchorCarryover(built.synopsis, i);
               const disallowedCharacter = findDisallowedCanonicalCharacter(built.synopsis);
               const missingCrossChapterCarryover = i === 0 && (previousChapterLastBlocHook || previousChapterLastBlocSynopsis) && !hasCrossChapterCarryoverCue(built.synopsis);
               const missingFlowCue = i > 0 && !hasProgressionCue(built.synopsis);
               const openingReset = i > 0 && hasOpeningResetCue(built.synopsis);
               const isTooSimilar = maxSimilarity >= SIMILARITY_THRESHOLD;
               const isGeneric = isGenericTemplateSynopsis(built.synopsis);
-              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingChunkAnchor && !missingCrossChapterCarryover && !disallowedCharacter && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
-                blocks.push(built);
-                updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+              if (!isTooSimilar && !missingFlowCue && !openingReset && !missingOpeningAnchor && !missingChapterAnchor && !missingBeatAnchor && !missingCrossChapterCarryover && !disallowedCharacter && hasMinSentences && hasMinWords && !stageMismatch && !isGeneric) {
+                blocks.push({ ...built, beatLabel: chapterBeats[i]?.label });
+                flushSync(() => updateChapter(targetChapterId, { sceneBlocks: [...blocks] }));
                 blockBuilt = true;
                 break;
               }
@@ -6516,8 +7009,8 @@ function NovelWorkspacePage() {
                     ? `Bloc 1 must start from the chapter opening setup beat: "${clampPromptText(openingAnchor, 220)}".`
                   : missingChapterAnchor
                     ? "This bloc drifts from chapter synopsis details. Keep the same core people/place/conflict and continue those exact chapter events."
-                  : missingChunkAnchor
-                    ? "This bloc drifts from its assigned chapter segment. Re-anchor to the specific chapter moments expected at this bloc position."
+                  : missingBeatAnchor
+                    ? "This bloc drifts from its assigned beat. Re-anchor to the specific beat: " + (beatAnchorSnippetForBloc(i) ? `"${beatAnchorSnippetForBloc(i).slice(0, 120)}..."` : "cover the chapter segment for this position.") + "."
                   : disallowedCharacter
                     ? `Do not introduce ${disallowedCharacter} here. Keep only chapter-linked characters for this chapter bloc set.`
                   : missingCrossChapterCarryover
@@ -6539,13 +7032,13 @@ function NovelWorkspacePage() {
           try {
             const previousSynopses = blocks.map((b, idx) => `Bloc ${idx + 1}: ${b.synopsis}`).join("\n");
             const repairPrompt = [
-              `REPAIR bloc ${i + 1} of ${BLOC_COUNT}.`,
+              `REPAIR bloc ${i + 1} of ${BLOC_COUNT}: "${chapterBeats[i]?.label ?? `Beat ${i + 1}`}".`,
               `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
               "- Write a concrete, scene-specific synopsis with named characters, setting, actions, conflict, and outcome.",
               "- Minimum: 4 sentences and 55 words.",
               "- Never use generic/template wording.",
               "- Use story logic: objective -> obstacle -> changed outcome.",
-              taggedBeats.length > 0 ? "- Keep spine alignment: this bloc must explicitly advance the tagged beat target for its slot." : "",
+              taggedBeats.length > 0 ? "- Keep The Architect alignment: this bloc must explicitly advance the tagged beat target for its slot." : "",
               shortChapterSynopsis ? "- The chapter synopsis is short: enrich with emotional texture and connective detail, but keep the same core events and direction." : "",
               allowedCharacterNames ? `- Do NOT add characters outside this list: ${allowedCharacterNames}.` : "",
               allowedLocationNames ? `- Do NOT change locations outside this list: ${allowedLocationNames}.` : "",
@@ -6586,8 +7079,8 @@ function NovelWorkspacePage() {
               isGenericTemplateSynopsis(rebuilt.synopsis) ||
               (i > 0 && hasOpeningResetCue(rebuilt.synopsis));
             if (rebuilt && !rebuiltTooThin) {
-              blocks.push(rebuilt);
-              updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+              blocks.push({ ...rebuilt, beatLabel: chapterBeats[i]?.label });
+              flushSync(() => updateChapter(targetChapterId, { sceneBlocks: [...blocks] }));
               blockBuilt = true;
             }
           } catch {
@@ -6604,8 +7097,8 @@ function NovelWorkspacePage() {
             : i === 0 && chapterBoundarySeed
               ? `Following ${chapterBoundarySeed}, this opening scene picks up from the previous chapter's consequences rather than resetting the story. The characters face a new immediate objective under changed conditions, and their first decisions create a clear new trajectory for this chapter.`
             : `This scene advances the chapter conflict around ${chapterSeed} with a new obstacle that grows directly out of ${prevSeed}. The characters take specific actions under pressure, and those choices create immediate consequences that change the story state. The ending turns the tension forward so the next bloc has a clear handoff.`;
-          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: deterministicSynopsis, notes: chapterLevelBolton });
-          updateChapter(targetChapterId, { sceneBlocks: [...blocks] });
+          blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: deterministicSynopsis, notes: chapterLevelBolton, beatLabel: chapterBeats[i]?.label });
+          flushSync(() => updateChapter(targetChapterId, { sceneBlocks: [...blocks] }));
         }
       }
 
@@ -6662,12 +7155,12 @@ function NovelWorkspacePage() {
         });
       }
     } catch (error) {
-      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); setChapterBlocksGenProgress(null); return; }
       let msg = "Block generation failed.";
       if (error instanceof Error) {
         const m = error.message.toLowerCase();
         if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
-          msg = "Bloc generation timed out. Your model may be slow — try a faster one or a shorter chapter synopsis.";
+          msg = "Generation failed. Try again.";
         } else if (m.includes("json") || m.includes("parse") || m.includes("invalid")) {
           msg = error.message;
         } else {
@@ -6676,6 +7169,7 @@ function NovelWorkspacePage() {
       }
       setStoryAiError(msg);
     } finally {
+      setChapterBlocksGenProgress(null);
       setStoryAiBusyAction(null);
     }
   }
@@ -6976,8 +7470,9 @@ function NovelWorkspacePage() {
         summary.tone?.length ? `Tone: ${summary.tone.slice(0, 10).join(", ")}` : "",
         sv?.pov ? `POV: ${sv.pov}` : "",
         sv?.tense ? `Tense: ${sv.tense}` : "",
-        sv?.comps?.length ? `Style: ${sv.comps.slice(0, 5).join(", ")}` : "",
-        sv?.voiceRules ? `Voice & style rules (FOLLOW THESE CLOSELY): ${(sv.voiceRules ?? "").slice(0, 1200)}` : "",
+        sv?.comps?.length ? `Style comps: ${sv.comps.slice(0, 5).join(", ")}` : "",
+        sv?.voiceRules ? `Voice rules (MANDATORY — match this exactly):\n${(sv.voiceRules ?? "").slice(0, 1400)}` : "",
+        sv?.bannedWords?.length ? `BANNED PHRASES (never use): ${sv.bannedWords.slice(0, 15).join(", ")}` : "",
       ].filter(Boolean).join("\n");
 
       const blockBoltonId = block.notes || chapterBoltonId;
@@ -7054,11 +7549,13 @@ function NovelWorkspacePage() {
         : "Use AMERICAN English spelling and grammar throughout (e.g. color, realize, honor, favorite, center, program, traveling, defense). NEVER use British spellings.";
 
       const humanWritingRules = [
-        "WRITE LIKE A HUMAN AUTHOR, NOT AN AI. This is the most important rule.",
+        "AUTHOR'S LENS (CRITICAL): Write as if you ARE the author of this book. Their voice, their style, their rhythms. Read the Style/Voice section above and match it exactly. Prose must feel authentic, consistent, and human. Every sentence should sound like it belongs in THIS novel.",
         "",
-        "EM DASH RULE: Do NOT overuse em dashes (\u2014). Use them ONLY where grammatically correct (parenthetical asides, interrupted speech). NEVER use them as a lazy substitute for commas, full stops, colons, or semicolons. If you find yourself reaching for an em dash, use a different punctuation mark instead. Maximum 1-2 per 500 words.",
+        "WRITE LIKE A HUMAN AUTHOR, NOT AN AI. No generic AI cadence. No 'a testament to', 'the weight of', 'couldn't help but'. Varied rhythm. Concrete over abstract. Trust the reader.",
         "",
-        "BANNED AI WORDS \u2014 NEVER use any of these words or phrases. They are dead giveaways of AI writing:",
+        "EM DASH RULE: Do NOT use em dashes (\u2014) except for interrupted dialogue. Use commas, periods, or colons instead. Em dashes are an AI crutch. Maximum 0\u20131 per scene.",
+        "",
+        "BANNED AI WORDS \u2014 NEVER use:",
         "fluorescent, iridescent, luminescent, gossamer, ethereal, palpable, visceral, tangible, cacophony, symphony (when not about music), tapestry (when not about fabric), cascade, labyrinth, mosaic, crucible, kaleidoscope, juxtaposition, dichotomy, paradigm, nuance (as a verb), uncharted, multifaceted, intricate, myriad, delve, embark, testament, resonate, aforementioned, pivotal, commendable, noteworthy, invaluable, comprehensive, facilitate, leverage (as a verb), utilize, underscore, realm, landscape (figurative), navigate (figurative), foster, harness, bolster, spearhead, whilst",
         "",
         "BANNED AI PHRASES \u2014 NEVER use any of these:",
@@ -7073,8 +7570,8 @@ function NovelWorkspacePage() {
 
       const systemMsg = isNF ? [
         `You are a professional ${nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} author writing in ${profileLangLabel}.`,
-        "You write like a published human author. Your prose is natural, varied, and compelling.",
-        "Your PRIMARY job: match the author's established style, voice, and genre conventions from the Style section. If voice rules are provided, follow them precisely — they define how this book should read.",
+        "AUTHOR'S LENS: You embody the author's voice. Their style, rhythm, and tone define every sentence. Read the Style section and match it exactly. Prose must feel authentic and consistent.",
+        "Your PRIMARY job: match the author's established style, voice, and genre conventions. If voice rules are provided, follow them precisely. No generic AI prose.",
         povNote,
         nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight." :
         nfData?.subtype === "historical" ? "Write with authority, narrative drive, and period authenticity." :
@@ -7083,10 +7580,10 @@ function NovelWorkspacePage() {
         "Use real names, places, and details from Canon and the Source Material. When the author has written their own memories in the Scrapbook, echo their authentic voice and specific details.",
         "Return ONLY prose — no headers, labels, JSON, or metadata.",
       ].join(" ") : [
-        `You are a professional novelist writing in ${profileLangLabel}. You write like a published human author — natural, skilled, varied prose.`,
-        "Your PRIMARY job: match the author's established style, voice, and genre conventions from the Style section.",
+        `You are a professional novelist writing in ${profileLangLabel}. AUTHOR'S LENS: You write AS the author of this book. Their voice, style, and rhythms — not generic AI prose.`,
+        "Your PRIMARY job: match the author's established style, voice, and genre from the Style section. If voice rules exist, follow them exactly. Consistency is vital.",
         povNote,
-        "Use ONLY characters and locations from Canon. Return ONLY prose — no headers, labels, JSON, metadata, or thinking.",
+        "Avoid AI tells: no em dashes, no 'a testament to', 'the weight of', 'couldn't help but'. Use ONLY characters/locations from Canon. Return ONLY prose.",
       ].join(" ");
 
       const isBestFit = block.wordTarget === 0;
@@ -7125,7 +7622,10 @@ function NovelWorkspacePage() {
       blueprintParts.push(`══ END BLUEPRINT ══`);
 
       const prompt = [
-        "STYLE AND TONE — THIS IS YOUR TOP PRIORITY:",
+        "══ AUTHOR'S LENS — YOUR TOP PRIORITY ══",
+        "Write AS the author. Their voice, style, rhythm, and tone. The Style section below defines how this book reads. Match it exactly. Consistency with existing prose and voice rules is vital. If voice rules exist, follow them precisely.",
+        "",
+        "STYLE & VOICE (from Canon — FOLLOW CLOSELY):",
         styleSection || "Use professional, consistent prose.",
         humanWritingRules,
         boltonDirective ? `\nBOLT-ON DIRECTIVE: ${boltonDirective}` : "",
@@ -7172,8 +7672,8 @@ function NovelWorkspacePage() {
         "- This scene must introduce NEW progression: at least one new action, revelation, decision, or consequence beyond previous scenes.",
         "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
         "- If there is prose after your scene, your ending must flow naturally into it.",
-        isNF ? "- Non-fiction: use details from Source Material (life events, scrapbook, research notes). Write with authenticity, sensory memory, and emotional truth. Match the Style & Voice rules exactly." : "- Maintain character and canon consistency throughout. Follow voice rules and style guidance precisely.",
-        "- Write like a skilled human author. Varied sentence rhythm. No AI patterns.",
+        isNF ? "- Non-fiction: use details from Source Material. Write with authenticity. Match the Style & Voice rules exactly." : "- Maintain character and canon consistency. Follow voice rules and style guidance precisely. The author's voice defines every sentence.",
+        "- AUTHOR'S LENS: Prose must feel authentic, consistent, and human. Varied rhythm. No em dashes, no AI crutches. Match the established voice.",
         "- Output the scene prose ONLY. No commentary, no labels, no metadata.",
         !isBestFit ? `- WORD COUNT IS MANDATORY: You MUST write between ${block.wordTarget - 110} and ${block.wordTarget + 110} words. Not fewer, not more. Plan your scene structure before writing to hit this target.` : "",
       ].filter(Boolean).join("\n");
@@ -7373,7 +7873,7 @@ function NovelWorkspacePage() {
       if (error instanceof Error) {
         const m = error.message.toLowerCase();
         if (m.includes("timeout") || m.includes("timed out") || m.includes("aborted")) {
-          msg = "Prose generation timed out. Try a faster model.";
+          msg = "Generation failed. Try again.";
         } else {
           msg = error.message;
         }
@@ -7500,11 +8000,13 @@ function NovelWorkspacePage() {
     const isAuthError = first.apiError?.includes("API key") || first.status === 401 || first.status === 402;
     const isTransient = first.text === "" || first.status === 500 || first.status === 502 || first.status === 503;
 
+    const isEmptyOverload = first.text === "" && first.ok;
+    const retryDelayMs = isEmptyOverload ? 2500 : 600;
+
     if (!isAuthError && isTransient && remaining > 12000) {
       if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
-      // Quality-first: allow up to two retries when models are slow/unreliable.
-      await new Promise((r) => window.setTimeout(r, 600));
-      const secondBudget = Math.max(6000, Math.min(secondPlannedBudget, remaining - 600));
+      await new Promise((r) => window.setTimeout(r, retryDelayMs));
+      const secondBudget = Math.max(6000, Math.min(secondPlannedBudget, remaining - retryDelayMs));
       const second = await singleAttempt(secondBudget);
       if (second.apiError === "cancelled") throw new Error("__CANCELLED__");
       if (second.ok && second.text) return second.text;
@@ -7512,13 +8014,25 @@ function NovelWorkspacePage() {
       const elapsedAfterSecond = Date.now() - startMs;
       const remainingAfterSecond = totalBudgetMs - elapsedAfterSecond;
       const secondTransient = second.text === "" || second.status === 500 || second.status === 502 || second.status === 503;
+      const secondDelayMs = second.text === "" && second.ok ? 2500 : 800;
       if (secondTransient && remainingAfterSecond > 8000) {
         if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
-        await new Promise((r) => window.setTimeout(r, 800));
-        const thirdBudget = Math.max(6000, Math.min(thirdPlannedBudget, remainingAfterSecond - 800));
+        await new Promise((r) => window.setTimeout(r, secondDelayMs));
+        const thirdBudget = Math.max(6000, Math.min(thirdPlannedBudget, remainingAfterSecond - secondDelayMs));
         const third = await singleAttempt(thirdBudget);
         if (third.apiError === "cancelled") throw new Error("__CANCELLED__");
         if (third.ok && third.text) return third.text;
+        const allEmpty = first.text === "" && second.text === "" && third.text === "" && first.ok;
+        if (allEmpty && !isAuthError) {
+          const elapsed3 = Date.now() - startMs;
+          const rem3 = totalBudgetMs - elapsed3 - 3500;
+          if (rem3 > 10000 && !aiAbortRef.current?.signal.aborted) {
+            await new Promise((r) => window.setTimeout(r, 3500));
+            const fourth = await singleAttempt(Math.min(rem3, 90000));
+            if (fourth.apiError === "cancelled") throw new Error("__CANCELLED__");
+            if (fourth.ok && fourth.text) return fourth.text;
+          }
+        }
         const bestError = third.apiError || second.apiError || first.apiError;
         if (bestError) throw new Error(bestError);
       } else {
@@ -7529,14 +8043,14 @@ function NovelWorkspacePage() {
 
     // Report the failure
     if (first.apiError === "timeout") {
-      throw new Error("Request timed out. This model is slow but can still work—retrying often helps. You can also try again with the same settings.");
+      throw new Error("Request failed. Try again.");
     }
     if (first.apiError) throw new Error(first.apiError);
     if (!first.ok && first.status === 400) {
       throw new Error(`${selectedProviderOption.label} rejected this request. Check your model and connection settings, then try again.`);
     }
     if (first.text === "") {
-      throw new Error("The AI model returned an empty response. This usually means the model is temporarily overloaded — try again in a moment. If it keeps happening, try a different model in Settings.");
+      throw new Error("The AI model returned an empty response. This usually means the model is temporarily overloaded — wait a minute and try again, or choose a different model in Settings.");
     }
     throw new Error("Assistant request failed — try again or check your model settings.");
   }
@@ -7748,68 +8262,207 @@ function NovelWorkspacePage() {
     if (!novel || !ensureStoryAiReady()) return;
     const userPrompt = summaryAutofillPrompt.trim();
     if (!userPrompt) {
-      setStoryAiError("Describe your story idea first so the assistant can fill the Summary section.");
+      setStoryAiError("Describe your story idea first so the assistant can build the Summary.");
       return;
     }
 
     setStoryAiBusyAction("summary-autofill");
     setStoryAiError(null);
     try {
-      const sysMsg = "Novel planning assistant. Return valid JSON only.";
+      const sysMsg = "Novel planning assistant. Return valid JSON only. Pure plot — no scenery, no proper names, no stage directions.";
 
-      const prompt = [
+      // Call 1: Act 1 (Setup) + metadata
+      setStoryAiError("Building Act 1 — Setup...");
+      const act1Prompt = [
         `Story idea: ${userPrompt}`,
-        `Create a novel summary. Do NOT use specific character names — refer to characters by role or description only (e.g. "a young detective", "her abusive partner"). Character names will be created separately in the Characters section.`,
-        `Return JSON:`,
-        `{"synopsis":"140-260 word synopsis","themes":["2-5 themes"],"genre":["2-4 genres"],"tone":["2-4 tones"],"coreConflict":"1-3 sentences of central tension"}`,
+        "Write ACT 1 (Setup) of a novel plot. Pure plot only: what happens, who does what, what changes. No scenery, no character names (use roles: protagonist, antagonist, mentor), no stage directions. Embellish the world — add conflict, tension, stakes. End with the inciting incident that changes everything. 150–250 words.",
+        "Return JSON: {\"act1\":\"...\",\"genre\":[\"2-4 genres\"],\"themes\":[\"2-5 themes\"],\"tone\":[\"2-4 tones\"],\"coreConflict\":\"1-3 sentences of central tension\"}",
       ].join("\n\n");
 
-      type SummaryResult = {
-        synopsis?: string;
-        themes?: string[];
-        genre?: string[];
-        tone?: string[];
-        coreConflict?: string;
-      };
-
-      let data: SummaryResult | null = null;
-
-      // Attempt 1: direct call
+      type Act1Result = { act1?: string; genre?: string[]; themes?: string[]; tone?: string[]; coreConflict?: string };
+      let act1Data: Act1Result | null = null;
       try {
-        const raw = await requestOpenRouterText(prompt, 800, 180000, sysMsg, false, 0.7);
-        data = parseJsonFromAi<SummaryResult>(raw);
-      } catch { /* continue */ }
-
-      // Attempt 2: stricter
-      if (!data || !data.synopsis) {
+        act1Data = parseJsonFromAi<Act1Result>(await requestOpenRouterText(act1Prompt, 1200, 90000, sysMsg, false, 0.7));
+      } catch {
         try {
-          const retryPrompt = prompt + "\n\nReturn ONLY valid JSON. No commentary, no markdown.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 800, 180000, sysMsg, false, 0.4);
-          data = parseJsonFromAi<SummaryResult>(raw2);
-        } catch { /* continue */ }
+          act1Data = parseJsonFromAi<Act1Result>(await requestOpenRouterText(act1Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
+        } catch { /* fall through */ }
       }
 
-      if (!data || !data.synopsis) {
-        throw new Error("Summary generation failed. Try again or use a different model.");
+      if (!act1Data?.act1?.trim()) {
+        throw new Error("Act 1 generation failed. Try again or use a different model.");
       }
 
+      const act1 = act1Data.act1.trim();
       updateStoryBible({
         summary: {
           ...novel.storyBible.summary,
-          synopsisShort:
-            typeof data.synopsis === "string" ? data.synopsis.trim() : novel.storyBible.summary.synopsisShort,
-          themes: parseStringList(data.themes).length ? parseStringList(data.themes) : novel.storyBible.summary.themes,
-          genre: parseStringList(data.genre).length ? parseStringList(data.genre) : novel.storyBible.summary.genre,
-          tone: parseStringList(data.tone).length ? parseStringList(data.tone) : novel.storyBible.summary.tone,
-          stakes:
-            typeof data.coreConflict === "string"
-              ? data.coreConflict.trim()
-              : novel.storyBible.summary.stakes,
+          synopsisAct1: act1,
+          themes: parseStringList(act1Data.themes).length ? parseStringList(act1Data.themes) : novel.storyBible.summary.themes,
+          genre: parseStringList(act1Data.genre).length ? parseStringList(act1Data.genre) : novel.storyBible.summary.genre,
+          tone: parseStringList(act1Data.tone).length ? parseStringList(act1Data.tone) : novel.storyBible.summary.tone,
+          stakes: typeof act1Data.coreConflict === "string" && act1Data.coreConflict.trim() ? act1Data.coreConflict.trim() : novel.storyBible.summary.stakes,
         },
       });
+      if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
+
+      // Call 2: Act 2 (Confrontation)
+      setStoryAiError("Building Act 2 — Confrontation...");
+      const act2Prompt = [
+        `Story idea: ${userPrompt}`,
+        `Act 1 (Setup):\n${act1}`,
+        "Write ACT 2 (Confrontation) — rising action, complications, midpoint twist, dark moment. Pure plot only: what happens, decisions, consequences. No scenery or names. 200–350 words.",
+        "CRITICAL: Do NOT repeat, recap, or restate anything from Act 1. Act 2 must continue from where Act 1 ended. Write only NEW plot — the reader already knows Act 1. Consistent storytelling: each act advances the story forward.",
+        'Return JSON: {"act2":"..."}',
+      ].join("\n\n");
+
+      type Act2Result = { act2?: string };
+      let act2Data: Act2Result | null = null;
+      try {
+        act2Data = parseJsonFromAi<Act2Result>(await requestOpenRouterText(act2Prompt, 1500, 90000, sysMsg, false, 0.7));
+      } catch {
+        try {
+          act2Data = parseJsonFromAi<Act2Result>(await requestOpenRouterText(act2Prompt + "\n\nReturn ONLY valid JSON.", 1500, 60000, sysMsg, false, 0.4));
+        } catch { /* fall through */ }
+      }
+
+      if (!act2Data?.act2?.trim()) {
+        throw new Error("Act 2 generation failed. Try again or use a different model.");
+      }
+
+      const act2 = act2Data.act2.trim();
+      updateStoryBible({ summary: { synopsisAct2: act2 } });
+      if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
+
+      // Call 3: Act 3 (Resolution)
+      setStoryAiError("Building Act 3 — Resolution...");
+      const act3Prompt = [
+        `Story idea: ${userPrompt}`,
+        `Act 1:\n${act1}`,
+        `Act 2:\n${act2}`,
+        "Write ACT 3 (Resolution) — climax, confrontation, aftermath. Pure plot only. 150–250 words.",
+        "CRITICAL: Do NOT repeat, recap, or restate anything from Act 1 or Act 2. Act 3 must continue from where Act 2 ended. Write only NEW plot — the reader already knows Acts 1 and 2. Consistent storytelling: each act advances forward only.",
+        'Return JSON: {"act3":"..."}',
+      ].join("\n\n");
+
+      type Act3Result = { act3?: string };
+      let act3Data: Act3Result | null = null;
+      try {
+        act3Data = parseJsonFromAi<Act3Result>(await requestOpenRouterText(act3Prompt, 1200, 90000, sysMsg, false, 0.7));
+      } catch {
+        try {
+          act3Data = parseJsonFromAi<Act3Result>(await requestOpenRouterText(act3Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
+        } catch { /* fall through */ }
+      }
+
+      if (!act3Data?.act3?.trim()) {
+        throw new Error("Act 3 generation failed. Try again or use a different model.");
+      }
+
+      updateStoryBible({
+        summary: { synopsisAct3: act3Data.act3.trim(), synopsisShort: "" },
+      });
+      setStoryAiError(null);
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
-      setStoryAiError(error instanceof Error ? error.message : "Unable to autofill summary from prompt.");
+      setStoryAiError(error instanceof Error ? error.message : "Unable to build summary from prompt.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
+  async function runSummaryBackbuildFromSynopsis() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const full = (novel.storyBible.summary.synopsisShort ?? "").trim();
+    if (!full || full.length < 80) {
+      setStoryAiError("Add a full synopsis first (at least ~80 characters). Paste it in Full synopsis below.");
+      return;
+    }
+    setStoryAiBusyAction("summary-backbuild");
+    setStoryAiError(null);
+    try {
+      const sysMsg = "Novel planning assistant. Return valid JSON only. Pure plot — no scenery, no proper names, no stage directions.";
+      setStoryAiError("Building Act 1 — Setup...");
+      const act1Prompt = [
+        `Full synopsis:\n${clampPromptText(full, 2000)}`,
+        "Extract and rewrite the SETUP (Act 1) from this synopsis — world, status quo, inciting incident. Pure plot only: what happens, who does what, what changes. No scenery, no character names (use roles). 150–250 words.",
+        'Return JSON: {"act1":"..."}',
+      ].join("\n\n");
+      type Act1R = { act1?: string };
+      let act1Data = parseJsonFromAi<Act1R>(await requestOpenRouterText(act1Prompt, 1200, 90000, sysMsg, false, 0.5));
+      if (!act1Data?.act1?.trim()) act1Data = parseJsonFromAi<Act1R>(await requestOpenRouterText(act1Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
+      if (!act1Data?.act1?.trim()) throw new Error("Act 1 generation failed.");
+      const act1 = act1Data.act1.trim();
+      updateStoryBible({ summary: { synopsisAct1: act1 } });
+      if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
+      setStoryAiError("Building Act 2 — Confrontation...");
+      const act2Prompt = [
+        `Full synopsis:\n${clampPromptText(full, 2000)}`,
+        `Act 1:\n${act1}`,
+        "Extract and rewrite the CONFRONTATION (Act 2) — rising action, midpoint twist, dark moment. Pure plot only. 200–350 words.",
+        "CRITICAL: Do NOT repeat anything from Act 1. Act 2 must continue from where Act 1 ended.",
+        'Return JSON: {"act2":"..."}',
+      ].join("\n\n");
+      type Act2R = { act2?: string };
+      let act2Data = parseJsonFromAi<Act2R>(await requestOpenRouterText(act2Prompt, 1500, 90000, sysMsg, false, 0.5));
+      if (!act2Data?.act2?.trim()) act2Data = parseJsonFromAi<Act2R>(await requestOpenRouterText(act2Prompt + "\n\nReturn ONLY valid JSON.", 1500, 60000, sysMsg, false, 0.4));
+      if (!act2Data?.act2?.trim()) throw new Error("Act 2 generation failed.");
+      const act2 = act2Data.act2.trim();
+      updateStoryBible({ summary: { synopsisAct2: act2 } });
+      if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
+      setStoryAiError("Building Act 3 — Resolution...");
+      const act3Prompt = [
+        `Full synopsis:\n${clampPromptText(full, 2000)}`,
+        `Act 1:\n${act1}`,
+        `Act 2:\n${act2}`,
+        "Extract and rewrite the RESOLUTION (Act 3) — climax, confrontation, aftermath. Pure plot only. 150–250 words.",
+        "CRITICAL: Do NOT repeat anything from Act 1 or Act 2. Act 3 must continue from where Act 2 ended.",
+        'Return JSON: {"act3":"..."}',
+      ].join("\n\n");
+      type Act3R = { act3?: string };
+      let act3Data = parseJsonFromAi<Act3R>(await requestOpenRouterText(act3Prompt, 1200, 90000, sysMsg, false, 0.5));
+      if (!act3Data?.act3?.trim()) act3Data = parseJsonFromAi<Act3R>(await requestOpenRouterText(act3Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
+      if (!act3Data?.act3?.trim()) throw new Error("Act 3 generation failed.");
+      updateStoryBible({ summary: { synopsisAct3: act3Data.act3.trim() } });
+      setStoryAiError(null);
+    } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
+      setStoryAiError(error instanceof Error ? error.message : "Unable to build acts from synopsis.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
+  async function runSummaryGenerateThemesStakes() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const synopsis = getCombinedSynopsis();
+    if (!synopsis || synopsis.trim().length < 60) {
+      setStoryAiError("Add acts or a full synopsis first, then use Generate.");
+      return;
+    }
+    setStoryAiBusyAction("summary-meta-generate");
+    setStoryAiError(null);
+    try {
+      const sysMsg = "Novel planning assistant. Return valid JSON only.";
+      const prompt = [
+        `Synopsis:\n${clampPromptText(synopsis, 1500)}`,
+        "Extract themes (2–5 short words or phrases, e.g. redemption, betrayal, survival) and stakes (1–3 sentences: what can be lost, what's at risk).",
+        'Return JSON: {"themes":["theme1","theme2",...],"stakes":"1–3 sentences"}',
+      ].join("\n\n");
+      const data = await requestOpenRouterJson<{ themes?: string[]; stakes?: string }>(prompt, 600, { systemMessage: sysMsg });
+      const themes = Array.isArray(data.themes) ? data.themes.filter((t): t is string => typeof t === "string").slice(0, 8) : [];
+      const stakes = typeof data.stakes === "string" && data.stakes.trim() ? data.stakes.trim().slice(0, STORY_BIBLE_LIMITS.summary.stakes) : "";
+      updateStoryBible({
+        summary: {
+          ...novel.storyBible.summary,
+          themes: themes.length ? themes : novel.storyBible.summary.themes,
+          stakes: stakes || novel.storyBible.summary.stakes,
+        },
+      });
+      setStoryAiError(null);
+    } catch (error) {
+      if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
+      setStoryAiError(error instanceof Error ? error.message : "Unable to generate themes and stakes.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -7950,8 +8603,8 @@ function NovelWorkspacePage() {
 
   function handleGenerateCharacters() {
     if (!novel || !ensureStoryAiReady()) return;
-    const hasSummaryInput =
-      Boolean(novel.storyBible.summary.synopsisShort.trim()) || Boolean(novel.storyBible.summary.stakes.trim());
+    const hasActs = Boolean((novel.storyBible.summary.synopsisAct1 ?? "").trim() || (novel.storyBible.summary.synopsisAct2 ?? "").trim() || (novel.storyBible.summary.synopsisAct3 ?? "").trim());
+    const hasSummaryInput = hasActs || Boolean(novel.storyBible.summary.synopsisShort?.trim() || novel.storyBible.summary.stakes.trim());
     if (!hasSummaryInput) {
       setStoryAiError(
         "Your Summary is still empty. Add synopsis or core conflict first so generated characters stay canon-safe and story-specific.",
@@ -7971,29 +8624,38 @@ function NovelWorkspacePage() {
       const sb = novel.storyBible;
       const genre = (sb.summary.genre ?? []).slice(0, 4).join(", ") || "fiction";
       const tone = (sb.summary.tone ?? []).slice(0, 3).join(", ") || "";
-      const synopsis = sb.summary.synopsisShort?.trim() || "";
+      const a1 = (sb.summary.synopsisAct1 ?? "").trim();
+      const a2 = (sb.summary.synopsisAct2 ?? "").trim();
+      const a3 = (sb.summary.synopsisAct3 ?? "").trim();
+      const hasActs = !!(a1 || a2 || a3);
+      const synopsis = getCombinedSynopsis();
       const stakes = sb.summary.stakes?.trim() || "";
       const themes = (sb.summary.themes ?? []).slice(0, 3).join(", ") || "";
       const premise = sb.summary.premise?.trim() || "";
       const detected = extractSummaryNameHints();
-      const requestedCount = Math.max(3, Math.min(6, detected.length + 2));
+      const requestedCount = Math.max(6, Math.min(10, detected.length + 4));
 
       type RosterEntry = { name?: string; role?: string; logline?: string };
 
+      const actContext = hasActs ? [
+        a1 ? `Act 1 (Setup): ${clampPromptText(a1, 280)}` : "",
+        a2 ? `Act 2 (Confrontation): ${clampPromptText(a2, 280)}` : "",
+        a3 ? `Act 3 (Resolution): ${clampPromptText(a3, 280)}` : "",
+      ].filter(Boolean).join("\n") : "";
+
       const promptParts = [
-        `You are creating characters for a ${genre} novel.`,
-        `Synopsis: ${clampPromptText(synopsis, 500)}`,
+        `You are creating characters for a full-length ${genre} novel. Think depth: a real novel has many people — protagonists, antagonists, allies, rivals, family, friends, authority figures. Not just 3 defaults.`,
+        hasActs ? actContext : `Synopsis: ${clampPromptText(synopsis, 500)}`,
         stakes ? `Core conflict: ${clampPromptText(stakes, 200)}` : "",
         premise ? `Premise: ${clampPromptText(premise, 150)}` : "",
         tone ? `Tone: ${tone}` : "",
         themes ? `Themes: ${themes}` : "",
         existingNames !== "none" ? `Already created (skip these): ${existingNames}` : "",
         detected.length > 0 ? `Names mentioned in synopsis (include these): ${detected.join(", ")}. Add fitting surnames if only first names.` : "",
-        `Create ${requestedCount} characters with realistic, human-sounding full names (first + last) that fit the story's setting, culture, time period, and geography.`,
-        "NAMING RULES:",
-        "- Names must feel like real people — not fantasy placeholders.",
-        "- Match the cultural background and era of the story.",
-        "- Each character needs a distinct, memorable name.",
+        `Create ${requestedCount} characters. Every character MUST have a real human full name (first + surname).`,
+        `NAMING (critical): ${getRegionalNameHint()}`,
+        "FORBIDDEN first names: Ethan, Emma, Liam, Olivia, Noah, Mason, Sophia, Jackson, Aiden, Luna. NEVER use these. NEVER use roles as names (no 'The Doctor', 'Man in Suit').",
+        "- Full names only: first + surname. No two characters with similar-sounding first names.",
         "",
         "Give each a role (Protagonist, Antagonist, Supporting, Love Interest, or Minor) and a one-sentence hook.",
         `Return JSON only: [{"name":"First Last","role":"Protagonist","logline":"one sentence hook"}]`,
@@ -8003,7 +8665,7 @@ function NovelWorkspacePage() {
       let roster: RosterEntry[] = [];
 
       try {
-        const raw = await requestOpenRouterText(prompt, 400, 120000, "Return JSON array only.", false, 0.7);
+        const raw = await requestOpenRouterText(prompt, 400, 90000, "Return JSON array only.", false, 0.7);
         const parsed = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw);
         if (Array.isArray(parsed)) {
           roster = parsed;
@@ -8018,8 +8680,8 @@ function NovelWorkspacePage() {
       if (roster.length === 0) {
         try {
           const raw2 = await requestOpenRouterText(
-            `Create 4 characters for a ${genre} novel: ${clampPromptText(synopsis, 300)}\nEach needs full name, role, one-sentence hook.\nJSON: [{"name":"First Last","role":"Protagonist","logline":"hook"}]`,
-            400, 60000, "Return JSON array only.", false, 0.5,
+            `Create 6–8 characters for a ${genre} novel. Use Acts 1–3 if available. Every character MUST have a full name (first + surname). ${getRegionalNameHint()} FORBIDDEN: Ethan, Emma, Liam, Olivia, Noah, Mason.\n${hasActs ? actContext : clampPromptText(synopsis, 400)}\nJSON: [{"name":"First Last","role":"Protagonist","logline":"hook"}]`,
+            400, 45000, "Return JSON array only.", false, 0.5,
           );
           const parsed2 = parseJsonFromAi<RosterEntry[] | { characters?: RosterEntry[] }>(raw2);
           if (Array.isArray(parsed2)) roster = parsed2;
@@ -8032,14 +8694,17 @@ function NovelWorkspacePage() {
         } catch { /* continue */ }
       }
 
+      const ROLE_FIRST_NAMES = new Set(["doctor", "nurse", "detective", "inspector", "stranger", "sergeant", "captain", "colonel", "mysterious", "unknown", "mrs", "mr", "ms"]);
       roster = roster.filter((r) => {
         if (typeof r.name !== "string" || !r.name.trim()) return false;
         const name = r.name.trim();
         const words = name.split(/\s+/).filter(Boolean);
-        if (words.length === 0) return false;
+        if (words.length < 2) return false;
         const firstLower = words[0].toLowerCase();
         if (SUMMARY_NAME_BLOCKLIST.has(firstLower)) return false;
         if (/^(new character|character \d|unknown|unnamed|n\/a|the )/i.test(name)) return false;
+        if (/^(the\s+)?(man|woman|boy|girl)\s+in\s+/i.test(name)) return false;
+        if (ROLE_FIRST_NAMES.has(firstLower)) return false;
         return true;
       });
 
@@ -8062,9 +8727,15 @@ function NovelWorkspacePage() {
         throw new Error("Could not generate characters. Try a different model or add more synopsis detail.");
       }
 
+      // Replace overused names (Ethan, Emma, etc.) before showing
+      const rosterWithSafeNames = roster.map((r, i) => ({
+        ...r,
+        name: ensureFullCharacterName((r.name ?? "").trim(), storyCharacters.length + i),
+      }));
+
       // Show the name confirmation popup — user picks which to keep
       setNameConfirmPopup({
-        roster: roster.map((r) => ({
+        roster: rosterWithSafeNames.map((r) => ({
           name: (r.name ?? "").trim(),
           role: normalizeCharacterRole(r.role),
           logline: typeof r.logline === "string" ? r.logline.trim() : "",
@@ -8088,14 +8759,16 @@ function NovelWorkspacePage() {
     const nextCharacters = [...storyCharacters];
     const addedIds: string[] = [];
 
-    for (const entry of selected) {
+    for (let i = 0; i < selected.length; i++) {
+      const entry = selected[i];
       const id = createEntityId("charv2");
+      const safeName = ensureFullCharacterName(entry.name, nextCharacters.length + i);
       nextCharacters.push({
         id,
-        name: entry.name,
+        name: safeName,
         role: normalizeCharacterRole(entry.role),
         logline: entry.logline,
-        appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        age: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
         secrets: "", readerSecretHint: "", accent: "", speakingStyle: "",
         reactionPattern: "", voiceNotes: "", tags: [], pronouns: "",
         groups: "", otherNames: "", relationships: [],
@@ -8248,7 +8921,7 @@ function NovelWorkspacePage() {
         if (availableSummaryName) {
           patch.name = ensureFullCharacterName(availableSummaryName, storyCharacters.length);
         } else {
-          patch.name = ensureFullCharacterName("Alex", storyCharacters.length + 1);
+          patch.name = makeFallbackHumanName(`profile-${character.id}`, storyCharacters.length + 1);
         }
       }
 
@@ -8261,16 +8934,143 @@ function NovelWorkspacePage() {
     }
   }
 
+  async function runBatchCharacterProfiles(characterIds: string[]) {
+    if (!novel || !ensureStoryAiReady() || characterIds.length === 0) return;
+    const chars = characterIds
+      .map((id) => storyCharacters.find((c) => c.id === id))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+    if (chars.length === 0) return;
+
+    setNameConfirmPopup(null);
+    setProfileOfferPopup(null);
+    setStoryAiError(null);
+    setStoryAiBusyAction("characters-generate");
+
+    const context = buildStoryBibleContext("characterCompact");
+    const summaryNameHints = extractSummaryNameHints();
+    const summaryNamesText = summaryNameHints.length ? summaryNameHints.join(", ") : "none detected";
+
+    try {
+      freshAiAbort();
+      for (let i = 0; i < chars.length; i++) {
+        if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
+        const character = chars[i];
+        setProfileGenProgress({
+          current: i + 1,
+          total: chars.length,
+          name: character.name || "Character",
+          done: i,
+        });
+        await new Promise((r) => setTimeout(r, 200));
+
+        const existingOtherNames = storyCharacters
+          .filter((item) => item.id !== character.id)
+          .map((item) => item.name.trim().toLowerCase())
+          .filter(Boolean);
+        const hasPlaceholderName =
+          !character.name.trim() ||
+          character.name.trim().toLowerCase() === "new character" ||
+          /^character\s+\d+$/i.test(character.name.trim());
+
+        const prompt = [
+          `Build a full profile for this character: ${character.name}`,
+          "Return ALL fields: name, role, age, pronouns, logline, appearance, personality, goals, fears, backstory, accent, speakingStyle, reactionPattern, voiceNotes. Age: a single number like 29 or 34 — never vague (no 'late 20s', 'early 40s', 'around 30'). Pronouns (e.g. 'she/her'). 2-3 sentences for appearance, personality, goals, fears, backstory. Story-grounded, vivid, no filler.",
+          "Anchor to Summary canon only. Do not invent unrelated storylines.",
+          "Return JSON only:",
+          `{
+  "name": "string (full first and last)",
+  "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Custom",
+  "age": "string (single number e.g. 29 or 34)",
+  "pronouns": "string (e.g. she/her, he/him)",
+  "logline": "string",
+  "appearance": "string",
+  "personality": "string",
+  "goals": "string",
+  "fears": "string",
+  "backstory": "string",
+  "accent": "string",
+  "speakingStyle": "string",
+  "reactionPattern": "string",
+  "voiceNotes": "string"
+}`,
+          `Summary-mentioned names: ${summaryNamesText}`,
+          `Current character:\n${JSON.stringify(trimCharacterForAiMode(character, "profile"), null, 2)}`,
+          `Story context:\n${context}`,
+        ].join("\n\n");
+
+        const data = await requestOpenRouterJson<{
+          name?: string; role?: string; age?: string; pronouns?: string; logline?: string;
+          appearance?: string; personality?: string; goals?: string; fears?: string;
+          backstory?: string; accent?: string; speakingStyle?: string; reactionPattern?: string; voiceNotes?: string;
+        }>(prompt, 950, { systemMessage: "Character profile specialist. Return valid JSON only.", timeoutMs: 120000 });
+
+        const patch: Partial<NonNullable<Novel["storyBible"]["characters"][number]>> = {};
+        const aiName = typeof data?.name === "string" ? data.name.trim() : "";
+        if (aiName) {
+          const aiFullName = ensureFullCharacterName(aiName, storyCharacters.length);
+          const aiNameKey = aiFullName.toLowerCase();
+          const currentNameKey = character.name.trim().toLowerCase();
+          if (aiNameKey === currentNameKey || !existingOtherNames.includes(aiNameKey)) {
+            patch.name = aiFullName;
+          }
+        }
+        if (typeof data?.role === "string" && data.role.trim()) patch.role = normalizeCharacterRole(data.role);
+        if (typeof data?.age === "string" && data.age.trim()) patch.age = data.age.trim();
+        if (typeof data?.pronouns === "string" && data.pronouns.trim()) patch.pronouns = data.pronouns.trim();
+        if (typeof data?.logline === "string" && data.logline.trim()) patch.logline = data.logline.trim();
+        if (typeof data?.appearance === "string" && data.appearance.trim()) patch.appearance = data.appearance.trim();
+        if (typeof data?.personality === "string" && data.personality.trim()) patch.personality = data.personality.trim();
+        if (typeof data?.goals === "string" && data.goals.trim()) patch.goals = data.goals.trim();
+        if (typeof data?.fears === "string" && data.fears.trim()) patch.fears = data.fears.trim();
+        if (typeof data?.backstory === "string" && data.backstory.trim()) patch.backstory = data.backstory.trim();
+        if (typeof data?.accent === "string" && data.accent.trim()) patch.accent = data.accent.trim();
+        if (typeof data?.speakingStyle === "string" && data.speakingStyle.trim()) patch.speakingStyle = data.speakingStyle.trim();
+        if (typeof data?.reactionPattern === "string" && data.reactionPattern.trim()) patch.reactionPattern = data.reactionPattern.trim();
+        if (typeof data?.voiceNotes === "string" && data.voiceNotes.trim()) patch.voiceNotes = data.voiceNotes.trim();
+
+        if (!patch.name && hasPlaceholderName) {
+          const availableSummaryName =
+            summaryNameHints.find((name) => !existingOtherNames.includes(name.trim().toLowerCase())) ??
+            summaryNameHints[0] ?? "";
+          if (availableSummaryName) {
+            patch.name = ensureFullCharacterName(availableSummaryName, storyCharacters.length);
+          } else {
+            patch.name = makeFallbackHumanName(`profile-${character.id}`, storyCharacters.length + i);
+          }
+        }
+        if (Object.keys(patch).length > 0) {
+          const charId = character.id;
+          mutateNovel((current) => {
+            const chars = current.storyBible.characters ?? [];
+            const updated = chars.map((c) =>
+              c.id === charId ? sanitizeCharacterEntry({ ...c, ...patch }) : c,
+            );
+            return {
+              ...current,
+              storyBible: {
+                ...current.storyBible,
+                characters: updated,
+                updatedAt: new Date().toISOString(),
+              },
+            };
+          });
+        }
+        setProfileGenProgress((p) => p ? { ...p, done: i + 1 } : null);
+      }
+    } catch (err) {
+      if (isCancelledError(err)) { /* user stopped */ }
+      else setStoryAiError(err instanceof Error ? err.message : "Profile generation failed.");
+    } finally {
+      setProfileGenProgress(null);
+      setStoryAiBusyAction(null);
+    }
+  }
+
   function runAutoGenerateAllProfiles(characterIds: string[]) {
     if (!novel || !ensureStoryAiReady() || characterIds.length === 0) return;
 
-    // Just set the queue — the useEffect above processes one at a time,
-    // each with a fresh React render (exactly like clicking the button manually).
-    setNameConfirmPopup(null);
     setStoryAiError(null);
-    batchProfileTotalRef.current = characterIds.length;
-    batchProfileAllIdsRef.current = [...characterIds];
-    setBatchProfileQueue([...characterIds]);
+    void runBatchCharacterProfiles(characterIds);
   }
 
   function getUnprofiledCharacterIds(characterIds?: string[]): string[] {
@@ -8309,7 +9109,7 @@ function NovelWorkspacePage() {
       if (target === "synopsis") {
         const currentSynopsis = novel.storyBible.summary.synopsisShort || "";
         if (!currentSynopsis.trim()) {
-          setStoryAiError("Write a synopsis first before using AI tools on it. Describe your story idea in the synopsis box above.");
+          setStoryAiError("Add content to the Full synopsis (optional) section below first, then use Run Assistant.");
           return;
         }
         const modeInstruction = mode === "tighten"
@@ -8640,7 +9440,7 @@ function NovelWorkspacePage() {
       0,
       new Set((sourceNovel.storyBible.plotSpine?.beats ?? []).map((beat) => beat.id)).size,
     );
-    const synopsisWordCount = (sourceNovel.storyBible.summary.synopsisShort || "")
+    const synopsisWordCount = (getCombinedSynopsis() || "")
       .trim()
       .split(/\s+/)
       .filter(Boolean).length;
@@ -8662,6 +9462,9 @@ function NovelWorkspacePage() {
     const pacingMode = sourceNovel.storyBible.bookPlan?.pacingMode ?? "balanced";
     if (pacingMode === "slow-burn") baseCount += 1;
     if (pacingMode === "fast") baseCount -= 1;
+    const setupIntensity = sourceNovel.storyBible.bookPlan?.setupIntensity ?? "standard";
+    if (setupIntensity === "deep") baseCount += 1;
+    if (setupIntensity === "light") baseCount -= 1;
     return normalizePlanTarget(baseCount);
   }
 
@@ -8694,6 +9497,12 @@ function NovelWorkspacePage() {
     setPlanGenerateCustomCount(String(target));
     setPlanGenerateCountMode(savedTarget === "auto" ? "auto" : "manual");
     setPlanGeneratePacingMode(novel.storyBible.bookPlan?.pacingMode ?? "balanced");
+    setPlanGenerateSetupIntensity(novel.storyBible.bookPlan?.setupIntensity ?? "standard");
+    setPlanGenerateRevealCadence(novel.storyBible.bookPlan?.revealCadence ?? "mid");
+    setPlanGenerateChapterOpenerStyle(novel.storyBible.bookPlan?.chapterOpenerStyle ?? "grounding-first");
+    setPlanGenerateContinuityMode(novel.storyBible.bookPlan?.continuityMode ?? "strict");
+    setPlanGenerateRepetitionGuard(novel.storyBible.bookPlan?.repetitionGuard ?? "aggressive");
+    setPlanGenerateCanonTagDepth(novel.storyBible.bookPlan?.canonTagDepth ?? "comprehensive");
     setShowPlanGenerateModal(true);
   }
 
@@ -8713,12 +9522,52 @@ function NovelWorkspacePage() {
       setShowPlanGenerateModal(false);
       setRegenConfirm({
         message: `This will replace your existing ${planChapters.length} chapter${planChapters.length === 1 ? "" : "s"} in the plan. Existing synopses will be overwritten.`,
-        onConfirm: () => { setRegenConfirm(null); updateBookPlan({ aiChapterTarget: targetSetting, pacingMode: planGeneratePacingMode }); void runGeneratePlan(target); },
+        onConfirm: () => {
+          setRegenConfirm(null);
+          updateBookPlan({
+            aiChapterTarget: targetSetting,
+            pacingMode: planGeneratePacingMode,
+            setupIntensity: planGenerateSetupIntensity,
+            revealCadence: planGenerateRevealCadence,
+            chapterOpenerStyle: planGenerateChapterOpenerStyle,
+            continuityMode: planGenerateContinuityMode,
+            repetitionGuard: planGenerateRepetitionGuard,
+            canonTagDepth: planGenerateCanonTagDepth,
+          });
+          planControlsOverrideRef.current = {
+            pacingMode: planGeneratePacingMode,
+            setupIntensity: planGenerateSetupIntensity,
+            revealCadence: planGenerateRevealCadence,
+            chapterOpenerStyle: planGenerateChapterOpenerStyle,
+            continuityMode: planGenerateContinuityMode,
+            repetitionGuard: planGenerateRepetitionGuard,
+            canonTagDepth: planGenerateCanonTagDepth,
+          };
+          void runGeneratePlan(target);
+        },
       });
       return;
     }
     setShowPlanGenerateModal(false);
-    updateBookPlan({ aiChapterTarget: targetSetting, pacingMode: planGeneratePacingMode });
+    updateBookPlan({
+      aiChapterTarget: targetSetting,
+      pacingMode: planGeneratePacingMode,
+      setupIntensity: planGenerateSetupIntensity,
+      revealCadence: planGenerateRevealCadence,
+      chapterOpenerStyle: planGenerateChapterOpenerStyle,
+      continuityMode: planGenerateContinuityMode,
+      repetitionGuard: planGenerateRepetitionGuard,
+      canonTagDepth: planGenerateCanonTagDepth,
+    });
+    planControlsOverrideRef.current = {
+      pacingMode: planGeneratePacingMode,
+      setupIntensity: planGenerateSetupIntensity,
+      revealCadence: planGenerateRevealCadence,
+      chapterOpenerStyle: planGenerateChapterOpenerStyle,
+      continuityMode: planGenerateContinuityMode,
+      repetitionGuard: planGenerateRepetitionGuard,
+      canonTagDepth: planGenerateCanonTagDepth,
+    };
     void runGeneratePlan(target);
   }
 
@@ -8894,7 +9743,7 @@ function NovelWorkspacePage() {
 
   async function runGeneratePlan(targetOverride?: number) {
     if (!novel || !ensureStoryAiReady()) return;
-    if (!novel.storyBible.summary.synopsisShort.trim()) {
+    if (!getCombinedSynopsis()) {
       setPlanError("Add a synopsis first so the assistant can plan your book.");
       return;
     }
@@ -8911,24 +9760,19 @@ function NovelWorkspacePage() {
       const planTarget = rawTarget === "auto" ? estimateAutoChapterCount(novel) : normalizePlanTarget(rawTarget);
       const spineActive = !isNF && hasPlotSpine();
       const planOutputProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
-      const systemMsg = spineActive
-        ? "You are a PLOT outliner and story architect. The user has built a detailed Plot Spine with story beats, subplots, and character arcs. Your job is to expand each chapter's assigned beats into a rich, detailed chapter blueprint. Follow the spine precisely — it is the user's vision for their story. Add emotional depth, scene transitions, and character dynamics between the beats, but never contradict or skip a beat. Track subplot progression and character arc evolution across chapters. Return only valid JSON."
-        : "You are a PLOT outliner and story architect, not a prose writer. Write DETAILED chapter blueprints describing what HAPPENS — actions, character reactions, emotional dynamics, consequences, and changes. Each chapter blueprint should read like a screenwriter's expanded beat sheet: opening beat, middle development, and closing beat. Include motivations, interpersonal dynamics, and cause-and-effect chains. Never write prose scenes or dialogue. Every chapter must cover NEW ground — never repeat the same scene type or emotional beat from a previous chapter. Respect all Canon. Return only valid JSON.";
+      const systemMsg = [
+        "You are a PLOT outliner and story architect. Take time to consider continuity and what makes each chapter distinct.",
+        "Write chapter synopses that TELL THE STORY — narrative flow, scene dynamics, cause-and-effect. Not dry 'X does Y' lists. These synopses guide scene bloc generation; richness and variety matter.",
+        "If The Architect exists, align with it on beat coverage while preserving canon.",
+        "Never write marketing copy or meta/template phrasing. Return only valid JSON.",
+      ].join(" ");
       const context = buildPhase1OutlineContext();
-      const pacingMode = novel.storyBible.bookPlan?.pacingMode ?? "balanced";
-      const pacingHint =
-        pacingMode === "slow-burn"
-          ? "Pacing: slow-burn. Let early chapters build character depth, atmosphere, and stakes gradually."
-          : pacingMode === "fast"
-            ? "Pacing: fast. Start with a strong hook and keep momentum high."
-            : "Pacing: balanced. Grounded setup with steady escalation.";
-
       // Collect all existing Canon names for the prompt
       const existingCharNames = (novel.storyBible.characters ?? []).map((c) => c.name).filter(Boolean);
       const existingLocNames = (novel.storyBible.locations ?? []).map((l) => l.name).filter(Boolean);
       const canonNames = [...existingCharNames, ...existingLocNames].join(", ");
       const storySettingAnchor = (() => {
-        const synopsis = `${novel.storyBible.summary.synopsisShort || ""} ${novel.synopsis || ""}`.trim();
+        const synopsis = `${getCombinedSynopsis()} ${novel.synopsis || ""}`.trim();
         if (!synopsis) return existingLocNames[0] || "";
         return detectPrimaryKnownLocationName(synopsis, existingLocNames) || existingLocNames[0] || "";
       })();
@@ -9024,15 +9868,17 @@ function NovelWorkspacePage() {
       const getStructuralBeat = (chapterIndex: number, totalChapters: number): string => {
         const pos = (chapterIndex + 1) / totalChapters;
         const chNum = chapterIndex + 1;
+        const profile = getChapterPlanningProfile(chapterIndex, totalChapters);
         if (chNum === 1) return "STRUCTURE: OPENING chapter. Prioritize grounded setup before acceleration: establish the protagonist's normal world, core relationships, and stakes through concrete interaction beats. End with a clear inciting pressure that naturally launches Chapter 2 (do not skip setup).";
         if (chNum === 2) return "STRUCTURE: Chapter 2 must move the story state forward from Chapter 1, not replay it. Show consequences in a new interaction context, advance at least one subplot/arc, and force a meaningful decision that changes what Chapter 3 can be.";
         if (chNum === 3) return "STRUCTURE: Chapter 3 must escalate into a real turn. Introduce a fresh complication, shift relationship power/leverage, and commit the protagonist to a changed strategy with clear consequences.";
         if (chNum === 4) return "STRUCTURE: Chapter 4 should convert rising pressure into a decisive turn that commits the story to the core arc.";
-        if (pos <= 0.25) return "STRUCTURE: Act 1 — Inciting Incident zone. The status quo shatters. The protagonist is thrust into the central conflict.";
+        if (profile.role === "opening") return "STRUCTURE: Setup movement. Build baseline dynamics, motive, and pressure progression before major endgame turns.";
         if (pos <= 0.40) return "STRUCTURE: Act 2A — Rising Action. New complications, new obstacles, deeper stakes. The protagonist is tested.";
         if (pos <= 0.55) return "STRUCTURE: MIDPOINT. A major twist, revelation, or reversal changes everything. The protagonist must fundamentally shift their approach.";
         if (pos <= 0.70) return "STRUCTURE: Act 2B — Escalation. Stakes peak. Subplots converge. Pressure mounts relentlessly.";
         if (pos <= 0.80) return "STRUCTURE: Act 2B — Dark moment. The protagonist's lowest point. Everything seems lost.";
+        if (profile.role === "conclusion") return "STRUCTURE: Convergence/payoff movement. Resolve main conflict and pay off setup threads without abrupt shortcuts.";
         if (pos <= 0.90) return "STRUCTURE: Act 3 — Climax. The central conflict reaches its peak. Maximum stakes, direct confrontation.";
         if (chNum === totalChapters) return "STRUCTURE: FINAL chapter. Resolve the central conflict decisively. Tie up major threads.";
         return "STRUCTURE: Act 3 — Resolution. Show consequences of the climax. Resolve remaining threads.";
@@ -9053,7 +9899,6 @@ function NovelWorkspacePage() {
         nfSubtype === "memoir" ? "Structure: follow a chronological or thematic arc through life events." : "",
         nfSubtype === "historical" ? "Structure: chronologically through key events with human stories." : "",
         nfSubtype === "investigative" ? "Structure: build toward revelation — hidden, uncovered, consequences." : "",
-        pacingHint,
         nfCtx ? `Context:\n${nfCtx}` : "",
         `\nCanon:\n${context}`,
       ].filter(Boolean).join("\n") : [
@@ -9067,7 +9912,6 @@ function NovelWorkspacePage() {
         "- Do not start many titles with the same opening word or phrase.",
         "- Avoid repeated bigrams (same 2-word chunks) across titles.",
         `Genre: ${genreStr}`,
-        pacingHint,
         authorStyleHint,
         `\nCanon:\n${context}`,
       ].filter(Boolean).join("\n");
@@ -9300,13 +10144,11 @@ function NovelWorkspacePage() {
       const usedLocations: string[] = [];
       const fullChapterList = allTitles.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n");
       const genreGuidance = getGenreGuidance();
-      const detailedRangeSpine = planOutputProfile.highDetail ? "18-30" : planOutputProfile.smallModel ? "12-18" : "15-25";
-      const detailedRangeRegular = planOutputProfile.highDetail ? "15-24" : planOutputProfile.smallModel ? "10-16" : "12-20";
-      const chapterRoleForIndex = (index: number, total: number): "opening" | "middle" | "conclusion" => {
-        if (index === 0) return "opening";
-        if (index === total - 1) return "conclusion";
-        return "middle";
-      };
+      const detailedRangeSpine = planOutputProfile.highDetail ? "12-18" : planOutputProfile.smallModel ? "8-12" : "10-14";
+      const detailedRangeRegular = planOutputProfile.highDetail ? "10-14" : planOutputProfile.smallModel ? "6-10" : "8-12";
+      const chapterRoleForIndex = (index: number, total: number): "opening" | "middle" | "conclusion" => (
+        getChapterPlanningProfile(index, total).role
+      );
       const synopsisCoversBeat = (synopsisText: string, beat: StoryBeat): boolean => {
         const synopsisNorm = normalizeLookup(synopsisText);
         const titleNorm = normalizeLookup(beat.title || "");
@@ -9356,16 +10198,12 @@ function NovelWorkspacePage() {
       })();
 
       const synopsisFormatGuide = [
-        "FORMAT: Write a FULL CHAPTER BLUEPRINT — not prose, not a summary, but a dense beat-by-beat roadmap that an AI prose writer will follow exactly. Every detail you include here becomes a scene. Every detail you leave out becomes a gap the prose writer must invent. MORE DETAIL = BETTER PROSE.",
-        "",
-        "BAD (too vague): 'John has a conversation with his wife about their problems. Things get tense. He decides to leave.'",
-        "BAD (prose, not blueprint): 'John sits at his desk, staring out the window. Rain streaks down the glass.'",
-        "",
-        "GOOD (this is what we need):",
-        "'The chapter opens with John finding a hidden letter from his estranged brother tucked inside a cookbook while searching for a recipe. His hands go still as he recognises the handwriting. He reads it standing at the kitchen counter — the brother, Daniel, is dying of stage 4 pancreatic cancer and has been writing monthly, begging to reconcile. John discovers six more letters hidden in different spots around the house, all opened and resealed. He confronts his wife Maria in the kitchen, holding the stack. She initially deflects — \"I was protecting you\" — but when pressed, admits she has been reading and hiding them for months because she didn't want John to go through the pain of reconnecting only to watch Daniel die. John is furious but also conflicted: he hasn't spoken to Daniel in eleven years since the family business split. Maria reveals one more thing she held back — Daniel has been asking specifically about their daughter Sophie, wanting to meet her before he dies. This shifts the argument from marital betrayal to something deeper about family and forgiveness. John announces he's driving upstate the next morning. Maria refuses to come, citing how Daniel humiliated Sophie at the last family gathering. They argue about whether protecting Sophie or giving her a dying uncle is the right call. The chapter ends with John packing a bag in silence, Maria watching from the bedroom doorway. He finds a photo of himself and Daniel as boys, arms around each other at a lake. He puts it in his bag without saying anything.'",
-        "",
-        "Write at THIS level of detail. Every beat should describe specific actions, specific dialogue topics, specific emotional reactions, and specific consequences.",
-        "Think of yourself as a screenwriter writing a scene breakdown — the prose writer reading this should know exactly what happens, moment by moment, without inventing anything.",
+        "PURPOSE: Beat-by-beat production outline for bloc writing. NOT prose — concrete actions.",
+        "FORMAT: X does Y. Town is deserted. He finds a cafe. Meets Meg, crying in the corner. Asks if she's ok. Each sentence = one action, discovery, or beat. Keep moving.",
+        "OPENING VARIETY: Do NOT start every chapter synopsis with the protagonist's name (e.g. 'Tom Hinchcliffe does X'). Vary openings: use setting, event, scene, or 'He/She' (e.g. 'The library is empty at dawn. He rifles the archive.'). Mix in passive, location-led, or action-led starts. Natural, not repetitive.",
+        "READER LENS: Would a reader keep turning pages? Forward momentum, cause-and-effect. Each beat leads to the next. No filler.",
+        "SCENE FLOW: One primary location per chapter unless travel is explicit. No street → library → street → library. Once you leave, don't return this chapter.",
+        "REQUIRED: Who appears, where, what happens. Each chapter = distinct beat (arrival, discovery, confrontation, reveal). Ch1 ≠ Ch2 ≠ Ch3.",
       ].join("\n");
 
       for (let index = 0; index < allTitles.length; index++) {
@@ -9374,10 +10212,14 @@ function NovelWorkspacePage() {
 
         const chapterTitle = allTitles[index];
         const chapterRole = chapterRoleForIndex(index, allTitles.length);
+        const chapterProfile = getChapterPlanningProfile(index, allTitles.length);
         const structuralBeat = getStructuralBeat(index, allTitles.length);
         const chapterSpineData = spineActive ? getPlotSpineChapterData(index, allTitles.length) : null;
         const chapterSpineHint = chapterSpineData
           ? [
+              chapterSpineData.isFlashback
+                ? "FLASHBACK CHAPTER: This chapter takes place in the past. Establish when and where (years ago, different place). Cover the past-event beats below. End with a bridge back to the present or a clear connection to the main storyline."
+                : "",
               chapterSpineData.focusedBeats.length > 0
                 ? `Primary beat focus: ${chapterSpineData.focusedBeats.map((b) => `"${b.title}"`).join(", ")}`
                 : "",
@@ -9404,24 +10246,28 @@ function NovelWorkspacePage() {
           return "- SUBPLOT/ARC PROGRESSION: advance at least one ongoing thread with a concrete state change by chapter end.";
         })();
 
-        const storySoFar = generatedSynopses.length > 0
-          ? generatedSynopses.map((s, si) => `Ch ${si + 1} "${allTitles[si]}": ${clampPromptText(s, 1000)}`).join("\n\n")
-          : "";
+        const storySoFar = buildRollingPlanContext({
+          allTitles,
+          generatedSynopses,
+          chapterIndex: index,
+        });
 
         const prevSynopsis = index > 0 ? generatedSynopses[index - 1] : "";
         const nextTitle = index < allTitles.length - 1 ? allTitles[index + 1] : "";
         const chapterContext = buildPhase2ChapterContext(chapterTitle, "", index, allTitles, prevSynopsis, nextTitle);
 
         const blockedLocations = usedLocations.length > 0
-          ? `LOCATIONS ALREADY USED (pick a DIFFERENT one): ${usedLocations.join(", ")}`
+          ? `LOCATION CONTINUITY CANDIDATES (reuse if plausible): ${usedLocations.join(", ")}`
           : "";
 
         const whatChangedLast = prevSynopsis
           ? `At the end of the previous chapter: ${clampPromptText(prevSynopsis.split(/\.\s/).slice(-4).join(". "), 500)}`
           : "";
+        const advancedHints = buildCompactAdvancedHints(index, allTitles.length);
         const chapterHandoffSeed = prevSynopsis
           ? clampPromptText(((prevSynopsis.split(/(?<=[.!?])\s+/).slice(-2).join(" ").match(/[^.!?]+[.!?]?/)?.[0] || prevSynopsis).trim()), 220)
           : "";
+        const chapterBlueprintContract = buildChapterBlueprintContract(index, allTitles.length, storySettingAnchor);
 
         const nfStoryCards = novel.storyBible.nonfiction?.storyCards ?? [];
         const chapterStoryCards = nfStoryCards.filter(c => c.chapterSlot === index).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -9438,7 +10284,9 @@ function NovelWorkspacePage() {
           "",
           synopsisFormatGuide,
           "",
-          storySoFar ? `ALREADY HAPPENED (do not repeat — continue AFTER this):\n${storySoFar}\n` : "",
+          ...chapterBlueprintContract,
+          advancedHints ? `Advanced controls (apply strictly): ${advancedHints}` : "",
+          storySoFar ? `ALREADY HAPPENED (do not repeat):\n${storySoFar}\n` : "",
           whatChangedLast ? `PICK UP FROM: ${whatChangedLast}\n` : "",
           blockedLocations,
           structuralBeat,
@@ -9448,102 +10296,71 @@ function NovelWorkspacePage() {
           nfSubtype === "true-crime" ? "- True crime narrative: evidence, investigation, pursuit." : "",
           nfSubtype === "biography" ? "- Biography: defining moments and turning points." : "",
           nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
-          "- Write 12-20 sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail here, the better the prose.",
-          "- OPENING: How does the chapter begin? What's the first image, action, or event? Where are we and who is present?",
-          "- OPENING RUNWAY: Start with 1-2 grounding beats (context, motive, emotional state) before the main confrontation/escalation.",
-          "- EARLY-CHAPTER PACING (CRITICAL): Chapters 1-3 must each produce a concrete story-state change. Do not keep the same scene loop or venue dynamic across all three chapters.",
-          "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment: what triggers it, who's involved, what's discovered or decided, how people react, and what shifts as a result.",
-          "- CLOSING: How does the chapter end? What moment or revelation carries into the next chapter?",
-          "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
-          "- PROFILE DEPTH (LIGHTWEIGHT): Use 1-2 character profile traits/goals/fears as action drivers in this chapter (show in behavior/choices, not exposition dumps).",
-          "- Be extremely specific about what people say, discover, feel, and decide. Concrete details, not summaries.",
+          "- Write 10-14 sentences: opening (where/who/how), middle (key beats, reactions, turns), closing (handoff).",
+          index < 3 ? "- Ch 1-3: each must cause a concrete story-state change." : "",
+          "- Middle: what triggers each beat, who reacts, what shifts. Closing: handoff to next chapter.",
           "- If the author has placed Story Board cards in this chapter, use those as the primary content source.",
           "",
-          "ANTI-REPETITION RULES:",
-          "- NEVER repeat narrative beats from previous chapters. Each chapter must cover NEW ground.",
-          "- If a confrontation or revelation already happened, show the AFTERMATH or a NEW development.",
-          "- Each chapter MUST introduce at least one new element: new information, new complication, shifted perspective, or changed dynamic.",
-          "- Keep chapter order coherence: this chapter must directly continue from prior consequences.",
-          index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
+          index > 0 ? `- HANDOFF: Continue from prior end (${chapterHandoffSeed || "carryover"}). Do NOT reset.` : "",
           chapterSubplotArcRule,
-          spineActive ? "- SPINE INTEGRATION: weave beats/subplots/arcs naturally into the chapter's events and dialogue beats (no list-like labeling)." : "",
-          chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
-          chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
-          chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
-          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish the baseline world, key relationships, and central stakes before major escalation." : "",
+          spineActive ? "- Weave Architect beats/subplots/arcs naturally into events." : "",
+          chapterRole === "opening" ? "- Role: setup and runway." : "",
+          chapterRole === "middle" ? "- Role: escalate. Do NOT conclude." : "",
+          chapterRole === "conclusion" ? "- Role: final chapter. Resolve and close threads." : "",
+          index === 0 ? "- Ch 1: grounding first." : "",
           subplotArcHint ? `\n${subplotArcHint}` : "",
-          chapterSpineHint ? `\nPLOT SPINE TARGETS FOR THIS CHAPTER:\n${chapterSpineHint}` : "",
-          "",
-          "- ONE location only. Return a single place name string.",
-          storySettingAnchor ? `- SETTING CONTINUITY (CRITICAL): This story's anchor location is "${storySettingAnchor}". Keep chapter setting consistent with this anchor unless there is an explicit travel/relocation transition.` : "",
+          chapterSpineHint ? `\nARCHITECT (cover these beats exactly — do not substitute generic scenes):\n${chapterSpineHint}` : "",
+          storySettingAnchor ? `- Setting: "${storySettingAnchor}" unless plot requires movement.` : "",
           "- Only people who appear and act (2-4 typically).",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
-          pacingHint,
           "",
           `Chapter outline:\n${fullChapterList}`,
           nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter.",
-          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 1500)}`,
-          nfCtx ? `\nNon-fiction context:\n${clampPromptText(nfCtx, 1200)}` : "",
-          `\nCanon:\n${clampPromptText(context, 800)}`,
+          `\nStory anchor: ${clampPromptText(getCombinedSynopsis() || "", 500)}`,
+          nfCtx ? `\nNon-fiction:\n${clampPromptText(nfCtx, 700)}` : "",
+          `\nCanon:\n${clampPromptText(context, 900)}`,
         ].filter(Boolean).join("\n") : [
           `Chapter ${index + 1} of ${allTitles.length}: "${chapterTitle}" — ${genreStr} novel.`,
           `Return JSON: { "synopsis": "...", "characters": ["First Last"], "location": "One Place Name", "events": ["key moment"] }`,
-          "- Generate ONLY this chapter. Do not draft or summarize other chapters.",
+          "- Generate ONLY this chapter. Consider the story so far and what makes this chapter distinct before writing.",
           "",
           synopsisFormatGuide,
           "",
-          ...(spineActive ? [buildPlotSpineChapterContext(index, allTitles.length), ""] : []),
-          storySoFar ? `ALREADY HAPPENED (do not repeat — continue AFTER this):\n${storySoFar}\n` : "",
+          ...chapterBlueprintContract,
+          ...(spineActive ? [buildMapBasedChapterSummary(index, allTitles.length), ""] : []),
+          advancedHints ? `Advanced controls (apply strictly): ${advancedHints}` : "",
+          storySoFar ? `ALREADY HAPPENED (do not repeat):\n${storySoFar}\n` : "",
           whatChangedLast ? `PICK UP FROM: ${whatChangedLast}\n` : "",
           blockedLocations,
           ...(!spineActive ? [structuralBeat] : []),
           genreGuidance,
           "",
           spineActive
-            ? `- Write ${detailedRangeSpine} sentences of DETAILED CHAPTER BLUEPRINT. This is the primary instruction set for AI prose generation — the MORE detail you provide, the BETTER the prose will be. Cover every beat from the Plot Spine above and expand each with:`
-            : `- Write ${detailedRangeRegular} sentences of DETAILED CHAPTER BLUEPRINT — this is the primary instruction set for AI prose generation. The more detail you provide here, the better the final prose will be.`,
-          "- OPENING: How does the chapter begin? What's the first image, action, or line of dialogue? Where is the POV character and what are they doing/feeling?",
-          "- OPENING RUNWAY: Start with 1-2 grounding beats (context, motive, emotional state) before the main confrontation/escalation.",
-          "- EARLY-CHAPTER PACING (CRITICAL): Chapters 1-3 must each produce a concrete story-state change. Do not keep the same scene loop or venue dynamic across all three chapters.",
-          "- MIDDLE: Break down the chapter's development beat by beat. For each significant moment, describe: what triggers it, who's involved, what's said or done, how characters react emotionally and physically, and what shifts as a result.",
-          "- DIALOGUE CUES: Note the key conversations that must happen — what's discussed, what's revealed, what subtext is running underneath.",
-          "- EMOTIONAL THROUGHLINE: Track the POV character's emotional state from the start to end of the chapter. How does it shift and why?",
-          "- CLOSING: How does the chapter end? What image, line, or moment carries the reader into the next chapter?",
-          "- STRUCTURE: Ensure the chapter clearly follows objective -> obstacle -> outcome, with escalating consequences.",
-          "- PROFILE DEPTH (LIGHTWEIGHT): Use 1-2 character profile traits/goals/fears as action drivers in this chapter (show in behavior/choices, not exposition dumps).",
-          "- SPECIFICITY: 'Elena confronts Marcus about the forged documents; he deflects by revealing her father was the original forger, which shatters Elena's belief that her father was innocent — she leaves the room mid-sentence, hands shaking' NOT 'they argue about the past'.",
-          "- Every sentence must advance the story. No scene-setting filler, no describing weather or postures.",
-          "- State WHO does WHAT, WHY, HOW others react, and what CHANGES as a result.",
-          "- ONE location only. Return a single place name string.",
-          storySettingAnchor ? `- SETTING CONTINUITY (CRITICAL): This story's anchor location is "${storySettingAnchor}". Keep chapter setting consistent with this anchor unless there is an explicit travel/relocation transition.` : "",
-          "- Only characters who appear and act (2-5 typically). Proper names only.",
-          "",
-          "ANTI-REPETITION RULES (CRITICAL):",
-          "- NEVER repeat scenes, confrontations, or emotional beats from previous chapters. If a confrontation already happened, this chapter must show the AFTERMATH or a NEW conflict.",
-          "- Each chapter MUST introduce at least one NEW element: a new piece of information, a new complication, a shifted alliance, a revealed secret, or a changed dynamic.",
-          "- If the previous chapter ended with a revelation, this chapter must show characters ACTING on that revelation — not re-processing it.",
-          "- Check the ALREADY HAPPENED section carefully. If a scene type (argument, chase, meeting, discovery) appeared before, this chapter must use a DIFFERENT type or dramatically escalate the stakes.",
-          "- Keep chapter order coherence: continue directly from prior consequences and move the story state forward.",
-          index > 0 ? `- CHAPTER HANDOFF (CRITICAL): Start from the prior chapter's ending consequence (${chapterHandoffSeed || "carryover consequence"}) and move forward. Do NOT rewind to opening setup language.` : "",
+            ? `- Expand the map above into ${detailedRangeSpine} sentences. Cover each beat in order. The map shows WHAT MUST HAPPEN — write it as a beat-by-beat action sequence (X does Y. Discovers Z. Meets Character.).`
+            : `- Write ${detailedRangeRegular} sentences: opening, middle beats, closing handoff. Each sentence = one concrete action or discovery.`,
+          index < 3 ? "- Ch 1-3: each must cause a concrete story-state change. Ch 1 ≠ Ch 2 ≠ Ch 3 — distinct beats, not repeated arrival/walking." : "",
+          "- Middle: what triggers each beat, who reacts, what shifts. Closing: handoff to next chapter.",
+          "- Be specific: who does what, where, what they discover/meet/confront. 2-5 characters. Proper names only. Keep moving.",
+          storySettingAnchor ? `- Setting: "${storySettingAnchor}" unless plot requires movement.` : "",
+          index > 0 ? `- HANDOFF: Continue from prior end. Do NOT reset.` : "",
           chapterSubplotArcRule,
-          spineActive ? "- SPINE INTEGRATION: weave beats/subplots/arcs naturally into the chapter's events and dialogue beats (no list-like labeling)." : "",
-          chapterRole === "opening" ? "- CHAPTER ROLE (OPENING): build setup and narrative runway. Establish core relationships, baseline stakes, and the inciting pressure that launches the journey." : "",
-          chapterRole === "middle" ? "- CHAPTER ROLE (MIDDLE): progress and escalate. Advance arcs/subplots and cause clear state change, but do NOT conclude the overall story yet." : "",
-          chapterRole === "conclusion" ? "- CHAPTER ROLE (CONCLUSION): this is the final chapter. Resolve the central conflict, land character arc outcomes, and close major threads with a satisfying ending." : "",
-          index === 0 ? "- Chapter 1 must prioritize setup/build-up: establish baseline world, key relationships, and central stakes before major escalation. Spend at least the first 2-3 beats on grounding before acceleration." : "",
-          subplotArcHint ? `\n${subplotArcHint}` : "",
-          chapterSpineHint ? `\nPLOT SPINE TARGETS FOR THIS CHAPTER:\n${chapterSpineHint}` : "",
+          spineActive ? "- Each chapter maps to its assigned beats. Cover them. Do not repeat the same type of scene (e.g. arrival, walking) for multiple chapters." : "",
+          chapterRole === "opening" ? "- Role: setup and runway. Establish relationships, stakes, inciting pressure." : "",
+          chapterRole === "middle" ? "- Role: escalate. Advance arcs/subplots. Do NOT conclude." : "",
+          chapterRole === "conclusion" ? "- Role: final chapter. Resolve conflict, land arcs, close threads." : "",
+          index === 0 ? "- Ch 1: grounding first, then escalation." : "",
+          subplotArcHint && !spineActive ? `\n${subplotArcHint}` : "",
+          chapterSpineHint && !spineActive ? `\nARCHITECT:\n${chapterSpineHint}` : "",
           "",
           "- Use existing Canon names. Never create duplicates.",
           canonNames ? `Canon names: ${canonNames}` : "",
-          pacingHint,
           authorStyleHint,
           "",
           `Chapter outline:\n${fullChapterList}`,
           nextTitle ? `Next chapter: "${nextTitle}"` : "This is the FINAL chapter — resolve the central conflict.",
-          `\nBook synopsis: ${clampPromptText(novel.storyBible.summary.synopsisShort || "", 1500)}`,
-          `\nCanon:\n${clampPromptText(context, 1200)}`,
+          `\nStory anchor: ${clampPromptText(getCombinedSynopsis() || "", 500)}`,
+          `\nCanon:\n${clampPromptText(context, 900)}`,
         ].filter(Boolean).join("\n");
 
         let synopsis = "";
@@ -9553,17 +10370,17 @@ function NovelWorkspacePage() {
 
         try {
           const chapterTokenLimit = spineActive
-            ? (planOutputProfile.highDetail ? 4300 : planOutputProfile.smallModel ? 2600 : 3500)
-            : (planOutputProfile.highDetail ? 3200 : planOutputProfile.smallModel ? 2000 : 2500);
-          const chapterTemp = planOutputProfile.smallModel ? 0.5 : planOutputProfile.highDetail ? 0.65 : 0.6;
-          const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 180000, systemMsg, false, chapterTemp);
+            ? (planOutputProfile.highDetail ? 1600 : planOutputProfile.smallModel ? 1000 : 1300)
+            : (planOutputProfile.highDetail ? 1300 : planOutputProfile.smallModel ? 800 : 1100);
+          const chapterTemp = planOutputProfile.smallModel ? 0.6 : planOutputProfile.highDetail ? 0.72 : 0.68;
+          const raw = await requestOpenRouterText(chapterPrompt, chapterTokenLimit, 90000, systemMsg, false, chapterTemp);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
           if (!parsed) {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* skip */ }
           }
           let accepted: Phase2Result | null = null;
-          const quality = evaluateOperationalPlanResult(parsed ?? null);
+          const quality = evaluateOperationalPlanResult(parsed ?? null, { chapterIndex: index, totalChapters: allTitles.length });
           if (quality.ok) {
             accepted = parsed;
           } else if (parsed?.synopsis) {
@@ -9575,7 +10392,7 @@ function NovelWorkspacePage() {
                 parsed,
                 systemMsg,
               );
-              if (evaluateOperationalPlanResult(repaired).ok) {
+              if (evaluateOperationalPlanResult(repaired, { chapterIndex: index, totalChapters: allTitles.length }).ok) {
                 accepted = repaired;
               }
             } catch {
@@ -9626,7 +10443,7 @@ function NovelWorkspacePage() {
           if (missingBeats.length > 0 || missingSubplots.length > 0 || missingArcNames.length > 0) {
             try {
               const repairPrompt = [
-                `Revise this chapter blueprint so it fully aligns with the Plot Spine for Chapter ${index + 1}.`,
+                `Revise this chapter blueprint so it fully aligns with The Architect for Chapter ${index + 1}.`,
                 "",
                 `Current synopsis:\n${synopsis}`,
                 "",
@@ -9634,12 +10451,12 @@ function NovelWorkspacePage() {
                 missingSubplots.length > 0 ? `MISSING REQUIRED SUBPLOT TITLES: ${missingSubplots.map((t) => `"${t}"`).join(", ")}` : "",
                 missingArcNames.length > 0 ? `MISSING ARC CHARACTERS: ${missingArcNames.map((n) => `"${n}"`).join(", ")}` : "",
                 "",
-                "Keep the same chapter direction and continuity, but add the missing spine-linked elements naturally inside scene progression (not as labels).",
+                "Keep the same chapter direction and continuity, but add the missing Architect-linked elements naturally inside scene progression (not as labels).",
                 "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
               ].filter(Boolean).join("\n");
-              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(repairPrompt, 2200, {
-                timeoutMs: 180000,
-                systemMessage: "Story architect. Repair chapter synopsis to match Plot Spine linkage exactly. Return valid JSON only.",
+              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(repairPrompt, 1800, {
+                timeoutMs: 45000,
+                systemMessage: "Story architect. Repair chapter synopsis to match The Architect linkage exactly. Return valid JSON only.",
               });
               const repairedSynopsis = (repaired?.synopsis ?? "").trim();
               if (repairedSynopsis.length > 40) synopsis = repairedSynopsis;
@@ -9671,8 +10488,8 @@ function NovelWorkspacePage() {
                 "",
                 "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
               ].join("\n");
-              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(continuityRepairPrompt, 2200, {
-                timeoutMs: 180000,
+              const repaired = await requestOpenRouterJson<{ synopsis?: string }>(continuityRepairPrompt, 1800, {
+                timeoutMs: 45000,
                 systemMessage: "Story continuity editor. Preserve chapter events while fixing location consistency. Return valid JSON only.",
               });
               const repairedSynopsis = (repaired?.synopsis ?? "").trim();
@@ -9701,8 +10518,8 @@ function NovelWorkspacePage() {
                 "",
                 "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
               ].filter(Boolean).join("\n");
-              const carryoverRepaired = await requestOpenRouterJson<{ synopsis?: string }>(carryoverRepairPrompt, 2200, {
-                timeoutMs: 180000,
+              const carryoverRepaired = await requestOpenRouterJson<{ synopsis?: string }>(carryoverRepairPrompt, 1800, {
+                timeoutMs: 45000,
                 systemMessage: "Story architect. Preserve plot while enforcing chapter handoff continuity. Return valid JSON only.",
               });
               const repairedSynopsis = (carryoverRepaired?.synopsis ?? "").trim();
@@ -9715,7 +10532,7 @@ function NovelWorkspacePage() {
 
         // Role guardrails: opening should setup, middle should progress (not conclude), final should conclude.
         if (synopsis) {
-          const needsOpeningRepair = chapterRole === "opening" && !hasOpeningSetupCue(synopsis);
+          const needsOpeningRepair = chapterRole === "opening" && !hasOpeningRunway(synopsis, chapterProfile.controls.setupIntensity);
           const needsConclusionRepair = chapterRole === "conclusion" && !hasConclusionCue(synopsis);
           const needsMiddleRepair = chapterRole === "middle" && looksLikePrematureConclusion(synopsis);
           if (needsOpeningRepair || needsConclusionRepair || needsMiddleRepair) {
@@ -9724,7 +10541,7 @@ function NovelWorkspacePage() {
                 `Revise Chapter ${index + 1} "${chapterTitle}" so it matches its required role in the full novel arc.`,
                 `Role requirement: ${chapterRole.toUpperCase()}.`,
                 chapterRole === "opening"
-                  ? "Must strengthen setup/build-up: protagonist baseline, relationships, stakes, and inciting pressure."
+                  ? `Must strengthen setup/build-up (${chapterProfile.controls.setupIntensity} depth): protagonist baseline, relationships, stakes, and inciting pressure.`
                   : chapterRole === "middle"
                     ? "Must progress and escalate from previous chapters, but must NOT feel like a final ending."
                     : "Must deliver a real conclusion: resolve the core conflict and land a clear ending.",
@@ -9735,8 +10552,8 @@ function NovelWorkspacePage() {
                 nextTitle ? `Next chapter title: ${nextTitle}` : "No next chapter (this is the final chapter).",
                 "Return JSON only: { \"synopsis\": \"revised synopsis\" }",
               ].filter(Boolean).join("\n");
-              const roleRepaired = await requestOpenRouterJson<{ synopsis?: string }>(roleRepairPrompt, 2200, {
-                timeoutMs: 180000,
+              const roleRepaired = await requestOpenRouterJson<{ synopsis?: string }>(roleRepairPrompt, 1800, {
+                timeoutMs: 45000,
                 systemMessage: "Story architect. Enforce chapter role in novel arc. Return valid JSON only.",
               });
               const repairedSynopsis = (roleRepaired?.synopsis ?? "").trim();
@@ -9761,15 +10578,7 @@ function NovelWorkspacePage() {
             spineHint: chapterSpineHint,
           });
         }
-        if (chapterRole === "opening" && !hasOpeningSetupCue(synopsis)) {
-          synopsis = `${synopsis} The chapter grounds the protagonist's baseline world, key relationships, and stakes before forcing the first major shift.`;
-        }
-        if (chapterRole === "middle" && looksLikePrematureConclusion(synopsis)) {
-          synopsis = `${synopsis} This chapter is not the ending; it escalates unresolved pressures and carries momentum into the next stage.`;
-        }
-        if (chapterRole === "conclusion" && !hasConclusionCue(synopsis)) {
-          synopsis = `${synopsis} In the final movement, the central conflict resolves and the story closes on a definitive new normal.`;
-        }
+        /* No template prepends/appends — they add identical boilerplate to every chapter. */
         synopsis = await ensureDistinctChapterSynopsis({
           synopsis,
           chapterTitle,
@@ -9783,6 +10592,7 @@ function NovelWorkspacePage() {
           priorSynopses: generatedSynopses,
           spineHint: chapterSpineHint,
         });
+        /* No template replacement on repetition — keep AI output; generic fallback adds same boilerplate to every chapter. */
         const inferenceSource = `${chapterTitle}\n${synopsis}`.trim();
         const inferredCharacterIds = inferEntityIdsFromText(
           inferenceSource,
@@ -9808,6 +10618,23 @@ function NovelWorkspacePage() {
           hintLocationNames.map(ensureLocationId).filter(Boolean),
           inferredLocationIds,
         ).slice(0, 2);
+        chapterLoreIds = mergeUniqueIds(
+          chapterLoreIds,
+          inferEntityIdsFromText(
+            inferenceSource,
+            mergedLore.map((entry) => ({ id: entry.id, name: entry.title || "" })),
+          ),
+        ).slice(0, 4);
+        if (chapterProfile.controls.canonTagDepth === "comprehensive") {
+          if (chapterCharacterIds.length === 0) {
+            const protagonistId = mergedCharacters.find((character) => character.role === "Protagonist")?.id;
+            if (protagonistId) chapterCharacterIds = [protagonistId];
+          }
+          if (chapterLocationIds.length === 0 && mergedLocations.length > 0) {
+            const fallbackId = mergedLocations[0]?.id;
+            if (fallbackId) chapterLocationIds = [fallbackId];
+          }
+        }
         if (chapterLocationIds.length === 0 && usedLocations.length > 0) {
           const lastLocationName = usedLocations[usedLocations.length - 1];
           const fallbackLocationId = ensureLocationId(lastLocationName);
@@ -9825,43 +10652,45 @@ function NovelWorkspacePage() {
           if (locEntity?.name) usedLocations.push(locEntity.name);
         }
 
-        mutateNovel((current) => {
-          const plan = current.storyBible.bookPlan;
-          if (!plan) return current;
-          const updatedPlanChapters = [...plan.chapters];
-          if (updatedPlanChapters[index]) {
-            updatedPlanChapters[index] = {
-              ...updatedPlanChapters[index],
-              synopsis,
-              characterIds: chapterCharacterIds,
-              locationIds: chapterLocationIds,
-              loreIds: chapterLoreIds,
-              beatIds: chapterSpineData?.beatsForChapter.map((b) => b.id) ?? updatedPlanChapters[index].beatIds ?? [],
-              subplotIds: chapterSpineData?.chapterSubplots.map((sp) => sp.id) ?? updatedPlanChapters[index].subplotIds ?? [],
-              arcIds: chapterSpineData?.activeArcs.map((arc) => arc.id) ?? updatedPlanChapters[index].arcIds ?? [],
+        flushSync(() => {
+          mutateNovel((current) => {
+            const plan = current.storyBible.bookPlan;
+            if (!plan) return current;
+            const updatedPlanChapters = [...plan.chapters];
+            if (updatedPlanChapters[index]) {
+              updatedPlanChapters[index] = {
+                ...updatedPlanChapters[index],
+                synopsis,
+                characterIds: chapterCharacterIds,
+                locationIds: chapterLocationIds,
+                loreIds: chapterLoreIds,
+                beatIds: chapterSpineData?.beatsForChapter.map((b) => b.id) ?? updatedPlanChapters[index].beatIds ?? [],
+                subplotIds: chapterSpineData?.chapterSubplots.map((sp) => sp.id) ?? updatedPlanChapters[index].subplotIds ?? [],
+                arcIds: chapterSpineData?.activeArcs.map((arc) => arc.id) ?? updatedPlanChapters[index].arcIds ?? [],
+              };
+            }
+            const updatedChapters = [...current.chapters];
+            if (updatedChapters[index]) {
+              updatedChapters[index] = {
+                ...updatedChapters[index],
+                subtitle: synopsis,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return {
+              ...current,
+              chapters: updatedChapters,
+              storyBible: {
+                ...current.storyBible,
+                characters: [...mergedCharacters],
+                locations: [...mergedLocations],
+                timeline: [...mergedEvents],
+                lore: [...mergedLore],
+                bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
+              },
             };
-          }
-          const updatedChapters = [...current.chapters];
-          if (updatedChapters[index]) {
-            updatedChapters[index] = {
-              ...updatedChapters[index],
-              subtitle: synopsis,
-              updatedAt: new Date().toISOString(),
-            };
-          }
-          return {
-            ...current,
-            chapters: updatedChapters,
-            storyBible: {
-              ...current.storyBible,
-              characters: [...mergedCharacters],
-              locations: [...mergedLocations],
-              timeline: [...mergedEvents],
-              lore: [...mergedLore],
-              bookPlan: { ...plan, chapters: updatedPlanChapters, updatedAt: new Date().toISOString() },
-            },
-          };
-        }, { skipSync: index < allTitles.length - 1 });
+          }, { skipSync: index < allTitles.length - 1 });
+        });
       }
       setPlanGenerateProgressIdx(null);
 
@@ -9944,6 +10773,7 @@ function NovelWorkspacePage() {
       setPlanError(error instanceof Error ? error.message : "Unable to generate plan.");
       planGenFailed = true;
     } finally {
+      planControlsOverrideRef.current = null;
       setStoryAiBusyAction(null);
       setPlanGenerateProgressIdx(null);
       setPlanGenerateTotal(0);
@@ -9997,7 +10827,7 @@ function NovelWorkspacePage() {
       const userPrompt = [
         `Novel: "${novel.title}"`,
         `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
-        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 600)}`,
+        `Synopsis: ${(novel.synopsis || getCombinedSynopsis() || "").slice(0, 600)}`,
         `Chapters:\n${chapterTitles}`,
         "",
         hasPlotSpine()
@@ -10111,17 +10941,17 @@ function NovelWorkspacePage() {
         const subplotLines = spine.subplots.map(sp => `  - "${sp.title}" (${sp.status}): ${sp.description.slice(0, 150)}`).join("\n");
         spineContext = [
           "",
-          "=== PLOT SPINE (IMMUTABLE — DO NOT ALTER) ===",
+          "=== THE ARCHITECT (IMMUTABLE — DO NOT ALTER) ===",
           beatLines,
           subplotLines ? `Subplots:\n${subplotLines}` : "",
-          "=== END PLOT SPINE ===",
+          "=== END THE ARCHITECT ===",
         ].filter(Boolean).join("\n");
       }
 
       const storyContext = [
         `Novel: "${novel.title}"`,
         `Genre: ${(novel.storyBible.summary.genre || []).join(", ") || "not specified"}`,
-        `Synopsis: ${(novel.synopsis || novel.storyBible.summary.synopsisShort || "").slice(0, 800)}`,
+        `Synopsis: ${(novel.synopsis || getCombinedSynopsis() || "").slice(0, 800)}`,
         spineContext,
         "",
         `Chosen arc direction: "${choice.name}"`,
@@ -10153,7 +10983,7 @@ function NovelWorkspacePage() {
           chapterOutline,
           "",
           "RULES (CRITICAL):",
-          "- You are ENHANCING, not rewriting. The Plot Spine is IMMUTABLE.",
+          "- You are ENHANCING, not rewriting. Preserve The Architect beats while also preserving summary/style/character/world canon continuity.",
           "- Every plot beat, event, and story point in the existing synopsis MUST remain. Do NOT remove, replace, or contradict any of them.",
           "- ADD richness: deepen emotional reactions, sharpen character dynamics, add sensory detail, strengthen transitions between scenes, add internal conflict and subtext.",
           "- ADD connective tissue: smoother transitions between beats, foreshadowing, echoes of earlier chapters, thematic resonance.",
@@ -10373,7 +11203,7 @@ function NovelWorkspacePage() {
 
       type Phase2Result = { synopsis?: string; characters?: string[]; location?: string; locations?: string[]; events?: string[]; lore?: string[] };
       let result: Phase2Result | null = null;
-        for (let attempt = 0; attempt < 4 && !result; attempt++) {
+        for (let attempt = 0; attempt < 2 && !result; attempt++) {
         try {
           const raw = await requestOpenRouterText(prompt, 1500, 240000, systemMsg, false, 0.25);
           let parsed = parseJsonFromAi<Phase2Result>(raw);
@@ -10381,7 +11211,7 @@ function NovelWorkspacePage() {
             const repaired = attemptCloseTruncatedJson(raw.trim());
             if (repaired) try { parsed = JSON.parse(repaired) as Phase2Result; } catch { /* ignore */ }
           }
-          const quality = evaluateOperationalPlanResult(parsed ?? null);
+          const quality = evaluateOperationalPlanResult(parsed ?? null, { chapterIndex, totalChapters: allTitles.length });
           if (quality.ok) {
             result = parsed;
           } else if (parsed?.synopsis) {
@@ -10393,7 +11223,7 @@ function NovelWorkspacePage() {
                 parsed,
                 systemMsg,
               );
-              if (evaluateOperationalPlanResult(repaired).ok) {
+              if (evaluateOperationalPlanResult(repaired, { chapterIndex, totalChapters: allTitles.length }).ok) {
                 result = repaired;
               }
             } catch {
@@ -10412,7 +11242,7 @@ function NovelWorkspacePage() {
       const lore = novel.storyBible.lore ?? [];
       let synopsis = (typeof result.synopsis === "string" ? result.synopsis.trim() : "");
       const knownLocations = locations.map((l) => l.name || "").filter(Boolean);
-      const synopsisSeed = `${novel.storyBible.summary.synopsisShort || ""} ${novel.synopsis || ""}`.trim();
+      const synopsisSeed = `${getCombinedSynopsis()} ${novel.synopsis || ""}`.trim();
       const settingAnchor = synopsisSeed
         ? (detectPrimaryKnownLocationName(synopsisSeed, knownLocations) || knownLocations[0] || "")
         : (knownLocations[0] || "");
@@ -11162,6 +11992,9 @@ function NovelWorkspacePage() {
           summary: {
             premise: "",
             synopsisShort: "",
+            synopsisAct1: "",
+            synopsisAct2: "",
+            synopsisAct3: "",
             themes: [],
             genre: [],
             tone: [],
@@ -12110,7 +12943,7 @@ function NovelWorkspacePage() {
       // AI disabled — just create a blank character directly
       const newChar = {
         id: charId, name: "New Character", role: "Protagonist" as CharacterRole,
-        logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        age: "", logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
         secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
         relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
         voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
@@ -12127,7 +12960,7 @@ function NovelWorkspacePage() {
     if (!novel) return;
     const newChar = {
       id: charId, name: "New Character", role: "Protagonist" as CharacterRole,
-      logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+      age: "", logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
       secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
       relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
       voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
@@ -12151,13 +12984,14 @@ function NovelWorkspacePage() {
         `Author's description: "${userDescription.trim()}"`,
         "",
         "Use the story context and existing characters to make this character fit naturally.",
-        "Give them a real, full human name (first and last) that suits the genre and setting.",
+        `Give them a distinctive full name (first + last). ${getRegionalNameHint()} FORBIDDEN: Ethan, Emma, Liam, Olivia, Noah, Mason.`,
         "Write detailed, rich content for EVERY field — do not leave anything empty or brief.",
         "",
         "Return JSON only in this shape:",
         `{
   "name": "string (full first and last name)",
   "role": "Protagonist|Antagonist|Supporting|Minor|Love Interest|Custom",
+  "age": "string (single number e.g. 29 or 34)",
   "logline": "one-sentence summary of who they are",
   "appearance": "detailed physical description — height, build, hair, eyes, distinguishing features, how they dress",
   "personality": "detailed personality traits, temperament, habits, quirks, demeanour",
@@ -12184,7 +13018,7 @@ function NovelWorkspacePage() {
       ].join("\n");
 
       const data = await requestOpenRouterJson<{
-        name?: string; role?: string; logline?: string;
+        name?: string; role?: string; age?: string; logline?: string;
         appearance?: string; personality?: string; goals?: string; fears?: string;
         backstory?: string; accent?: string; speakingStyle?: string;
         reactionPattern?: string; voiceNotes?: string;
@@ -12200,6 +13034,7 @@ function NovelWorkspacePage() {
         id: charId,
         name: aiName,
         role: (typeof data.role === "string" && data.role.trim()) ? normalizeCharacterRole(data.role) : ("Supporting" as CharacterRole),
+        age: (typeof data.age === "string" && data.age.trim()) ? data.age.trim() : "",
         logline: (typeof data.logline === "string" && data.logline.trim()) ? data.logline.trim() : "",
         appearance: (typeof data.appearance === "string" && data.appearance.trim()) ? data.appearance.trim() : "",
         personality: (typeof data.personality === "string" && data.personality.trim()) ? data.personality.trim() : "",
@@ -12226,7 +13061,7 @@ function NovelWorkspacePage() {
       // AI failed — create a blank character so nothing is lost
       const blankChar = {
         id: charId, name: "New Character", role: "Supporting" as CharacterRole,
-        logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
+        age: "", logline: "", appearance: "", personality: "", goals: "", fears: "", backstory: "",
         secrets: "", readerSecretHint: "", accent: "", speakingStyle: "", reactionPattern: "",
         relationships: [] as Array<{ targetCharacterId: string; type: string; description?: string }>,
         voiceNotes: "", tags: [] as string[], pronouns: "", groups: "", otherNames: "",
@@ -12514,19 +13349,22 @@ function NovelWorkspacePage() {
     updateSceneBlocks(activeChapter.id, aligned);
   }
 
-  /** Save a single bolt-on to the global library (localStorage + server settings) */
-  async function saveSingleBoltonToLibrary(bolton: { title: string; description?: string; prompt?: string; category?: string }) {
+  /** Save a single bolt-on to the global library (localStorage + server settings). Optionally mark as favourite. */
+  async function saveSingleBoltonToLibrary(bolton: { title: string; description?: string; prompt?: string; category?: string }, asFavourite?: boolean) {
     if (typeof window === "undefined") return;
     const library = readBoltonLibrary();
     const desc = bolton.description || "";
     const key = `${bolton.title.trim().toLowerCase()}|${desc.trim().toLowerCase()}`;
-    const exists = library.some((item) => `${item.title.trim().toLowerCase()}|${(item.description || "").trim().toLowerCase()}` === key);
-    if (!exists) {
+    const idx = library.findIndex((item) => `${item.title.trim().toLowerCase()}|${(item.description || "").trim().toLowerCase()}` === key);
+    if (idx >= 0) {
+      if (asFavourite) library[idx] = { ...library[idx], favourite: true };
+    } else {
       library.push({
         title: clampText(bolton.title, 40),
         description: clampPromptText(desc, 500),
         prompt: clampPromptText(bolton.prompt || "", 500),
         category: normalizeBoltonCategory(bolton.category || "custom"),
+        favourite: asFavourite ?? false,
       });
     }
     try { window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library)); } catch { /* ignore */ }
@@ -12538,6 +13376,17 @@ function NovelWorkspacePage() {
       message: syncOk ? "Bolt-on saved to library" : "Saved locally, but cloud sync failed.",
       at: now,
     });
+  }
+
+  /** Toggle favourite on a library bolt-on by index */
+  async function toggleLibraryBoltonFavourite(index: number) {
+    if (typeof window === "undefined") return;
+    const library = readBoltonLibrary();
+    if (index < 0 || index >= library.length) return;
+    library[index] = { ...library[index], favourite: !library[index].favourite };
+    try { window.localStorage.setItem(BOLTON_LIBRARY_KEY, JSON.stringify(library)); } catch { /* ignore */ }
+    setBoltonLibraryCount(library.length);
+    await saveSettingsToServer(gatherSettings());
   }
 
   /** Delete a bolt-on from the global library by index */
@@ -12886,9 +13735,10 @@ function NovelWorkspacePage() {
     if (!novel || !ensureStoryAiReady()) return;
     setStoryAiBusyAction("worldbuilding-generate");
     setStoryAiError(null);
+    setGenProgressBar({ type: "worldbuilding" });
     try {
       const sb = novel.storyBible;
-      const synopsis = sb.summary.synopsisShort?.trim() || "";
+      const synopsis = getCombinedSynopsis();
       const stakes = sb.summary.stakes?.trim() || "";
       const genres = sb.summary.genre.slice(0, 4);
       const genre = genres.join(", ") || "fiction";
@@ -12945,6 +13795,7 @@ function NovelWorkspacePage() {
         existingLoreNames !== "none" ? `Already exists (do NOT duplicate): ${existingLoreNames}` : "",
         "",
         `Think about what world-building notes a ${genre} author actually needs. What rules, systems, or context must be established so the story stays consistent?`,
+        "CRITICAL: Only generate entries that DIRECTLY affect the plot, character choices, or conflict. Do NOT generate: sports rules, game rules, hobby trivia, minor customs, or tangential background (e.g. rugby rules, cooking techniques) unless explicitly central to the story.",
         `Create 4-8 entries. Return JSON:`,
         `{"entries":[{"title":"Short descriptive name","category":"${suggestedCategories}","content":"2-4 sentences explaining this world-building element and why it matters to the story","constraints":["a concrete rule the story must follow because of this"]}]}`,
       ].filter(Boolean).join("\n");
@@ -12986,6 +13837,9 @@ function NovelWorkspacePage() {
         const title = (entry.title ?? "").trim();
         if (!title) return true;
         const lower = title.toLowerCase();
+        const synLower = synopsis.toLowerCase();
+        // Tangential/non-story entries: sports, games, hobbies unless mentioned in synopsis
+        if (/rugby|sports? rule|game rule|cooking|recipe|hobby|minor custom/i.test(lower) && !/rugby|sport|game rule|cooking|recipe|hobby/i.test(synLower)) return true;
         // Matches a character name — it's a character bio, not lore
         if (charNamesLowerLore.has(lower)) return true;
         for (const cn of charNamesLowerLore) {
@@ -13056,6 +13910,7 @@ function NovelWorkspacePage() {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate worldbuilding.");
     } finally {
+      setGenProgressBar(null);
       setStoryAiBusyAction(null);
     }
   }
@@ -13181,7 +14036,7 @@ function NovelWorkspacePage() {
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       if (error instanceof DOMException && error.name === "AbortError") {
-        setStoryAiError("Location lookup timed out. Please try again.");
+        setStoryAiError("Location lookup failed. Try again.");
       } else {
         setStoryAiError(error instanceof Error ? error.message : "Unable to look up this location.");
       }
@@ -13196,141 +14051,168 @@ function NovelWorkspacePage() {
     setStoryAiError(null);
     setLocationLookupMessage(null);
 
+    const sb = novel.storyBible;
+    const synopsis = getCombinedSynopsis();
+    const stakes = sb.summary.stakes?.trim() || "";
+    const genre = sb.summary.genre.slice(0, 4).join(", ") || "fiction";
+    const tone = sb.summary.tone.slice(0, 3).join(", ") || "";
+    const themes = (sb.summary.themes ?? []).slice(0, 5).join(", ");
+    const synopsisBlock = [synopsis, stakes ? `Stakes: ${stakes}` : "", themes ? `Themes: ${themes}` : ""].filter(Boolean).join("\n");
+    const locationHint = getLocationNamingHint();
+    const charNamesLower = new Set((sb.characters ?? []).map((c) => c.name.trim().toLowerCase()).filter(Boolean));
+    const existingLocNames = storyLocations.map((l) => l.name.trim()).filter(Boolean);
+    const sysMsg = "Location designer. Create physical places only. Return valid JSON.";
+
+    function isArchiveOrInvalid(name: string): boolean {
+      const n = name.trim().toLowerCase();
+      if (!n) return true;
+      if (/\barchive/i.test(n)) return true;
+      if (/^(location \d|new location|place \d|unnamed|unknown|n\/a)/i.test(n)) return true;
+      if (charNamesLower.has(n)) return true;
+      return false;
+    }
+
     try {
-      const sb = novel.storyBible;
-      const synopsis = sb.summary.synopsisShort?.trim() || "";
-      const stakes = sb.summary.stakes?.trim() || "";
-      const genre = sb.summary.genre.slice(0, 4).join(", ") || "fiction";
-      const tone = sb.summary.tone.slice(0, 3).join(", ") || "";
-      const themes = (sb.summary.themes ?? []).slice(0, 5).join(", ");
-      const charNames = (sb.characters ?? []).map((c) => c.name).filter(Boolean).join(", ") || "none";
-      const existingLocNames = storyLocations.map((l) => l.name.trim()).filter(Boolean).join(", ") || "none";
+      freshAiAbort();
 
-      const synopsisBlock = [synopsis, stakes ? `Stakes: ${stakes}` : "", themes ? `Themes: ${themes}` : ""].filter(Boolean).join("\n");
+      // ── Phase 1: Generate names only (one fast call) ──
+      setLocationGenProgress({ phase: "names" });
+      await new Promise((r) => setTimeout(r, 150));
 
-      const sysMsg = "Location designer. Create ONLY physical places. NO characters, factions, or lore. Return valid JSON.";
+      const namesPrompt = [
+        `${genre} novel${tone ? ` (${tone})` : ""}.`,
+        synopsisBlock,
+        locationHint,
+        existingLocNames.length ? `Existing (different): ${existingLocNames.join(", ")}` : "",
+        `Return 4–8 specific place NAMES only. Follow the naming hint above for this genre.`,
+        `JSON: {"names":["Name1","Name2","Name3",...]}`,
+      ].filter(Boolean).join("\n\n");
 
-      const userPrompt = [
-        `${genre} novel${tone ? ` (${tone})` : ""}. ${synopsisBlock}`,
-        existingLocNames !== "none" ? `Existing (skip): ${existingLocNames}` : "",
-        `Create 4-8 locations. Return JSON:`,
-        `{"locations":[{"name":"Place Name","description":"2-3 sentences","type":"City|Building|Wilderness|Region|Residence|Other"}]}`,
-      ].filter(Boolean).join("\n");
-
-      // ── Call WITHOUT jsonMode — works with any model ──
-      type LocGenResult = {
-        locations?: Array<{ name?: string; description?: string; type?: string }>;
-      };
-
-      let data: LocGenResult | null = null;
-
+      let raw: string;
       try {
-        const raw = await requestOpenRouterText(userPrompt, 700, 180000, sysMsg, false, 0.7);
-        data = parseJsonFromAi<LocGenResult>(raw);
-      } catch { /* continue */ }
-
-      if (!data || !Array.isArray(data.locations) || data.locations.length === 0) {
-        try {
-          const retryPrompt = userPrompt + "\n\nReturn ONLY valid JSON.";
-          const raw2 = await requestOpenRouterText(retryPrompt, 700, 180000, sysMsg, false, 0.4);
-          data = parseJsonFromAi<LocGenResult>(raw2);
-        } catch { /* continue */ }
+        raw = await requestOpenRouterText(namesPrompt, 400, 60000, sysMsg, false, 0.7);
+      } catch {
+        raw = await requestOpenRouterText(namesPrompt + "\n\nReturn ONLY valid JSON.", 400, 60000, sysMsg, false, 0.4);
       }
 
-      if (!data || !Array.isArray(data.locations) || data.locations.length === 0) {
-        throw new Error("Location generation failed. Try a different model or add more detail to your synopsis.");
+      type NamesResult = { names?: string[] };
+      const namesData = parseJsonFromAi<NamesResult>(raw);
+      const rawNames = Array.isArray(namesData?.names) ? namesData.names : [];
+      const names: string[] = [];
+      const seen = new Set<string>();
+      for (const n of rawNames) {
+        const s = typeof n === "string" ? n.trim() : "";
+        if (!s || isArchiveOrInvalid(s) || seen.has(s.toLowerCase())) continue;
+        seen.add(s.toLowerCase());
+        names.push(s);
       }
 
-      // Filter: reject characters, organisations, lore masquerading as locations
-      const charNamesLower = new Set((sb.characters ?? []).map((c) => c.name.trim().toLowerCase()).filter(Boolean));
-      // Also build first-name and last-name sets for partial matching
-      const charNameParts = new Set<string>();
-      for (const c of sb.characters ?? []) {
-        for (const part of c.name.trim().toLowerCase().split(/\s+/)) {
-          if (part.length > 2) charNameParts.add(part);
-        }
-      }
-      const loreNamesLower = new Set((sb.lore ?? []).map((l) => l.title?.trim().toLowerCase()).filter(Boolean));
-
-      function isNotALocation(entry: { name?: string; description?: string; type?: string }): boolean {
-        const name = (entry.name ?? "").trim();
-        if (!name) return true;
-        const lower = name.toLowerCase();
-        const words = lower.split(/\s+/).filter(Boolean);
-        // Exact match with a character name
-        if (charNamesLower.has(lower)) return true;
-        // Partial match — if the location name IS a character's first or last name
-        if (words.length <= 2 && words.every((w) => charNameParts.has(w))) return true;
-        // Matches a lore entry
-        if (loreNamesLower.has(lower)) return true;
-        // Placeholder names
-        if (/^(location \d|new location|place \d|unnamed|unknown|n\/a|lore \d|entry \d)/i.test(name)) return true;
-        // Description sounds like a person bio
-        const desc = (entry.description ?? "").toLowerCase();
-        if (desc && /^(a |an |the )?(young |old |brave |wise |cunning |fierce |gentle |quiet |tall |short )?(man|woman|boy|girl|warrior|knight|mage|wizard|witch|queen|king|prince|princess|thief|assassin|priest|priestess|healer|merchant|farmer|soldier|captain|general|lord|lady|duke|duchess|orphan|scholar|blacksmith|bard|ranger|druid|paladin|monk|rogue|sorcerer|sorceress|necromancer|alchemist|detective|spy|hunter|sailor|pirate|noble|servant|slave|gladiator|chef|artist|poet|musician|inventor|scientist|doctor|nurse|teacher|student|child|elder|chief|warden|guardian|sentinel|champion)\b/.test(desc)) return true;
-        // Description sounds like lore/rules
-        if (desc && /^(a |an |the )?(system|rule|law|custom|tradition|belief|magic|spell|ritual|prophecy|legend|myth|code|pact|treaty|curse|blessing|practice|philosophy|covenant|doctrine|mandate|edict|decree|tenet|principle|creed|ideology|movement|rebellion|revolution|conspiracy)\b/.test(desc)) return true;
-        // Type field is suspicious
-        const type = (entry.type ?? "").toLowerCase();
-        if (/\b(person|character|faction|guild|order|organisation|organization|alliance|council|rule|system|magic|lore|creature|beast|monster|spirit|deity|god|goddess)\b/.test(type)) return true;
-        return false;
-      }
-
-      const generatedLocations = data.locations
-        .map((item) => {
-          const name = typeof item.name === "string" ? item.name.trim() : "";
-          const description = typeof item.description === "string" ? item.description.trim() : "";
-          if (!name || !description) return null;
-          if (isNotALocation(item)) return null;
-          return {
-            id: createEntityId("loc"),
-            name,
-            description,
-            type: typeof item.type === "string" ? item.type.trim() : "",
-            sensoryDetails: "",
-            rules: "",
-            significance: "",
-            tags: [],
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
-      if (generatedLocations.length === 0) {
-        throw new Error("Assistant did not return usable locations.");
+      if (names.length === 0) {
+        throw new Error("No valid location names. Try adding more detail to your synopsis.");
       }
 
       const nextLocations = [...storyLocations];
       const byName = new Map<string, number>();
-      nextLocations.forEach((location, index) => {
-        const key = location.name.trim().toLowerCase();
-        if (key) byName.set(key, index);
+      nextLocations.forEach((loc, i) => {
+        const k = loc.name.trim().toLowerCase();
+        if (k) byName.set(k, i);
       });
 
-      generatedLocations.forEach((generatedLocation) => {
-        const key = generatedLocation.name.trim().toLowerCase();
-        if (!key) return;
-        const existingIndex = byName.get(key);
-        if (existingIndex === undefined) {
-          nextLocations.push(generatedLocation);
-          byName.set(key, nextLocations.length - 1);
-          return;
+      const toProfile: Array<{ id: string; name: string }> = [];
+      for (const name of names) {
+        const key = name.toLowerCase();
+        if (byName.has(key)) continue;
+        const id = createEntityId("loc");
+        nextLocations.push({
+          id,
+          name,
+          description: "",
+          type: "",
+          sensoryDetails: "",
+          rules: "",
+          significance: "",
+          tags: [],
+        });
+        byName.set(key, nextLocations.length - 1);
+        toProfile.push({ id, name });
+      }
+
+      if (toProfile.length === 0) {
+        setLocationLookupMessage(`No new locations to add.`);
+        return;
+      }
+
+      // ── Phase 2: Profile each location one-by-one (like character profiles, simpler) ──
+      for (let i = 0; i < toProfile.length; i++) {
+        if (aiAbortRef.current?.signal.aborted) throw new Error("__CANCELLED__");
+        const { id: locId, name: locName } = toProfile[i];
+        setLocationGenProgress({
+          phase: "profile",
+          current: i + 1,
+          total: toProfile.length,
+          name: locName,
+          done: i,
+        });
+        await new Promise((r) => setTimeout(r, 200));
+
+        const profilePrompt = [
+          `${genre} novel${tone ? ` (${tone})` : ""}.`,
+          synopsisBlock,
+          locationHint,
+          `Build a SHORT profile for this location: ${locName}. Describe it in a way that fits the genre.`,
+          `Return JSON:`,
+          `{
+  "description": "2-3 sentences: what happens here, its role in the story",
+  "vision": "Brief: what you see (light, colours, layout)",
+  "smell": "Brief: scents",
+  "sound": "Brief: ambience",
+  "atmosphere": "Brief: mood",
+  "type": "City|Building|Wilderness|Region|Residence|Other"
+}`,
+        ].filter(Boolean).join("\n\n");
+
+        let profileRaw: string;
+        try {
+          profileRaw = await requestOpenRouterText(profilePrompt, 500, 90000, sysMsg, false, 0.7);
+        } catch {
+          if (i === 0) throw new Error("Location profile failed. Try again.");
+          continue;
         }
-        const current = nextLocations[existingIndex];
-        nextLocations[existingIndex] = {
-          ...current,
-          description: current.description.trim() ? current.description : generatedLocation.description,
-          type: current.type?.trim() ? current.type : generatedLocation.type,
-        };
-      });
+
+        type Profile = { description?: string; vision?: string; smell?: string; sound?: string; atmosphere?: string; type?: string };
+        const prof = parseJsonFromAi<Profile>(profileRaw);
+        const description = typeof prof?.description === "string" ? prof.description.trim() : "";
+        if (!description) continue;
+
+        const sensory = [prof?.vision, prof?.smell, prof?.sound, prof?.atmosphere]
+          .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+          .map((s) => s.trim())
+          .join("\n");
+
+        const idx = nextLocations.findIndex((l) => l.id === locId);
+        if (idx >= 0) {
+          nextLocations[idx] = {
+            ...nextLocations[idx],
+            description,
+            type: typeof prof?.type === "string" ? prof.type.trim() : "",
+            sensoryDetails: sensory,
+          };
+        }
+
+        setLocationGenProgress((p) =>
+          p && p.phase === "profile" ? { ...p, name: locName, done: i + 1 } : p,
+        );
+      }
 
       updateStoryBible({ locations: nextLocations });
       setLocationLookupMessage(
-        `Generated ${generatedLocations.length} location${generatedLocations.length === 1 ? "" : "s"} from your Canon.`,
+        `Added ${toProfile.length} location${toProfile.length === 1 ? "" : "s"} and profiled them.`,
       );
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       setStoryAiError(error instanceof Error ? error.message : "Unable to generate locations.");
     } finally {
+      setLocationGenProgress(null);
       setStoryAiBusyAction(null);
     }
   }
@@ -13535,10 +14417,15 @@ function NovelWorkspacePage() {
         : "Autosaving";
   const aiBusyLabel = (() => {
     if (!storyAiBusyAction) return null;
+    if (storyAiBusyAction === "summary-autofill") return storyAiError && /^Building Act \d/.test(storyAiError) ? storyAiError : "Building story summary (3 acts)";
+    if (storyAiBusyAction === "summary-backbuild") return storyAiError && /^Building Act \d/.test(storyAiError) ? storyAiError : "Building acts from synopsis";
+    if (storyAiBusyAction === "summary-meta-generate") return "Generating themes & stakes";
     if (storyAiBusyAction === "plan-generate") return "Building your chapter plan";
     if (storyAiBusyAction.startsWith("plan-regen-")) return "Regenerating chapter plan";
     if (storyAiBusyAction.startsWith("chapter-blocks-")) return "Generating chapter blocs";
     if (storyAiBusyAction.startsWith("block-")) return "Writing prose";
+    if (storyAiBusyAction === "doctor-fix-story") return "Story Doctor: Applying fixes";
+    if (storyAiBusyAction === "doctor-fix-chapter") return "Chapter Doctor: Applying fixes";
     if (storyAiBusyAction === "events-generate") return "Generating key events";
     if (storyAiBusyAction === "characters-generate") return "Generating characters";
     if (storyAiBusyAction === "character-profile-batch") return "Building character profiles";
@@ -13573,6 +14460,337 @@ function NovelWorkspacePage() {
 
   return (
     <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
+      {!aiOff && storyAiBusyAction && storyAiBusyAction !== "plan-generate" && !storyAiBusyAction.startsWith("chapter-blocks-") && !storyAiBusyAction.startsWith("block-prose-") && !storyAiBusyAction.startsWith("doctor-fix-") && aiBusyLabel && !profileGenProgress && !locationGenProgress && !genProgressBar && !chapterBlocksGenProgress && (
+        <div className="pw-ai-overlay" aria-live="polite" aria-busy="true">
+          <div className="pw-ai-overlay-banner">
+            <div className="pw-ai-overlay-spinner" aria-hidden="true" />
+            <div className="pw-ai-overlay-label">{aiBusyLabel}</div>
+            <div className="pw-ai-overlay-duration">{aiBusyDuration} elapsed</div>
+            <div className="pw-ai-overlay-note">Almost there — your content is being created</div>
+            <div className="pw-ai-overlay-stop-wrap" style={{ pointerEvents: "auto" }}>
+              <button
+                type="button"
+                className="pw-ai-overlay-stop"
+                onClick={() => setShowStopConfirm(true)}
+                aria-label="Stop AI"
+              >
+                Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showStopConfirm && storyAiBusyAction && (
+        <div className="pw-ai-overlay pw-ai-overlay-confirm" onClick={() => setShowStopConfirm(false)} aria-modal="true">
+          <div className="pw-ai-overlay-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <p className="pw-ai-overlay-confirm-title">Stop AI?</p>
+            <p className="pw-ai-overlay-confirm-text">The current task will be cancelled. Any partial progress may be lost.</p>
+            <div className="pw-ai-overlay-confirm-actions">
+              <button type="button" className="pw-ai-overlay-confirm-cancel" onClick={() => setShowStopConfirm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="pw-ai-overlay-confirm-stop"
+                onClick={() => {
+                  cancelAiWork();
+                  setStoryAiError(null);
+                  setShowStopConfirm(false);
+                }}
+              >
+                Stop AI
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {spineDoctorResult && (() => {
+        const docStoryChars = novel?.storyBible?.characters ?? [];
+        return (
+        <div className="pw-story-doctor-overlay" onClick={() => setSpineDoctorResult(null)} aria-modal="true">
+          <div className="pw-story-doctor-card" onClick={(e) => e.stopPropagation()}>
+            <div className="pw-story-doctor-header">
+              <span className="pw-story-doctor-title">Story Doctor</span>
+              <div className="pw-story-doctor-score">
+                <span className="pw-story-doctor-score-value" style={{ color: spineDoctorResult.score >= 80 ? "#22c55e" : spineDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{spineDoctorResult.score}</span>
+                <span className="pw-story-doctor-score-label">/100</span>
+              </div>
+              <button type="button" style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, opacity: 0.7, border: "none", background: "transparent", cursor: "pointer", color: "var(--pw-text-dim)", borderRadius: 6 }} onClick={() => setSpineDoctorResult(null)} aria-label="Close">✕</button>
+            </div>
+            <div className="pw-story-doctor-body">
+              {spineDoctorResult.summary && <p className="pw-story-doctor-summary">{spineDoctorResult.summary}</p>}
+              {spineDoctorResult.issues.length === 0 ? (
+                <div className="pw-story-doctor-all-clear">
+                  <span>✓</span> All clear — your Architect is in great shape.
+                </div>
+              ) : (
+                <>
+                  <div className="pw-story-doctor-issues">
+                    {(["critical", "warning", "tip"] as const).flatMap((sev) =>
+                      spineDoctorResult.issues.filter(i => i.severity === sev).map((issue, i) => (
+                        <div key={`${sev}-${i}`} className={`pw-story-doctor-issue pw-story-doctor-issue-${sev}`}>
+                          <div className="pw-story-doctor-issue-meta">
+                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "#ef4444" : sev === "warning" ? "#f59e0b" : "#3b82f6" }}>{issue.severity}</span>
+                            <span className="pw-story-doctor-issue-area">{issue.area}</span>
+                          </div>
+                          <div className="pw-story-doctor-issue-message">{issue.message}</div>
+                          <div className="pw-story-doctor-issue-suggestion">{issue.suggestion}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {!aiOff && (
+                    <div className="pw-story-doctor-actions">
+                      {spineBusy ? (
+                        storyAiBusyAction === "doctor-fix-story" ? (
+                          <div style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>See progress bar below.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)" }}>{spineProgress}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 20, height: 20, border: "2px solid var(--pw-border-light)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "pw-spin 0.8s linear infinite" }} />
+                              <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>AI is updating your Architect…</span>
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <button type="button" className="btn btn-primary" disabled={spineDoctorResult.issues.length === 0} style={{ fontSize: 12 }} onClick={async () => {
+                          if (spineBusy || !novel) return;
+                          const fixableIssues = spineDoctorResult.issues;
+                          if (fixableIssues.length === 0) return;
+                          setSpineBusy(true);
+                          setStoryAiBusyAction("doctor-fix-story");
+                          setSpineError("");
+                          setSpineProgress(`Applying fixes to ${fixableIssues.length} issues…`);
+                          try {
+                            const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
+                            const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [chars: " + b.characterIds.map(id => docStoryChars.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
+                            const spCtx = (novel.storyBible.plotSpine?.subplots ?? []).map(s => `"${s.title}" (${s.status})`).join("; ");
+                            const arcCtxStr = (novel.storyBible.plotSpine?.characterArcs ?? []).map(a => { const cn = docStoryChars.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
+                            const issueList = fixableIssues.map((i, idx) => `${idx + 1}. [${i.severity}/${i.area}] ${i.message} → Fix: ${i.suggestion}`).join("\n");
+                            const charNames = docStoryChars.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
+                            const fixAllPrompt = [
+                              "Fix ALL of the following issues in The Architect. Apply every fix simultaneously without breaking anything.",
+                              `\nISSUES TO FIX:\n${issueList}`,
+                              `\nCanon Characters: ${charNames}`,
+                              `\nCurrent beats:\n${beatCtx}`,
+                              spCtx ? `Subplots: ${spCtx}` : "",
+                              arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
+                              `\nReturn JSON with the COMPLETE fixed beat list:`,
+                              `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
+                              "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Use character names from the Canon list.",
+                            ].filter(Boolean).join("\n");
+                            const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in The Architect simultaneously. Return only valid JSON.", false, 0.4);
+                            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                            if (jsonMatch) {
+                              const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
+                              if (parsed.beats?.length) {
+                                const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
+                                  id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
+                                  title: b.title || "", description: b.description || "",
+                                  act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
+                                  chapterHint: currentBeats[bi]?.chapterHint ?? -1,
+                                  characterIds: (b.characterNames ?? []).map(name => docStoryChars.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
+                                  locationHint: b.locationHint || "",
+                                  tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                  sortOrder: bi,
+                                }));
+                                updatePlotSpine({ beats: fixedBeats });
+                                const newScore = Math.min(100, spineDoctorResult.score + 25);
+                                setSpineDoctorResult(null);
+                              }
+                            }
+                          } catch (e) {
+                            setSpineError(e instanceof Error ? e.message : "Fix failed. Try again.");
+                          } finally {
+                            setSpineBusy(false);
+                            setStoryAiBusyAction(null);
+                            setSpineProgress("");
+                          }
+                        }}>
+                          Fix All {spineDoctorResult.issues.length} Issues
+                        </button>
+                      )}
+                      {!spineBusy && (
+                        <button type="button" className="btn" style={{ fontSize: 11, opacity: 0.7 }} onClick={() => setSpineDoctorResult(null)}>Close</button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {spineDoctorResult.issues.length === 0 && !aiOff && (
+                <div className="pw-story-doctor-actions">
+                  <button type="button" className="btn" style={{ fontSize: 12 }} onClick={() => setSpineDoctorResult(null)}>Close</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+      {chapterDoctorResult && (() => {
+        const fixable = chapterDoctorResult.issues;
+        const closeDoctor = () => { setChapterDoctorResult(null); setChapterDoctorFixesApplied(false); };
+        return (
+        <div className="pw-story-doctor-overlay" onClick={chapterDoctorFixesApplied ? undefined : closeDoctor} aria-modal="true">
+          <div className="pw-story-doctor-card" onClick={(e) => e.stopPropagation()}>
+            <div className="pw-story-doctor-header">
+              <span className="pw-story-doctor-title">Chapter Doctor</span>
+              <div className="pw-story-doctor-score">
+                <span className="pw-story-doctor-score-value" style={{ color: chapterDoctorResult.score >= 80 ? "#22c55e" : chapterDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{chapterDoctorResult.score}</span>
+                <span className="pw-story-doctor-score-label">/100</span>
+              </div>
+              <button type="button" style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, opacity: 0.7, border: "none", background: "transparent", cursor: "pointer", color: "var(--pw-text-dim)", borderRadius: 6 }} onClick={closeDoctor} aria-label="Close">✕</button>
+            </div>
+            <div className="pw-story-doctor-body">
+              {chapterDoctorFixesApplied && (
+                <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--pw-accent)", color: "var(--pw-surface)", borderRadius: 10, border: "none" }}>
+                  <strong style={{ fontSize: 14 }}>✓ Fixes saved to your plan</strong>
+                  <p style={{ margin: "8px 0 0", fontSize: 13, opacity: 0.95 }}>Yes, the plan was updated. The issues below are the <em>old</em> list. Click Close, then <strong>Re-analyse</strong> in the plan toolbar to run Chapter Doctor on the updated plan and see a new score.</p>
+                </div>
+              )}
+              {chapterDoctorResult.summary && <p className="pw-story-doctor-summary">{chapterDoctorResult.summary}</p>}
+              {chapterDoctorResult.issues.length === 0 ? (
+                <div className="pw-story-doctor-all-clear">
+                  <span>✓</span> All clear — your chapter plan is in great shape.
+                </div>
+              ) : (
+                <>
+                  <div className="pw-story-doctor-issues">
+                    {(["critical", "warning", "tip"] as const).flatMap((sev) =>
+                      chapterDoctorResult.issues.filter((i) => i.severity === sev).map((issue, i) => (
+                        <div key={`${sev}-${i}`} className={`pw-story-doctor-issue pw-story-doctor-issue-${sev}`}>
+                          <div className="pw-story-doctor-issue-meta">
+                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "#ef4444" : sev === "warning" ? "#f59e0b" : "#3b82f6" }}>{issue.severity}</span>
+                            <span className="pw-story-doctor-issue-area">{issue.area}</span>
+                          </div>
+                          <div className="pw-story-doctor-issue-message">{issue.message}</div>
+                          <div className="pw-story-doctor-issue-suggestion">{issue.suggestion}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {!aiOff && (
+                    <div className="pw-story-doctor-actions">
+                      {chapterDoctorFixesApplied ? (
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                          <button type="button" className="btn btn-primary" style={{ fontSize: 13 }} onClick={closeDoctor}>Close</button>
+                          <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>Then click <strong>Re-analyse</strong> in the plan bar to score the updated plan.</span>
+                        </div>
+                      ) : chapterDoctorBusy ? (
+                        storyAiBusyAction === "doctor-fix-chapter" ? (
+                          <div style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>See progress bar below.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)" }}>Applying fixes to chapter synopses…</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 20, height: 20, border: "2px solid var(--pw-border-light)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "pw-spin 0.8s linear infinite" }} />
+                              <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>AI is revising…</span>
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={fixable.length === 0}
+                          style={{ fontSize: 12 }}
+                          onClick={async () => {
+                            if (chapterDoctorBusy || !novel || fixable.length === 0) return;
+                            setChapterDoctorBusy(true);
+                            setStoryAiBusyAction("doctor-fix-chapter");
+                            setPlanError(null);
+                            setChapterDoctorFixProgress(null);
+                            try {
+                              const chapters = novel.storyBible.bookPlan?.chapters ?? [];
+                              const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                              const spine = novel.storyBible.plotSpine;
+                              const beatCtx = spine?.beats?.length ? spine.beats.map((b, i) => `${i + 1}. "${b.title}": ${b.description.slice(0, 80)}`).join("\n") : "";
+                              const titlesOnly = chapters.map((c, i) => `Ch${i + 1}: ${c.title || `Chapter ${i + 1}`}`).join("\n");
+                              const fixList = fixable.map((f, i) => `#${i + 1} [${f.area}] ${f.message}\n   Suggestion: ${f.suggestion}`).join("\n\n");
+                              flushSync(() => setChapterDoctorFixProgress({ current: 1, total: 1, done: 0, label: "Breaking fixes into steps…" }));
+                              const expandPrompt = `Break each fix into 1–3 minimal sub-steps. Each sub-step: at most 2 chapters, one clear instruction (one sentence).
+Fixes:\n${fixList}
+Chapter titles:\n${titlesOnly}
+Return JSON: { "steps": [{"fixIndex": 0, "chapters": [4], "instruction": "Add librarian confrontation to Ch4"}, {"fixIndex": 0, "chapters": [7], "instruction": "Add clinic break-in to Ch7"}, ...] }
+Use 1-based chapter numbers. Each step = one narrow change. If a fix is already minimal, use 1 step.`;
+                              const expandRaw = await requestOpenRouterText(expandPrompt, 1200, 45000, "Return only valid JSON. Be concise.", false, 0.2);
+                              const expandMatch = expandRaw.match(/\{[\s\S]*\}/);
+                              type Step = { fixIndex?: number; chapters: number[]; instruction: string };
+                              const steps: Step[] = expandMatch ? (JSON.parse(expandMatch[0]) as { steps?: Step[] })?.steps ?? [] : [];
+                              if (steps.length === 0) {
+                                steps.push(...fixable.map((f, i) => ({ fixIndex: i, chapters: Array.from({ length: chapters.length }, (_, j) => j + 1), instruction: f.suggestion })));
+                              }
+                              let revisedChapters = [...chapters];
+                              const totalSteps = steps.length;
+                              for (let stepIdx = 0; stepIdx < totalSteps; stepIdx++) {
+                                const step = steps[stepIdx]!;
+                                const chIndices = step.chapters.filter((n) => n >= 1 && n <= revisedChapters.length).map((n) => n - 1);
+                                if (chIndices.length === 0) continue;
+                                flushSync(() => setChapterDoctorFixProgress({ current: stepIdx + 1, total: totalSteps, done: stepIdx, label: step.instruction.slice(0, 50) }));
+                                const chContent = chIndices.map((i) => {
+                                  const c = revisedChapters[i]!;
+                                  return `Ch${i + 1} "${c.title || `Chapter ${i + 1}`}":\n${(c.synopsis ?? "").trim()}`;
+                                }).join("\n\n");
+                                const storyAnchor = (getCombinedSynopsis() ?? "").trim().slice(0, 450);
+                                const fixCharNames = (novel.storyBible.characters ?? []).slice(0, 6).map((c) => c.name).filter(Boolean).join(", ");
+                                const applyPrompt = [
+                                  `Apply ONLY this change: ${step.instruction}`,
+                                  `\nGenre: ${genre}`,
+                                  storyAnchor ? `\nStory premise (do not contradict): ${storyAnchor}` : "",
+                                  fixCharNames ? `\nUse these character names where relevant; do not invent new ones: ${fixCharNames}` : "",
+                                  beatCtx ? `\nArchitect beats:\n${beatCtx}` : "",
+                                  `\nChapters to revise (1-based: ${step.chapters.join(", ")}):\n${chContent}`,
+                                  `\nReturn JSON: { "revisions": [{ "chapterIndex": 4, "title": "...", "synopsis": "..." }, ...] }`,
+                                  "Return only the revised chapter(s). Use 1-based chapterIndex. Keep titles unless the change requires it.",
+                                  "CRITICAL: Stay true to the story. Enrich the outline — preserve cause-and-effect, character agency, and continuity with the rest of the plan. No generic or tone-deaf revisions. Keep synopses concrete (who does what, where).",
+                                ].filter(Boolean).join("\n");
+                                const applyRaw = await requestOpenRouterText(applyPrompt, 3200, 70000, "You are a story editor. Apply the fix precisely. Preserve story logic and character consistency. Return only valid JSON.", false, 0.32);
+                                const applyMatch = applyRaw.match(/\{[\s\S]*\}/);
+                                if (applyMatch) {
+                                  const parsed = JSON.parse(applyMatch[0]) as { revisions?: Array<{ chapterIndex: number; title?: string; synopsis?: string }> };
+                                  for (const r of parsed.revisions ?? []) {
+                                    const i = (r.chapterIndex ?? 0) - 1;
+                                    if (i >= 0 && i < revisedChapters.length) {
+                                      revisedChapters[i] = inferPlanReferences({
+                                        ...revisedChapters[i]!,
+                                        title: r.title ?? revisedChapters[i]!.title,
+                                        synopsis: r.synopsis ?? revisedChapters[i]!.synopsis,
+                                      }, novel);
+                                    }
+                                  }
+                                  updateBookPlan({ chapters: revisedChapters });
+                                }
+                                flushSync(() => setChapterDoctorFixProgress({ current: stepIdx + 1, total: totalSteps, done: stepIdx + 1, label: step.instruction.slice(0, 50) }));
+                              }
+                              setChapterDoctorFixesApplied(true);
+                            } catch (e) {
+                              setPlanError(e instanceof Error ? e.message : "Fix failed. Try again.");
+                            } finally {
+                              setChapterDoctorBusy(false);
+                              setStoryAiBusyAction(null);
+                              setChapterDoctorFixProgress(null);
+                            }
+                          }}
+                        >
+                          Fix All {chapterDoctorResult.issues.length} Issues
+                        </button>
+                      )}
+                      {!chapterDoctorBusy && !chapterDoctorFixesApplied && (
+                        <button type="button" className="btn" style={{ fontSize: 11, opacity: 0.7 }} onClick={closeDoctor}>Close</button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {chapterDoctorResult.issues.length === 0 && !aiOff && (
+                <div className="pw-story-doctor-actions">
+                  <button type="button" className="btn" style={{ fontSize: 12 }} onClick={closeDoctor}>Close</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
       <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}${focusMode ? " pw-focus-mode" : ""}`}>
         <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
           <div className="pw-logo">
@@ -13580,8 +14798,10 @@ function NovelWorkspacePage() {
               <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
               <img src={currentTheme === "dark" ? "/blocwrite-icon-dark.png" : "/blocwrite-icon-light.png"} alt="Bw" className="pw-logo-icon-img" />
             </div>
-            <button type="button" className={`pw-collapse-btn ${sidebarPinned ? "pw-pin-active" : ""}`} onClick={toggleSidebarPin} title={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}>
-              <span style={{ fontWeight: 300, fontSize: 16, fontStyle: "italic", lineHeight: 1 }}>/</span>
+            <button type="button" className={`pw-collapse-btn ${sidebarPinned ? "pw-pin-active" : ""}`} onClick={toggleSidebarPin} title={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"} aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
           </div>
           <Link href="/studio" prefetch={true} className="pw-back-link" onClick={(e) => {
@@ -13648,7 +14868,7 @@ function NovelWorkspacePage() {
               Admin Hub
             </Link>
           )}
-          <div style={{ fontSize: 9, color: "var(--pw-text-dim)", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>&copy; {new Date().getFullYear()} Blocwrite</div>
+          <div style={{ fontSize: 9, color: "var(--pw-text-dim)", textAlign: "center", padding: "4px 8px 8px", opacity: 0.5 }}>© 2026 Blocwrite. All rights reserved.</div>
         </aside>
 
         <div className="pw-topbar">
@@ -13775,7 +14995,7 @@ function NovelWorkspacePage() {
                 {aiBusyLabel} - {aiBusyDuration} elapsed. Slow models get extra time automatically.
               </div>
             )}
-            {!showStoryBibleModal && !aiOff && storyAiError && (
+            {!showStoryBibleModal && !aiOff && storyAiError && !storyAiBusyAction && (
               <div className="pw-ora-error" style={{ margin: 0 }}>
                 {storyAiError}
               </div>
@@ -14313,7 +15533,14 @@ function NovelWorkspacePage() {
                           <div key={idx} className="pw-block-wrap">
                             <div className="pw-block-card">
                               <div className="pw-block-header">
-                                <span className="pw-block-title">SCENE {idx + 1}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span className="pw-block-beat-badge" title={`Beat ${idx + 1} of ${blocks.length}`}>
+                                    {idx + 1}
+                                  </span>
+                                  <span className="pw-block-title">
+                                    {block.beatLabel || `Scene ${idx + 1}`}
+                                  </span>
+                                </div>
                                 <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                                   {!!block.prose?.trim() && (
                                     <button
@@ -14619,7 +15846,7 @@ function NovelWorkspacePage() {
                   />
                   <textarea
                     className="pw-overview-synopsis"
-                    value={novel.synopsis || novel.storyBible?.summary?.synopsisShort || ""}
+                    value={novel.synopsis || getCombinedSynopsis() || ""}
                     onChange={(event) => updateNovel({ synopsis: event.target.value })}
                     placeholder="Write your full synopsis here — this is the foundation the AI uses for every generation..."
                     rows={8}
@@ -14656,8 +15883,8 @@ function NovelWorkspacePage() {
                         </div>
                         <div className="pw-bible-summary-wide">
                           <p className="pw-overview-sub">
-                            {nfData?.centralTheme || novel.storyBible.summary?.synopsisShort
-                              ? (nfData?.centralTheme || novel.storyBible.summary.synopsisShort).slice(0, 140)
+                            {nfData?.centralTheme || getCombinedSynopsis()
+                              ? (nfData?.centralTheme || getCombinedSynopsis()).slice(0, 140)
                               : "Open My Story to start building your memoir."}
                           </p>
                         </div>
@@ -14681,9 +15908,11 @@ function NovelWorkspacePage() {
                         </div>
                         <div className="pw-bible-summary-wide">
                           <p className="pw-overview-sub">
-                            {novel.storyBible.summary?.synopsisShort
-                              ? novel.storyBible.summary.synopsisShort.slice(0, 140) +
-                                (novel.storyBible.summary.synopsisShort.length > 140 ? "…" : "")
+                            {getCombinedSynopsis()
+                              ? (() => {
+                                const s = getCombinedSynopsis();
+                                return s.slice(0, 140) + (s.length > 140 ? "…" : "");
+                              })()
                               : "Add a synopsis to start your canon."}
                           </p>
                         </div>
@@ -15094,6 +16323,18 @@ function NovelWorkspacePage() {
                     Clear All
                   </button>
                 )}
+                {planChapters.length >= 2 && planChapters.some((c) => (c.synopsis ?? "").trim().length >= 50) && (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={chapterDoctorBusy || storyAiBusyAction === "plan-generate"}
+                    onClick={() => void runChapterDoctor()}
+                    title="Analyse chapter plan for beat coverage, momentum, genre delivery, and consistency"
+                    style={{ gap: "6px" }}
+                  >
+                    {chapterDoctorBusy ? <><span className="pw-plan-spinner" /> Analysing…</> : chapterDoctorResult ? <>✦ Re-analyse</> : <>✦ Chapter Doctor</>}
+                  </button>
+                )}
                 <button type="button" className="btn" onClick={addPlanChapter}>
                   + Add chapter
                 </button>
@@ -15140,22 +16381,19 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
-              {/* Synopsis */}
-              <div style={{ marginBottom: "16px" }}>
-                <label className="pw-plan-modal-label">Master Synopsis</label>
-                <textarea
-                  className="pw-bible-input"
-                  rows={6}
-                  value={novel.storyBible.summary.synopsisShort}
-                  placeholder="Write or paste your full story synopsis here. The more detail you include — plot points, character arcs, conflicts, turning points — the better the AI plan generation will be."
-                  onChange={(event) =>
-                    updateStoryBible({
-                      summary: { ...novel.storyBible.summary, synopsisShort: event.target.value },
-                    })
-                  }
-                  style={{ marginBottom: 0, width: "100%" }}
-                />
-              </div>
+              {/* Master synopsis preview is only shown while AI is generating */}
+              {storyAiBusyAction === "plan-generate" && (
+                <div style={{ marginBottom: "16px" }}>
+                  <label className="pw-plan-modal-label">Master Synopsis</label>
+                  <textarea
+                    className="pw-bible-input"
+                    rows={4}
+                    value={novel.storyBible.summary.synopsisShort ?? ""}
+                    readOnly
+                    style={{ marginBottom: 0, width: "100%", opacity: 0.9 }}
+                  />
+                </div>
+              )}
 
               {planError && (
                 <div className="pw-plan-error-banner" style={{ marginBottom: "12px" }}>
@@ -15163,56 +16401,7 @@ function NovelWorkspacePage() {
                 </div>
               )}
 
-              {/* Plan generation progress bar + slow model warning */}
-              {storyAiBusyAction === "plan-generate" && (
-                <div
-                  style={{
-                    marginBottom: 14,
-                    padding: "12px 16px",
-                    borderRadius: 10,
-                    background: "rgba(var(--pw-accent-rgb, 134,239,172), 0.08)",
-                    border: "1px solid rgba(var(--pw-accent-rgb, 134,239,172), 0.18)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>
-                      {planGenerateProgressIdx === null
-                        ? "Generating chapter plan..."
-                        : `Filling in chapter ${planGenerateProgressIdx + 1} of ${planGenerateTotal}...`}
-                    </span>
-                    <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
-                      {aiBusyDuration}
-                    </span>
-                  </div>
-                  {/* Progress bar */}
-                  {planGenerateTotal > 0 && (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 4,
-                        borderRadius: 2,
-                        background: "var(--pw-overlay-bg-hover)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          borderRadius: 2,
-                          background: "var(--pw-accent, #86efac)",
-                          width: `${Math.round(((planGenerateProgressIdx ?? 0) + 1) / planGenerateTotal * 100)}%`,
-                          transition: "width 0.3s ease",
-                        }}
-                      />
-                    </div>
-                  )}
-                  {storyAiBusyElapsedSec >= 15 && (
-                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-                      Some models are slower than others — this is normal. The plan is being built in a single request for speed.
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* Plan generation progress shown in bottom bar (like characters/canon) — no in-modal block */}
 
               {/* ── Plan analysis panel ── */}
               {novel && false && (novel?.storyBible.bookPlan?.arcAnalysis || arcBusy || arcError) && planChapters.length >= 3 && (
@@ -15335,7 +16524,7 @@ function NovelWorkspacePage() {
 
                         <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 12, lineHeight: 1.5 }}>
                           {hasPlotSpine()
-                            ? "Choose an enhancement direction. This will deepen your chapter synopses with richer emotional detail, stronger transitions, and more character depth — without changing any plot events from your Plot Spine."
+                            ? "Choose an enhancement direction. This will deepen your chapter synopses with richer emotional detail, stronger transitions, and more character depth — without changing any plot events from The Architect."
                             : "Choose an arc direction. Selecting one will rewrite all chapter synopses to follow that narrative path."}
                         </div>
 
@@ -15530,21 +16719,19 @@ function NovelWorkspacePage() {
                           transition: "opacity 0.35s ease",
                         }}
                       >
-                        <div className="pw-plan-connector">
-                          <div
-                            className="pw-plan-dot"
-                            style={isCurrentlyFilling ? { background: "var(--pw-accent, #86efac)", boxShadow: "0 0 6px var(--pw-accent, #86efac)" } : isFilled && isGenerating ? { background: "var(--pw-accent, #86efac)" } : {}}
-                          />
-                          {index < planChapters.length - 1 && <div className="pw-plan-line" />}
-                        </div>
                         <div className="pw-plan-chapter-body">
                           <div className="pw-plan-chapter-header">
-                            <span className="pw-plan-chapter-num">Ch. {index + 1}</span>
+                            <span
+                              className="pw-plan-chapter-num"
+                              style={isCurrentlyFilling ? { background: "var(--pw-accent)", color: "var(--pw-surface)", borderColor: "var(--pw-accent)" } : isFilled && isGenerating ? { background: "rgba(var(--accent-rgb),0.15)", borderColor: "var(--pw-accent)" } : {}}
+                            >
+                              {index + 1}
+                            </span>
                             <input
                               className="pw-plan-chapter-title-input"
                               value={plan.title}
                               onChange={(e) => updatePlanChapter(plan.id, { title: e.target.value })}
-                              placeholder="Chapter title..."
+                              placeholder="Chapter title"
                             />
                             {!aiOff && <button
                               type="button"
@@ -15553,18 +16740,22 @@ function NovelWorkspacePage() {
                               disabled={storyAiBusyAction !== null}
                               title="Regenerate this chapter"
                               style={{
-                                background: "none",
+                                background: "transparent",
                                 border: "none",
                                 cursor: storyAiBusyAction !== null ? "not-allowed" : "pointer",
-                                opacity: storyAiBusyAction === `plan-regen-${index}` ? 0.5 : 0.7,
-                                padding: "2px 4px",
-                                fontSize: "14px",
-                                lineHeight: 1,
-                                color: "var(--color-text-secondary, #999)",
-                                transition: "opacity 0.15s",
+                                opacity: storyAiBusyAction === `plan-regen-${index}` ? 0.5 : 0.6,
+                                padding: "4px",
+                                width: 28,
+                                height: 28,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                borderRadius: 8,
+                                color: "var(--pw-text-dim)",
+                                transition: "all 150ms",
                               }}
-                              onMouseEnter={(e) => { if (!storyAiBusyAction) (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = storyAiBusyAction === `plan-regen-${index}` ? "0.5" : "0.7"; }}
+                              onMouseEnter={(e) => { if (!storyAiBusyAction) (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(var(--accent-rgb),0.08)"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = storyAiBusyAction === `plan-regen-${index}` ? "0.5" : "0.6"; (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
                             >
                               {storyAiBusyAction === `plan-regen-${index}` ? (
                                 <span className="pw-plan-spinner" style={{ width: "12px", height: "12px" }} />
@@ -15585,10 +16776,15 @@ function NovelWorkspacePage() {
                             className="pw-plan-synopsis-input"
                             rows={3}
                             value={plan.synopsis}
-                            placeholder="What happens in this chapter..."
+                            placeholder="Synopsis..."
                             onChange={(e) => updatePlanChapter(plan.id, { synopsis: e.target.value })}
                           />
-                          <div className="pw-plan-refs" style={{ marginTop: 8 }}>
+                          <details className="pw-plan-refs-wrap">
+                            <summary className="pw-plan-refs-toggle">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                              Links {charCount + locCount + beatCount + subplotCount + arcCount > 0 ? `(${charCount + locCount + beatCount + subplotCount + arcCount})` : ""}
+                            </summary>
+                          <div className="pw-plan-refs pw-plan-refs-details">
                             <div className="pw-plan-ref-group">
                               <div className="pw-plan-ref-header">
                                 <span className="pw-plan-ref-icon pw-plan-ref-icon-badge" aria-hidden="true">
@@ -15799,6 +16995,7 @@ function NovelWorkspacePage() {
                               </div>
                             </div>
                           </div>
+                          </details>
                           <div className="pw-plan-chapter-meta">
                             {charCount > 0 && <span>{charCount} character{charCount !== 1 ? "s" : ""}</span>}
                             {locCount > 0 && <span>{locCount} location{locCount !== 1 ? "s" : ""}</span>}
@@ -17290,7 +18487,7 @@ function NovelWorkspacePage() {
                 { label: "Extracted to Canon", done: !!nfData?.extractedAt },
                 { label: "1+ characters", done: (novel?.storyBible.characters ?? []).length >= 1 },
                 { label: "1+ scrapbook memory", done: (nfData?.scrapbook ?? []).filter(s => s.content).length >= 1 },
-                { label: "Story summary", done: !!(novel?.storyBible.summary?.synopsisShort) },
+                { label: "Story summary", done: !!(getCombinedSynopsis()) },
                 { label: "Story board cards", done: (nfData?.storyCards ?? []).length >= 3 },
               ] : [
                 { label: "Subject / topic", done: !!nfData?.subjectName },
@@ -17300,7 +18497,7 @@ function NovelWorkspacePage() {
                 { label: "5+ researcher messages", done: (nfData?.researchChat ?? []).filter(m => m.role === "user").length >= 5 },
                 { label: "Extracted to Canon", done: !!nfData?.researchExtractedAt },
                 { label: "1+ characters", done: (novel?.storyBible.characters ?? []).length >= 1 },
-                { label: "Story summary", done: !!(novel?.storyBible.summary?.synopsisShort) },
+                { label: "Story summary", done: !!(getCombinedSynopsis()) },
                 { label: "Story board cards", done: (nfData?.storyCards ?? []).length >= 3 },
               ];
               const done = checks.filter(c => c.done).length;
@@ -17341,8 +18538,8 @@ function NovelWorkspacePage() {
                     { id: "nf-relationships" as const, label: "Relationships" },
                     { id: "characters" as const, label: "People" },
                     { id: "locations" as const, label: "Places" },
-                    { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "summary" as const, label: "Summary" },
+                    { id: "styleVoice" as const, label: "Style & Voice" },
                   ] : [
                     { id: "nf-about" as const, label: "About" },
                     { id: "nf-researcher" as const, label: "Researcher" },
@@ -17352,16 +18549,17 @@ function NovelWorkspacePage() {
                     { id: "nf-timeline" as const, label: "Timeline" },
                     { id: "characters" as const, label: "People" },
                     { id: "locations" as const, label: "Places" },
-                    { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "summary" as const, label: "Summary" },
+                    { id: "styleVoice" as const, label: "Style & Voice" },
                   ]) : [
                     { id: "summary" as const, label: "Summary" },
-                    { id: "styleVoice" as const, label: "Style & Voice" },
                     { id: "characters" as const, label: "Characters" },
                     { id: "locations" as const, label: "Locations" },
                     { id: "worldbuilding" as const, label: "Worldbuilding" },
-                    { id: "plotSpine" as const, label: "Plot Spine" },
+                    { id: "plotSpine" as const, label: "The Architect" },
+                    ...(hasPlotSpine() ? [{ id: "visualMap" as const, label: "Map" }] : []),
                     { id: "boltons" as const, label: "Bolt-Ons" },
+                    { id: "styleVoice" as const, label: "Style & Voice" },
                   ]
                 ).map((item) => (
                   <button
@@ -17382,95 +18580,162 @@ function NovelWorkspacePage() {
                 </div>
               </aside>
 
-              <section className="pw-bible-panel">
+              <section ref={biblePanelRef} className="pw-bible-panel">
                 {bibleSection === "summary" && (
-                  <div className="pw-bible-section">
-                    <div className="pw-bible-flex-head">
-                      <h3>Story Summary</h3>
+                  <div className="pw-bible-section pw-summary-section">
+                    <div className="pw-bible-flex-head pw-summary-head">
+                      <div>
+                        <h3>Story Summary</h3>
+                        <p className="pw-bible-section-note">
+                          Plot structure in three acts. Pure plot — what happens, who does what, what changes. The Architect uses this to build beats and arcs.
+                        </p>
+                      </div>
                       <button
                         type="button"
                         className="pw-bible-clear-btn"
                         onClick={() => clearBibleSection("summary")}
                         title="Clear this section"
                       >
-                        Clear this section
+                        Clear
                       </button>
                     </div>
-                    <p className="pw-bible-section-note">
-                      Shape your book direction here. The more you write in your synopsis, the better the AI generates — include plot points, character dynamics, key events, turning points, and resolution.
-                    </p>
                     {!aiOff && (
-                    <div className="pw-bible-autofill-row">
+                    <div className="pw-summary-autofill-card">
                       <input
                         className="pw-bible-input pw-bible-autofill-input"
                         placeholder="Create me a story about..."
                         value={summaryAutofillPrompt}
-                        maxLength={1200}
+                        maxLength={2400}
                         onChange={(event) => setSummaryAutofillPrompt(event.target.value)}
                         disabled={storyAiBusyAction !== null}
                       />
                       <button
                         type="button"
-                        className="pw-ai-mini-btn"
+                        className="pw-summary-build-btn"
                         onClick={() => void runSummaryAutofillFromPrompt()}
                         disabled={storyAiBusyAction !== null}
                       >
-                        {storyAiBusyAction === "summary-autofill" ? "Building..." : "✦ Build Summary"}
+                        {storyAiBusyAction === "summary-autofill" ? "Building…" : "✦ Build Summary"}
                       </button>
                     </div>
                     )}
-                    <div className="pw-bible-field-head">
-                      <label>Synopsis</label>
-                      {!aiOff && <div className="pw-bible-field-ai">
-                        <select
-                          className="pw-bible-input pw-bible-field-select"
-                          value={summaryAiMode.synopsis}
-                          onChange={(event) =>
-                            setSummaryAiMode((current) => ({
-                              ...current,
-                              synopsis: event.target.value as typeof current.synopsis,
-                            }))
-                          }
-                        >
-                          <option value="improve">Improve clarity + flow</option>
-                          <option value="tighten">Tighten and trim</option>
-                          <option value="expand">Expand with detail</option>
-                          <option value="blurb">Back-cover blurb version</option>
-                          <option value="beats">Chapter-arc version</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="pw-ai-mini-btn pw-bible-field-btn"
-                          disabled={storyAiBusyAction !== null}
-                          onClick={() => void runSummaryFieldAi("synopsis", summaryAiMode.synopsis)}
-                        >
-                          {storyAiBusyAction === "summary-field-synopsis" ? "Generating options..." : "Run Assistant"}
-                        </button>
-                      </div>}
-                    </div>
+                    {(() => {
+                      const hasActs = Boolean((novel.storyBible.summary.synopsisAct1 ?? "").trim() || (novel.storyBible.summary.synopsisAct2 ?? "").trim() || (novel.storyBible.summary.synopsisAct3 ?? "").trim());
+                      const hasSynopsis = Boolean((novel.storyBible.summary.synopsisShort ?? "").trim());
+                      if (hasActs || hasSynopsis) return null;
+                      return (
+                        <div className="pw-summary-empty-state">
+                          <p className="pw-summary-empty-text">
+                            Describe your story above, or paste a full synopsis below and click <strong>Generate acts</strong>. Your plot structure will appear here.
+                          </p>
+                        </div>
+                      );
+                    })()}
+                    <div className="pw-summary-acts-card">
+                      <div className="pw-summary-act-block">
+                        <div className="pw-bible-field-head">
+                          <label>Act 1 — Setup</label>
+                          <span className="pw-summary-act-count">{(novel.storyBible.summary.synopsisAct1 ?? "").length}/{STORY_BIBLE_LIMITS.summary.synopsisAct1}</span>
+                        </div>
                     <textarea
-                      className="pw-bible-input"
-                      rows={12}
-                      maxLength={STORY_BIBLE_LIMITS.summary.synopsisShort}
-                      value={novel.storyBible.summary.synopsisShort}
-                      placeholder="Write your full story synopsis here — the more detail you provide, the better the AI generation will be. Include major plot points, character arcs, key conflicts, turning points, and how the story resolves. This is the foundation for every chapter the AI generates."
+                      className="pw-bible-input pw-summary-act-input"
+                      rows={5}
+                      maxLength={STORY_BIBLE_LIMITS.summary.synopsisAct1}
+                      value={novel.storyBible.summary.synopsisAct1 ?? ""}
+                      placeholder="Establish the world, status quo, and inciting incident. Pure plot — no scenery or character names."
                       onChange={(event) =>
-                        updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisShort: event.target.value } })
+                        updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct1: event.target.value } })
                       }
                     />
-                    <p className="pw-field-help">
-                      {novel.storyBible.summary.synopsisShort.length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}
-                    </p>
+                      </div>
+                      <div className="pw-summary-act-block">
+                        <div className="pw-bible-field-head">
+                          <label>Act 2 — Confrontation</label>
+                          <span className="pw-summary-act-count">{(novel.storyBible.summary.synopsisAct2 ?? "").length}/{STORY_BIBLE_LIMITS.summary.synopsisAct2}</span>
+                        </div>
+                    <textarea
+                      className="pw-bible-input pw-summary-act-input"
+                      rows={6}
+                      maxLength={STORY_BIBLE_LIMITS.summary.synopsisAct2}
+                      value={novel.storyBible.summary.synopsisAct2 ?? ""}
+                      placeholder="Rising action, midpoint twist, dark moment. What happens, what changes."
+                      onChange={(event) =>
+                        updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct2: event.target.value } })
+                      }
+                    />
+                      </div>
+                      <div className="pw-summary-act-block">
+                        <div className="pw-bible-field-head">
+                          <label>Act 3 — Resolution</label>
+                          <span className="pw-summary-act-count">{(novel.storyBible.summary.synopsisAct3 ?? "").length}/{STORY_BIBLE_LIMITS.summary.synopsisAct3}</span>
+                        </div>
+                    <textarea
+                      className="pw-bible-input pw-summary-act-input"
+                      rows={5}
+                      maxLength={STORY_BIBLE_LIMITS.summary.synopsisAct3}
+                      value={novel.storyBible.summary.synopsisAct3 ?? ""}
+                      placeholder="Climax, confrontation, aftermath."
+                      onChange={(event) =>
+                        updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct3: event.target.value } })
+                      }
+                    />
+                      </div>
+                    </div>
+                    <details className="pw-summary-full-details">
+                      <summary className="pw-summary-full-summary">Full synopsis (optional)</summary>
+                      <div className="pw-summary-full-body">
+                        <p className="pw-summary-full-desc">Paste a full synopsis here. Then use <strong>Generate acts</strong> to split it into Act 1–3. Acts above take priority when both exist.</p>
+                        <textarea
+                          className="pw-bible-input pw-summary-full-input"
+                          rows={6}
+                          maxLength={STORY_BIBLE_LIMITS.summary.synopsisShort}
+                          value={novel.storyBible.summary.synopsisShort ?? ""}
+                          placeholder="Paste your full synopsis here…"
+                          onChange={(event) =>
+                            updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisShort: event.target.value } })
+                          }
+                        />
+                        <div className="pw-summary-full-actions">
+                          <span className="pw-field-help">{(novel.storyBible.summary.synopsisShort ?? "").length}/{STORY_BIBLE_LIMITS.summary.synopsisShort}</span>
+                          {!aiOff && (
+                            <button
+                              type="button"
+                              className="pw-summary-backbuild-btn"
+                              onClick={() => void runSummaryBackbuildFromSynopsis()}
+                              disabled={storyAiBusyAction !== null || (novel.storyBible.summary.synopsisShort ?? "").trim().length < 80}
+                              title="Generate Act 1, 2, 3 from your full synopsis"
+                            >
+                              {storyAiBusyAction === "summary-backbuild" ? "Building acts…" : "Generate acts"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </details>
                     {/* Synopsis options are shown in a modal popup below */}
                     {!aiOff && storyAiError && storyAiBusyAction === null && (
                       <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>
                     )}
-                    <div className="pw-bible-grid-3">
-                      <div>
-                        <label>Themes (comma separated)</label>
+                    <div className="pw-summary-meta-card">
+                      <div className="pw-summary-meta-head">
+                        <span>Themes & Stakes</span>
+                        {!aiOff && (
+                          <button
+                            type="button"
+                            className="pw-summary-meta-generate"
+                            onClick={() => void runSummaryGenerateThemesStakes()}
+                            disabled={storyAiBusyAction !== null || (getCombinedSynopsis()?.trim() ?? "").length < 60}
+                            title="Generate from acts or synopsis"
+                          >
+                            {storyAiBusyAction === "summary-meta-generate" ? "Generating…" : "Generate"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="pw-summary-meta-row">
+                        <label>Themes</label>
                         <input
                           className="pw-bible-input"
                           maxLength={SUMMARY_LIST_INPUT_MAX}
+                          placeholder="e.g. redemption, betrayal, survival"
                           value={novel.storyBible.summary.themes.join(", ")}
                           onChange={(event) =>
                             updateStoryBible({
@@ -17485,48 +18750,21 @@ function NovelWorkspacePage() {
                           }
                         />
                       </div>
-                    </div>
-                    <div className="pw-bible-field-head">
-                      <label>Core conflict (what can be lost?)</label>
-                      {!aiOff && <div className="pw-bible-field-ai">
-                        <select
-                          className="pw-bible-input pw-bible-field-select"
-                          value={summaryAiMode.conflict}
+                      <div className="pw-summary-meta-row">
+                        <label>Stakes</label>
+                        <textarea
+                          className="pw-bible-input pw-summary-stakes-input"
+                          rows={2}
+                          maxLength={STORY_BIBLE_LIMITS.summary.stakes}
+                          placeholder="What can be lost? What’s at risk?"
+                          value={novel.storyBible.summary.stakes}
                           onChange={(event) =>
-                            setSummaryAiMode((current) => ({
-                              ...current,
-                              conflict: event.target.value as typeof current.conflict,
-                            }))
+                            updateStoryBible({ summary: { ...novel.storyBible.summary, stakes: event.target.value } })
                           }
-                        >
-                          <option value="improve">Improve clarity</option>
-                          <option value="intensify">Intensify consequence</option>
-                          <option value="moral">Add moral dilemma</option>
-                          <option value="pressure">Add antagonist pressure</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="pw-ai-mini-btn pw-bible-field-btn"
-                          disabled={storyAiBusyAction !== null}
-                          onClick={() => void runSummaryFieldAi("conflict", summaryAiMode.conflict)}
-                        >
-                          {storyAiBusyAction === "summary-field-conflict" ? "Running..." : "Run Assistant"}
-                        </button>
-                      </div>}
+                        />
+                        <span className="pw-summary-meta-count">{novel.storyBible.summary.stakes.length}/{STORY_BIBLE_LIMITS.summary.stakes}</span>
+                      </div>
                     </div>
-                    <textarea
-                      className="pw-bible-input"
-                      rows={2}
-                      maxLength={STORY_BIBLE_LIMITS.summary.stakes}
-                      value={novel.storyBible.summary.stakes}
-                      placeholder="Example: If they fail, the colony collapses and the family is exposed."
-                      onChange={(event) =>
-                        updateStoryBible({ summary: { ...novel.storyBible.summary, stakes: event.target.value } })
-                      }
-                    />
-                    <p className="pw-field-help">
-                      {novel.storyBible.summary.stakes.length}/{STORY_BIBLE_LIMITS.summary.stakes}
-                    </p>
                     {!aiOff && storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
                   </div>
                 )}
@@ -17585,25 +18823,55 @@ function NovelWorkspacePage() {
                             {isNF ? "No people yet. Add them manually or extract from your interview." : "No characters yet. Use Generate from Summary or add one manually."}
                           </p>
                         ) : (
-                          storyCharacters.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
-                              onClick={() => setSelectedV2CharacterId(c.id)}
-                            >
-                              <span className="pw-char-name">{c.name || "Untitled"}</span>
-                              <span className="pw-char-role">
-                                {isNF ? NF_ROLE_LABELS[c.role] || c.role : c.role}
-                                {c.accent ? ` • ${c.accent}` : ""}
-                              </span>
-                            </button>
-                          ))
+                          storyCharacters.map((c) => {
+                            const age = (c.age ?? "").trim();
+                            const pronouns = (c.pronouns ?? "").trim();
+                            const accentRaw = (c.accent ?? "").trim();
+                            const accentShort = accentRaw.length > 28 ? accentRaw.slice(0, 28) + "…" : accentRaw;
+                            const details: string[] = [];
+                            if (age) details.push(age);
+                            if (pronouns) details.push(pronouns);
+                            if (accentShort) details.push(accentShort);
+                            const detailsLine = details.length > 0 ? details.join(" · ") : "";
+                            const roleLabel = isNF ? (NF_ROLE_LABELS[c.role] || c.role) : (c.role || "Supporting");
+                            const roleStyle = c.role === "Protagonist"
+                              ? "pw-char-role-pill pw-char-role-protagonist"
+                              : c.role === "Antagonist"
+                                ? "pw-char-role-pill pw-char-role-antagonist"
+                                : "pw-char-role-pill pw-char-role-other";
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                className={`pw-bible-char-chip ${selectedV2CharacterId === c.id ? "active" : ""}`}
+                                onClick={() => setSelectedV2CharacterId(c.id)}
+                              >
+                                <div className="pw-char-chip-avatar">{(c.name || "?").charAt(0).toUpperCase()}</div>
+                                <div className="pw-char-chip-body">
+                                  <span className="pw-char-name">{c.name || "Untitled"}</span>
+                                  <span className={roleStyle}>{roleLabel}</span>
+                                  {(detailsLine || (c.logline ?? "").trim()) && (
+                                    <span className="pw-char-chip-meta">
+                                      {detailsLine || (c.logline ?? "").trim().slice(0, 50) + ((c.logline ?? "").trim().length > 50 ? "…" : "")}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
                         )}
                       </div>
 
                       <div className="pw-bible-char-detail">
-                        {!selectedV2CharacterId && <p>{isNF ? "Select a person to edit details." : "Select a character to edit details."}</p>}
+                        {!selectedV2CharacterId && (
+                          <div className="pw-char-detail-empty">
+                            <div className="pw-char-detail-empty-icon">
+                              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            </div>
+                            <p className="pw-char-detail-empty-text">{isNF ? "Select a person to edit" : "Select a character to edit"}</p>
+                            <p className="pw-char-detail-empty-sub">{isNF ? "Details appear here" : "Name, role, voice & more"}</p>
+                          </div>
+                        )}
                         {selectedV2CharacterId && (
                           (() => {
                             const character = storyCharacters.find((c) => c.id === selectedV2CharacterId);
@@ -17614,34 +18882,41 @@ function NovelWorkspacePage() {
                             );
                             return (
                               <div className="pw-character-editor">
-                                {/* ── Character header: name + actions ── */}
-                                <div style={{
-                                  display: "flex", alignItems: "center", gap: 10,
-                                  padding: "12px 0 8px", borderBottom: "1px solid var(--pw-border-light, rgba(255,255,255,0.06))",
-                                  marginBottom: 12,
-                                }}>
-                                  <div style={{
-                                    width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                                    background: "rgba(var(--pw-accent-rgb,124,92,252),0.12)",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    fontSize: 14, fontWeight: 800, color: "var(--pw-accent)",
-                                  }}>
+                                {/* ── Character header: name + role + actions ── */}
+                                <div className="pw-character-editor-header">
+                                  <div className="pw-character-editor-avatar">
                                     {(character.name || "?").charAt(0).toUpperCase()}
                                   </div>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <h4 style={{
-                                      margin: 0, fontSize: 15, fontWeight: 800, letterSpacing: "-0.01em",
-                                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                    }}>
-                                      {character.name || "Character Profile"}
-                                    </h4>
-                                    <p style={{ margin: "1px 0 0", fontSize: 11, color: "var(--pw-text-dim)", fontWeight: 500 }}>
-                                      {character.role || "Supporting"}{character.logline ? ` — ${character.logline.slice(0, 60)}${character.logline.length > 60 ? "…" : ""}` : ""}
-                                    </p>
+                                  <div className="pw-character-editor-head-text">
+                                    <h4 className="pw-character-editor-name">{character.name || "Character Profile"}</h4>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                                      <span style={{
+                                        fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
+                                        padding: "3px 8px", borderRadius: 6,
+                                        background: character.role === "Protagonist" ? "rgba(var(--pw-accent-rgb,124,92,252),0.12)" : character.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(30,58,95,0.08)",
+                                        color: character.role === "Protagonist" ? "var(--pw-accent)" : character.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                                      }}>
+                                        {character.role || "Supporting"}
+                                      </span>
+                                      {character.logline && (
+                                        <span style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>
+                                          {character.logline.slice(0, 80)}{character.logline.length > 80 ? "…" : ""}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                   <button
                                     type="button"
                                     title={`Remove ${character.name || "character"}`}
+                                    style={{
+                                      marginLeft: "auto", flexShrink: 0,
+                                      padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
+                                      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.12)",
+                                      color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                                      transition: "all 0.15s",
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.12)"; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.06)"; }}
                                     onClick={() => {
                                       setRegenConfirm({
                                         message: `Remove "${character.name || "Untitled"}" from your Canon? This cannot be undone.`,
@@ -17652,14 +18927,6 @@ function NovelWorkspacePage() {
                                         },
                                       });
                                     }}
-                                    style={{
-                                      padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                                      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.12)",
-                                      color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                                      transition: "all 0.15s", flexShrink: 0,
-                                    }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.12)"; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.06)"; }}
                                   >
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                                     Remove
@@ -17702,18 +18969,19 @@ function NovelWorkspacePage() {
                                 </div>
                                 )}
 
-                                <div className="pw-char-row">
+                                <div className="pw-char-row pw-char-header-row">
                                   <div className="pw-char-col">
                                     <label>Name</label>
                                     <input
                                       className="pw-bible-input"
                                       maxLength={STORY_BIBLE_LIMITS.character.name}
+                                      placeholder="Full name"
                                       value={character.name}
                                       onChange={(event) => updateV2Character(character.id, { name: event.target.value })}
                                     />
                                   </div>
                                   <div className="pw-char-col">
-                                    <label>{isNF ? "Role in Story" : "Role"}</label>
+                                    <label>Role</label>
                                     <select
                                       className="pw-bible-input"
                                       value={character.role}
@@ -17730,50 +18998,60 @@ function NovelWorkspacePage() {
                                       ))}
                                     </select>
                                   </div>
-                                  <div className="pw-char-col">
+                                  <div className="pw-char-col pw-char-age-col">
+                                    <label>Age</label>
+                                    <input
+                                      className="pw-bible-input"
+                                      maxLength={STORY_BIBLE_LIMITS.character.age}
+                                      placeholder="e.g. 29"
+                                      value={character.age ?? ""}
+                                      onChange={(event) => updateV2Character(character.id, { age: event.target.value })}
+                                    />
+                                  </div>
+                                  <div className="pw-char-col pw-char-pronoun-col">
                                     <label>Pronouns</label>
                                     <input
                                       className="pw-bible-input"
                                       maxLength={STORY_BIBLE_LIMITS.character.pronouns}
+                                      placeholder="e.g. she/her"
                                       value={character.pronouns ?? ""}
                                       onChange={(event) => updateV2Character(character.id, { pronouns: event.target.value })}
                                     />
                                   </div>
                                 </div>
 
-                                <div className="pw-character-section-card">
-                                  <h4>{isNF ? "Who They Are" : "Core Identity"}</h4>
-                                  <label>{isNF ? "Summary" : "Logline"}</label>
-                                  <p className="pw-field-help">
-                                    {isNF ? "One-sentence summary of who this person is and their role in the story." : "One-sentence character hook: who they are, what they want, and what blocks them."}
-                                  </p>
+                                <div className="pw-character-section-card pw-char-who-card">
+                                  <h4>Who they are</h4>
+                                  <label>In one sentence</label>
                                   <textarea
                                     className="pw-bible-input"
                                     rows={2}
                                     maxLength={STORY_BIBLE_LIMITS.character.logline}
+                                    placeholder="Who they are, what they want, what gets in the way."
                                     value={character.logline}
                                     onChange={(event) => updateV2Character(character.id, { logline: event.target.value })}
                                   />
                                   <div className="pw-bible-grid-2">
                                     <div>
-                                      <label>{isNF ? "Personality / Character" : "Personality"}</label>
+                                      <label>Personality</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.personality}
+                                        placeholder="Temperament, habits, how they come across."
                                         value={character.personality ?? ""}
-                                        placeholder={isNF ? "What kind of person are they? Temperament, habits, values." : ""}
                                         onChange={(event) =>
                                           updateV2Character(character.id, { personality: event.target.value })
                                         }
                                       />
                                     </div>
                                     <div>
-                                      <label>{isNF ? "Background / History" : "Backstory"}</label>
+                                      <label>Background</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.backstory}
+                                        placeholder="Relevant history that shapes them."
                                         value={character.backstory ?? ""}
                                         onChange={(event) =>
                                           updateV2Character(character.id, { backstory: event.target.value })
@@ -17781,39 +19059,39 @@ function NovelWorkspacePage() {
                                       />
                                     </div>
                                   </div>
-                                </div>
-
-                                <div className="pw-character-section-card">
-                                  <h4>Voice and Presence</h4>
                                   <div>
                                     <label>Appearance</label>
                                     <textarea
                                       className="pw-bible-input"
                                       rows={2}
                                       maxLength={STORY_BIBLE_LIMITS.character.appearance}
+                                      placeholder="What the reader would notice."
                                       value={character.appearance ?? ""}
                                       onChange={(event) => updateV2Character(character.id, { appearance: event.target.value })}
                                     />
                                   </div>
+                                </div>
+
+                                <div className="pw-character-section-card pw-char-voice-card">
+                                  <h4>How they speak</h4>
                                   <div className="pw-bible-grid-2">
                                     <div>
                                       <label>Accent</label>
                                       <input
                                         className="pw-bible-input"
                                         maxLength={STORY_BIBLE_LIMITS.character.accent}
+                                        placeholder="e.g. Yorkshire, American South"
                                         value={character.accent ?? ""}
-                                        placeholder="e.g. Soft Yorkshire, Lagos urban English"
                                         onChange={(event) => updateV2Character(character.id, { accent: event.target.value })}
                                       />
                                     </div>
                                     <div>
                                       <label>Speaking style</label>
-                                      <textarea
+                                      <input
                                         className="pw-bible-input"
-                                        rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.speakingStyle}
+                                        placeholder="Rhythm, vocabulary, how they phrase things"
                                         value={character.speakingStyle ?? ""}
-                                        placeholder="How they phrase, rhythm, vocabulary, cadence."
                                         onChange={(event) =>
                                           updateV2Character(character.id, { speakingStyle: event.target.value })
                                         }
@@ -17823,195 +19101,50 @@ function NovelWorkspacePage() {
                                   <label>Voice notes</label>
                                   <textarea
                                     className="pw-bible-input"
-                                    rows={2}
+                                    rows={1}
                                     maxLength={STORY_BIBLE_LIMITS.character.voiceNotes}
+                                    placeholder="Filler words, signature phrases, humour style"
                                     value={character.voiceNotes ?? ""}
-                                    placeholder="Signature lines, filler words, sarcasm level, humor style."
                                     onChange={(event) => updateV2Character(character.id, { voiceNotes: event.target.value })}
                                   />
                                 </div>
 
-                                <div className="pw-character-section-card">
-                                  <h4>{isNF ? "Character & Motivations" : "Behavior Engine"}</h4>
+                                <div className="pw-character-section-card pw-char-motivation-card">
+                                  <h4>Motivation</h4>
                                   <div className="pw-bible-grid-2">
                                     <div>
-                                      <label>{isNF ? "Motivations / Drives" : "Goals"}</label>
+                                      <label>Goals</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.goals}
+                                        placeholder="What they want"
                                         value={character.goals ?? ""}
                                         onChange={(event) => updateV2Character(character.id, { goals: event.target.value })}
                                       />
                                     </div>
                                     <div>
-                                      <label>{isNF ? "Vulnerabilities / Flaws" : "Fears"}</label>
+                                      <label>Fears</label>
                                       <textarea
                                         className="pw-bible-input"
                                         rows={2}
                                         maxLength={STORY_BIBLE_LIMITS.character.fears}
+                                        placeholder="What they're afraid of"
                                         value={character.fears ?? ""}
-                                        placeholder={isNF ? "Weaknesses, blind spots, struggles." : ""}
                                         onChange={(event) => updateV2Character(character.id, { fears: event.target.value })}
                                       />
                                     </div>
                                   </div>
-                                  <label>{isNF ? "Behaviour under pressure" : "Reaction pattern"}</label>
-                                  <textarea
+                                  <label>Under pressure</label>
+                                  <input
                                     className="pw-bible-input"
-                                    rows={2}
                                     maxLength={STORY_BIBLE_LIMITS.character.reactionPattern}
-                                    placeholder="How they react when cornered, betrayed, or under stress."
+                                    placeholder="How they react when stressed or betrayed"
                                     value={character.reactionPattern ?? ""}
                                     onChange={(event) =>
                                       updateV2Character(character.id, { reactionPattern: event.target.value })
                                     }
                                   />
-                                </div>
-
-                                <div className="pw-character-section-card">
-                                  <h4>{isNF ? "What's Not Public" : "Secrets and Reveal Control"}</h4>
-                                  <p className="pw-character-secret-note">
-                                    {isNF ? "Information the author knows but may not reveal immediately in the narrative." : "Author-only secrets stay private. Use reader hint only for subtle foreshadowing."}
-                                  </p>
-                                  <div className="pw-bible-grid-2">
-                                    <div>
-                                      <label>{isNF ? "Private information" : "Author-only secret"}</label>
-                                      <textarea
-                                        className="pw-bible-input"
-                                        rows={2}
-                                        maxLength={STORY_BIBLE_LIMITS.character.secrets}
-                                        value={character.secrets ?? ""}
-                                        onChange={(event) => updateV2Character(character.id, { secrets: event.target.value })}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>{isNF ? "What readers will learn" : "Reader-visible hint (safe)"}</label>
-                                      <textarea
-                                        className="pw-bible-input"
-                                        rows={2}
-                                        maxLength={STORY_BIBLE_LIMITS.character.readerSecretHint}
-                                        value={character.readerSecretHint ?? ""}
-                                        onChange={(event) =>
-                                          updateV2Character(character.id, { readerSecretHint: event.target.value })
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="pw-character-section-card">
-                                  <h4>Metadata</h4>
-                                  <div className="pw-bible-grid-3">
-                                    <div>
-                                      <label>Groups</label>
-                                      <input
-                                        className="pw-bible-input"
-                                        maxLength={STORY_BIBLE_LIMITS.character.groups}
-                                        value={character.groups ?? ""}
-                                        onChange={(event) => updateV2Character(character.id, { groups: event.target.value })}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>Other Names</label>
-                                      <input
-                                        className="pw-bible-input"
-                                        maxLength={STORY_BIBLE_LIMITS.character.otherNames}
-                                        value={character.otherNames ?? ""}
-                                        onChange={(event) =>
-                                          updateV2Character(character.id, { otherNames: event.target.value })
-                                        }
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>Tags (comma separated)</label>
-                                      <input
-                                        className="pw-bible-input"
-                                        maxLength={CHARACTER_TAG_INPUT_MAX}
-                                        value={(character.tags ?? []).join(", ")}
-                                        onChange={(event) =>
-                                          updateV2Character(character.id, {
-                                            tags: event.target.value
-                                              .split(",")
-                                              .map((s) => s.trim())
-                                              .filter(Boolean),
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="pw-bible-flex-head">
-                                    <label>Relationships</label>
-                                    <button
-                                      type="button"
-                                      className="pw-ai-mini-btn pw-bible-field-btn"
-                                      onClick={() => addCharacterRelationship(character.id)}
-                                      disabled={availableRelationshipTargets.length === 0}
-                                    >
-                                      + Add link
-                                    </button>
-                                  </div>
-                                  {availableRelationshipTargets.length === 0 ? (
-                                    <p className="pw-character-relationship-empty">
-                                      Add at least two characters to connect relationships.
-                                    </p>
-                                  ) : (character.relationships ?? []).length === 0 ? (
-                                    <p className="pw-character-relationship-empty">
-                                      No relationship links yet.
-                                    </p>
-                                  ) : (
-                                    <div className="pw-character-rel-list">
-                                      {(character.relationships ?? []).map((relationship, index) => (
-                                        <div key={`${character.id}-rel-${index}`} className="pw-character-rel-row">
-                                          <select
-                                            className="pw-bible-input"
-                                            value={relationship.targetCharacterId}
-                                            onChange={(event) =>
-                                              updateCharacterRelationship(character.id, index, {
-                                                targetCharacterId: event.target.value,
-                                              })
-                                            }
-                                          >
-                                            <option value="">Select character</option>
-                                            {availableRelationshipTargets.map((targetCharacter) => (
-                                              <option key={targetCharacter.id} value={targetCharacter.id}>
-                                                {targetCharacter.name || "Unnamed character"}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          <input
-                                            className="pw-bible-input"
-                                            maxLength={STORY_BIBLE_LIMITS.character.relationshipType}
-                                            placeholder="Type (rival, sibling, mentor)"
-                                            value={relationship.type ?? ""}
-                                            onChange={(event) =>
-                                              updateCharacterRelationship(character.id, index, {
-                                                type: event.target.value,
-                                              })
-                                            }
-                                          />
-                                          <input
-                                            className="pw-bible-input"
-                                            maxLength={STORY_BIBLE_LIMITS.character.relationshipDescription}
-                                            placeholder="Short note (optional)"
-                                            value={relationship.description ?? ""}
-                                            onChange={(event) =>
-                                              updateCharacterRelationship(character.id, index, {
-                                                description: event.target.value,
-                                              })
-                                            }
-                                          />
-                                          <button
-                                            type="button"
-                                            className="pw-character-delete"
-                                            onClick={() => removeCharacterRelationship(character.id, index)}
-                                          >
-                                            Remove
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
                                 </div>
 
                                 {/* Footer spacer */}
@@ -18026,8 +19159,8 @@ function NovelWorkspacePage() {
                 )}
 
                 {bibleSection === "locations" && (
-                  <div className="pw-bible-section">
-                    <div className="pw-bible-flex-head">
+                  <div className="pw-bible-section pw-locations-section">
+                    <div className="pw-bible-flex-head pw-locations-head">
                       <div>
                         <h3>Locations</h3>
                         <p className="pw-bible-section-note">
@@ -18070,9 +19203,9 @@ function NovelWorkspacePage() {
                         No locations yet. Add one manually or generate from Canon.
                       </p>
                     ) : (
-                      <div className="pw-bible-events-list">
+                      <div className="pw-locations-list">
                         {storyLocations.map((location) => (
-                          <div key={location.id} className="pw-bible-event-card">
+                          <div key={location.id} className="pw-bible-event-card pw-location-card">
                             <div className="pw-location-card-head">
                               <div className="pw-location-name-wrap">
                                 <label>Location name</label>
@@ -18082,23 +19215,9 @@ function NovelWorkspacePage() {
                                   value={location.name}
                                   placeholder="e.g. Harrogate"
                                   onChange={(event) => updateLocationName(location.id, event.target.value)}
-                                  onBlur={() => {
-                                    if (!location.name.trim()) return;
-                                    void lookupLocationFromRealWorld(location.id, false);
-                                  }}
                                 />
                               </div>
                               <div className="pw-location-actions">
-                                {!aiOff && (
-                                <button
-                                  type="button"
-                                  className="pw-ai-mini-btn"
-                                  onClick={() => void lookupLocationFromRealWorld(location.id, true)}
-                                  disabled={locationLookupBusyId === location.id}
-                                >
-                                  {locationLookupBusyId === location.id ? "Looking up..." : "Find real location"}
-                                </button>
-                                )}
                                 <button
                                   type="button"
                                   className="pw-character-delete"
@@ -18129,8 +19248,8 @@ function NovelWorkspacePage() {
                 )}
 
                 {bibleSection === "worldbuilding" && (
-                  <div className="pw-bible-section">
-                    <div className="pw-bible-flex-head">
+                  <div className="pw-bible-section pw-worldbuilding-section">
+                    <div className="pw-bible-flex-head pw-worldbuilding-head">
                       <div>
                         <h3>Worldbuilding & Lore</h3>
                         <p className="pw-bible-section-note">
@@ -18156,24 +19275,11 @@ function NovelWorkspacePage() {
                           {storyAiBusyAction === "worldbuilding-generate" ? "Generating..." : "Generate world-building"}
                         </button>
                         )}
-                        <button type="button" className="btn" onClick={addLoreEntry}>
+                        <button type="button" className="btn btn-primary" onClick={addLoreEntry}>
                           + Add entry
                         </button>
                       </div>
                     </div>
-
-                    <label>Worldbuilding notes</label>
-                    <textarea
-                      className="pw-bible-input"
-                      rows={4}
-                      maxLength={STORY_BIBLE_LIMITS.worldbuilding}
-                      placeholder="High-level world notes, atmosphere, broad setting guidance."
-                      value={novel.storyBible.worldbuilding ?? ""}
-                      onChange={(event) => updateStoryBible({ worldbuilding: event.target.value })}
-                    />
-                    <p className="pw-field-help">
-                      {(novel.storyBible.worldbuilding ?? "").length}/{STORY_BIBLE_LIMITS.worldbuilding}
-                    </p>
 
                     {!aiOff && storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
 
@@ -18182,9 +19288,9 @@ function NovelWorkspacePage() {
                         No world-building entries yet. Add entries manually or generate from your synopsis and genre.
                       </p>
                     ) : (
-                      <div className="pw-bible-events-list">
+                      <div className="pw-worldbuilding-list">
                         {(novel.storyBible.lore ?? []).map((entry) => (
-                          <div key={entry.id} className="pw-bible-event-card">
+                          <div key={entry.id} className="pw-bible-event-card pw-lore-card">
                             <div className="pw-bible-grid-3">
                               <div>
                                 <label>Title</label>
@@ -18282,23 +19388,23 @@ function NovelWorkspacePage() {
                 {/* Knowledge & Reveals moved to NCC */}
 
                 {bibleSection === "plotSpine" && !isNF && (
-                  <div className="pw-bible-section">
-                    <div className="pw-bible-flex-head">
-                      <div>
-                        <h3>Plot Spine</h3>
-                        <p className="pw-field-help">Build the backbone of your story — beats, subplots, and character arcs that drive chapter generation.</p>
-                      </div>
+                  <div className="pw-bible-section" style={{ paddingBottom: 24 }}>
+                    <div style={{ marginBottom: 20 }}>
+                      <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--pw-text)", margin: 0 }}>The Architect</h3>
+                      <p style={{ fontSize: 13, color: "var(--pw-text-dim)", marginTop: 4, lineHeight: 1.5 }}>Beats, subplots, and character arcs — the backbone that drives chapter generation.</p>
                     </div>
 
                     {/* Internal tabs */}
-                    <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--pw-border-light)", marginBottom: 12 }}>
+                    <div style={{ display: "flex", gap: 2, marginBottom: 20, padding: 4, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
                       {(["overview", "beats", "subplots", "arcs"] as const).map((t) => (
                         <button key={t} type="button" onClick={() => { setSpineTab(t); setSpineExpandedId(null); }}
                           style={{
-                            padding: "8px 16px", fontSize: 12, fontWeight: spineTab === t ? 700 : 500,
-                            color: spineTab === t ? "var(--pw-accent)" : "var(--pw-text-dim)",
-                            background: "none", border: "none", borderBottom: spineTab === t ? "2px solid var(--pw-accent)" : "2px solid transparent",
-                            cursor: "pointer", transition: "all 0.15s",
+                            flex: 1, padding: "10px 14px", fontSize: 13, fontWeight: 600,
+                            color: spineTab === t ? "var(--pw-text)" : "var(--pw-text-dim)",
+                            background: spineTab === t ? "var(--pw-surface)" : "transparent",
+                            border: "none", borderRadius: 10,
+                            cursor: "pointer", transition: "all 0.2s",
+                            boxShadow: spineTab === t ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
                           }}>
                           {t === "overview" ? "Overview" : t === "beats" ? `Beats (${(novel.storyBible.plotSpine?.beats ?? []).length})` : t === "subplots" ? `Subplots (${(novel.storyBible.plotSpine?.subplots ?? []).length})` : `Arcs (${(novel.storyBible.plotSpine?.characterArcs ?? []).length})`}
                         </button>
@@ -18321,89 +19427,37 @@ function NovelWorkspacePage() {
                       const charsInBeats = new Set(beats.flatMap(b => b.characterIds));
                       const orphanChars = storyCharacters.filter(c => !charsInBeats.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Supporting"));
 
-                      // Completeness score
-                      let score = 0;
-                      if (beats.length >= 8) score += 25; else if (beats.length >= 4) score += 15; else if (beats.length > 0) score += 5;
-                      if (act1.length > 0 && act2.length > 0 && act3.length > 0) score += 15; else if (act1.length > 0 || act3.length > 0) score += 5;
-                      if (subplots.length >= 2) score += 20; else if (subplots.length >= 1) score += 10;
-                      if (arcs.length >= 2) score += 20; else if (arcs.length >= 1) score += 10;
-                      if (missingArcs.length === 0 && mainChars.length > 0) score += 10;
-                      if (orphanChars.length === 0) score += 5;
-                      if (beats.every(b => b.description.length > 30)) score += 5;
-                      const clampedScore = Math.min(100, score);
-                      const scoreColor = clampedScore >= 80 ? "#22c55e" : clampedScore >= 50 ? "#f59e0b" : "#ef4444";
-
                       const userGenres = (novel.storyBible.summary?.genre ?? []).map(g => g.toLowerCase());
 
                       return (
                         <div>
                           {/* Build Full Spine + Story Doctor + Clear buttons */}
                           {!aiOff && (
-                            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-                              <span style={{ fontSize: 10, color: "var(--pw-text-dim)", border: "1px solid var(--pw-border-light)", borderRadius: 999, padding: "3px 8px" }}>
-                                Spine mode: Auto (model-adaptive)
-                              </span>
+                            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                               {beats.length === 0 ? (
                                 <button
                                   type="button"
                                   className="btn btn-primary"
-                                  disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())}
-                                  onClick={async () => {
-                                    setSpineArcChoice(null);
-                                    setSpineArcDynamicOptions(null);
-                                    setSpineShowArcPicker(true);
-                                    const synopsis = (novel.storyBible.summary?.synopsisShort || "").trim();
-                                    if (!synopsis || spineArcDynamicLoading) return;
-                                    setSpineArcDynamicLoading(true);
-                                    try {
-                                      const aiPrompt = [
-                                        "Create 4 story-arc options for this novel.",
-                                        `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
-                                        `Synopsis: ${synopsis.slice(0, 650)}`,
-                                        'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits genre" }] }',
-                                        "Make each option genuinely different and genre-specific.",
-                                      ].join("\n");
-                                      const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
-                                        aiPrompt,
-                                        700,
-                                        { timeoutMs: 35000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
-                                      );
-                                      const options = (ai?.options ?? [])
-                                        .slice(0, 4)
-                                        .map((o, i) => ({
-                                          id: `opt-${i + 1}`,
-                                          name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
-                                          description: (o.description || "").slice(0, 280),
-                                          rationale: (o.rationale || "").slice(0, 140),
-                                        }))
-                                        .filter((o) => o.description.length > 10);
-                                      if (options.length > 0) {
-                                        setSpineArcDynamicOptions(options);
-                                        setSpineArcChoice(`ai:${options[0].id}`);
-                                      }
-                                    } catch { /* keep retry prompt visible */ }
-                                    finally {
-                                      setSpineArcDynamicLoading(false);
-                                    }
-                                  }}
+                                  disabled={spineBusy || !getCombinedSynopsis()}
+                                  onClick={() => setSpineShowArcModePopup(true)}
                                 >
-                                  ✦ Build Full Spine
+                                  {spineBusy ? "Building…" : "✦ Build Spine from Summary"}
                                 </button>
                               ) : (
-                                <button type="button" className="btn" style={{ opacity: 0.5, cursor: "help" }} onClick={() => alert("Your spine is already built with interconnected beats, subplots, and character arcs. Regenerating would overwrite all your work and break the connections you've crafted.\n\nTo start fresh, use \"Clear Spine\" first — then build a new one.")}>
+                                <button type="button" className="btn" style={{ opacity: 0.5, cursor: "help" }} onClick={() => alert("Your Architect is already built with interconnected beats, subplots, and character arcs. Regenerating would overwrite all your work and break the connections you've crafted.\n\nTo start fresh, use \"Clear Architect\" first — then build a new one.")}>
                                   ✦ Build Full Spine
                                 </button>
                               )}
                               {beats.length >= 3 && !spineDoctorResult && (
                                 <button type="button" className="btn" disabled={spineBusy} onClick={async () => {
                                   if (!novel || spineBusy) return;
-                                  setSpineBusy(true); setSpineDoctorResult(null); setSpineProgress("Story Doctor is analysing your spine...");
+                                  setSpineBusy(true); setSpineDoctorResult(null); setSpineError(""); setSpineProgress("Story Doctor is analysing your Architect...");
                                   try {
                                     const beatCtx = beats.map((b, i) => `${i + 1}. [Act ${b.act}, tension: ${b.tension}] "${b.title}": ${b.description.slice(0, 100)}`).join("\n");
                                     const spCtx = subplots.map(s => `"${s.title}" (${s.status}): touches ${s.linkedBeatIds.length} beats`).join("; ");
                                     const arcCtx = arcs.map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.startState} → ${a.endState} (${a.turningPointBeatIds.length} turning points)`; }).join("; ");
                                     const prompt = [
-                                      "Analyze this story spine for structural issues. Be a tough but constructive story editor.",
+                                      "Analyze The Architect for structural issues. Be a tough but constructive story editor.",
                                       `\nBeats:\n${beatCtx}`,
                                       spCtx ? `\nSubplots: ${spCtx}` : "\nNo subplots defined.",
                                       arcCtx ? `\nCharacter Arcs: ${arcCtx}` : "\nNo character arcs defined.",
@@ -18424,41 +19478,42 @@ function NovelWorkspacePage() {
                                       aiScore = parsed.score ?? 50;
                                       aiSummary = parsed.summary ?? "";
                                     }
-                                    // Client-side: detect Canon characters missing from all beats
+                                    // Client-side: optional guidance — characters not in any beat (tip only, not critical)
                                     const charsInBeats = new Set(beats.flatMap(b => b.characterIds));
                                     const missingChars = storyCharacters.filter(c => !charsInBeats.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Supporting" || c.role === "Love Interest"));
                                     if (missingChars.length > 0) {
-                                      aiIssues.unshift({
-                                        severity: "critical",
+                                      aiIssues.push({
+                                        severity: "tip",
                                         area: "characters",
-                                        message: `Missing from all beats: ${missingChars.map(c => c.name).join(", ")}. These Canon characters don't appear anywhere in your story spine.`,
-                                        suggestion: `Weave ${missingChars.map(c => c.name).join(", ")} into existing beats where they naturally belong, or create new beats that involve them.`,
+                                        message: `${missingChars.map(c => c.name).join(", ")} ${missingChars.length === 1 ? "doesn't" : "don't"} appear in any beat yet.`,
+                                        suggestion: `Optionally weave them into existing beats or add beats in the Beats tab.`,
                                       });
-                                      aiScore = Math.max(10, aiScore - 15);
                                     }
-                                    // Detect main characters without arcs
+                                    // Main characters without arcs — tip only
                                     const charsWithArcs = new Set(arcs.map(a => a.characterId));
                                     const noArcChars = storyCharacters.filter(c => !charsWithArcs.has(c.id) && (c.role === "Protagonist" || c.role === "Antagonist"));
                                     if (noArcChars.length > 0) {
                                       const alreadyHasArcIssue = aiIssues.some(i => i.area === "arcs" && noArcChars.some(c => i.message.includes(c.name)));
                                       if (!alreadyHasArcIssue) {
                                         aiIssues.push({
-                                          severity: "warning",
+                                          severity: "tip",
                                           area: "arcs",
                                           message: `${noArcChars.map(c => c.name).join(", ")} ${noArcChars.length === 1 ? "has" : "have"} no character arc defined.`,
-                                          suggestion: `Add character arcs in the Arcs tab, or use AI Suggest Arcs to generate arc options.`,
+                                          suggestion: `Optional: add arcs in the Arcs tab or use AI Suggest Arcs.`,
                                         });
                                       }
                                     }
                                     setSpineDoctorResult({ issues: aiIssues, score: aiScore, summary: aiSummary });
-                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                  } catch (e) {
+                                    setSpineError(e instanceof Error ? e.message : "Story Doctor failed. Try again.");
+                                  } finally { setSpineBusy(false); setSpineProgress(""); }
                                 }}>
                                   {spineBusy ? "Wait..." : "✦ Story Doctor"}
                                 </button>
                               )}
                               {beats.length > 0 && (
-                                <button type="button" className="btn" disabled={spineBusy} onClick={() => { if (confirm("Clear entire spine? This removes all beats, subplots, and character arcs.")) { updatePlotSpine({ beats: [], subplots: [], characterArcs: [], generatedAt: undefined }); setSpineDoctorResult(null); setSpineSuggestedChars(null); } }} style={{ fontSize: 11, opacity: 0.7 }}>
-                                  Clear Spine
+                                <button type="button" className="btn" disabled={spineBusy} onClick={() => { if (confirm("Clear The Architect? This removes all beats, subplots, character arcs, and flashbacks.")) { updatePlotSpine({ beats: [], subplots: [], characterArcs: [], flashbackBeats: [], flashbackSlots: undefined, generatedAt: undefined }); setSpineDoctorResult(null); setSpineSuggestedChars(null); setSpineShowAdvancedOptions(false); setSpineShowArcPicker(false); setSpineShowArcModePopup(false); } }} style={{ fontSize: 11, opacity: 0.7 }}>
+                                  Clear Architect
                                 </button>
                               )}
                             </div>
@@ -18525,13 +19580,143 @@ function NovelWorkspacePage() {
                             </div>
                           )}
 
+                          {/* Arc mode choice popup — shown first when Build Spine is clicked */}
+                          {spineShowArcModePopup && (
+                            <div style={{ marginBottom: 16, padding: 20, background: "var(--pw-surface-alt)", borderRadius: 14, border: "1px solid var(--pw-border-light)", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--pw-text)", marginBottom: 6 }}>How do you want to set the story arc?</div>
+                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 18 }}>Choose an approach before building your Architect.</p>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setSpineShowArcModePopup(false);
+                                    setSpineArcMode("ai");
+                                    setSpineArcChoice(null);
+                                    setSpineArcDynamicOptions(null);
+                                    setSpineShowArcPicker(true);
+                                    setSpineArcDynamicLoading(true);
+                                    const synopsis = (getCombinedSynopsis() || "").trim();
+                                    const genreStr = (novel?.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                                    if (!novel) { setSpineArcDynamicLoading(false); return; }
+                                    const fallbackOptions = [
+                                      { id: "opt-1", name: "Classic three-act transformation", description: "Protagonist starts in one state, is tested through the middle, and emerges changed by the end.", rationale: "Works for most genres." },
+                                      { id: "opt-2", name: "Mystery / revelation arc", description: "Truth is hidden; the story drives toward a central reveal that reframes everything.", rationale: "Strong for thriller and drama." },
+                                      { id: "opt-3", name: "Relationship or alliance arc", description: "Core tension is between characters; the arc is how their bond or conflict evolves.", rationale: "Fits romance and character-driven stories." },
+                                      { id: "opt-4", name: "Quest or mission arc", description: "A clear external goal drives the plot; internal change happens along the way.", rationale: "Genre-flexible." },
+                                    ];
+                                    try {
+                                      const synopsisForPrompt = synopsis.length >= 30 ? synopsis.slice(0, 800) : `No detailed synopsis yet. Genre: ${genreStr}. Suggest 4 different story-arc directions that could work.`;
+                                      const aiPrompt = [
+                                        "Create 4 story-arc options for this novel.",
+                                        `Genres: ${genreStr}`,
+                                        `Synopsis or context:\n${synopsisForPrompt}`,
+                                        'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits" }] }',
+                                        "Make each option different. If synopsis is short, suggest 4 sensible arc types for the genre.",
+                                      ].join("\n");
+                                      const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
+                                        aiPrompt,
+                                        900,
+                                        { timeoutMs: 60000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
+                                      );
+                                      const rawOpts = (ai?.options ?? []).slice(0, 4);
+                                      const options = rawOpts.length > 0
+                                        ? rawOpts.map((o, i) => ({
+                                            id: `opt-${i + 1}`,
+                                            name: (o.name || `Arc ${i + 1}`).trim().slice(0, 60) || `Arc Option ${i + 1}`,
+                                            description: (o.description || "").trim().slice(0, 280) || "Story-driven arc.",
+                                            rationale: (o.rationale || "").slice(0, 140),
+                                          })).filter((o) => o.name.length > 0)
+                                        : [];
+                                      if (options.length > 0) {
+                                        setSpineArcDynamicOptions(options);
+                                        setSpineArcChoice(`ai:${options[0].id}`);
+                                      } else {
+                                        setSpineArcDynamicOptions(fallbackOptions);
+                                        setSpineArcChoice("ai:opt-1");
+                                      }
+                                    } catch {
+                                      setSpineArcDynamicOptions(fallbackOptions);
+                                      setSpineArcChoice("ai:opt-1");
+                                    }
+                                    finally { setSpineArcDynamicLoading(false); }
+                                  }}
+                                  style={{
+                                    display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderRadius: 12,
+                                    background: "linear-gradient(135deg, rgba(var(--accent-rgb, 124,92,252), 0.12) 0%, rgba(var(--accent-rgb, 124,92,252), 0.04) 100%)",
+                                    border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.35)", cursor: "pointer", transition: "all 0.2s",
+                                    textAlign: "left", color: "var(--pw-text)",
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.15)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(var(--accent-rgb, 124,92,252), 0.35)"; e.currentTarget.style.boxShadow = "none"; }}
+                                >
+                                  <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, flexShrink: 0 }}>AI</span>
+                                  <div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 2 }}>AI-generated arc options</div>
+                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>Generate 4 genre-specific arc directions</div>
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSpineShowArcModePopup(false);
+                                    setSpineArcMode("custom");
+                                    setSpineArcChoice("");
+                                    setSpineArcDynamicOptions(null);
+                                    setSpineShowArcPicker(true);
+                                  }}
+                                  style={{
+                                    display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderRadius: 12,
+                                    background: "var(--pw-surface)", border: "1.5px solid var(--pw-border-light)", cursor: "pointer", transition: "all 0.2s",
+                                    textAlign: "left", color: "var(--pw-text)",
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.04)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--pw-border-light)"; e.currentTarget.style.background = "var(--pw-surface)"; }}
+                                >
+                                  <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0, color: "var(--pw-text-dim)" }}>✎</span>
+                                  <div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 2 }}>Custom arc direction</div>
+                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>Write your own arc in a few sentences</div>
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSpineShowArcModePopup(false);
+                                    const defaultArc = "Follow the Act 1, Act 2, and Act 3 synopsis. Expand each act into clear story beats. Use only existing Canon characters — the cast is fixed, never add new.";
+                                    setSpineArcMode("skip");
+                                    setSpineArcChoice(defaultArc);
+                                    setSpineArcDynamicOptions(null);
+                                    setSpineShowArcPicker(true);
+                                  }}
+                                  style={{
+                                    display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderRadius: 12,
+                                    background: "var(--pw-surface)", border: "1.5px solid var(--pw-border-light)", cursor: "pointer", transition: "all 0.2s",
+                                    textAlign: "left", color: "var(--pw-text)",
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.04)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--pw-border-light)"; e.currentTarget.style.background = "var(--pw-surface)"; }}
+                                >
+                                  <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0, color: "var(--pw-text-dim)" }}>→</span>
+                                  <div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 2 }}>Skip — use default</div>
+                                    <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>Expand Acts 1, 2 &amp; 3 from your synopsis</div>
+                                  </div>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Arc Picker Modal */}
-                          {spineShowArcPicker && (
+                          {spineShowArcPicker && !spineShowArcModePopup && (
                             <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
-                              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Choose a Story Arc</div>
-                              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>AI is generating 4 genre-specific arc directions for this story.</p>
-                              {spineArcDynamicLoading && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>Analyzing genre + synopsis and crafting arc options...</p>}
-                              {spineArcDynamicOptions && spineArcDynamicOptions.length > 0 && (
+                              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>
+                                {spineArcMode === "skip" ? "Using default arc" : spineArcMode === "custom" ? "Custom arc direction" : "Choose a Story Arc"}
+                              </div>
+                              {spineArcMode === "ai" && <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Pick one of the AI-generated arc directions below.</p>}
+                              {spineArcMode === "custom" && <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Describe the arc direction for your story.</p>}
+                              {spineArcMode === "skip" && <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 12 }}>Expanding Act 1, 2, and 3 from your synopsis. Click Build Spine to continue.</p>}
+                              {spineArcMode === "ai" && spineArcDynamicLoading && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10 }}>Analyzing genre + synopsis and crafting arc options...</p>}
+                              {spineArcMode === "ai" && spineArcDynamicOptions && spineArcDynamicOptions.length > 0 && (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)" }}>AI-Crafted Arc Directions</div>
                                   {spineArcDynamicOptions.map((opt) => (
@@ -18551,54 +19736,77 @@ function NovelWorkspacePage() {
                                   ))}
                                 </div>
                               )}
-                              {!spineArcDynamicLoading && (!spineArcDynamicOptions || spineArcDynamicOptions.length === 0) && (
-                                <div style={{ marginBottom: 12, padding: 10, border: "1px solid var(--pw-border-light)", borderRadius: 8, background: "var(--pw-surface)" }}>
-                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>AI couldn't generate arc options yet. Try again.</div>
+                              {spineArcMode === "ai" && !spineArcDynamicLoading && (!spineArcDynamicOptions || spineArcDynamicOptions.length === 0) && (
+                                <div style={{ marginBottom: 12, padding: 14, border: "1px solid var(--pw-border-light)", borderRadius: 10, background: "var(--pw-surface)" }}>
+                                  <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginBottom: 10 }}>Arc options couldn&apos;t be generated — the AI may be busy or your synopsis needs more detail. Retry or go back and choose Custom or Skip.</div>
+                                  <div style={{ display: "flex", gap: 8 }}>
                                   <button
                                     type="button"
                                     className="btn"
                                     style={{ fontSize: 11 }}
                                     onClick={async () => {
                                       if (spineArcDynamicLoading || !novel) return;
-                                      const synopsis = (novel.storyBible.summary?.synopsisShort || "").trim();
-                                      if (!synopsis) return;
+                                      const synopsis = (getCombinedSynopsis() || "").trim();
+                                      const genreStr = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                                      const fallbackOptions = [
+                                        { id: "opt-1", name: "Classic three-act transformation", description: "Protagonist starts in one state, is tested through the middle, and emerges changed by the end.", rationale: "Works for most genres." },
+                                        { id: "opt-2", name: "Mystery / revelation arc", description: "Truth is hidden; the story drives toward a central reveal that reframes everything.", rationale: "Strong for thriller and drama." },
+                                        { id: "opt-3", name: "Relationship or alliance arc", description: "Core tension is between characters; the arc is how their bond or conflict evolves.", rationale: "Fits romance and character-driven stories." },
+                                        { id: "opt-4", name: "Quest or mission arc", description: "A clear external goal drives the plot; internal change happens along the way.", rationale: "Genre-flexible." },
+                                      ];
                                       setSpineArcDynamicLoading(true);
                                       try {
+                                        const synopsisForPrompt = synopsis.length >= 30 ? synopsis.slice(0, 800) : `No detailed synopsis yet. Genre: ${genreStr}. Suggest 4 different story-arc directions.`;
                                         const aiPrompt = [
                                           "Create 4 story-arc options for this novel.",
-                                          `Genres: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "not set"}`,
-                                          `Synopsis: ${synopsis.slice(0, 650)}`,
-                                          'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits genre" }] }',
-                                          "Make each option genuinely different and genre-specific.",
+                                          `Genres: ${genreStr}`,
+                                          `Synopsis or context:\n${synopsisForPrompt}`,
+                                          'Return JSON: { "options": [{ "name": "2-6 words", "description": "1-2 sentences", "rationale": "why this fits" }] }',
                                         ].join("\n");
                                         const ai = await requestOpenRouterJson<{ options?: Array<{ name?: string; description?: string; rationale?: string }> }>(
                                           aiPrompt,
-                                          700,
-                                          { timeoutMs: 35000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
+                                          900,
+                                          { timeoutMs: 60000, systemMessage: "Story structure strategist. Return genre-appropriate arc options in JSON only." },
                                         );
-                                        const options = (ai?.options ?? [])
-                                          .slice(0, 4)
-                                          .map((o, i) => ({
-                                            id: `opt-${i + 1}`,
-                                            name: (o.name || `Arc Option ${i + 1}`).slice(0, 60),
-                                            description: (o.description || "").slice(0, 280),
-                                            rationale: (o.rationale || "").slice(0, 140),
-                                          }))
-                                          .filter((o) => o.description.length > 10);
+                                        const rawOpts = (ai?.options ?? []).slice(0, 4);
+                                        const options = rawOpts.length > 0
+                                          ? rawOpts.map((o, i) => ({
+                                              id: `opt-${i + 1}`,
+                                              name: (o.name || `Arc ${i + 1}`).trim().slice(0, 60) || `Arc Option ${i + 1}`,
+                                              description: (o.description || "").trim().slice(0, 280) || "Story-driven arc.",
+                                              rationale: (o.rationale || "").slice(0, 140),
+                                            })).filter((o) => o.name.length > 0)
+                                          : [];
                                         if (options.length > 0) {
                                           setSpineArcDynamicOptions(options);
                                           setSpineArcChoice(`ai:${options[0].id}`);
+                                        } else {
+                                          setSpineArcDynamicOptions(fallbackOptions);
+                                          setSpineArcChoice("ai:opt-1");
                                         }
-                                      } catch { /* keep retry prompt visible */ }
+                                      } catch {
+                                        setSpineArcDynamicOptions(fallbackOptions);
+                                        setSpineArcChoice("ai:opt-1");
+                                      }
                                       finally { setSpineArcDynamicLoading(false); }
                                     }}
                                   >
-                                    Retry AI Options
+                                    Retry
                                   </button>
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ fontSize: 11 }}
+                                    onClick={() => { setSpineShowArcPicker(false); setSpineShowArcModePopup(true); setSpineArcMode(null); setSpineArcChoice(null); setSpineArcDynamicOptions(null); }}
+                                  >
+                                    Back
+                                  </button>
+                                  </div>
                                 </div>
                               )}
+                              {spineArcMode !== "ai" && (
                               <div style={{ marginBottom: 12 }}>
-                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", display: "block", marginBottom: 4 }}>Or describe your own arc direction:</label>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-text-dim)", display: "block", marginBottom: 4 }}>Arc direction:</label>
                                 <textarea
                                   value={spineArcChoice && !spineArcChoice.startsWith("ai:") ? spineArcChoice : ""}
                                   onChange={(e) => setSpineArcChoice(e.target.value || null)}
@@ -18607,604 +19815,522 @@ function NovelWorkspacePage() {
                                   style={{ width: "100%", background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", borderRadius: 6, padding: "8px 10px", fontSize: 12, color: "var(--pw-text)", outline: "none", resize: "vertical" }}
                                 />
                               </div>
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <button type="button" className="btn btn-primary" disabled={!spineArcChoice} onClick={async () => {
-                                  setSpineShowArcPicker(false);
-                                  if (!novel || spineBusy || !spineArcChoice) return;
-                                  setSpineBusy(true);
-                                  setSpineError("");
-                                  setSpineSuggestedChars(null);
-                                  setSpineDoctorResult(null);
+                              )}
+                              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                                <button type="button" className="btn btn-primary" disabled={!spineArcChoice} onClick={() => { setSpineShowArcPicker(false); setSpineShowAdvancedOptions(true); }}>
+                                  Continue to Advanced Options
+                                </button>
+                                <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineShowArcModePopup(false); setSpineArcMode(null); setSpineArcChoice(null); setSpineArcDynamicOptions(null); }}>Cancel</button>
+                              </div>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>Set your arc, then configure advanced options before generating.</p>
+                            </div>
+                          )}
 
-                                  const synopsis = novel.storyBible.summary?.synopsisShort || "";
-                                  const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
-                                  const existingChars = storyCharacters.slice(0, 10);
-                                  const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 50) : ""}`).join("\n  ");
-                                  const locCtx = (novel.storyBible.locations ?? []).slice(0, 5).map(l => l.name).join(", ");
+                          {/* Advanced Options — premium step before Build Spine */}
+                          {spineShowAdvancedOptions && (
+                            <div style={{ marginBottom: 16, padding: 20, background: "linear-gradient(180deg, var(--pw-surface-alt) 0%, var(--pw-surface) 100%)", borderRadius: 14, border: "1px solid var(--pw-border-light)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                                <span style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚙</span>
+                                <div>
+                                  <div style={{ fontSize: 15, fontWeight: 700, color: "var(--pw-text)", letterSpacing: "-0.02em" }}>Advanced Options</div>
+                                  <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 2 }}>Refine how your story structure is built</div>
+                                </div>
+                              </div>
+
+                              {/* Flashbacks */}
+                              <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Flashback chapters</div>
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10, lineHeight: 1.5 }}>Weave past-event beats into the timeline for depth and backstory. AI will suggest beats from your synopsis.</p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {([0, 1, 2, 3] as const).map((n) => {
+                                    const label = n === 0 ? "None" : n === 1 ? "1 chapter" : `${n} chapters`;
+                                    const active = (novel.storyBible.plotSpine?.flashbackSlots ?? 0) === n;
+                                    return (
+                                      <button key={n} type="button" onClick={() => updatePlotSpine({ flashbackSlots: n })} style={{
+                                        padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                        color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                      }}>{label}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Subplot emphasis */}
+                              <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Subplot emphasis</div>
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10, lineHeight: 1.5 }}>How much the AI develops secondary plot threads alongside the main story.</p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {(["light", "standard", "rich"] as const).map((level) => {
+                                    const labels = { light: "Light (2–3)", standard: "Standard (3–4)", rich: "Rich (4–5)" };
+                                    const active = (novel.storyBible.plotSpine?.subplotEmphasis ?? "standard") === level;
+                                    return (
+                                      <button key={level} type="button" onClick={() => updatePlotSpine({ subplotEmphasis: level })} style={{
+                                        padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                        color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                      }}>{labels[level]}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Beat density */}
+                              <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Beat density</div>
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10, lineHeight: 1.5 }}>How many story beats per act — lean keeps it punchy; detailed gives finer granularity.</p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {(["lean", "standard", "detailed"] as const).map((level) => {
+                                    const labels = { lean: "Lean", standard: "Standard", detailed: "Detailed" };
+                                    const active = (novel.storyBible.plotSpine?.beatDensity ?? "standard") === level;
+                                    return (
+                                      <button key={level} type="button" onClick={() => updatePlotSpine({ beatDensity: level })} style={{
+                                        padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                        color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                      }}>{labels[level]}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Character arc depth */}
+                              <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Character arc depth</div>
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10, lineHeight: 1.5 }}>How fully the AI develops each character&apos;s psychological journey — start state, turning points, end state.</p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {(["brief", "standard", "rich"] as const).map((level) => {
+                                    const labels = { brief: "Brief", standard: "Standard", rich: "Rich" };
+                                    const active = (novel.storyBible.plotSpine?.arcDepth ?? "standard") === level;
+                                    return (
+                                      <button key={level} type="button" onClick={() => updatePlotSpine({ arcDepth: level })} style={{
+                                        padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                        color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                      }}>{labels[level]}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Midpoint emphasis */}
+                              <div style={{ marginBottom: 16, padding: 16, background: "var(--pw-surface)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>Midpoint emphasis</div>
+                                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 10, lineHeight: 1.5 }}>How pronounced the Act 2 midpoint twist — the moment that raises stakes and shifts the story.</p>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {(["subtle", "clear", "dramatic"] as const).map((level) => {
+                                    const labels = { subtle: "Subtle", clear: "Clear", dramatic: "Dramatic" };
+                                    const active = (novel.storyBible.plotSpine?.midpointEmphasis ?? "clear") === level;
+                                    return (
+                                      <button key={level} type="button" onClick={() => updatePlotSpine({ midpointEmphasis: level })} style={{
+                                        padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
+                                        color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                      }}>{labels[level]}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div style={{ display: "flex", gap: 10, marginTop: 4, alignItems: "center", flexWrap: "wrap" }}>
+                                <button type="button" className="btn btn-primary" disabled={spineBusy || !spineArcChoice} style={{ minWidth: 120 }} onClick={async () => {
+                                  setSpineShowAdvancedOptions(false);
+                                  if (!novel || spineBusy || !spineArcChoice) return;
+                                  const requestedFlashbackSlots = novel.storyBible.plotSpine?.flashbackSlots ?? 0;
                                   const dynamicPreset = spineArcChoice?.startsWith("ai:")
                                     ? spineArcDynamicOptions?.find((o) => `ai:${o.id}` === spineArcChoice)
                                     : null;
                                   const arcDirective = dynamicPreset
                                     ? `ARC: ${dynamicPreset.name} — ${dynamicPreset.description.slice(0, 140)}`
                                     : `ARC: ${(spineArcChoice || "").slice(0, 150)}`;
-
-                                  // Helper: parse JSON from AI response with repair fallback
-                                  function cleanAiOutput(raw: string): string {
-                                    let out = stripThinkingBlocks(raw);
-                                    out = out.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
-                                    return out.trim();
-                                  }
-
-                                  function extractJson<T>(raw: string): T | null {
-                                    const cleaned = cleanAiOutput(raw);
-                                    const m = cleaned.match(/\{[\s\S]*\}/);
-                                    if (!m) return null;
-                                    try { return JSON.parse(m[0]) as T; } catch {
-                                      const repaired = attemptCloseTruncatedJson(m[0]);
-                                      if (repaired) try { return JSON.parse(repaired) as T; } catch { /* */ }
+                                  setSpineBusy(true);
+                                  setSpineError("");
+                                  setSpineSuggestedChars(null);
+                                  setSpineDoctorResult(null);
+                                  try {
+                                    const synopsis = getCombinedSynopsis();
+                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
+                                    const existingChars = storyCharacters.slice(0, 10);
+                                    const charCtx = existingChars.map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 50) : ""}`).join("\n  ");
+                                    const locCtx = (novel.storyBible.locations ?? []).slice(0, 5).map(l => l.name).join(", ");
+                                    function cleanAiOutput(raw: string): string {
+                                      let out = stripThinkingBlocks(raw);
+                                      out = out.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+                                      return out.trim();
                                     }
-                                    return null;
-                                  }
-
-                                  const structuredProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
-
-                                  async function smallCall(prompt: string, tokens: number, sys: string): Promise<string> {
-                                    for (let a = 0; a < 3; a++) {
-                                      try {
-                                        const useJsonMode = a >= 1 && !structuredProfile.smallModel;
-                                        const scaledTokens = Math.max(450, Math.round(tokens * structuredProfile.maxTokensScale));
-                                        const r = await requestOpenRouterText(prompt, scaledTokens, 120000, sys, useJsonMode, structuredProfile.baseTemp);
-                                        if (r && r.trim().length > 5) return r;
-                                      } catch { /* retry */ }
-                                    }
-                                    return "";
-                                  }
-
-                                  const sys = "You are a story architect for novels. Return only valid JSON.";
-                                  type RawBeat = { title: string; description: string; tension: number; locationHint?: string; characterNames?: string[] };
-                                  let allBeats: StoryBeat[] = [];
-                                  const allCharNames = new Set<string>();
-                                  let failed = false;
-                                  const fallbackArcType = genreArcExamples(userGenres).split(",")[0]?.trim() || "transformation";
-                                  const ensureText = (value: string | undefined | null, fallback: string) => {
-                                    const v = (value ?? "").trim();
-                                    return v.length > 0 ? v : fallback;
-                                  };
-                                  const existingNameMap = new Map(existingChars.map((c) => [normalizeCharacterNameKey(c.name), c.name] as const));
-                                  const usedGeneratedNameKeys = new Set(existingChars.map((c) => normalizeCharacterNameKey(c.name)));
-                                  const fallbackHumanNames = [
-                                    "Maya Bennett", "Ethan Cole", "Nina Alvarez", "Marcus Reid", "Leah Okafor",
-                                    "Daniel Park", "Ava Sinclair", "Jonah Cross", "Priya Nair", "Lucas Grant",
-                                  ];
-                                  const bannedRoleTokens = new Set([
-                                    "the", "nurse", "doctor", "dr", "informant", "stranger", "boss", "chief", "officer",
-                                    "detective", "captain", "sergeant", "guard", "receptionist", "teacher", "professor",
-                                    "lawyer", "attorney", "judge", "agent", "assistant", "manager", "cashier", "bartender",
-                                    "waiter", "waitress", "driver", "paramedic", "therapist", "counsellor", "counselor",
-                                  ]);
-                                  const cleanNameToken = (token: string) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z'-]+$/g, "");
-                                  const toTitleCase = (token: string) => token.length <= 1 ? token.toUpperCase() : token[0].toUpperCase() + token.slice(1).toLowerCase();
-                                  const nextFallbackHumanName = () => {
-                                    for (const name of fallbackHumanNames) {
-                                      const key = normalizeCharacterNameKey(name);
-                                      if (!usedGeneratedNameKeys.has(key)) {
-                                        usedGeneratedNameKeys.add(key);
-                                        return name;
+                                    function extractJson<T>(raw: string): T | null {
+                                      const cleaned = cleanAiOutput(raw);
+                                      const m = cleaned.match(/\{[\s\S]*\}/);
+                                      if (!m) return null;
+                                      try { return JSON.parse(m[0]) as T; } catch {
+                                        const repaired = attemptCloseTruncatedJson(m[0]);
+                                        if (repaired) try { return JSON.parse(repaired) as T; } catch { /* */ }
                                       }
+                                      return null;
                                     }
-                                    const id = usedGeneratedNameKeys.size + 1;
-                                    const generated = `Alex Rowan ${id}`;
-                                    usedGeneratedNameKeys.add(normalizeCharacterNameKey(generated));
-                                    return generated;
-                                  };
-                                  const normalizeHumanName = (rawName: string): string | null => {
-                                    const raw = (rawName || "").trim();
-                                    if (!raw) return null;
-                                    const exactExisting = existingNameMap.get(normalizeCharacterNameKey(raw));
-                                    if (exactExisting) return exactExisting;
-                                    const tokens = raw
-                                      .replace(/[()"'`]/g, " ")
-                                      .split(/\s+/)
-                                      .map(cleanNameToken)
-                                      .filter(Boolean);
-                                    if (tokens.length < 2 || tokens.length > 3) return null;
-                                    if (tokens.some((t) => bannedRoleTokens.has(t.toLowerCase()))) return null;
-                                    if (tokens.some((t) => t.length < 2)) return null;
-                                    const normalized = tokens.map(toTitleCase).join(" ");
-                                    if (normalized.toLowerCase().startsWith("the ")) return null;
-                                    return normalized;
-                                  };
-                                  const enforceHumanNames = (names?: string[]) => {
-                                    const out: string[] = [];
-                                    const seen = new Set<string>();
-                                    for (const raw of names ?? []) {
-                                      const normalized = normalizeHumanName(raw) ?? nextFallbackHumanName();
-                                      const key = normalizeCharacterNameKey(normalized);
-                                      if (!seen.has(key)) {
-                                        seen.add(key);
-                                        out.push(normalized);
+                                    const structuredProfile = getStructuredOutputProfile(openRouterModel, assistantProvider);
+                                    async function smallCall(prompt: string, tokens: number, sys: string): Promise<string> {
+                                      for (let a = 0; a < 3; a++) {
+                                        try {
+                                          const useJsonMode = a >= 1 && !structuredProfile.smallModel;
+                                          const scaledTokens = Math.max(450, Math.round(tokens * structuredProfile.maxTokensScale));
+                                          const r = await requestOpenRouterText(prompt, scaledTokens, 120000, sys, useJsonMode, structuredProfile.baseTemp);
+                                          if (r && r.trim().length > 5) return r;
+                                        } catch { /* retry */ }
                                       }
+                                      return "";
                                     }
-                                    while (out.length < 2) {
-                                      const fallback = nextFallbackHumanName();
-                                      const key = normalizeCharacterNameKey(fallback);
-                                      if (!seen.has(key)) {
-                                        seen.add(key);
-                                        out.push(fallback);
+                                    const sys = "You are a story architect for novels. Return only valid JSON.";
+                                    type RawBeat = { title: string; description: string; tension: number; locationHint?: string; characterNames?: string[] };
+                                    let allBeats: StoryBeat[] = [];
+                                    let failed = false;
+                                    const fallbackArcType = genreArcExamples(userGenres).split(",")[0]?.trim() || "transformation";
+                                    const ensureText = (value: string | undefined | null, fallback: string) => {
+                                      const v = (value ?? "").trim();
+                                      return v.length > 0 ? v : fallback;
+                                    };
+                                    const charNameList = existingChars.map(c => c.name).join(", ");
+                                    function findCharIdsInText(text: string, extraNames?: string[]): string[] {
+                                      const haystack = text.toLowerCase();
+                                      const found = new Set<string>();
+                                      for (const c of existingChars) {
+                                        const full = c.name.toLowerCase().trim();
+                                        if (full.length > 1 && haystack.includes(full)) { found.add(c.id); continue; }
+                                        const parts = full.split(/\s+/);
+                                        if (parts.length >= 2) {
+                                          const first = parts[0]; const last = parts[parts.length - 1];
+                                          if (first.length > 2 && haystack.includes(first)) found.add(c.id);
+                                          else if (last.length > 2 && haystack.includes(last)) found.add(c.id);
+                                        }
                                       }
-                                    }
-                                    return out;
-                                  };
-
-                                  // Helper: find all Canon character IDs mentioned in text (by name, first name, or last name)
-                                  function findCharIdsInText(text: string, extraNames?: string[]): string[] {
-                                    const haystack = text.toLowerCase();
-                                    const found = new Set<string>();
-                                    for (const c of existingChars) {
-                                      const full = c.name.toLowerCase().trim();
-                                      if (full.length > 1 && haystack.includes(full)) { found.add(c.id); continue; }
-                                      const parts = full.split(/\s+/);
-                                      if (parts.length >= 2) {
-                                        const first = parts[0]; const last = parts[parts.length - 1];
-                                        if (first.length > 2 && haystack.includes(first)) found.add(c.id);
-                                        else if (last.length > 2 && haystack.includes(last)) found.add(c.id);
-                                      }
-                                    }
-                                    if (extraNames) {
-                                      for (const n of extraNames) {
-                                        const match = existingChars.find(c => c.name.toLowerCase() === n.toLowerCase());
-                                        if (match) found.add(match.id);
-                                        else {
-                                          const parts = n.toLowerCase().split(/\s+/);
-                                          for (const c of existingChars) {
-                                            const cParts = c.name.toLowerCase().split(/\s+/);
-                                            if (parts.some(p => p.length > 2 && cParts.some(cp => cp === p))) { found.add(c.id); break; }
+                                      if (extraNames) {
+                                        for (const n of extraNames) {
+                                          const match = existingChars.find(c => c.name.toLowerCase() === n.toLowerCase());
+                                          if (match) found.add(match.id);
+                                          else {
+                                            const parts = n.toLowerCase().split(/\s+/);
+                                            for (const c of existingChars) {
+                                              const cParts = c.name.toLowerCase().split(/\s+/);
+                                              if (parts.some(p => p.length > 2 && cParts.some(cp => cp === p))) { found.add(c.id); break; }
+                                            }
                                           }
                                         }
                                       }
+                                      return [...found];
                                     }
-                                    return [...found];
-                                  }
-
-                                  const charNameList = existingChars.map(c => c.name).join(", ");
-
-                                  // ═══ BEATS: 3 small calls, one per act ═══
-                                  const actConfigs = [
-                                    { act: 1 as const, label: "Act 1 — Setup", count: "4-5", desc: `Setup: introduce the world, establish the status quo, plant the seeds of conflict, and end with the inciting incident that changes everything. Tension: 1→3. You MUST include these characters by name: ${charNameList}. Introduce 2-3 new characters with realistic human names (e.g. "Rachel Torres", "David Okafor") — NEVER archetype labels like "The Mastermind" or "The Shadow".` },
-                                    { act: 2 as const, label: "Act 2 — Confrontation", count: "7-9", desc: `Confrontation: rising stakes, complications, betrayals, alliances, a midpoint twist that reframes everything, and a dark moment where all seems lost. Tension: 3→4. Continue using: ${charNameList}. Each beat must involve at least 2 named characters interacting.` },
-                                    { act: 3 as const, label: "Act 3 — Resolution", count: "4-5", desc: `Resolution: the final push, climax, confrontation, and aftermath. Tension peaks at 5 then resolves to 2. Every major character (${charNameList}) must appear in at least one Act 3 beat. Tie up character arcs.` },
-                                  ];
-
-                                  for (const cfg of actConfigs) {
-                                    setSpineProgress(`Building beats — ${cfg.label}...`);
-                                    const prevBeats = allBeats.length > 0
-                                      ? `\nBeats so far:\n${allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 60)}`).join("\n")}`
-                                      : "";
-                                    const prompt = [
-                                      `Generate ${cfg.count} story beats for ${cfg.label} of a ${genre} novel.`,
-                                      `\n${cfg.desc}`,
-                                      `\n${arcDirective}`,
-                                      `\nSynopsis: ${synopsis.slice(0, 800)}`,
-                                      charCtx ? `\nCanon characters (USE THESE EXACT NAMES in characterNames):\n  ${charCtx}` : "",
-                                      locCtx ? `\nLocations: ${locCtx}` : "",
-                                      prevBeats,
-                                      `\nReturn JSON: { "beats": [{ "title": "short title", "description": "${structuredProfile.beatStructureSentences} — who does what, why, and what changes", "tension": 1-5, "locationHint": "place name", "characterNames": ["Exact Name", "Exact Name"] }] }`,
-                                      "",
-                                      "CRITICAL:",
-                                      `- characterNames MUST use the EXACT names from the Canon list above (e.g. "${existingChars[0]?.name || "Elena Voss"}", not "Elena" or "the protagonist").`,
-                                      "- Every beat must have at least 2 characters in characterNames.",
-                                      "- description must be specific: what happens, what's said, what decision is made, what changes.",
-                                      "- New characters MUST have realistic human names (First Last) — e.g. 'Marcus Chen', 'Diane Okafor', 'Tom Sadler'. NEVER use archetype labels/titles like 'The Mastermind', 'The Shadow', 'The Informant', 'The Stranger', 'The Boss', 'Nurse', or 'Doctor'. Every person is a human with a real name.",
-                                    ].filter(Boolean).join("\n");
-
-                                    const raw = await smallCall(prompt, 1500, sys);
-                                    const parsed = extractJson<{ beats?: RawBeat[] }>(raw);
-                                    const rawBeats = parsed?.beats ?? [];
-
-                                    if (rawBeats.length === 0) {
-                                      setSpineProgress(`${cfg.label} was too complex for this model — retrying with a simpler JSON prompt...`);
-                                      const fallbackPrompt = [
-                                        `Generate 3-4 story beats for Act ${cfg.act} of a ${genre} novel.`,
-                                        `Synopsis: ${synopsis.slice(0, 400)}`,
-                                        `Return JSON: { "beats": [{ "title": "string", "description": "string", "tension": ${cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5}, "characterNames": ["${existingChars[0]?.name || "Character"}"] }] }`,
-                                        `Return ONLY the JSON object. No explanation.`,
-                                      ].join("\n");
-                                      const fallbackRaw = await smallCall(fallbackPrompt, 1200, "Return only valid JSON.");
-                                      const fallbackParsed = extractJson<{ beats?: RawBeat[] }>(fallbackRaw);
-                                      const fallbackBeats = fallbackParsed?.beats ?? [];
-                                      if (fallbackBeats.length > 0) {
-                                        const offset2 = allBeats.length;
-                                        allBeats = [...allBeats, ...fallbackBeats.map((b, i) => {
-                                          const safeNames = enforceHumanNames(b.characterNames);
-                                          safeNames.forEach((n) => allCharNames.add(n));
-                                          return {
-                                            id: `beat-${Date.now().toString(36)}-${offset2 + i}`,
-                                            title: ensureText(b.title, `Beat ${offset2 + i + 1}`),
-                                            description: ensureText(b.description, `Key turning point that raises pressure in this ${genre} story.`),
-                                            act: cfg.act,
-                                            chapterHint: -1,
-                                            characterIds: findCharIdsInText(`${b.title} ${b.description} ${safeNames.join(" ")}`, safeNames),
-                                            locationHint: b.locationHint || "",
-                                            tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : (cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5)) as 1|2|3|4|5,
-                                            sortOrder: offset2 + i,
-                                          };
-                                        })];
-                                      } else {
-                                        const modelName = openRouterModel || "your AI model";
-                                        setSpineError(`${modelName} couldn't return valid JSON for story beats. This model may not support structured output well. Try a different model (GPT-4o, Claude, or Gemini Pro work best) or check your API key.`);
-                                        setSpineBusy(false); setSpineProgress("");
-                                        failed = true; break;
-                                      }
-                                    }
-
-                                    const offset = allBeats.length;
-                                    const actBeats: StoryBeat[] = rawBeats.map((b, i) => {
-                                      const safeNames = enforceHumanNames(b.characterNames);
-                                      safeNames.forEach((n) => allCharNames.add(n));
-                                      const searchText = `${b.title} ${b.description} ${safeNames.join(" ")}`;
-                                      const charIds = findCharIdsInText(searchText, safeNames);
-                                      return {
-                                        id: `beat-${Date.now().toString(36)}-${offset + i}`,
-                                        title: ensureText(b.title, `Beat ${offset + i + 1}`),
-                                        description: ensureText(b.description, `A decisive event that moves the ${genre} conflict forward.`),
-                                        act: cfg.act,
-                                        chapterHint: -1,
-                                        characterIds: charIds,
-                                        locationHint: b.locationHint || "",
-                                        tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                        sortOrder: offset + i,
-                                      };
-                                    });
-
-                                    allBeats = [...allBeats, ...actBeats];
-                                    updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
-                                  }
-
-                                  if (failed || allBeats.length === 0) {
-                                    if (!failed) setSpineError("No beats were generated. Try a different AI model.");
-                                    setSpineBusy(false); setSpineProgress("");
-                                    return;
-                                  }
-
-                                  // Auto detail pipeline:
-                                  // - small models: reliable structure pass, then enrich
-                                  // - strong models: still run an extra polish pass for maximum detail
-                                  if ((structuredProfile.smallModel || structuredProfile.highDetail) && allBeats.length > 0) {
-                                    setSpineProgress(structuredProfile.smallModel ? "Deepening beat detail..." : "Adding extra beat detail...");
-                                    try {
-                                      const beatTitles = allBeats.map((b, i) => `${i + 1}. "${b.title}" (Act ${b.act}, tension ${b.tension})`).join("\n");
-                                      const enrichPrompt = [
-                                        `Expand these ${allBeats.length} beats for a ${genre} novel into richer detail.`,
-                                        `Each description must be ${structuredProfile.beatFinalSentences}, concrete, and specific.`,
-                                        "Do not change beat titles, act placement, or tension scores.",
-                                        `\nBeats:\n${beatTitles}`,
-                                        `\nSynopsis: ${synopsis.slice(0, 700)}`,
-                                        `\n${arcDirective}`,
-                                        `\nReturn JSON: { "beats": [{ "title": "Exact Beat Title", "description": "expanded detailed description" }] }`,
-                                        "Use EXACT beat titles from the list above.",
-                                      ].join("\n");
-                                      const enrichRaw = await smallCall(enrichPrompt, 1600, sys);
-                                      const enrichParsed = extractJson<{ beats?: Array<{ title: string; description: string }> }>(enrichRaw);
-                                      const enrichedByTitle = new Map(
-                                        (enrichParsed?.beats ?? [])
-                                          .map((b) => [b.title?.toLowerCase().trim(), ensureText(b.description, "")] as const)
-                                          .filter(([t, d]) => !!t && d.length > 20),
-                                      );
-                                      if (enrichedByTitle.size > 0) {
-                                        allBeats = allBeats.map((b) => {
-                                          const enriched = enrichedByTitle.get(b.title.toLowerCase().trim());
-                                          return enriched ? { ...b, description: enriched } : b;
-                                        });
-                                        updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
-                                      }
-                                    } catch { /* keep structured beats if enrichment fails */ }
-                                  }
-
-                                  // ═══ SUBPLOTS: single small call ═══
-                                  let newSubplots: Subplot[] = [];
-                                  setSpineProgress("Weaving subplots...");
-                                  try {
-                                    const beatList = allBeats.map((b, i) => `${i+1}. "${b.title}"`).join(", ");
-                                    const spPrompt = [
-                                      `Generate 3-4 subplots for a ${genre} novel.`,
-                                      `\nBeats: ${beatList}`,
-                                      `\nCanon characters: ${charNameList}`,
-                                      `Other characters: ${[...allCharNames].filter(n => !existingChars.some(c => c.name.toLowerCase() === n.toLowerCase())).join(", ")}`,
-                                      `\nReturn JSON: { "subplots": [{ "title": "...", "description": "1-2 sentences", "characterNames": ["Exact Name"], "linkedBeatTitles": ["Exact Beat Title"], "status": "setup" }] }`,
-                                      `Use EXACT character names from the Canon list. Use EXACT beat titles.`,
-                                    ].join("\n");
-                                    const spRaw = await smallCall(spPrompt, 1000, sys);
-                                    const spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
-                                    newSubplots = (spParsed?.subplots ?? []).map((s, i) => {
-                                      const searchText = `${s.title} ${s.description} ${(s.characterNames ?? []).join(" ")}`;
-                                      const linkedBeatIds = (s.linkedBeatTitles ?? []).map(t => {
-                                        const tl = t.toLowerCase();
-                                        return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
-                                      }).filter((x): x is string => !!x);
-                                      return {
-                                        id: `sp-${Date.now().toString(36)}-${i}`,
-                                        title: ensureText(s.title, `Subplot ${i + 1}`),
-                                        description: ensureText(s.description, "A pressure thread that complicates the main conflict and intersects with key beats."),
-                                        characterIds: findCharIdsInText(searchText, s.characterNames),
-                                        linkedBeatIds: linkedBeatIds.length > 0 ? linkedBeatIds : (allBeats[0] ? [allBeats[0].id] : []),
-                                        status: "setup" as const,
-                                      };
-                                    });
-                                    updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
-                                  } catch { /* beats still saved */ }
-
-                                  if (newSubplots.length === 0 && allBeats.length > 0) {
-                                    const first = allBeats[0];
-                                    const mid = allBeats[Math.floor(allBeats.length / 2)];
-                                    const last = allBeats[allBeats.length - 1];
-                                    newSubplots = [
-                                      {
-                                        id: `sp-fallback-${Date.now().toString(36)}-1`,
-                                        title: "Pressure Escalation Thread",
-                                        description: "Secondary pressures tighten around the protagonists, making each choice costlier and riskier.",
-                                        characterIds: [],
-                                        linkedBeatIds: [first?.id, mid?.id, last?.id].filter((x): x is string => !!x),
-                                        status: "setup",
-                                      },
+                                    const beatDensity = novel.storyBible.plotSpine?.beatDensity ?? "standard";
+                                    const counts = { lean: { a1: "2-3", a2: "3-4", a3: "2-3" }, standard: { a1: "3-4", a2: "4-6", a3: "3-4" }, detailed: { a1: "4-5", a2: "5-7", a3: "4-5" } }[beatDensity];
+                                    const midpointEmphasis = novel.storyBible.plotSpine?.midpointEmphasis ?? "clear";
+                                    const midpointHint = midpointEmphasis === "subtle" ? "Midpoint: a quiet shift, not a big twist." : midpointEmphasis === "dramatic" ? "Midpoint: a major reversal or revelation that raises stakes sharply." : "Midpoint: a clear twist that raises stakes and shifts the story.";
+                                    const actConfigs = [
+                                      { act: 1 as const, label: "Act 1 — Setup", count: counts.a1, desc: `Expand the Act 1 synopsis into ${counts.a1} story beats. Setup: world, status quo, seeds of conflict, inciting incident. Tension: 1→3. The cast is FIXED — use ONLY: ${charNameList || "protagonist, antagonist"}. NEVER invent or add new characters.` },
+                                      { act: 2 as const, label: "Act 2 — Confrontation", count: counts.a2, desc: `Expand the Act 2 synopsis into ${counts.a2} story beats. Rising stakes, ${midpointHint} Dark moment. Tension: 3→4. The cast is FIXED — use ONLY: ${charNameList}. NEVER add new characters. Each beat must reference at least one named Canon character.` },
+                                      { act: 3 as const, label: "Act 3 — Resolution", count: counts.a3, desc: `Expand the Act 3 synopsis into ${counts.a3} story beats. Climax, confrontation, aftermath. Tension peaks at 5 then resolves. The cast is FIXED — use ONLY: ${charNameList}. Tie up arcs for existing characters only. NEVER add new characters.` },
                                     ];
-                                  }
-
-                                  // ═══ ARCS: one call per main Canon character for reliability ═══
-                                  let newArcs: CharacterArc[] = [];
-                                  setSpineProgress("Mapping character arcs...");
-                                  try {
+                                    const actTokenBudget = (act: number) => (act === 2 ? 2200 : act === 3 ? 1800 : 1600);
+                                    for (const cfg of actConfigs) {
+                                      setSpineProgress(`Building beats — ${cfg.label}...`);
+                                      const prevBeats = allBeats.length > 0 ? `\nBeats so far:\n${allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 60)}`).join("\n")}` : "";
+                                      const actSynopsis = getSynopsisForAct(cfg.act);
+                                      const prompt = [
+                                        `Generate ${cfg.count} story beats for ${cfg.label} of a ${genre} novel.`,
+                                        `\n${cfg.desc}`,
+                                        arcDirective ? `\n${arcDirective}` : "",
+                                        actSynopsis ? `\nAct synopsis (expand this into beats — do not contradict):\n${actSynopsis}` : "",
+                                        charCtx ? `\nCanon characters (cast is FIXED — use ONLY these; never add new):\n  ${charCtx}` : "",
+                                        locCtx ? `\nLocations: ${locCtx}` : "",
+                                        prevBeats,
+                                        `\nReturn JSON: { "beats": [{ "title": "short title", "description": "${structuredProfile.beatStructureSentences}", "tension": 1-5, "locationHint": "place name", "characterNames": ["Exact Canon Name only"] }] }`,
+                                        "",
+                                        "Rules: The cast is already plotted. characterNames must be a strict subset of the Canon list. NEVER suggest, invent, or add new characters. Each beat description must be concrete and story-specific — what actually happens, who does what, cause and effect. No vague filler.",
+                                      ].filter(Boolean).join("\n");
+                                      let raw = await smallCall(prompt, actTokenBudget(cfg.act), sys);
+                                      let parsed = extractJson<{ beats?: RawBeat[] }>(raw);
+                                      let rawBeats = parsed?.beats ?? [];
+                                      if (rawBeats.length === 0) {
+                                        setSpineProgress(`Retrying ${cfg.label}...`);
+                                        raw = await smallCall(prompt, actTokenBudget(cfg.act), sys);
+                                        parsed = extractJson<{ beats?: RawBeat[] }>(raw);
+                                        rawBeats = parsed?.beats ?? [];
+                                      }
+                                      if (rawBeats.length === 0) {
+                                        setSpineProgress(`Retrying ${cfg.label} with simplified format...`);
+                                        const fallbackPrompt = [
+                                          `Generate ${cfg.act === 2 ? "4-5" : "3-4"} story beats for ${cfg.label} of a ${genre} novel.`,
+                                          `\n${cfg.desc}`,
+                                          arcDirective ? `\n${arcDirective}` : "",
+                                          actSynopsis ? `\nAct synopsis:\n${actSynopsis}` : "",
+                                          charCtx ? `\nCharacters (use ONLY these): ${existingChars.slice(0, 6).map(c => c.name).join(", ")}` : "",
+                                          prevBeats,
+                                          `\nEach beat: title (short), description (${structuredProfile.beatStructureSentences}), tension 1-5.`,
+                                          `\nReturn ONLY valid JSON: { "beats": [{ "title": "...", "description": "...", "tension": ${cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5}, "characterNames": ["Name"] }] }`,
+                                        ].filter(Boolean).join("\n");
+                                        const fallbackRaw = await smallCall(fallbackPrompt, actTokenBudget(cfg.act), "Return only valid JSON. No markdown or explanation.");
+                                        const fallbackParsed = extractJson<{ beats?: RawBeat[] }>(fallbackRaw);
+                                        const fallbackBeats = fallbackParsed?.beats ?? [];
+                                        if (fallbackBeats.length > 0) {
+                                          const offset2 = allBeats.length;
+                                          allBeats = [...allBeats, ...fallbackBeats.map((b, i) => {
+                                            const canonOnlyNames = (b.characterNames ?? []).filter((n) => existingChars.some((c) => normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey(n)));
+                                            const searchText = `${b.title} ${b.description} ${canonOnlyNames.join(" ")}`;
+                                            return {
+                                              id: `beat-${Date.now().toString(36)}-${offset2 + i}`,
+                                              title: ensureText(b.title, `Beat ${offset2 + i + 1}`),
+                                              description: ensureText(b.description, `Key turning point that raises pressure in this ${genre} story.`),
+                                              act: cfg.act,
+                                              chapterHint: -1,
+                                              characterIds: findCharIdsInText(searchText, canonOnlyNames),
+                                              locationHint: b.locationHint || "",
+                                              tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : (cfg.act === 1 ? 2 : cfg.act === 2 ? 4 : 5)) as 1|2|3|4|5,
+                                              sortOrder: offset2 + i,
+                                            };
+                                          })];
+                                        } else {
+                                          const modelName = openRouterModel || "your AI model";
+                                          setSpineError(`${modelName} couldn't return valid story beats for ${cfg.label}. Try a different model (GPT-4o, Claude, or Gemini Pro) or add more detail to your synopsis.`);
+                                          setSpineBusy(false); setSpineProgress("");
+                                          failed = true; break;
+                                        }
+                                      }
+                                      const offset = allBeats.length;
+                                      const actBeats: StoryBeat[] = rawBeats.map((b, i) => {
+                                        const canonOnlyNames = (b.characterNames ?? []).filter((n) => existingChars.some((c) => normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey(n)));
+                                        const searchText = `${b.title} ${b.description} ${canonOnlyNames.join(" ")}`;
+                                        const charIds = findCharIdsInText(searchText, canonOnlyNames);
+                                        return {
+                                          id: `beat-${Date.now().toString(36)}-${offset + i}`,
+                                          title: ensureText(b.title, `Beat ${offset + i + 1}`),
+                                          description: ensureText(b.description, `A decisive event that moves the ${genre} conflict forward.`),
+                                          act: cfg.act,
+                                          chapterHint: -1,
+                                          characterIds: charIds,
+                                          locationHint: b.locationHint || "",
+                                          tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
+                                          sortOrder: offset + i,
+                                        };
+                                      });
+                                      allBeats = [...allBeats, ...actBeats];
+                                      updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
+                                    }
+                                    if (failed || allBeats.length === 0) {
+                                      if (!failed) setSpineError("No beats were generated. Try a different AI model.");
+                                      setSpineBusy(false); setSpineProgress("");
+                                      return;
+                                    }
+                                    if ((structuredProfile.smallModel || structuredProfile.highDetail) && allBeats.length > 0) {
+                                      try {
+                                        for (const actNum of [1, 2, 3] as const) {
+                                          const actBeats = allBeats.filter((b) => b.act === actNum);
+                                          if (actBeats.length === 0) continue;
+                                          setSpineProgress(`Deepening Act ${actNum} beats...`);
+                                          const beatTitles = actBeats.map((b, i) => `${i + 1}. "${b.title}"`).join("\n");
+                                          const enrichPrompt = [
+                                            `Expand these ${actBeats.length} Act ${actNum} beats for a ${genre} novel into richer detail.`,
+                                            `Each description must be ${structuredProfile.beatFinalSentences}, concrete, and specific.`,
+                                            "Do not change beat titles. Use EXACT titles from the list.",
+                                            `\nBeats:\n${beatTitles}`,
+                                            `\nSynopsis: ${clampPromptText(synopsis, 700)}`,
+                                            arcDirective ? `\n${arcDirective}` : "",
+                                            `\nReturn JSON: { "beats": [{ "title": "Exact Beat Title", "description": "expanded detailed description" }] }`,
+                                          ].filter(Boolean).join("\n");
+                                          const enrichRaw = await smallCall(enrichPrompt, 900, sys);
+                                          const enrichParsed = extractJson<{ beats?: Array<{ title: string; description: string }> }>(enrichRaw);
+                                          const enrichedByTitle = new Map(
+                                            (enrichParsed?.beats ?? [])
+                                              .map((b) => [b.title?.toLowerCase().trim(), ensureText(b.description, "")] as const)
+                                              .filter(([t, d]) => !!t && d.length > 20),
+                                          );
+                                          if (enrichedByTitle.size > 0) {
+                                            allBeats = allBeats.map((b) => {
+                                              const enriched = enrichedByTitle.get(b.title.toLowerCase().trim());
+                                              return enriched ? { ...b, description: enriched } : b;
+                                            });
+                                            updatePlotSpine({ beats: allBeats, subplots: [], characterArcs: [], generatedAt: new Date().toISOString() });
+                                          }
+                                        }
+                                      } catch { /* keep structured beats */ }
+                                    }
+                                    let newSubplots: Subplot[] = [];
+                                    setSpineProgress("Weaving subplots...");
+                                    try {
+                                      const beatListWithDesc = allBeats.map((b, i) => `${i+1}. "${b.title}": ${b.description.slice(0, 80)}`).join("\n");
+                                      const subplotRange = { light: "2-3", standard: "3-4", rich: "4-5" }[novel.storyBible.plotSpine?.subplotEmphasis ?? "standard"];
+                                      const spPrompt = [
+                                        `Generate ${subplotRange} subplots for a ${genre} novel. Each subplot must be specific to THIS story.`,
+                                        `\nStory context: ${clampPromptText(synopsis, 400)}`,
+                                        arcDirective ? `\nArc direction: ${arcDirective.slice(0, 120)}` : "",
+                                        `\nBeats (expand these into subplot threads):\n${beatListWithDesc}`,
+                                        `\nCharacters (use ONLY these): ${charNameList}`,
+                                        `\nEach subplot: a distinct pressure thread that complicates the main plot, intersects with 2-4 beats, involves specific characters. Descriptions must be concrete and story-specific — not generic.`,
+                                        `\nReturn JSON: { "subplots": [{ "title": "specific subplot name", "description": "2-3 sentences — what happens, how it ties to the main conflict", "characterNames": ["Exact Canon Name"], "linkedBeatTitles": ["Exact Beat Title"], "status": "setup" }] }`,
+                                      ].filter(Boolean).join("\n");
+                                      let spRaw = await smallCall(spPrompt, 1400, sys);
+                                      let spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
+                                      let spRawBeats = spParsed?.subplots ?? [];
+                                      if (spRawBeats.length === 0) {
+                                        setSpineProgress("Retrying subplots...");
+                                        spRaw = await smallCall(spPrompt, 1400, sys);
+                                        spParsed = extractJson<{ subplots?: Array<{ title: string; description: string; characterNames?: string[]; linkedBeatTitles?: string[]; status?: string }> }>(spRaw);
+                                        spRawBeats = spParsed?.subplots ?? [];
+                                      }
+                                      newSubplots = spRawBeats.map((s, i) => {
+                                        const searchText = `${s.title} ${s.description} ${(s.characterNames ?? []).join(" ")}`;
+                                        const linkedBeatIds = (s.linkedBeatTitles ?? []).map(t => {
+                                          const tl = t.toLowerCase();
+                                          return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
+                                        }).filter((x): x is string => !!x);
+                                        return {
+                                          id: `sp-${Date.now().toString(36)}-${i}`,
+                                          title: ensureText(s.title, `Subplot ${i + 1}`),
+                                          description: ensureText(s.description, "A pressure thread that complicates the main conflict and intersects with key beats."),
+                                          characterIds: findCharIdsInText(searchText, s.characterNames),
+                                          linkedBeatIds: linkedBeatIds.length > 0 ? linkedBeatIds : (allBeats[0] ? [allBeats[0].id] : []),
+                                          status: "setup" as const,
+                                        };
+                                      });
+                                      updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: [], generatedAt: new Date().toISOString() });
+                                    } catch { /* beats still saved */ }
+                                    if (newSubplots.length === 0 && allBeats.length > 0) {
+                                      const first = allBeats[0];
+                                      const mid = allBeats[Math.floor(allBeats.length / 2)];
+                                      const last = allBeats[allBeats.length - 1];
+                                      newSubplots = [{ id: `sp-fallback-${Date.now().toString(36)}-1`, title: "Pressure Escalation Thread", description: "Secondary pressures tighten around the protagonists.", characterIds: [], linkedBeatIds: [first?.id, mid?.id, last?.id].filter((x): x is string => !!x), status: "setup" as const }];
+                                    }
+                                    let newArcs: CharacterArc[] = [];
                                     const mainCanonChars = existingChars.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting").slice(0, 6);
                                     const beatTitles = allBeats.map((b, i) => `${i+1}. "${b.title}" (Act ${b.act})`).join(", ");
                                     const genreArcEx = genreArcExamples(userGenres);
-                                    const arcPrompt = [
-                                      `Generate character arcs for these characters in a ${genre} novel.`,
-                                      `The arcs MUST feel authentic to the ${genre} genre — no romance or comedy arcs unless this IS a romance or comedy.`,
-                                      mainCanonChars.map(c => `- ${c.name} (${c.role})`).join("\n"),
-                                      `\n${arcDirective}`,
-                                      `\nBeats: ${beatTitles}`,
-                                      `\nFor a ${genre} story, appropriate arc types include: ${genreArcEx}.`,
-                                      `Choose arc types that match the tone and stakes of this genre. Do NOT use generic arcs like "love story" or "comedy" unless the genre calls for it.`,
-                                      `\nReturn JSON: { "arcs": [{ "characterName": "Exact Name", "arcType": "genre-appropriate arc type", "startState": "who they are at start", "endState": "who they become", "turningPointBeatTitles": ["Exact Beat Title"] }] }`,
-                                      `Use EXACT character names and EXACT beat titles from the lists above.`,
-                                    ].join("\n");
-                                    const arcRaw = await smallCall(arcPrompt, 1000, sys);
-                                    const arcParsed = extractJson<{ arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> }>(arcRaw);
-                                    newArcs = (arcParsed?.arcs ?? []).map((a, i) => {
-                                      const charIds = findCharIdsInText(a.characterName, [a.characterName]);
-                                      const charId = charIds[0] || "";
-                                      const safeTurningPoints = (a.turningPointBeatTitles ?? []).map(t => {
-                                        const tl = t.toLowerCase();
-                                        return allBeats.find(b => b.title.toLowerCase() === tl || b.title.toLowerCase().includes(tl) || tl.includes(b.title.toLowerCase()))?.id;
-                                      }).filter((x): x is string => !!x);
-                                      return {
-                                        id: `arc-${Date.now().toString(36)}-${i}`,
-                                        characterId: charId,
-                                        arcType: ensureText(a.arcType, fallbackArcType),
-                                        startState: ensureText(a.startState, "Starts reactive and constrained by old assumptions."),
-                                        endState: ensureText(a.endState, "Ends more decisive, changed by escalating pressure."),
-                                        turningPointBeatIds: safeTurningPoints.length > 0 && safeTurningPoints[0]
-                                          ? safeTurningPoints
-                                          : (allBeats[Math.floor(allBeats.length / 2)] ? [allBeats[Math.floor(allBeats.length / 2)].id] : []),
-                                      };
-                                    }).filter(a => a.characterId);
-                                  } catch { /* beats + subplots still saved */ }
-
-                                  if (newArcs.length === 0) {
-                                    const fallbackChars = existingChars
-                                      .filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting")
-                                      .slice(0, 4);
-                                    const midpointBeatId = allBeats[Math.floor(allBeats.length / 2)]?.id;
-                                    newArcs = fallbackChars.map((c, i) => ({
-                                      id: `arc-fallback-${Date.now().toString(36)}-${i}`,
-                                      characterId: c.id,
-                                      arcType: fallbackArcType,
-                                      startState: "Starts constrained by fear, duty, or false certainty.",
-                                      endState: "Ends transformed by escalating pressure and hard-earned choices.",
-                                      turningPointBeatIds: midpointBeatId ? [midpointBeatId] : [],
-                                    }));
-                                  }
-
-                                  setSpineProgress("Finalising spine...");
-                                  updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
-
-                                  // Suggest new characters
-                                  const existingCharNamesLower = new Set(existingChars.map(c => c.name.toLowerCase()));
-                                  const newCharNames = [...allCharNames].filter(n => !existingCharNamesLower.has(n.toLowerCase()));
-                                  if (newCharNames.length > 0) {
-                                    const charDescriptions: Array<{ name: string; role: string; logline: string }> = [];
-                                    for (const name of newCharNames.slice(0, 10)) {
-                                      const beatMatches = allBeats.filter(b => b.description.toLowerCase().includes(name.toLowerCase()));
-                                      const role = beatMatches.length >= 3 ? "Supporting" : "Minor";
-                                      const contexts = beatMatches.slice(0, 3).map(b => b.description.slice(0, 60)).join("; ");
-                                      charDescriptions.push({ name, role, logline: contexts || "Appears in the story" });
-                                    }
-                                    setSpineSuggestedChars(charDescriptions);
-                                  }
-                                  setSpineBusy(false); setSpineProgress("");
-                                }}>Build Spine</button>
-                                <button type="button" className="btn" onClick={() => { setSpineShowArcPicker(false); setSpineArcChoice(null); setSpineArcDynamicLoading(false); setSpineArcDynamicOptions(null); }}>Cancel</button>
-                              </div>
-                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>Builds your story in 3 phases — beats, subplots, and character arcs. Takes 30-60 seconds. Each phase saves automatically, so if anything fails your progress is kept.</p>
-                            </div>
-                          )}
-
-                          {/* Suggested new characters */}
-                          {spineSuggestedChars && spineSuggestedChars.length > 0 && (
-                            <div style={{ marginBottom: 16, padding: 14, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 4 }}>New Characters Found</div>
-                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>The spine introduced these characters. Add them to your Canon so the AI can reference their profiles during generation.</p>
-                              {spineSuggestedChars.map((c, i) => (
-                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < spineSuggestedChars.length - 1 ? "1px solid var(--pw-border-light)" : "none" }}>
-                                  <div style={{ flex: 1 }}>
-                                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--pw-text)" }}>{c.name}</span>
-                                    <span style={{ fontSize: 11, color: "var(--pw-text-dim)", marginLeft: 6 }}>({c.role})</span>
-                                    <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: "2px 0 0" }}>{c.logline.slice(0, 120)}</p>
-                                  </div>
-                                  <button type="button" className="btn" style={{ fontSize: 11, flexShrink: 0 }} onClick={() => {
-                                    mutateNovel((n) => {
-                                      const key = normalizeCharacterNameKey(c.name);
-                                      const exists = n.storyBible.characters.some((ch) => normalizeCharacterNameKey(ch.name) === key);
-                                      if (exists) return n;
-                                      const newChar: Character = {
-                                        id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                        name: c.name,
-                                        role: (["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
-                                        logline: c.logline,
-                                      };
-                                      return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, newChar] } };
-                                    });
-                                    setSpineSuggestedChars(prev => prev?.filter((_, idx) => idx !== i) ?? null);
-                                  }}>+ Add to Canon</button>
-                                </div>
-                              ))}
-                              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                                <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => {
-                                  mutateNovel((n) => {
-                                    const existing = new Set(n.storyBible.characters.map((ch) => normalizeCharacterNameKey(ch.name)));
-                                    const toAdd: Character[] = [];
-                                    for (const suggested of spineSuggestedChars) {
-                                      const key = normalizeCharacterNameKey(suggested.name);
-                                      if (existing.has(key)) continue;
-                                      existing.add(key);
-                                      toAdd.push({
-                                        id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                        name: suggested.name,
-                                        role: (["Supporting", "Minor"].includes(suggested.role) ? suggested.role : "Supporting") as Character["role"],
-                                        logline: suggested.logline,
-                                      });
-                                    }
-                                    if (toAdd.length === 0) return n;
-                                    return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...toAdd] } };
-                                  });
-                                  setSpineSuggestedChars(null);
-                                }}>Add All to Canon</button>
-                                <button type="button" className="btn btn-primary" style={{ fontSize: 11 }} disabled={spineBusy} onClick={async () => {
-                                  if (spineBusy || !novel || !spineSuggestedChars || spineSuggestedChars.length === 0) return;
-                                  setSpineBusy(true);
-                                  setSpineProgress("Building character profiles...");
-                                  try {
-                                    const suggestedSnapshot = [...spineSuggestedChars];
-                                    // Always add suggested characters first (deduped) before profile generation.
-                                    mutateNovel((n) => {
-                                      const existing = new Set(n.storyBible.characters.map((ch) => normalizeCharacterNameKey(ch.name)));
-                                      const toAdd: Character[] = [];
-                                      for (const suggested of suggestedSnapshot) {
-                                        const key = normalizeCharacterNameKey(suggested.name);
-                                        if (existing.has(key)) continue;
-                                        existing.add(key);
-                                        toAdd.push({
-                                          id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                          name: suggested.name,
-                                          role: (["Supporting", "Minor"].includes(suggested.role) ? suggested.role : "Supporting") as Character["role"],
-                                          logline: suggested.logline,
-                                        });
+                                    const arcChunkSize = 2;
+                                    try {
+                                      for (let chunkStart = 0; chunkStart < mainCanonChars.length; chunkStart += arcChunkSize) {
+                                        const chunk = mainCanonChars.slice(chunkStart, chunkStart + arcChunkSize);
+                                        const charNames = chunk.map(c => c.name).join(", ");
+                                        setSpineProgress(`Mapping arcs: ${charNames}...`);
+                                        const charWithContext = chunk.map(c => `- ${c.name} (${c.role})${c.logline ? `: ${c.logline.slice(0, 60)}` : ""}`).join("\n");
+                                        const arcPrompt = [
+                                          `Generate character arcs for these ${chunk.length} characters in a ${genre} novel. Each arc must be specific to THIS story — not generic.`,
+                                          `\nStory context: ${clampPromptText(synopsis, 350)}`,
+                                          arcDirective ? `\nArc: ${arcDirective.slice(0, 120)}` : "",
+                                          `\nCharacters:\n${charWithContext}`,
+                                          `\nBeats: ${beatTitles}`,
+                                          `\nGenre-appropriate arc types: ${genreArcEx}.`,
+                                          `\nFor each character: startState and endState must be concrete and story-specific (reference the actual conflict, stakes, or world). Include 1-3 turningPointBeatTitles where the character changes.`,
+                                          `${(novel.storyBible.plotSpine?.arcDepth ?? "standard") === "brief" ? "\nKeep startState and endState concise (1 sentence each)." : (novel.storyBible.plotSpine?.arcDepth ?? "standard") === "rich" ? "\nGive rich, detailed startState and endState (2-4 sentences each) with psychological nuance." : ""}`,
+                                          `\nReturn JSON: { "arcs": [{ "characterName": "Exact Name", "arcType": "genre arc type", "startState": "who they are at start, specific to this story", "endState": "who they become, specific to this story", "turningPointBeatTitles": ["Exact Beat Title"] }] }`,
+                                        ].filter(Boolean).join("\n");
+                                        let arcRaw = await smallCall(arcPrompt, 900, sys);
+                                        let arcParsed = extractJson<{ arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> }>(arcRaw);
+                                        let arcRawList = arcParsed?.arcs ?? [];
+                                        if (arcRawList.length === 0) {
+                                          setSpineProgress(`Retrying arcs for ${charNames}...`);
+                                          arcRaw = await smallCall(arcPrompt, 900, sys);
+                                          arcParsed = extractJson<{ arcs?: Array<{ characterName: string; arcType: string; startState: string; endState: string; turningPointBeatTitles?: string[] }> }>(arcRaw);
+                                          arcRawList = arcParsed?.arcs ?? [];
+                                        }
+                                        const chunkArcs = arcRawList.map((a, i) => {
+                                          const charIds = findCharIdsInText(a.characterName, [a.characterName]);
+                                          const charId = charIds[0] || "";
+                                          const safeTurningPoints = (a.turningPointBeatTitles ?? []).map(t => allBeats.find(b => b.title.toLowerCase() === t.toLowerCase() || b.title.toLowerCase().includes(t.toLowerCase()))?.id).filter((x): x is string => !!x);
+                                          return {
+                                            id: `arc-${Date.now().toString(36)}-${chunkStart + i}`,
+                                            characterId: charId,
+                                            arcType: ensureText(a.arcType, fallbackArcType),
+                                            startState: ensureText(a.startState, "Starts reactive and constrained by old assumptions."),
+                                            endState: ensureText(a.endState, "Ends more decisive, changed by escalating pressure."),
+                                            turningPointBeatIds: safeTurningPoints.length > 0 ? safeTurningPoints : (allBeats[Math.floor(allBeats.length / 2)] ? [allBeats[Math.floor(allBeats.length / 2)].id] : []),
+                                          };
+                                        }).filter(a => a.characterId);
+                                        newArcs = [...newArcs, ...chunkArcs];
+                                        updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: newArcs, generatedAt: new Date().toISOString() });
                                       }
-                                      if (toAdd.length === 0) return n;
-                                      return { ...n, storyBible: { ...n.storyBible, characters: [...n.storyBible.characters, ...toAdd] } };
-                                    });
+                                    } catch { /* arcs so far remain saved */ }
+                                    if (newArcs.length === 0) {
+                                      const fallbackChars = existingChars.filter(c => c.role === "Protagonist" || c.role === "Antagonist" || c.role === "Love Interest" || c.role === "Supporting").slice(0, 4);
+                                      const midpointBeatId = allBeats[Math.floor(allBeats.length / 2)]?.id;
+                                      newArcs = fallbackChars.map((c, i) => ({
+                                        id: `arc-fallback-${Date.now().toString(36)}-${i}`,
+                                        characterId: c.id,
+                                        arcType: fallbackArcType,
+                                        startState: "Starts constrained by fear, duty, or false certainty.",
+                                        endState: "Ends transformed by escalating pressure and hard-earned choices.",
+                                        turningPointBeatIds: midpointBeatId ? [midpointBeatId] : [],
+                                      }));
+                                    }
+                                    setSpineProgress("Finalising Architect...");
+                                    const subplotEmphasis = novel.storyBible.plotSpine?.subplotEmphasis ?? "standard";
+                                    updatePlotSpine({ beats: allBeats, subplots: newSubplots, characterArcs: newArcs, flashbackSlots: requestedFlashbackSlots, subplotEmphasis, generatedAt: new Date().toISOString() });
                                     setSpineSuggestedChars(null);
-
-                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
-                                    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
-                                    const beatCtx = (novel.storyBible.plotSpine?.beats ?? []).map(b => `"${b.title}": ${b.description.slice(0, 60)}`).join("; ");
-                                    const charList = suggestedSnapshot.map(c => `${c.name} (${c.role}): ${c.logline.slice(0, 80)}`).join("\n");
-                                    const prompt = [
-                                      `Build full character profiles for these characters in a ${genre} novel.`,
-                                      `\nSynopsis: ${synopsis.slice(0, 500)}`,
-                                      `\nStory context: ${beatCtx.slice(0, 800)}`,
-                                      `\nCharacters to profile:\n${charList}`,
-                                      `\nReturn JSON: { "characters": [{ "name": "...", "role": "Supporting"|"Minor", "logline": "1 sentence hook", "appearance": "physical description", "personality": "key traits", "goals": "what they want", "fears": "what they dread", "backstory": "2-3 sentences of background", "accent": "regional accent and vocal texture", "speakingStyle": "how they speak, cadence, vocabulary", "reactionPattern": "how they react under stress", "voiceNotes": "dialogue writing notes", "secrets": "hidden truth the author knows", "readerSecretHint": "spoiler-safe foreshadow hint", "tags": ["tag1","tag2","tag3"] }] }`,
-                                      "Make each profile feel like a real person. Every field must be filled with useful, story-grounded detail.",
-                                    ].join("\n");
-                                    const raw = await requestOpenRouterText(prompt, 3000, 120000, "You are a character designer. Build vivid, specific character profiles. Return only valid JSON.", false, 0.6);
-                                    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                                    if (jsonMatch) {
-                                      const parsed = JSON.parse(jsonMatch[0]) as { characters?: Array<{ name: string; role?: string; logline?: string; appearance?: string; personality?: string; goals?: string; fears?: string; backstory?: string; accent?: string; speakingStyle?: string; reactionPattern?: string; voiceNotes?: string; secrets?: string; readerSecretHint?: string; tags?: string[] }> };
-                                      if (parsed.characters?.length) {
-                                        mutateNovel((n) => {
-                                          const merged = [...n.storyBible.characters];
-                                          for (const c of parsed.characters ?? []) {
-                                            const safeName = (c.name || "").trim();
-                                            if (!safeName) continue;
-                                            const key = normalizeCharacterNameKey(safeName);
-                                            const idx = merged.findIndex((ch) => normalizeCharacterNameKey(ch.name) === key);
-                                            if (idx >= 0) {
-                                              const existing = merged[idx];
-                                              merged[idx] = {
-                                                ...existing,
-                                                role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : existing.role) as Character["role"],
-                                                logline: c.logline || existing.logline || "",
-                                                appearance: c.appearance || existing.appearance || "",
-                                                personality: c.personality || existing.personality || "",
-                                                goals: c.goals || existing.goals || "",
-                                                fears: c.fears || existing.fears || "",
-                                                backstory: c.backstory || existing.backstory || "",
-                                                accent: c.accent || existing.accent || "",
-                                                speakingStyle: c.speakingStyle || existing.speakingStyle || "",
-                                                reactionPattern: c.reactionPattern || existing.reactionPattern || "",
-                                                voiceNotes: c.voiceNotes || existing.voiceNotes || "",
-                                                secrets: c.secrets || existing.secrets || "",
-                                                readerSecretHint: c.readerSecretHint || existing.readerSecretHint || "",
-                                                tags: parseStringList(c.tags).length > 0 ? parseStringList(c.tags) : existing.tags || [],
-                                              };
-                                            } else {
-                                              merged.push({
-                                                id: `char-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-                                                name: safeName,
-                                                role: (c.role && ["Supporting", "Minor"].includes(c.role) ? c.role : "Supporting") as Character["role"],
-                                                logline: c.logline || "",
-                                                appearance: c.appearance || "",
-                                                personality: c.personality || "",
-                                                goals: c.goals || "",
-                                                fears: c.fears || "",
-                                                backstory: c.backstory || "",
-                                                accent: c.accent || "",
-                                                speakingStyle: c.speakingStyle || "",
-                                                reactionPattern: c.reactionPattern || "",
-                                                voiceNotes: c.voiceNotes || "",
-                                                secrets: c.secrets || "",
-                                                readerSecretHint: c.readerSecretHint || "",
-                                                tags: parseStringList(c.tags),
-                                                pronouns: "",
-                                                groups: "",
-                                                otherNames: "",
-                                                relationships: [],
-                                              });
-                                            }
-                                          }
-                                          return { ...n, storyBible: { ...n.storyBible, characters: merged } };
-                                        });
-                                      }
+                                    // Auto-generate flashback beats if user requested slots and none exist yet
+                                    if (requestedFlashbackSlots >= 1) {
+                                      try {
+                                        setSpineProgress("Generating flashback beats...");
+                                        const synopsis = (getCombinedSynopsis() || "").slice(0, 600);
+                                        const genreStr = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+                                        const beatTitles = allBeats.slice(0, 8).map((b) => b.title).filter(Boolean).join(", ");
+                                        const charNames = existingChars.slice(0, 5).map((c) => c.name).filter(Boolean).join(", ");
+                                        const fbPrompt = [
+                                          "Suggest 1–3 past-event flashback beats for this novel. These are events that happened BEFORE the main story that add depth or explain character motivation.",
+                                          `Genre: ${genreStr}`,
+                                          synopsis ? `Synopsis: ${synopsis}` : "No synopsis yet.",
+                                          beatTitles ? `Main beats (for context): ${beatTitles}` : "",
+                                          charNames ? `Characters: ${charNames}` : "",
+                                          'Return JSON: { "beats": [{ "title": "short title", "description": "What happened in the past, who was there, why it matters to the present story" }] }',
+                                          `Keep each beat concrete and story-specific. ${Math.min(requestedFlashbackSlots, 3)} beat(s) only.`,
+                                        ].filter(Boolean).join("\n");
+                                        const fbRes = await requestOpenRouterJson<{ beats?: Array<{ title?: string; description?: string }> }>(fbPrompt, 800, { timeoutMs: 45000, systemMessage: "Story structure. Return JSON only." });
+                                        const suggested = (fbRes?.beats ?? []).slice(0, 3).filter((b) => (b.title ?? "").trim().length > 0);
+                                        if (suggested.length > 0) {
+                                          const newBeats: StoryBeat[] = suggested.map((b, i) => ({
+                                            id: `fb-${Date.now().toString(36)}-${i}`,
+                                            title: (b.title || `Past event ${i + 1}`).trim().slice(0, 80),
+                                            description: (b.description || "").trim().slice(0, 500),
+                                            act: 2,
+                                            chapterHint: -1,
+                                            characterIds: [],
+                                            locationHint: "",
+                                            tension: 3,
+                                            sortOrder: i,
+                                          }));
+                                          updatePlotSpine({ flashbackBeats: newBeats });
+                                        }
+                                      } catch { /* keep spine as-is */ }
                                     }
-                                  } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
+                                  } catch (e) {
+                                    setSpineError(e instanceof Error ? e.message : "Spine build failed.");
+                                  } finally {
+                                    setSpineBusy(false); setSpineProgress("");
+                                  }
                                 }}>
-                                  {spineBusy ? "Building profiles..." : "Add All & Build Profiles"}
+                                  Build Spine
                                 </button>
-                                <button type="button" onClick={() => setSpineSuggestedChars(null)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--pw-text-dim)", cursor: "pointer" }}>Dismiss</button>
+                                <button type="button" className="btn" onClick={() => { setSpineShowAdvancedOptions(false); setSpineShowArcPicker(true); }}>Back</button>
+                                <button type="button" className="btn" onClick={() => { setSpineShowAdvancedOptions(false); setSpineShowArcPicker(false); setSpineShowArcModePopup(false); setSpineArcMode(null); setSpineArcChoice(null); setSpineArcDynamicOptions(null); }}>Cancel</button>
                               </div>
+                              <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, lineHeight: 1.4 }}>Builds your story in chunks — beats, subplots, character arcs, and flashbacks. Saves after each chunk.</p>
                             </div>
                           )}
 
-                          {/* Completeness score */}
-                          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-                            <div style={{ flex: "1 1 140px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
-                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Spine Score</div>
-                              <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor, lineHeight: 1.2, marginTop: 2 }}>{clampedScore}<span style={{ fontSize: 14, fontWeight: 500 }}>/100</span></div>
+                          {/* Stats */}
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+                            <div style={{ padding: "16px 18px", background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.06em" }}>Beats</div>
+                              <div style={{ fontSize: 24, fontWeight: 800, color: "var(--pw-text)", marginTop: 4 }}>{beats.length}</div>
+                              <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>Act 1: {act1.length} · 2: {act2.length} · 3: {act3.length}</div>
                             </div>
-                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
-                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Beats</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{beats.length}</div>
-                              <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>Act 1: {act1.length} · 2: {act2.length} · 3: {act3.length}</div>
+                            <div style={{ padding: "16px 18px", background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.06em" }}>Subplots</div>
+                              <div style={{ fontSize: 24, fontWeight: 800, color: "var(--pw-text)", marginTop: 4 }}>{subplots.length}</div>
+                              <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{unresolvedSubplots.length} unresolved</div>
                             </div>
-                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
-                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Subplots</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{subplots.length}</div>
-                              <div style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>{unresolvedSubplots.length} unresolved</div>
-                            </div>
-                            <div style={{ flex: "1 1 100px", padding: "12px 16px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
-                              <div style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 600, color: "var(--pw-text-dim)", letterSpacing: "0.5px" }}>Arcs</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: "var(--pw-text)", marginTop: 2 }}>{arcs.length}</div>
-                              <div style={{ fontSize: 10, color: missingArcs.length > 0 ? "#f59e0b" : "var(--pw-text-dim)" }}>{missingArcs.length > 0 ? `${missingArcs.map(c => c.name).join(", ")} missing` : "All main chars covered"}</div>
+                            <div style={{ padding: "16px 18px", background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.06em" }}>Arcs</div>
+                              <div style={{ fontSize: 24, fontWeight: 800, color: "var(--pw-text)", marginTop: 4 }}>{arcs.length}</div>
+                              <div style={{ fontSize: 11, color: missingArcs.length > 0 ? "#f59e0b" : "var(--pw-text-dim)", marginTop: 2 }}>{missingArcs.length > 0 ? `${missingArcs.map(c => c.name).join(", ")} missing` : "All main chars covered"}</div>
                             </div>
                           </div>
 
@@ -19320,107 +20446,12 @@ function NovelWorkspacePage() {
                             );
                           })()}
 
-                          {/* Story Doctor Results */}
-                          {spineDoctorResult && (
-                            <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, border: "1px solid var(--pw-border-light)", background: "var(--pw-surface-alt)" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>Story Doctor Report</div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span style={{ fontSize: 18, fontWeight: 800, color: spineDoctorResult.score >= 80 ? "#22c55e" : spineDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{spineDoctorResult.score}</span>
-                                  <span style={{ fontSize: 10, color: "var(--pw-text-dim)" }}>/100</span>
-                                </div>
-                              </div>
-                              {spineDoctorResult.summary && <p style={{ fontSize: 12, color: "var(--pw-text)", marginBottom: 10, lineHeight: 1.5, fontStyle: "italic" }}>{spineDoctorResult.summary}</p>}
-                              {!aiOff && (
-                                <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--pw-border-light)", background: "var(--pw-surface)" }}>
-                                  <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginBottom: 8 }}>
-                                    {spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length > 0
-                                      ? "Apply all recommended structural fixes together, keep this report as guidance, or dismiss it."
-                                      : "No major issues found. Keep this report as guidance or dismiss it."}
-                                  </div>
-                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button type="button" className="btn btn-primary" disabled={spineBusy || spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length === 0} style={{ fontSize: 11 }} onClick={async () => {
-                                      if (spineBusy || !novel) return;
-                                      const fixableIssues = spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning");
-                                      if (fixableIssues.length === 0) return;
-                                      setSpineBusy(true);
-                                      setSpineProgress(`Fixing all ${fixableIssues.length} issues...`);
-                                      try {
-                                        const currentBeats = novel.storyBible.plotSpine?.beats ?? [];
-                                        const beatCtx = currentBeats.map((b, bi) => `${bi + 1}. [Act ${b.act}, T:${b.tension}] "${b.title}": ${b.description.slice(0, 100)}${b.characterIds.length ? " [chars: " + b.characterIds.map(id => storyCharacters.find(c => c.id === id)?.name || "?").join(", ") + "]" : ""}`).join("\n");
-                                        const spCtx = (novel.storyBible.plotSpine?.subplots ?? []).map(s => `"${s.title}" (${s.status})`).join("; ");
-                                        const arcCtxStr = (novel.storyBible.plotSpine?.characterArcs ?? []).map(a => { const cn = storyCharacters.find(c => c.id === a.characterId)?.name || "?"; return `${cn}: ${a.arcType}`; }).join("; ");
-                                        const issueList = fixableIssues.map((i, idx) => `${idx + 1}. [${i.severity}/${i.area}] ${i.message} → Fix: ${i.suggestion}`).join("\n");
-                                        const charNames = storyCharacters.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
-                                        const fixAllPrompt = [
-                                          "Fix ALL of the following issues in the story spine. Apply every fix simultaneously without breaking anything.",
-                                          `\nISSUES TO FIX:\n${issueList}`,
-                                          `\nCanon Characters: ${charNames}`,
-                                          `\nCurrent beats:\n${beatCtx}`,
-                                          spCtx ? `Subplots: ${spCtx}` : "",
-                                          arcCtxStr ? `Arcs: ${arcCtxStr}` : "",
-                                          `\nReturn JSON with the COMPLETE fixed beat list:`,
-                                          `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
-                                          "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Add new beats if needed. Weave missing characters into existing beats naturally.",
-                                          "Use character names from the Canon list. Every fix must be applied.",
-                                        ].filter(Boolean).join("\n");
-                                        const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in the spine simultaneously. Return only valid JSON.", false, 0.4);
-                                        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                                        if (jsonMatch) {
-                                          const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
-                                          if (parsed.beats?.length) {
-                                            const fixedBeats: StoryBeat[] = parsed.beats.map((b, bi) => ({
-                                              id: currentBeats[bi]?.id || `beat-fix-${Date.now().toString(36)}-${bi}`,
-                                              title: b.title || "", description: b.description || "",
-                                              act: ([1,2,3].includes(b.act) ? b.act : 2) as 1|2|3,
-                                              chapterHint: currentBeats[bi]?.chapterHint ?? -1,
-                                              characterIds: (b.characterNames ?? []).map(name => storyCharacters.find(c => c.name.toLowerCase() === name.toLowerCase())?.id).filter((x): x is string => !!x),
-                                              locationHint: b.locationHint || "",
-                                              tension: ([1,2,3,4,5].includes(b.tension) ? b.tension : 3) as 1|2|3|4|5,
-                                              sortOrder: bi,
-                                            }));
-                                            updatePlotSpine({ beats: fixedBeats });
-                                            setSpineDoctorResult(prev => prev ? { ...prev, issues: prev.issues.filter(i => i.severity === "tip"), score: Math.min(100, prev.score + 25) } : null);
-                                          }
-                                        }
-                                      } catch { /* */ } finally { setSpineBusy(false); setSpineProgress(""); }
-                                    }}>
-                                      {spineBusy ? spineProgress : `Fix All ${spineDoctorResult.issues.filter(i => i.severity === "critical" || i.severity === "warning").length} Issues`}
-                                    </button>
-                                    <button type="button" className="btn" style={{ fontSize: 11 }} onClick={() => setSpineProgress("")}>
-                                      Keep Recommendations
-                                    </button>
-                                    <button type="button" className="btn" style={{ fontSize: 11, opacity: 0.8 }} onClick={() => setSpineDoctorResult(null)}>
-                                      Reject All
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                {spineDoctorResult.issues.map((issue, i) => {
-                                  const sevColors = { critical: "#ef4444", warning: "#f59e0b", tip: "#3b82f6" };
-                                  return (
-                                    <div key={i} style={{ padding: "8px 10px", borderRadius: 6, background: `${sevColors[issue.severity]}08`, borderLeft: `3px solid ${sevColors[issue.severity]}` }}>
-                                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 2 }}>
-                                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: sevColors[issue.severity] }}>{issue.severity}</span>
-                                        <span style={{ fontSize: 9, color: "var(--pw-text-dim)", textTransform: "uppercase" }}>{issue.area}</span>
-                                      </div>
-                                      <div style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 500 }}>{issue.message}</div>
-                                      <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>{issue.suggestion}</div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              {spineDoctorResult.issues.length === 0 && (
-                                <p style={{ fontSize: 12, color: "#22c55e", fontWeight: 600, marginTop: 8 }}>All issues resolved. Your spine is in great shape.</p>
-                              )}
-                            </div>
-                          )}
+                          {/* Story Doctor Results — modal is rendered at page root */}
 
                           {/* Empty state */}
                           {beats.length === 0 && (
                             <div style={{ textAlign: "center", padding: "30px 20px", color: "var(--pw-text-dim)" }}>
-                              <p style={{ fontSize: 14, marginBottom: 8 }}>Your story spine is empty</p>
+                              <p style={{ fontSize: 14, marginBottom: 8 }}>Your Architect is empty</p>
                               <p style={{ fontSize: 12 }}>Use <strong>Build Full Spine</strong> above to generate a complete structure from your synopsis, or switch to the <strong>Beats</strong> tab to add beats manually.</p>
                             </div>
                           )}
@@ -19442,12 +20473,12 @@ function NovelWorkspacePage() {
                             }}>+ Add Beat</button>
                             {!aiOff && (
                               <>
-                                <button type="button" className="btn btn-primary" disabled={spineBusy || !(novel.storyBible.summary?.synopsisShort?.trim())} onClick={async () => {
+                                <button type="button" className="btn btn-primary" disabled={spineBusy || !getCombinedSynopsis()} onClick={async () => {
                                   if (!novel || spineBusy) return;
                                   setSpineBusy(true);
                                   setSpineVariations(null);
                                   try {
-                                    const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                    const synopsis = getCombinedSynopsis();
                                     const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "general fiction";
                                     const charCtx = storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})${c.logline ? ": " + c.logline.slice(0, 60) : ""}`).join("; ");
                                     const locCtx = (novel.storyBible.locations ?? []).slice(0, 6).map(l => l.name).join(", ");
@@ -19510,7 +20541,7 @@ function NovelWorkspacePage() {
                                     if (!novel || spineBusy) return;
                                     setSpineBusy(true);
                                     try {
-                                      const synopsis = novel.storyBible.summary?.synopsisShort || "";
+                                      const synopsis = getCombinedSynopsis();
                                       const existingBeats = beats.map((b, i) => `${i + 1}. [Act ${b.act}] "${b.title}": ${b.description.slice(0, 100)}`).join("\n");
                                       const prompt = [
                                         "Here are the existing story beats:",
@@ -19719,7 +20750,7 @@ function NovelWorkspacePage() {
                                     `\nBeats:\n${beatCtx}`,
                                     `\nCharacters: ${charCtx}`,
                                     existingSp,
-                                    `\nSynopsis: ${(novel.storyBible.summary?.synopsisShort || "").slice(0, 800)}`,
+                                    `\nSynopsis: ${(getCombinedSynopsis() || "").slice(0, 800)}`,
                                     `\nReturn JSON: { "subplots": [{ "title": "...", "description": "2-3 sentences describing the subplot arc", "characterNames": ["Name"], "linkedBeatIndices": [0, 3, 7], "status": "setup" }] }`,
                                     "Each subplot should involve 1-3 characters and touch 2-5 existing beats. Make them feel organic to the main story, not forced.",
                                   ].join("\n");
@@ -19985,32 +21016,41 @@ function NovelWorkspacePage() {
                 {bibleSection === "boltons" && (
                   <div className="pw-bible-section">
                     {/* ── Top bar: title + actions ── */}
-                    <div className="pw-bible-flex-head">
+                    <div className="pw-bible-flex-head pw-bolton-head">
                       <div>
                         <h3>Bolt-Ons</h3>
                         <p className="pw-bible-section-note">
-                          Tell the AI how to write. Type an instruction, hit Build, and the AI turns it into a craft directive. Bolt-ons auto-save to your library.
+                          Craft directives for the AI. Build, use packs, or load from library.
                         </p>
                       </div>
-                      <div className="pw-bible-inline-actions" style={{ display: "flex", gap: 6 }}>
+                      <div className="pw-bolton-actions-row">
+                        <button
+                          type="button"
+                          className="pw-bolton-add-btn pw-bolton-add-primary"
+                          disabled={allBoltons.length >= 10}
+                          onClick={() => addBolton()}
+                          title="Add new bolt-on"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                          Create
+                        </button>
                         <button
                           type="button"
                           className="pw-bolton-add-btn"
                           onClick={() => setWritingPacksOpen(true)}
-                          title="Browse pre-made writing packs"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                          title="Browse packs"
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2 }}><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                           Packs
                         </button>
                         <button
                           type="button"
                           className="pw-bolton-add-btn"
                           onClick={() => setBoltonLibraryOpen(true)}
-                          title={`Bolt-on library (${boltonLibraryCount} saved)`}
+                          title={`Library (${boltonLibraryCount} saved)`}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-                          Library {boltonLibraryCount > 0 ? `(${boltonLibraryCount})` : ""}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                          Library {boltonLibraryCount > 0 && <span className="pw-bolton-badge">{boltonLibraryCount}</span>}
                         </button>
                       </div>
                     </div>
@@ -20052,32 +21092,48 @@ function NovelWorkspacePage() {
                             </p>
                           </div>
 
-                          {/* List */}
+                          {/* List: favourites first */}
                           <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
                           {(() => {
                             const library = readBoltonLibrary();
+                            const sorted = [...library].sort((a, b) => (b.favourite ? 1 : 0) - (a.favourite ? 1 : 0));
                             if (library.length === 0) return (
                               <div style={{ textAlign: "center", padding: "40px 0", opacity: 0.4 }}>
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                 <p style={{ fontWeight: 600, marginBottom: 4 }}>Library is empty</p>
-                                <p style={{ fontSize: 12 }}>Build a bolt-on and it auto-saves here.</p>
+                                <p style={{ fontSize: 12 }}>Build a bolt-on and it auto-saves here. Star to favourite.</p>
                               </div>
                             );
                             return (
                               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                {library.map((item, i) => {
+                                {sorted.map((item) => {
+                                  const origIdx = library.indexOf(item);
                                   const catLabel = BOLTON_PLUGIN_CATEGORIES.find((c) => c.id === item.category)?.label || "Custom";
                                   return (
-                                    <div key={i} style={{
+                                    <div key={origIdx} style={{
                                       display: "flex", alignItems: "center", gap: 12,
                                       padding: "10px 12px", borderRadius: 10,
-                                      background: "var(--pw-overlay-bg)",
-                                      border: "1px solid var(--pw-border-light)",
-                                      transition: "background 0.15s",
+                                      background: item.favourite ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "var(--pw-overlay-bg)",
+                                      border: item.favourite ? "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" : "1px solid var(--pw-border-light)",
+                                      transition: "background 0.15s, border-color 0.15s",
                                     }}
                                       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg-hover)"; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = item.favourite ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "var(--pw-overlay-bg)"; }}
                                     >
+                                      {/* Favourite star */}
+                                      <button
+                                        type="button"
+                                        onClick={() => void toggleLibraryBoltonFavourite(origIdx)}
+                                        title={item.favourite ? "Unfavourite" : "Favourite"}
+                                        style={{
+                                          width: 28, height: 28, flexShrink: 0,
+                                          display: "flex", alignItems: "center", justifyContent: "center",
+                                          background: "none", border: "none", cursor: "pointer", padding: 0,
+                                          color: item.favourite ? "var(--pw-accent)" : "var(--pw-text-dim)",
+                                        }}
+                                      >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={item.favourite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                      </button>
                                       {/* Icon */}
                                       <div style={{
                                         width: 34, height: 34, borderRadius: 8, flexShrink: 0,
@@ -20103,17 +21159,17 @@ function NovelWorkspacePage() {
                                           type="button"
                                           disabled={allBoltons.length >= 10}
                                           onClick={() => { loadSingleFromLibrary(item); setBoltonLibraryOpen(false); }}
-                                          title="Load into this novel"
+                                          title="Use in this novel"
                                           style={{
                                             padding: "5px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
                                             background: "var(--pw-accent)", color: "var(--pw-btn-primary-text)", border: "none", cursor: "pointer",
                                           }}
                                         >
-                                          Load
+                                          Use
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => { void deleteLibraryBolton(i); setBoltonLibraryOpen(false); setTimeout(() => setBoltonLibraryOpen(true), 50); }}
+                                          onClick={() => { void deleteLibraryBolton(origIdx); setBoltonLibraryOpen(false); setTimeout(() => setBoltonLibraryOpen(true), 50); }}
                                           title="Remove from library"
                                           style={{
                                             padding: "5px 8px", fontSize: 11, borderRadius: 6,
@@ -20135,32 +21191,6 @@ function NovelWorkspacePage() {
                     )}
 
                     {/* Writing Packs modal is rendered at top level so it can be opened from chapter/bloc view too */}
-
-                    {/* ── Quick-add by category ── */}
-                    <div className="pw-bolton-quick-cats">
-                      <span className="pw-bolton-quick-label">Quick add:</span>
-                      {BOLTON_PLUGIN_CATEGORIES.filter((category) => category.id !== "custom").map((category) => (
-                        <button
-                          key={category.id}
-                          type="button"
-                          className="pw-bolton-quick-cat-btn"
-                          disabled={allBoltons.length >= 10}
-                          onClick={() => addBolton(category.id)}
-                          title={category.hint}
-                        >
-                          + {category.label}
-                        </button>
-                      ))}
-                      {allBoltons.length < 10 && (
-                        <button
-                          type="button"
-                          className="pw-bolton-quick-cat-btn pw-bolton-quick-custom"
-                          onClick={() => addBolton()}
-                        >
-                          + Custom
-                        </button>
-                      )}
-                    </div>
 
                     {/* ── Filter tabs ── */}
                     {allBoltons.length > 0 && (
@@ -20198,7 +21228,7 @@ function NovelWorkspacePage() {
                           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                         </div>
                         <p style={{ fontWeight: 500, marginBottom: 4 }}>No bolt-ons yet</p>
-                        <p style={{ fontSize: 12, opacity: 0.6 }}>Pick a category above to create one, or load from your library. Just describe what you want and hit Build.</p>
+                        <p style={{ fontSize: 12, opacity: 0.6 }}>Click Create to add one, or use Packs and Library. Describe what you want and hit Build.</p>
                       </div>
                     ) : visibleBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
@@ -20208,8 +21238,17 @@ function NovelWorkspacePage() {
                       <div className="pw-bolton-grid">
                         {visibleBoltons.map((bolton) => (
                           <div key={bolton.id} className={`pw-bolton-card ${bolton.prompt ? "pw-bolton-card-ready" : ""}`}>
-                            {/* Header: title + category + delete */}
+                            {/* Header: star + title + category + delete */}
                             <div className="pw-bolton-card-head">
+                              <button
+                                type="button"
+                                onClick={() => void saveSingleBoltonToLibrary({ title: bolton.title, description: bolton.description, prompt: bolton.prompt, category: bolton.category }, true)}
+                                title="Favourite — save to library and star"
+                                className="pw-bolton-fav-btn"
+                                style={{ flexShrink: 0 }}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                              </button>
                               <input
                                 className="pw-bolton-card-title"
                                 placeholder={bolton.prompt ? "Untitled bolt-on" : "Title (auto-generated on build)"}
@@ -20346,119 +21385,146 @@ function NovelWorkspacePage() {
                 )}
 
                 {bibleSection === "styleVoice" && (
-                  <div className="pw-bible-section">
-                    <div className="pw-bible-flex-head">
-                      <h3>Style & Voice</h3>
+                  <div className="pw-bible-section pw-style-section">
+                    <div className="pw-bible-flex-head pw-style-head">
+                      <div>
+                        <h3>Style & Voice</h3>
+                        <p className="pw-bible-section-note">
+                          Define your canon voice: POV, tense, tone, and prose rules. These settings guide every generation.
+                        </p>
+                      </div>
                       <button
                         type="button"
                         className="pw-bible-clear-btn"
                         onClick={() => clearBibleSection("styleVoice")}
                         title="Clear this section"
                       >
-                        Clear this section
+                        Clear
                       </button>
                     </div>
-                    <div className="pw-bible-grid-3">
-                      <div>
-                        <label>{isNF ? "Narrative POV" : "POV"}</label>
-                        <select
-                          className="pw-bible-input"
-                          value={novel.storyBible.styleVoice.pov ?? ""}
-                          onChange={(event) =>
-                            updateStoryBible({
-                              styleVoice: { ...novel.storyBible.styleVoice, pov: event.target.value },
-                            })
-                          }
-                        >
-                          <option value="">{isNF ? "Select narrative POV" : "Select POV"}</option>
-                          {(isNF ? (nfData?.nfCategory === "biography" ? POV_OPTIONS_BIO : POV_OPTIONS_NF) : POV_OPTIONS).map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "How the life story is narrated" : "The perspective of the narrative"}</p>}
+                    <div className="pw-style-perspective-card">
+                      <div className="pw-style-card-head">
+                        <span>Perspective Setup</span>
+                        <p>Lock narrator and tense first to keep output consistent chapter to chapter.</p>
                       </div>
-                      <div>
-                        <label>Tense</label>
-                        <select
-                          className="pw-bible-input"
-                          value={novel.storyBible.styleVoice.tense ?? ""}
-                          onChange={(event) =>
-                            updateStoryBible({
-                              styleVoice: { ...novel.storyBible.styleVoice, tense: event.target.value },
-                            })
-                          }
-                        >
-                          <option value="">Select tense</option>
-                          {TENSE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "Most memoirs use past tense. Present creates immediacy for key scenes." : "Past for historical narrative. Present for investigative immediacy."}</p>}
-                      </div>
-                      <div>
-                        <label>{isNF ? (nfData?.nfCategory === "biography" ? "Narrator / Voice" : "Author Perspective") : "Narrating character (optional)"}</label>
-                        <select
-                          className="pw-bible-input"
-                          value={novel.storyBible.styleVoice.povCharacterId ?? ""}
-                          onChange={(event) =>
-                            updateStoryBible({
-                              styleVoice: { ...novel.storyBible.styleVoice, povCharacterId: event.target.value },
-                            })
-                          }
-                        >
-                          <option value="">None selected</option>
-                          {storyCharacters.map((character) => (
-                            <option key={character.id} value={character.id}>
-                              {character.name || "Unnamed character"}
-                            </option>
-                          ))}
-                        </select>
-                        {isNF && <p className="pw-field-help" style={{ marginTop: 2 }}>{nfData?.nfCategory === "biography" ? "Who tells this story?" : "Whose lens shapes the narrative?"}</p>}
-                      </div>
-                    </div>
-                    <div className="pw-bible-field-head">
-                      <label>{isNF ? (nfData?.nfCategory === "biography" ? "Category & Tone" : "Genre & Tone") : "Genre & Tone"}</label>
-                      {!aiOff && <div className="pw-bible-field-ai">
-                        <select
-                          className="pw-bible-input pw-bible-field-select"
-                          value={summaryAiMode.palette}
-                          onChange={(event) =>
-                            setSummaryAiMode((current) => ({
-                              ...current,
-                              palette: event.target.value as typeof current.palette,
-                            }))
-                          }
-                        >
-                          {isNF ? (
-                            <>
-                              <option value="classify">{nfData?.nfCategory === "biography" ? "Classify from life story" : "Classify from research"}</option>
-                              <option value="refresh">Refresh alternatives</option>
-                              <option value="blend">{nfData?.nfCategory === "biography" ? "Suggest memoir blend" : "Suggest category blend"}</option>
-                              <option value="audience">Align for target audience</option>
-                            </>
+                      <div className="pw-style-perspective-row">
+                        <div className="pw-style-perspective-item">
+                          <label>{isNF ? "POV" : "Point of view"}</label>
+                          <select
+                            className="pw-bible-input pw-style-select"
+                            value={novel.storyBible.styleVoice.pov ?? ""}
+                            onChange={(event) =>
+                              updateStoryBible({
+                                styleVoice: { ...novel.storyBible.styleVoice, pov: event.target.value },
+                              })
+                            }
+                          >
+                            <option value="">POV</option>
+                            {(isNF ? (nfData?.nfCategory === "biography" ? POV_OPTIONS_BIO : POV_OPTIONS_NF) : POV_OPTIONS).map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="pw-style-perspective-item">
+                          <label>Tense</label>
+                          <select
+                            className="pw-bible-input pw-style-select"
+                            value={novel.storyBible.styleVoice.tense ?? ""}
+                            onChange={(event) =>
+                              updateStoryBible({
+                                styleVoice: { ...novel.storyBible.styleVoice, tense: event.target.value },
+                              })
+                            }
+                          >
+                            <option value="">Tense</option>
+                            {TENSE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {(() => {
+                          const pov = novel.storyBible.styleVoice.pov ?? "";
+                          const isMultiplePov = !isNF && (pov === "first-multiple" || pov === "third-multiple");
+                          const showNarrator = isNF || pov && (pov === "first" || pov === "first-multiple" || pov === "third-limited" || pov === "third-multiple");
+                          const currentIds = (novel.storyBible.styleVoice.povCharacterId ?? "")
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean);
+                          if (!showNarrator) return null;
+                          return (
+                        <div className="pw-style-perspective-item pw-style-narrator-item">
+                          <label>
+                            {isNF
+                              ? (nfData?.nfCategory === "biography" ? "Narrator" : "Perspective")
+                              : isMultiplePov
+                                ? "Narrators"
+                                : "Narrator"}
+                          </label>
+                          {!isNF && storyCharacters.length === 0 ? (
+                            <p className="pw-style-narrator-empty">
+                              Add characters in the Characters section first, then return here to choose who narrates.
+                            </p>
+                          ) : isMultiplePov ? (
+                            <div className="pw-style-narrator-multi">
+                              {storyCharacters.map((character) => {
+                                const checked = currentIds.includes(character.id);
+                                return (
+                                  <label key={character.id} className="pw-style-narrator-chip">
+                                    <input
+                                      type="checkbox"
+                                      className="pw-style-checkbox-input"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = checked
+                                          ? currentIds.filter((id) => id !== character.id)
+                                          : [...currentIds, character.id];
+                                        updateStoryBible({
+                                          styleVoice: { ...novel.storyBible.styleVoice, povCharacterId: next.join(",") },
+                                        });
+                                      }}
+                                    />
+                                    <span className="pw-style-checkbox-ui" aria-hidden="true">
+                                      <svg viewBox="0 0 16 16" fill="none">
+                                        <path d="M3 8.5L6.4 12L13 4.8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </span>
+                                    <span className="pw-style-checkbox-label">{character.name || "Unnamed"}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
                           ) : (
-                            <>
-                              <option value="classify">Classify from synopsis</option>
-                              <option value="refresh">Refresh alternatives</option>
-                              <option value="blend">Suggest genre blend</option>
-                              <option value="audience">Align for target audience</option>
-                            </>
+                            <select
+                              className="pw-bible-input pw-style-select"
+                              value={novel.storyBible.styleVoice.povCharacterId ?? ""}
+                              onChange={(event) =>
+                                updateStoryBible({
+                                  styleVoice: { ...novel.storyBible.styleVoice, povCharacterId: event.target.value },
+                                })
+                              }
+                            >
+                              <option value="">—</option>
+                              {storyCharacters.map((character) => (
+                                <option key={character.id} value={character.id}>
+                                  {character.name || "Unnamed"}
+                                </option>
+                              ))}
+                            </select>
                           )}
-                        </select>
-                        <button
-                          type="button"
-                          className="pw-ai-mini-btn pw-bible-field-btn"
-                          disabled={storyAiBusyAction !== null}
-                          onClick={() => void runSummaryFieldAi("palette", summaryAiMode.palette)}
-                        >
-                          {storyAiBusyAction === "summary-field-palette" ? "Running..." : "Run Assistant"}
-                        </button>
-                      </div>}
+                        </div>
+                          );
+                        })()}
+                      </div>
                     </div>
+                    <div className="pw-style-meta-card">
+                      <div className="pw-style-card-head">
+                        <span>{isNF ? "Category & Tone" : "Genre & Tone"}</span>
+                        <p>These tags define the target reading experience for your canon voice.</p>
+                      </div>
                     <div className="pw-bible-genre-picker">
                       <select
                         className="pw-bible-input pw-bible-field-select"
@@ -20519,7 +21585,7 @@ function NovelWorkspacePage() {
                         ))
                       )}
                     </div>
-                    <label>Tone (comma separated)</label>
+                    <label className="pw-style-meta-label">Tone tags</label>
                     <input
                       className="pw-bible-input"
                       maxLength={SUMMARY_LIST_INPUT_MAX}
@@ -20537,19 +21603,20 @@ function NovelWorkspacePage() {
                         })
                       }
                     />
-                    <label>Writing Style</label>
+                    </div>
+                    <div className="pw-style-writing-card">
+                      <div className="pw-style-card-head">
+                        <span>Writing Rules</span>
+                        <p>Use this to make voice instructions explicit and canon-safe.</p>
+                      </div>
                     <p className="pw-field-help" style={{ marginBottom: 6, marginTop: 0 }}>
-                      {isNF
-                        ? (nfData?.nfCategory === "biography"
-                          ? "Describe the writing style for your life story — AI will generate voice rules that capture the right feel for memoir."
-                          : "Describe the writing style for your book — AI will generate voice rules suited to non-fiction narrative.")
-                        : "Describe the writing style you want — AI will generate voice rules, tone, and style guidance from your description."}
+                      Describe how you want the prose to sound. AI generates voice rules from this.
                     </p>
                     <div className="pw-ai-assist-row">
                       <input
                         className="pw-bible-input pw-ai-assist-select"
                         maxLength={STORY_BIBLE_LIMITS.styleVoice.compItem}
-                        placeholder={isNF ? (nfData?.nfCategory === "biography" ? "e.g. intimate first-person, conversational, vivid sensory detail..." : "e.g. clean reportorial prose, evidence-driven, narrative non-fiction...") : "e.g. dark literary prose, punchy dialogue, sparse and gritty..."}
+                        placeholder={isNF ? "e.g. intimate, conversational, vivid sensory detail" : "e.g. dark literary prose, punchy dialogue, sparse and gritty"}
                         value={styleAuthorDraft}
                         onChange={(event) => setStyleAuthorDraft(event.target.value)}
                         onKeyDown={(event) => {
@@ -20655,10 +21722,14 @@ function NovelWorkspacePage() {
                       </div>
                     )}
                     <label>Voice rules</label>
+                    <p className="pw-field-help" style={{ marginTop: -4, marginBottom: 6 }}>
+                      How the prose should sound. Be specific: sentence length, sensory detail, dialogue style, what to avoid. The AI reads this for every generation.
+                    </p>
                     <textarea
                       className="pw-bible-input"
-                      rows={3}
+                      rows={4}
                       maxLength={STORY_BIBLE_LIMITS.styleVoice.voiceRules}
+                      placeholder="e.g. Short punchy sentences. Concrete sensory detail over abstract feelings. Minimal dialogue tags. Avoid purple prose and obvious metaphors."
                       value={novel.storyBible.styleVoice.voiceRules ?? ""}
                       onChange={(event) =>
                         updateStoryBible({
@@ -20669,10 +21740,36 @@ function NovelWorkspacePage() {
                     <p className="pw-field-help">
                       {(novel.storyBible.styleVoice.voiceRules ?? "").length}/{STORY_BIBLE_LIMITS.styleVoice.voiceRules}
                     </p>
-                    <label>Banned words (comma separated)</label>
+                    <label>Style tags</label>
+                    <p className="pw-field-help" style={{ marginTop: -4, marginBottom: 6 }}>
+                      Comma-separated descriptors used as persistent canon cues.
+                    </p>
                     <input
                       className="pw-bible-input"
-                      maxLength={BANNED_WORDS_INPUT_MAX}
+                      maxLength={STORY_BIBLE_LIMITS.styleVoice.compCount * STORY_BIBLE_LIMITS.styleVoice.compItem}
+                      placeholder={isNF ? "e.g. clear, reflective, grounded, interview-driven" : "e.g. atmospheric, sharp dialogue, lean prose, cinematic"}
+                      value={(novel.storyBible.styleVoice.comps ?? []).join(", ")}
+                      onChange={(event) =>
+                        updateStoryBible({
+                          styleVoice: {
+                            ...novel.storyBible.styleVoice,
+                            comps: event.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                              .slice(0, STORY_BIBLE_LIMITS.styleVoice.compCount),
+                          },
+                        })
+                      }
+                    />
+                    <label>Avoid words / phrases</label>
+                    <p className="pw-field-help" style={{ marginTop: -4, marginBottom: 6 }}>
+                      Optional guardrails for words, cliches, or phrasing you do not want in drafts.
+                    </p>
+                    <input
+                      className="pw-bible-input"
+                      maxLength={STORY_BIBLE_LIMITS.styleVoice.compCount * STORY_BIBLE_LIMITS.styleVoice.compItem}
+                      placeholder="e.g. suddenly, very, just, heart pounding, little did they know"
                       value={(novel.storyBible.styleVoice.bannedWords ?? []).join(", ")}
                       onChange={(event) =>
                         updateStoryBible({
@@ -20681,17 +21778,206 @@ function NovelWorkspacePage() {
                             bannedWords: event.target.value
                               .split(",")
                               .map((s) => s.trim())
-                              .filter(Boolean),
+                              .filter(Boolean)
+                              .slice(0, STORY_BIBLE_LIMITS.styleVoice.compCount),
                           },
                         })
                       }
                     />
-                    <p className="pw-field-help">
-                      {(novel.storyBible.styleVoice.bannedWords ?? []).join(", ").length}/{BANNED_WORDS_INPUT_MAX}
-                    </p>
+                    </div>
                     {!aiOff && storyAiError && <p className="pw-ora-error pw-bible-ai-error">{storyAiError}</p>}
                   </div>
                 )}
+
+                {bibleSection === "visualMap" && !isNF && (() => {
+                  const spine = novel.storyBible.plotSpine;
+                  const spineBeats = spine?.beats ?? [];
+                  const subplots = spine?.subplots ?? [];
+                  const arcs = spine?.characterArcs ?? [];
+                  const chars = novel.storyBible.characters ?? [];
+                  const act1 = spineBeats.filter(b => b.act === 1).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+                  const act2 = spineBeats.filter(b => b.act === 2).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+                  const act3 = spineBeats.filter(b => b.act === 3).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+                  const spineDone = spineBeats.length >= 6 && act1.length > 0 && act2.length > 0 && act3.length > 0;
+                  const actColors = ["#4a7ba7", "#c76b1a", "#2d8a6e"] as const;
+                  const subplotColors = ["#8b5cf6", "#ec4899", "#06b6d4", "#f59e0b", "#22c55e"] as const;
+                  const getCharName = (id: string) => chars.find(c => c.id === id)?.name ?? "?";
+                  const beatIdToSubplotIds = new Map<string, string[]>();
+                  subplots.forEach((sp, i) => {
+                    sp.linkedBeatIds.forEach(bid => {
+                      const arr = beatIdToSubplotIds.get(bid) ?? [];
+                      if (!arr.includes(sp.id)) arr.push(sp.id);
+                      beatIdToSubplotIds.set(bid, arr);
+                    });
+                  });
+                  const beatIdToArcIds = new Map<string, string[]>();
+                  arcs.forEach(arc => {
+                    arc.turningPointBeatIds.forEach(bid => {
+                      const arr = beatIdToArcIds.get(bid) ?? [];
+                      if (!arr.includes(arc.id)) arr.push(arc.id);
+                      beatIdToArcIds.set(bid, arr);
+                    });
+                  });
+                  const BeatCard = ({ beat, actIdx, isLast }: { beat: (typeof act1)[0]; actIdx: number; isLast: boolean }) => {
+                    const spIds = beatIdToSubplotIds.get(beat.id) ?? [];
+                    const arcIds = beatIdToArcIds.get(beat.id) ?? [];
+                    const arcChars = [...new Set(arcIds.map(aid => arcs.find(a => a.id === aid)?.characterId).filter((x): x is string => !!x))];
+                    const hasConnections = spIds.length > 0 || arcIds.length > 0;
+                    return (
+                      <div key={beat.id} style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
+                        <div style={{
+                          flex: "0 0 auto",
+                          padding: "14px 16px",
+                          borderRadius: 12,
+                          background: "var(--pw-surface)",
+                          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                          minWidth: 200,
+                          maxWidth: 280,
+                          borderLeft: `4px solid ${actColors[actIdx]}`,
+                        }}>
+                          {(spIds.length > 0 || arcIds.length > 0) && (
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+                              {spIds.map((spid, i) => {
+                                const sp = subplots.find(s => s.id === spid);
+                                return sp ? (
+                                  <span key={spid} style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: `${subplotColors[i % subplotColors.length]}22`, color: subplotColors[i % subplotColors.length], border: `1px solid ${subplotColors[i % subplotColors.length]}66` }}>
+                                    {sp.title}
+                                  </span>
+                                ) : null;
+                              })}
+                              {arcChars.map(cid => (
+                                <span key={cid} style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(124,92,252,0.15)", color: "var(--pw-accent)", border: "1px solid rgba(124,92,252,0.4)" }}>
+                                  arc: {getCharName(cid)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)", marginBottom: 6 }}>
+                            {beat.title || "Untitled Beat"}
+                          </div>
+                          {beat.description && (
+                            <div style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.45, marginBottom: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              {beat.description}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                            {[...new Set(beat.characterIds)].map(id => (
+                              <span key={id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "var(--pw-accent-light, rgba(124,92,252,0.12))", color: "var(--pw-accent)", fontWeight: 600 }}>
+                                {getCharName(id)}
+                              </span>
+                            ))}
+                            {beat.locationHint && (
+                              <span style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)", color: "var(--pw-text-dim)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <span style={{ opacity: 0.7 }}>📍</span> {beat.locationHint}
+                              </span>
+                            )}
+                            {beat.tension >= 4 && (
+                              <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontWeight: 600 }}>
+                                tension {beat.tension}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {!isLast && (
+                          <div style={{ flex: "0 0 24px", alignSelf: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ color: "var(--pw-border-light)" }}>
+                              <path d="M8 12h8M13 9l3 3-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+                  return (
+                  <div className="pw-bible-section pw-summary-section">
+                    <div className="pw-bible-flex-head pw-style-head">
+                      <div>
+                        <h3>Story Map</h3>
+                        <p className="pw-bible-section-note">
+                          Plot flow with connections — beats, subplots, character arcs, and locations.
+                        </p>
+                      </div>
+                    </div>
+                    {!spineDone ? (
+                      <div className="pw-summary-empty-state" style={{ padding: 48 }}>
+                        <p className="pw-summary-empty-text">
+                          Complete The Architect first — you need beats in Act 1, 2, and 3. The map will appear automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "20px 0", overflowX: "auto" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                          {[act1, act2, act3].map((actBeats, actIdx) => (
+                            <div key={actIdx}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: actColors[actIdx], padding: "6px 14px", borderRadius: 8, background: `${actColors[actIdx]}18`, border: `1px solid ${actColors[actIdx]}44` }}>
+                                  ACT {actIdx + 1}
+                                </span>
+                                <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${actColors[actIdx]}40, transparent)` }} />
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: "8px 0" }}>
+                                {actBeats.map((beat, i) => (
+                                  <BeatCard key={beat.id} beat={beat} actIdx={actIdx} isLast={i === actBeats.length - 1} />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {subplots.length > 0 && (
+                          <div style={{ marginTop: 28, padding: 18, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.08em", marginBottom: 12 }}>SUBPLOT THREADS</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {subplots.map((sp, i) => (
+                                <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                  <span style={{ fontSize: 11, fontWeight: 600, padding: "6px 12px", borderRadius: 8, background: `${subplotColors[i % subplotColors.length]}20`, color: subplotColors[i % subplotColors.length], border: `1px solid ${subplotColors[i % subplotColors.length]}55`, minWidth: 100 }}>
+                                    {sp.title}
+                                  </span>
+                                  <span style={{ color: "var(--pw-text-dim)", fontSize: 11 }}>→</span>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                    {spineBeats.filter(b => sp.linkedBeatIds.includes(b.id)).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map(b => (
+                                      <span key={b.id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "var(--pw-surface)", border: "1px solid var(--pw-border-light)", color: "var(--pw-text)" }}>
+                                        {b.title || "Beat"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {arcs.length > 0 && (
+                          <div style={{ marginTop: 16, padding: 18, background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.08em", marginBottom: 12 }}>CHARACTER ARC TURNING POINTS</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {arcs.map(arc => {
+                                const charName = getCharName(arc.characterId);
+                                const turnBeats = spineBeats.filter(b => arc.turningPointBeatIds.includes(b.id));
+                                return (
+                                  <div key={arc.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--pw-accent)" }}>{charName}</span>
+                                    <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{arc.startState} → {arc.endState}</span>
+                                    {turnBeats.length > 0 && (
+                                      <>
+                                        <span style={{ color: "var(--pw-text-dim)", fontSize: 11 }}>@</span>
+                                        {turnBeats.map(b => (
+                                          <span key={b.id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "rgba(124,92,252,0.1)", border: "1px solid rgba(124,92,252,0.3)", color: "var(--pw-accent)" }}>
+                                            {b.title || "Beat"}
+                                          </span>
+                                        ))}
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  );
+                })()}
 
                 {/* ═══════════════════ NON-FICTION: ABOUT ═══════════════════ */}
                 {bibleSection === "nf-about" && isNF && (
@@ -22406,7 +23692,7 @@ function NovelWorkspacePage() {
                                 try {
                                   const cardList = cards.map(c => `[${c.id}] "${c.title}": ${c.summary?.slice(0, 100) || "(empty)"}`).join("\n");
                                   const chapterList = planChapters.map((ch, i) => `Chapter ${i + 1}: ${ch.title || ""} — ${ch.synopsis?.slice(0, 100) || ""}`).join("\n");
-                                  const synopsis = novel.storyBible.summary?.synopsisShort?.slice(0, 500) || "";
+                                  const synopsis = (getCombinedSynopsis() || "").slice(0, 500);
                                   const prompt = `Given these story cards and chapter plan, suggest which card belongs in which chapter.\n\nCards:\n${cardList}\n\nChapters:\n${chapterList}\n\nSynopsis: ${synopsis}\n\nReturn JSON array: [{ "cardId": "...", "chapterSlot": 0 }]\nchapterSlot is 0-indexed. Use -1 for cards that don't fit any chapter.`;
                                   const data = await requestOpenRouterJson<Array<{ cardId: string; chapterSlot: number }>>(prompt, 1500, {
                                     systemMessage: "Story structure assistant. Return valid JSON only.",
@@ -22465,7 +23751,7 @@ function NovelWorkspacePage() {
                                 setStoryAiError(null);
                                 try {
                                   const cardList = cards.map(c => `[${c.id}] "${c.title}": ${c.summary?.slice(0, 120) || "(empty)"}`).join("\n");
-                                  const synopsis = novel.storyBible.summary?.synopsisShort?.slice(0, 600) || "";
+                                  const synopsis = (getCombinedSynopsis() || "").slice(0, 600);
                                   const chapterCount = Math.max(6, Math.min(25, Math.ceil(cards.length / 3)));
                                   const prompt = [
                                     `Based on these story cards, suggest a chapter structure of approximately ${chapterCount} chapters.`,
@@ -22786,50 +24072,456 @@ function NovelWorkspacePage() {
         </div>
       )}
 
-      {/* ── Profile generation progress overlay ── */}
-      {profileGenProgress && (
-        <div className="pw-modal-overlay">
-          <div className="pw-modal" style={{ maxWidth: 380, textAlign: "center", padding: "28px 24px" }}>
-            {/* Pulsing icon */}
-            <div style={{
-              width: 48, height: 48, borderRadius: 14, margin: "0 auto 14px",
-              background: "rgba(var(--accent-rgb, 124,92,252), 0.10)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              animation: "pulse 1.8s ease-in-out infinite",
-            }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round">
-                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
-              </svg>
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--pw-text)", letterSpacing: "-0.01em" }}>
-              Building profiles
-            </div>
-            {profileGenProgress.name && (
-              <p style={{ marginTop: 4, fontSize: 13, color: "var(--pw-text-dim)", fontWeight: 500 }}>
-                <strong style={{ color: "var(--pw-text)" }}>{profileGenProgress.name}</strong> — {profileGenProgress.current} of {profileGenProgress.total}
-              </p>
-            )}
-            {/* Progress bar */}
-            <div style={{
-              marginTop: 16, height: 5, borderRadius: 3,
-              background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
-              overflow: "hidden",
-            }}>
-              <div style={{
-                height: "100%", borderRadius: 3,
-                background: "var(--pw-accent, #b8a4ff)",
-                width: `${Math.max(4, Math.round((profileGenProgress.done / profileGenProgress.total) * 100))}%`,
-                transition: "width 0.5s cubic-bezier(.4,0,.2,1)",
-              }} />
-            </div>
-            <p style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 10, fontWeight: 600 }}>
-              {profileGenProgress.done} of {profileGenProgress.total} done
-            </p>
-            <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 8, fontWeight: 400, opacity: 0.7 }}>
-              This may take a few minutes. Sit tight, your characters are being crafted.
-            </p>
-            <style>{`@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.7; transform:scale(0.95); } }`}</style>
+      {/* ── Plan generation progress bar (compact, bottom of screen, like characters/canon) ── */}
+      {storyAiBusyAction === "plan-generate" && (
+        <div style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 99998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              {planGenerateTotal > 0 && planGenerateProgressIdx !== null
+                ? <>Chapter {planGenerateProgressIdx + 1} of {planGenerateTotal}: <strong>{planChapters[planGenerateProgressIdx]?.title ?? `Chapter ${planGenerateProgressIdx + 1}`}</strong></>
+                : "Building your chapter plan..."}
+            </span>
           </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: planGenerateTotal > 0
+                ? `${Math.max(4, Math.round(((planGenerateProgressIdx ?? 0) + 1) / planGenerateTotal * 100))}%`
+                : "40%",
+              transition: "width 0.4s ease-out",
+              ...(planGenerateTotal === 0 && { animation: "pw-gen-indeterminate 1.5s ease-in-out infinite" }),
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+              {planGenerateTotal > 0 ? `${(planGenerateProgressIdx ?? 0) + 1} of ${planGenerateTotal}` : aiBusyDuration}
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7 }}>
+            Each chapter can take a few minutes to generate — don&apos;t close this window.
+          </span>
+          {planGenerateTotal === 0 && (
+            <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+          )}
+        </div>
+      )}
+
+      {/* ── Doctor Fix progress bar (Story Doctor / Chapter Doctor applying fixes) ── */}
+      {(storyAiBusyAction === "doctor-fix-story" || storyAiBusyAction === "doctor-fix-chapter") && aiBusyLabel && (
+        <div style={{
+          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 99998,
+          minWidth: 320, maxWidth: 480, padding: "14px 18px", background: "var(--pw-surface)",
+          borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex", flexDirection: "column", gap: 10, animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              {storyAiBusyAction === "doctor-fix-chapter" && chapterDoctorFixProgress
+                ? (chapterDoctorFixProgress.done > 0
+                    ? `Step ${chapterDoctorFixProgress.done} done ✓ · ${chapterDoctorFixProgress.current} of ${chapterDoctorFixProgress.total}${chapterDoctorFixProgress.label ? `: ${chapterDoctorFixProgress.label}…` : "…"}`
+                    : chapterDoctorFixProgress.label ?? `Step 1 of ${chapterDoctorFixProgress.total}…`)
+                : aiBusyLabel}
+            </span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: "var(--pw-surface-alt)", overflow: "hidden" }}>
+            {storyAiBusyAction === "doctor-fix-chapter" && chapterDoctorFixProgress && chapterDoctorFixProgress.total > 0 ? (
+              <div style={{ height: "100%", borderRadius: 3, background: "var(--pw-accent)", width: `${(chapterDoctorFixProgress.done / chapterDoctorFixProgress.total) * 100}%`, transition: "width 0.2s ease" }} />
+            ) : (
+              <div style={{ height: "100%", borderRadius: 3, background: "var(--pw-accent)", width: "40%", animation: "pw-gen-indeterminate 1.5s ease-in-out infinite" }} />
+            )}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{aiBusyDuration} elapsed</span>
+            <button type="button" onClick={() => cancelAiWork()} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "1px solid var(--pw-border)", background: "transparent", color: "var(--pw-text-dim)", cursor: "pointer" }}>Stop</button>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7 }}>
+            {storyAiBusyAction === "doctor-fix-chapter" ? "Small steps per fix — reduces timeouts." : "Applying fixes — this may take 1–2 minutes."}
+          </span>
+          <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+        </div>
+      )}
+      {/* ── Block prose generation progress bar (bottom of screen, like canon/blocs) ── */}
+      {storyAiBusyAction?.startsWith("block-prose-") && aiBusyLabel && activeChapter && (() => {
+        const match = storyAiBusyAction.match(/^block-prose-(\d+)$/);
+        const blockIndex = match ? parseInt(match[1], 10) : -1;
+        const blocks = getSceneBlocks(activeChapter);
+        const block = blockIndex >= 0 && blockIndex < blocks.length ? blocks[blockIndex] : null;
+        const beatLabel = block?.beatLabel || block?.synopsis?.trim().slice(0, 40) || `Scene ${blockIndex + 1}`;
+        return (
+        <div key="block-prose-bar" style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 99998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              Writing Scene {blockIndex + 1} prose: <strong>{typeof beatLabel === "string" && beatLabel.length > 36 ? `${beatLabel.slice(0, 36)}…` : beatLabel}</strong>
+            </span>
+          </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: "40%",
+              animation: "pw-gen-indeterminate 1.5s ease-in-out infinite",
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{aiBusyDuration} elapsed</span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7 }}>
+            Prose generation can take 30–90 seconds — you can keep working.
+          </span>
+          <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+        </div>
+        );
+      })()}
+
+      {/* ── Chapter bloc generation progress bar (bottom of screen, like canon) ── */}
+      {chapterBlocksGenProgress && (
+        <div style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 99998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              {chapterBlocksGenProgress.current === 0
+                ? chapterBlocksGenProgress.beatLabel || "Extracting beats…"
+                : <>Bloc {chapterBlocksGenProgress.current} of {chapterBlocksGenProgress.total}: <strong>{chapterBlocksGenProgress.beatLabel || `Beat ${chapterBlocksGenProgress.current}`}</strong></>}
+            </span>
+          </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: chapterBlocksGenProgress.current === 0
+                ? "40%"
+                : `${Math.max(4, Math.round((chapterBlocksGenProgress.current / chapterBlocksGenProgress.total) * 100))}%`,
+              transition: "width 0.4s ease-out",
+              ...(chapterBlocksGenProgress.current === 0 && { animation: "pw-gen-indeterminate 1.5s ease-in-out infinite" }),
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+              {chapterBlocksGenProgress.current === 0 ? aiBusyDuration : `${chapterBlocksGenProgress.current} of ${chapterBlocksGenProgress.total}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+          {chapterBlocksGenProgress.current === 0 ? (
+            <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7 }}>
+              Each bloc can take ~30–60 seconds — you can see blocs appear as they generate.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Profile generation progress bar (compact, bottom of screen, non-blocking) ── */}
+      {profileGenProgress && (
+        <div style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              Character {profileGenProgress.current} of {profileGenProgress.total}: <strong>{profileGenProgress.name}</strong>
+            </span>
+          </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: `${Math.max(4, Math.round((profileGenProgress.done / profileGenProgress.total) * 100))}%`,
+              transition: "width 0.4s ease-out",
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+              {profileGenProgress.done} done
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Location generation progress bar (names → profile, like characters) ── */}
+      {locationGenProgress && (
+        <div style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              {locationGenProgress.phase === "names"
+                ? "Generating location names..."
+                : <>Profile {locationGenProgress.current} of {locationGenProgress.total}: <strong>{locationGenProgress.name}</strong></>}
+            </span>
+          </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: locationGenProgress.phase === "names"
+                ? "40%"
+                : `${Math.max(4, Math.round((locationGenProgress.done / locationGenProgress.total) * 100))}%`,
+              transition: "width 0.4s ease-out",
+              ...(locationGenProgress.phase === "names" && { animation: "pw-gen-indeterminate 1.5s ease-in-out infinite" }),
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+              {locationGenProgress.phase === "names" ? "From your Canon…" : `${locationGenProgress.done} done`}
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+          {locationGenProgress.phase === "names" && (
+            <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+          )}
+        </div>
+      )}
+
+      {/* ── World-building generation progress bar ── */}
+      {genProgressBar && (
+        <div style={{
+          position: "fixed",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9998,
+          minWidth: 320,
+          maxWidth: 480,
+          padding: "14px 18px",
+          background: "var(--pw-surface)",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>
+              {genProgressBar.type === "locations" ? "Generating locations" : "Generating world-building"}
+            </span>
+          </div>
+          <div style={{
+            height: 6,
+            borderRadius: 3,
+            background: "var(--pw-surface-alt, rgba(255,255,255,0.06))",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              borderRadius: 3,
+              background: "var(--pw-accent, #b8a4ff)",
+              width: "40%",
+              animation: "pw-gen-indeterminate 1.5s ease-in-out infinite",
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
+              Creating from your Canon…
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelAiWork()}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "1px solid var(--pw-border)",
+                background: "transparent",
+                color: "var(--pw-text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+          <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
         </div>
       )}
 
@@ -22958,7 +24650,7 @@ function NovelWorkspacePage() {
               display: "flex", flexDirection: "column", gap: 4, margin: "0 0 18px", maxHeight: 160, overflowY: "auto",
               padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-border)",
             }}>
-              {profileOfferPopup.characterIds.map((cid) => {
+              {[...new Set(profileOfferPopup.characterIds)].map((cid) => {
                 const ch = storyCharacters.find((c) => c.id === cid);
                 return ch ? (
                   <div key={cid} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
@@ -23114,7 +24806,7 @@ function NovelWorkspacePage() {
                   type="button"
                   className={`pw-plan-gen-preset-btn ${planGenerateCountMode === "auto" ? "active" : ""}`}
                   onClick={() => setPlanGenerateCountMode("auto")}
-                  title={novel ? `Auto currently suggests ${estimateAutoChapterCount(novel)} chapters based on your spine/synopsis.` : "Auto pick chapter count"}
+                  title={novel ? `Auto currently suggests ${estimateAutoChapterCount(novel)} chapters based on your Architect/synopsis.` : "Auto pick chapter count"}
                 >
                   Auto
                 </button>
@@ -23166,16 +24858,213 @@ function NovelWorkspacePage() {
                   }}
                 >
                   Story pacing
+                  <span className="pw-plan-help-wrap">
+                    <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                    <span className="pw-plan-help-tip">Controls overall chapter momentum across the whole plan.</span>
+                  </span>
                 </label>
-                <select
-                  className="pw-select"
-                  value={planGeneratePacingMode}
-                  onChange={(event) => setPlanGeneratePacingMode(event.target.value as "balanced" | "slow-burn" | "fast")}
-                >
-                  <option value="balanced">Balanced novel pacing</option>
-                  <option value="slow-burn">Slow-burn (gradual build)</option>
-                  <option value="fast">Fast-paced (quicker progression)</option>
-                </select>
+                <div className="pw-plan-adv-options">
+                  <button
+                    type="button"
+                    className={`pw-plan-adv-option ${planGeneratePacingMode === "balanced" ? "active" : ""}`}
+                    onClick={() => setPlanGeneratePacingMode("balanced")}
+                  >
+                    Balanced
+                  </button>
+                  <button
+                    type="button"
+                    className={`pw-plan-adv-option ${planGeneratePacingMode === "slow-burn" ? "active" : ""}`}
+                    onClick={() => setPlanGeneratePacingMode("slow-burn")}
+                  >
+                    Slow-burn
+                  </button>
+                  <button
+                    type="button"
+                    className={`pw-plan-adv-option ${planGeneratePacingMode === "fast" ? "active" : ""}`}
+                    onClick={() => setPlanGeneratePacingMode("fast")}
+                  >
+                    Fast
+                  </button>
+                </div>
+              </div>
+              <div className="pw-plan-adv-panel">
+                <div className="pw-plan-adv-head">
+                  <span>Advanced Story Controls</span>
+                  <p>Control setup depth, continuity handoff, anti-repeat strictness, canon tagging, and reveal timing.</p>
+                </div>
+                <div className="pw-plan-adv-grid">
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Setup depth
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">How much groundwork early chapters build before major escalation.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateSetupIntensity === "light" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateSetupIntensity("light")}
+                      >
+                        Light
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateSetupIntensity === "standard" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateSetupIntensity("standard")}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateSetupIntensity === "deep" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateSetupIntensity("deep")}
+                      >
+                        Deep
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Reveal cadence
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">When key reveals land: early, mid-book, or later for longer suspense.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateRevealCadence === "early" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateRevealCadence("early")}
+                      >
+                        Early
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateRevealCadence === "mid" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateRevealCadence("mid")}
+                      >
+                        Mid
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateRevealCadence === "late" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateRevealCadence("late")}
+                      >
+                        Late
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Chapter opener style
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">Choose whether chapters open with context first, hook first, or a mix.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateChapterOpenerStyle === "grounding-first" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateChapterOpenerStyle("grounding-first")}
+                      >
+                        Grounding
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateChapterOpenerStyle === "mixed" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateChapterOpenerStyle("mixed")}
+                      >
+                        Mixed
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateChapterOpenerStyle === "cold-open" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateChapterOpenerStyle("cold-open")}
+                      >
+                        Cold Open
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Continuity lock
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">How strictly each chapter must pick up where the previous chapter left off.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options pw-plan-adv-options-2">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateContinuityMode === "standard" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateContinuityMode("standard")}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateContinuityMode === "strict" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateContinuityMode("strict")}
+                      >
+                        Strict
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Repeat guard
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">Prevents repeated chapter beats. Aggressive mode enforces stronger novelty.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options pw-plan-adv-options-2">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateRepetitionGuard === "standard" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateRepetitionGuard("standard")}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateRepetitionGuard === "aggressive" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateRepetitionGuard("aggressive")}
+                      >
+                        Aggressive
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pw-plan-adv-card">
+                    <div className="pw-plan-adv-label">
+                      Canon tagging
+                      <span className="pw-plan-help-wrap">
+                        <span className="pw-plan-help-dot" aria-hidden="true">i</span>
+                        <span className="pw-plan-help-tip">How deeply chapters should tag characters, locations, lore, and events.</span>
+                      </span>
+                    </div>
+                    <div className="pw-plan-adv-options pw-plan-adv-options-2">
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateCanonTagDepth === "focused" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateCanonTagDepth("focused")}
+                      >
+                        Focused
+                      </button>
+                      <button
+                        type="button"
+                        className={`pw-plan-adv-option ${planGenerateCanonTagDepth === "comprehensive" ? "active" : ""}`}
+                        onClick={() => setPlanGenerateCanonTagDepth("comprehensive")}
+                      >
+                        Comprehensive
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -23808,7 +25697,7 @@ function NovelWorkspacePage() {
                 }}>&times;</button>
               </div>
               <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-                Pre-made craft kits — install bolt-ons built by genre experts with one click.
+                Pre-made craft kits by genre. Add bolt-ons to this novel — they stay in packs, you pick what to use.
               </p>
             </div>
 
@@ -23852,7 +25741,7 @@ function NovelWorkspacePage() {
                             <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
                             <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
                             {allInstalled && (
-                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(124,92,252,0.12)", color: "var(--pw-accent)" }}>Installed</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(124,92,252,0.12)", color: "var(--pw-accent)" }}>In use</span>
                             )}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>{pack.tagline}</div>
@@ -23871,7 +25760,7 @@ function NovelWorkspacePage() {
                         <div style={{ borderTop: "1px solid var(--pw-border-light)", padding: "12px 16px 16px" }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                             <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              {pack.boltons.length} bolt-ons — select which to install
+                              {pack.boltons.length} bolt-ons — select which to add
                             </p>
                             <button type="button" onClick={() => {
                               const uninstalled = pack.boltons.map((pb, i) => {
@@ -23919,7 +25808,7 @@ function NovelWorkspacePage() {
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
                                       {pb.title}
-                                      {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>installed</span>}
+                                      {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>in use</span>}
                                     </div>
                                     <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
                                   </div>
@@ -23929,13 +25818,13 @@ function NovelWorkspacePage() {
                           </div>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
                             <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
-                              {allInstalled ? "All installed" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
+                              {allInstalled ? "All in use" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
                             </span>
                             <div style={{ display: "flex", gap: 6 }}>
                               {hasSelection && (
                                 <button type="button" disabled={slotsLeft <= 0} onClick={() => installWritingPack(pack, packSelectedBoltons)}
                                   style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent, #b8a4ff)", color: "#fff", transition: "all 0.15s" }}>
-                                  Install Selected ({packSelected.length})
+                                  Add Selected ({packSelected.length})
                                 </button>
                               )}
                               <button type="button" disabled={allInstalled || slotsLeft <= 0} onClick={() => installWritingPack(pack)}
@@ -23946,7 +25835,7 @@ function NovelWorkspacePage() {
                                   color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
                                   opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1, transition: "all 0.15s",
                                 }}>
-                                {justInstalled ? "Installed!" : allInstalled ? "Installed" : slotsLeft <= 0 ? "Slots Full" : "Install All"}
+                                {justInstalled ? "Added!" : allInstalled ? "All added" : slotsLeft <= 0 ? "Slots full" : "Add all"}
                               </button>
                             </div>
                           </div>
@@ -24084,7 +25973,7 @@ function NovelWorkspacePage() {
                     className="pw-synopsis-modal-use-btn"
                     onClick={() => {
                       updateStoryBible({
-                        summary: { ...novel!.storyBible.summary, synopsisShort: opt.text },
+                        summary: { ...novel!.storyBible.summary, synopsisShort: opt.text, synopsisAct1: "", synopsisAct2: "", synopsisAct3: "" },
                       });
                       setSynopsisOptions([]);
                     }}

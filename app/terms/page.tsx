@@ -2,11 +2,11 @@ import Link from "next/link";
 
 export default function TermsPage() {
   const C = {
-    bg: "#ffffff",
-    text: "#1a1a2e",
-    textSoft: "#5a5d66",
-    textMuted: "#9ea0a8",
-    border: "#e5e6ea",
+    bg: "#fafaf9",
+    text: "#1c1917",
+    textSoft: "#44403c",
+    textMuted: "#57534e",
+    border: "#e7e5e4",
   };
 
   const sectionStyle: React.CSSProperties = {
@@ -30,12 +30,12 @@ export default function TermsPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       {/* Nav */}
-      <nav style={{ background: "rgba(20,20,24,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "14px 28px" }}>
+      <nav style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "14px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
           </Link>
-          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>&larr; Back to Home</Link>
+          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>&larr; Back to Home</Link>
         </div>
       </nav>
 
@@ -225,12 +225,12 @@ export default function TermsPage() {
       </article>
 
       {/* Footer */}
-      <footer style={{ padding: "48px 0 40px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <footer style={{ padding: "48px 0 40px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              &copy; {new Date().getFullYear()} Blocwrite
+              © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

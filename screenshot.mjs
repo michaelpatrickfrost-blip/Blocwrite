@@ -15,10 +15,10 @@ import puppeteer from 'puppeteer';
   console.log('1. Hero section captured');
 
   // Scroll down and capture each section
-  // 2. Plot Spine section
-  const plotSpine = await page.$('text/PLOT SPINE') || await page.evaluate(() => {
+  // 2. The Architect section
+  const plotSpine = await page.$('text/THE ARCHITECT') || await page.evaluate(() => {
     const els = [...document.querySelectorAll('*')];
-    const el = els.find(e => e.textContent?.includes('PLOT SPINE') && e.textContent?.includes('Map your entire story'));
+    const el = els.find(e => e.textContent?.includes('THE ARCHITECT') && e.textContent?.includes('Map your entire story'));
     if (el) {
       el.scrollIntoView({ block: 'start' });
       return true;
@@ -26,8 +26,8 @@ import puppeteer from 'puppeteer';
     return false;
   });
   await new Promise(r => setTimeout(r, 1000));
-  await page.screenshot({ path: 'screenshot-2-plot-spine.png', fullPage: false });
-  console.log('2. Plot Spine section captured');
+  await page.screenshot({ path: 'screenshot-2-architect.png', fullPage: false });
+  console.log('2. The Architect section captured');
 
   // 3. Canon section
   await page.evaluate(() => {

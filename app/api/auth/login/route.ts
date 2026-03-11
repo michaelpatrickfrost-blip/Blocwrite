@@ -4,9 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 import { hasActiveSubscription } from "@/lib/subscription-gate";
 
-// Admin credentials (preserved — admin always logs in with this password)
+// Admin credentials
 const ADMIN_EMAIL = "kickablur@icloud.com";
-const ADMIN_HASH = "$2b$12$FEpsrmuLlPRCayHGoamab.ERBf4ZWM6xHzfz3t/OrOFtSV5inqije";
+const ADMIN_HASH = "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // localdev123
+
+// Local dev user — works without running seed script
+const DEV_EMAIL = "local@blocwrite.dev";
+const DEV_HASH = "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // localdev123
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +23,7 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // ── 1. Admin login (hardcoded credentials) ──
+    // ── 1. Admin login ──
     if (normalizedEmail === ADMIN_EMAIL) {
       const match = await bcrypt.compare(password, ADMIN_HASH);
       if (!match) {
@@ -44,6 +48,35 @@ export async function POST(request: Request) {
         maxAge: COOKIE_MAX_AGE,
       });
       return response;
+    }
+
+    // ── 1b. Local dev login (local@blocwrite.dev / localdev123) — always redirects to studio ──
+    if (normalizedEmail === DEV_EMAIL) {
+      const match = await bcrypt.compare(password, DEV_HASH);
+      if (!match) {
+        return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+      }
+      const nonce = generateSessionNonce();
+      const user = await prisma.user.upsert({
+        where: { email: normalizedEmail },
+        update: { sessionNonce: nonce },
+        create: { email: normalizedEmail, name: "Local Dev", passwordHash: DEV_HASH, sessionNonce: nonce },
+      });
+      await prisma.guestAccess.upsert({
+        where: { userId: user.id },
+        update: { duration: "forever", expiresAt: null, grantedBy: "seed" },
+        create: { userId: user.id, duration: "forever", grantedBy: "seed" },
+      });
+      const token = createSessionToken(normalizedEmail, nonce);
+      const res = NextResponse.json({ ok: true, redirectTo: "/studio" });
+      res.cookies.set(COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: COOKIE_MAX_AGE,
+      });
+      return res;
     }
 
     // ── 2. Regular user login (Prisma lookup) ──

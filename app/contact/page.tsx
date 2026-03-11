@@ -3,14 +3,14 @@
 import Link from "next/link";
 
 const C = {
-  bg: "#ffffff",
-  bgSoft: "#f8f8fa",
-  bgDark: "#1a1a2e",
-  text: "#1a1a2e",
-  textSoft: "#64666d",
-  textMuted: "#9ea0a8",
-  border: "#e5e6ea",
-  btnBg: "linear-gradient(135deg, #2a2a30, #1a1a2e)",
+  bg: "#fafaf9",
+  bgSoft: "#f5f5f4",
+  bgDark: "#1e3a5f",
+  text: "#1c1917",
+  textSoft: "#44403c",
+  textMuted: "#57534e",
+  border: "#e7e5e4",
+  btnBg: "linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%)",
   btnText: "#ffffff",
 };
 
@@ -18,12 +18,12 @@ export default function ContactPage() {
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       {/* Nav */}
-      <nav style={{ background: "rgba(20,20,24,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "14px 28px" }}>
+      <nav style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "14px 28px" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
           </Link>
-          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", textDecoration: "none" }}>
+          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>
             &larr; Back to Home
           </Link>
         </div>
@@ -52,12 +52,12 @@ export default function ContactPage() {
       </div>
 
       {/* Footer */}
-      <footer style={{ padding: "48px 0 40px", background: "#0e0e12", borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: 80 }}>
+      <footer style={{ padding: "48px 0 40px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 80 }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              &copy; {new Date().getFullYear()} Blocwrite
+              © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

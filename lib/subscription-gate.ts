@@ -110,6 +110,11 @@ export async function checkSubscriptionGate(): Promise<GateResult> {
 
   const normalizedEmail = payload.email.trim().toLowerCase();
 
+  // Local dev bypass — skip subscription check so you can access studio
+  if (process.env.BYPASS_STUDIO_GATE === "1") {
+    return { authorized: true, isAdmin: false, email: normalizedEmail, userId: null, subscriptionStatus: "bypass" };
+  }
+
   // Admin always gets in (but still validate nonce)
   if (normalizedEmail === ADMIN_EMAIL) {
     // Check nonce for admin too

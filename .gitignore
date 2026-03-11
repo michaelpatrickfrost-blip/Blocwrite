@@ -45,3 +45,8 @@ next-env.d.ts
 
 # Server-side novel data
 /data
+
+# Local dev
+prisma/dev.db
+prisma/*.db-journal
+server.log

@@ -71,7 +71,7 @@ function StudioHomePage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [hoveredNovelId, setHoveredNovelId] = useState<string | null>(null);
-  const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("dark");
+  const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("light");
   const [isAdmin, setIsAdmin] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [navigatingAway, setNavigatingAway] = useState(false);
