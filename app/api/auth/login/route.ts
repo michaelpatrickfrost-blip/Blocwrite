@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     if (normalizedEmail === ADMIN_EMAIL && ADMIN_HASH) {
       const match = await bcrypt.compare(password, ADMIN_HASH);
       if (!match) {
-        return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+        return NextResponse.json({ error: "Invalid email or password.", _dbg: "admin_bcrypt_fail" }, { status: 401 });
       }
 
       // Generate nonce and store it (upsert admin user)
@@ -88,12 +88,12 @@ export async function POST(request: Request) {
     });
 
     if (!user || !user.passwordHash) {
-      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+      return NextResponse.json({ error: "Invalid email or password.", _dbg: "no_user_or_hash" }, { status: 401 });
     }
 
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
-      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+      return NextResponse.json({ error: "Invalid email or password.", _dbg: "bcrypt_no_match" }, { status: 401 });
     }
 
     // Always rotate nonce on successful login — newest session wins and
