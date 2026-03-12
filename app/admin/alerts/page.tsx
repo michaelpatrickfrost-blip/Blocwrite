@@ -180,7 +180,7 @@ export default function AdminAlertsPage() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <Link href="/admin" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28 }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 40 }} />
           </Link>
           <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.5 }}>Admin Hub</span>
         </div>

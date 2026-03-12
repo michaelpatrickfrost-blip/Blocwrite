@@ -87,7 +87,7 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
       }}>
         <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 34, width: "auto" }} />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 44, width: "auto" }} />
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
             <div style={{ display: "flex", gap: 32 }} className="post-nav-links">
@@ -219,7 +219,7 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
       <footer style={{ padding: "52px 0 44px", background: "#0a0a0a" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.7 }} />
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 44, width: "auto", opacity: 0.7 }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
               © 2026 Blocwrite. All rights reserved.
             </span>

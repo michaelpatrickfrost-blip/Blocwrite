@@ -172,7 +172,7 @@ function LoginForm() {
           <img
             src="/blocwrite-logo-black.png"
             alt="Blocwrite"
-            style={{ height: 48, width: "auto", maxWidth: 200, objectFit: "contain" }}
+            style={{ height: 64, width: "auto", maxWidth: 240, objectFit: "contain" }}
           />
         </Link>
 

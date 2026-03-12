@@ -231,7 +231,7 @@ export default function AdminPage() {
         position: "sticky", top: 0, zIndex: 100,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28 }} />
+          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 40 }} />
           <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.5 }}>Admin Hub</span>
         </div>
         <nav style={{ display: "flex", gap: 6, alignItems: "center" }}>
