@@ -15713,7 +15713,7 @@ Use 1-based chapter numbers. Each step = one narrow, concrete change.`;
                                                 const localOffset = offset - start;
                                                 const newProse = p.slice(0, localOffset) + rep.value + p.slice(localOffset + len);
                                                 const next = blks.map((b, j) => j === i ? { ...b, prose: newProse } : b);
-                                                setSceneBlocks(activeChapter.id, next);
+                                                updateSceneBlocks(activeChapter.id, next, true);
                                                 syncChapterContentFromBlocks(activeChapter.id, next);
                                                 break;
                                               }
