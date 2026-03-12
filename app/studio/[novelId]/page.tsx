@@ -16093,7 +16093,7 @@ Use 1-based chapter numbers. Each step = one narrow, concrete change.`;
                   >
                     {!novel.coverImage && (
                       <div className="pw-cover-placeholder">
-                        <img src={currentTheme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" className="pw-cover-placeholder-logo" />
+                        <span className="pw-cover-placeholder-brand">Blocwrite</span>
                         <h3 className="pw-cover-placeholder-title">{novel.title || "Untitled"}</h3>
                         {novel.authorName?.trim() ? (
                           <p className="pw-cover-placeholder-author">by {novel.authorName.trim()}</p>

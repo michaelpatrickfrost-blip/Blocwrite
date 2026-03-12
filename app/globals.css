@@ -923,14 +923,6 @@ a { color: inherit; text-decoration: none; }
   color: var(--pw-accent);
   opacity: 0.9;
 }
-.pw-cover-placeholder-logo {
-  margin-top: auto;
-  height: 40px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
-  opacity: 0.85;
-}
 .pw-cover-placeholder-title {
   font-family: var(--font-display), "Figtree", system-ui, sans-serif;
   font-size: clamp(13px, 4vw, 18px);
