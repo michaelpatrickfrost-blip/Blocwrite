@@ -4,12 +4,11 @@
  * Sets passwordHash in User table so they can login via regular path.
  * Run on server: node scripts/fix-admin-login.js
  */
-require("dotenv").config({ path: ".env" });
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 
 const prisma = new PrismaClient();
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "kickablur@icloud.com").trim().toLowerCase();
+const ADMIN_EMAIL = "kickablur@icloud.com";
 const PASSWORD = process.argv[2] || "localdev123";
 
 async function main() {
