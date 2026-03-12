@@ -4,9 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 import { hasActiveSubscription } from "@/lib/subscription-gate";
 
-// Admin credentials
-const ADMIN_EMAIL = "kickablur@icloud.com";
-const ADMIN_HASH = "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // localdev123
+// Admin credentials — override via ADMIN_PASSWORD_HASH in production
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
+const ADMIN_HASH = process.env.ADMIN_PASSWORD_HASH ?? "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // default: localdev123
 
 // Local dev user — works without running seed script
 const DEV_EMAIL = "local@blocwrite.dev";
