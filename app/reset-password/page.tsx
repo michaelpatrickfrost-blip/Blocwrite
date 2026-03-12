@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -85,7 +84,7 @@ function ResetPasswordForm() {
       >
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           <Link href="/" style={{ textDecoration: "none" }}>
-            <Image src="/blocwrite-logo-black.png" alt="Blocwrite" width={200} height={60} priority />
+            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 48, width: "auto", maxWidth: 200, objectFit: "contain" }} />
           </Link>
           <p style={{ color: "#ff6b6b", marginTop: 24, fontSize: 14 }}>
             Invalid reset link. Please request a new password reset from the login page.
@@ -133,7 +132,7 @@ function ResetPasswordForm() {
         }}
       >
         <Link href="/" style={{ textDecoration: "none" }}>
-          <Image src="/blocwrite-logo-black.png" alt="Blocwrite" width={200} height={60} priority />
+          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 48, width: "auto", maxWidth: 200, objectFit: "contain" }} />
         </Link>
 
         <div

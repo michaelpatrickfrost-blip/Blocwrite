@@ -4,10 +4,16 @@
 set timeout 60
 set host "217.154.51.15"
 set user "root"
-set pass $env(DEPLOY_PASS)
-
+if {[info exists env(DEPLOY_PASS)]} {
+    set pass $env(DEPLOY_PASS)
+} else {
+    set pass ""
+}
+if {[catch {set f [open [file join [file dirname [info script]] .deploy-pass] r]; set pass [string trim [read -nonewline $f]]; close $f} err]} {
+    # .deploy-pass not found, pass stays empty or from env
+}
 if {$pass == ""} {
-    puts "Error: set DEPLOY_PASS environment variable"
+    puts "Error: set DEPLOY_PASS or create scripts/.deploy-pass with server password"
     exit 1
 }
 

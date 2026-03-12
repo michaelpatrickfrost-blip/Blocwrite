@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -169,13 +168,11 @@ function LoginForm() {
         }}
       >
         {/* Logo */}
-        <Link href="/" style={{ textDecoration: "none" }}>
-          <Image
+        <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+          <img
             src="/blocwrite-logo-black.png"
             alt="Blocwrite"
-            width={200}
-            height={60}
-            priority
+            style={{ height: 48, width: "auto", maxWidth: 200, objectFit: "contain" }}
           />
         </Link>
 

@@ -27,7 +27,7 @@ export function PublicFooter() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 28, width: "auto", opacity: 0.85 }} />
+          <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 36, width: "auto", opacity: 0.85 }} />
           <span style={{ fontSize: 13, color: "#6b6b6b" }}>© 2026 Blocwrite</span>
         </div>
         <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

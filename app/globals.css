@@ -923,6 +923,14 @@ a { color: inherit; text-decoration: none; }
   color: var(--pw-accent);
   opacity: 0.9;
 }
+.pw-cover-placeholder-logo {
+  margin-top: auto;
+  height: 28px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  opacity: 0.85;
+}
 .pw-cover-placeholder-title {
   font-family: var(--font-display), "Figtree", system-ui, sans-serif;
   font-size: clamp(13px, 4vw, 18px);
@@ -960,6 +968,9 @@ a { color: inherit; text-decoration: none; }
 .pw-overview-cover .pw-cover-placeholder-brand {
   font-size: 10px;
   letter-spacing: 0.15em;
+}
+.pw-overview-cover .pw-cover-placeholder-logo {
+  height: 36px;
 }
 
 .pw-novel-card-label {
@@ -6837,24 +6848,21 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 .pw-logo-full {
   display: block;
   flex: 0 0 auto;
-  height: 40px !important;
+  height: 72px !important;
   width: auto !important;
   max-width: 100%;
   object-fit: contain;
   object-position: left center;
-  background: transparent;
+  background: transparent !important;
   transition: opacity 0.3s ease;
-  opacity: 0.82;
-  mix-blend-mode: screen;
-  background: transparent;
+  opacity: 0.9;
 }
-/* Light mode: logo dark on light bg — same logo, bolder */
+/* Light mode: use blocwrite-logo-black (dark text on light grey) — box visibility reduced by matching sidebar #f5f4f2 */
 [data-theme="light"] .pw-logo-full,
 html:not([data-theme]) .pw-logo-full {
-  filter: invert(1) contrast(1.08) drop-shadow(0 0 0.35px rgba(0,0,0,0.5));
-  mix-blend-mode: multiply;
+  filter: contrast(1.05) drop-shadow(0 0 0.35px rgba(0,0,0,0.3));
 }
-/* Dark mode: logo light on dark bg — bolder */
+/* Dark mode: use blocwrite-logo-white (cream on black) — no invert */
 [data-theme="dark"] .pw-logo-full {
   filter: contrast(1.1) drop-shadow(0 0 0.4px rgba(255,255,255,0.5));
 }
@@ -6865,17 +6873,18 @@ html:not([data-theme]) .pw-logo-full {
   transform: translate(-50%, -50%);
   width: 100%;
   height: auto;
-  max-width: 88px;
+  max-width: 100px;
   object-fit: contain;
   opacity: 0;
   transition: opacity 0.3s ease;
-  mix-blend-mode: screen;
-  background: transparent;
+  background: transparent !important;
 }
 [data-theme="light"] .pw-logo-icon-img,
 html:not([data-theme]) .pw-logo-icon-img {
-  filter: invert(1);
-  mix-blend-mode: multiply;
+  filter: contrast(1.05);
+}
+[data-theme="dark"] .pw-logo-icon-img {
+  filter: contrast(1.1);
 }
 
 /* Pin button – hidden when collapsed */

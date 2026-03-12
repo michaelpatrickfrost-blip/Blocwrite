@@ -14708,7 +14708,7 @@ Requirements:
         <div className="pw-window">
           <aside className="pw-sidebar">
             <div className="pw-logo">
-              <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
+              <img src={currentTheme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" className="pw-logo-full" />
             </div>
             <Link href="/studio" className="pw-back-link">
               <span>&larr; Back to novels</span>
@@ -15105,8 +15105,8 @@ Use 1-based chapter numbers. Each step = one narrow, concrete change.`;
         <aside className="pw-sidebar">
           <div className="pw-logo">
             <div className="pw-logo-swap">
-              <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
-              <img src={currentTheme === "dark" ? "/blocwrite-icon-dark.png" : "/blocwrite-icon-light.png"} alt="Bw" className="pw-logo-icon-img" />
+              <img src={currentTheme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" className="pw-logo-full" />
+              <img src={currentTheme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Bw" className="pw-logo-icon-img" />
             </div>
           </div>
           <Link href="/studio" prefetch={true} className="pw-back-link" onClick={(e) => {
@@ -16093,7 +16093,7 @@ Use 1-based chapter numbers. Each step = one narrow, concrete change.`;
                   >
                     {!novel.coverImage && (
                       <div className="pw-cover-placeholder">
-                        <span className="pw-cover-placeholder-brand">Blocwrite</span>
+                        <img src={currentTheme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" className="pw-cover-placeholder-logo" />
                         <h3 className="pw-cover-placeholder-title">{novel.title || "Untitled"}</h3>
                         {novel.authorName?.trim() ? (
                           <p className="pw-cover-placeholder-author">by {novel.authorName.trim()}</p>
