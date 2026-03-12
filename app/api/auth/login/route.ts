@@ -4,11 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { createSessionToken, generateSessionNonce, COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/bw-auth";
 import { hasActiveSubscription } from "@/lib/subscription-gate";
 
-// Admin credentials — override via ADMIN_PASSWORD_HASH in production
+// Admin credentials — in production, ADMIN_PASSWORD_HASH must be set in .env
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "kickablur@icloud.com").trim().toLowerCase();
-const ADMIN_HASH = process.env.ADMIN_PASSWORD_HASH ?? "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // default: localdev123
+const ADMIN_HASH =
+  process.env.ADMIN_PASSWORD_HASH ??
+  (process.env.NODE_ENV === "production" ? null : "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2");
 
-// Local dev user — works without running seed script
+// Local dev user — works without running seed script (dev only)
 const DEV_EMAIL = "local@blocwrite.dev";
 const DEV_HASH = "$2b$12$orXgbi6dT.q6mcyTKRI5ZukoqYQLgWcHrJvZb8T6Oajb3WJ4PX9N2"; // localdev123
 
@@ -23,8 +25,8 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // ── 1. Admin login ──
-    if (normalizedEmail === ADMIN_EMAIL) {
+    // ── 1. Admin login (only when ADMIN_PASSWORD_HASH is set, or dev fallback) ──
+    if (normalizedEmail === ADMIN_EMAIL && ADMIN_HASH) {
       const match = await bcrypt.compare(password, ADMIN_HASH);
       if (!match) {
         return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
