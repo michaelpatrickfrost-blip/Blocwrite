@@ -6837,7 +6837,7 @@ input.pw-bible-input, select.pw-bible-input { height: 44px; min-height: 44px; pa
 .pw-logo-full {
   display: block;
   flex: 0 0 auto;
-  height: 72px !important;
+  height: 40px !important;
   width: auto !important;
   max-width: 100%;
   object-fit: contain;

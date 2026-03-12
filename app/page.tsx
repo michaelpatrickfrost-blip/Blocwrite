@@ -109,7 +109,7 @@ function Nav() {
     }}>
       <div style={{ ...wrap(), display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 32px" }}>
         <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", minHeight: 44, overflow: "visible" }}>
-          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 112, width: "auto", maxWidth: 520, opacity: 0.95, objectFit: "contain" }} />
+          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 44, width: "auto", maxWidth: 180, opacity: 0.95, objectFit: "contain" }} />
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
           <div style={{ display: "flex", gap: 28 }} className="bw-nav-links">
@@ -808,7 +808,7 @@ function Footer() {
     <footer style={{ padding: "64px 0 48px", background: "#000000" }}>
       <div className="bw-footer-inner" style={{ ...wrap(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 96, width: "auto", maxWidth: 440, opacity: 0.6, objectFit: "contain", filter: "contrast(1.15) drop-shadow(0 0 0.5px rgba(255,255,255,0.5))", background: "transparent", display: "block" }} />
+          <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", maxWidth: 160, opacity: 0.6, objectFit: "contain", filter: "contrast(1.15) drop-shadow(0 0 0.5px rgba(255,255,255,0.5))", background: "transparent", display: "block" }} />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>© 2026 Blocwrite. All rights reserved.</span>
         </div>
         <div className="bw-footer-links" style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>

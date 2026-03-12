@@ -31,7 +31,7 @@ export function PublicNav({ showLinks = false }: { showLinks?: boolean }) {
           <img
             src="/blocwrite-logo-white.png"
             alt="Blocwrite"
-            style={{ height: 48, width: "auto", maxWidth: 200, opacity: 0.95, objectFit: "contain" }}
+            style={{ height: 32, width: "auto", maxWidth: 140, opacity: 0.95, objectFit: "contain" }}
           />
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
