@@ -61,7 +61,11 @@ export async function POST(request: Request) {
     const userEmail = email.trim().toLowerCase();
     const dir = userEmail === ADMIN_EMAIL ? DATA_DIR : join(DATA_DIR, "users", createHash("sha256").update(userEmail).digest("hex").slice(0, 16));
     const raw = await readFile(join(dir, "novels.json"), "utf-8").catch(() => "[]");
-    const novels = JSON.parse(raw) as Array<{ id: string; title?: string }>;
+    let novels: Array<{ id: string; title?: string }> = [];
+    try {
+      const parsed = JSON.parse(raw);
+      novels = Array.isArray(parsed) ? parsed : [];
+    } catch { /* use [] */ }
     const novel = novels.find((n) => n.id === shareLink.novelId);
     if (novel?.title) novelTitle = novel.title;
   } catch { /* fallback to "Untitled Novel" */ }

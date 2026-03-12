@@ -108,7 +108,10 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/subscribe") ||
     isApiRoute
   ) {
-    const secret = process.env.BW_SESSION_SECRET;
+    // In development, allow login without BW_SESSION_SECRET (same fallback as lib/bw-auth)
+    const secret =
+      process.env.BW_SESSION_SECRET ||
+      (process.env.NODE_ENV !== "production" ? "blocwrite-local-dev-secret-do-not-use-in-production" : "");
     if (!secret) {
       return isApiRoute
         ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })

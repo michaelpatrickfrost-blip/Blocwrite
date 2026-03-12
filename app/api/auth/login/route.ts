@@ -105,12 +105,20 @@ export async function POST(request: Request) {
     // Create session with nonce
     const token = createSessionToken(normalizedEmail, nonce);
 
-    // Route users based on live access status:
-    // active/trial/guest -> studio, otherwise paywall.
-    const hasSub = await hasActiveSubscription(normalizedEmail);
+    // Route users based on live access status: active/trial/guest -> studio, else subscribe.
+    // If subscription check fails (Stripe/DB error), allow through to studio so users aren't locked out;
+    // studio layout will re-check and show paywall if needed.
+    let redirectTo: string;
+    try {
+      const hasSub = await hasActiveSubscription(normalizedEmail);
+      redirectTo = hasSub ? "/studio" : "/subscribe";
+    } catch {
+      redirectTo = "/studio";
+    }
+
     const response = NextResponse.json({
       ok: true,
-      redirectTo: hasSub ? "/studio" : "/subscribe",
+      redirectTo,
       mustChangePassword: !!user.mustChangePassword,
     });
     response.cookies.set(COOKIE_NAME, token, {
@@ -122,7 +130,11 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+  } catch (err) {
+    // Don't lock users out: surface config errors in development
+    const message = err instanceof Error && process.env.NODE_ENV !== "production"
+      ? err.message
+      : "Something went wrong.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

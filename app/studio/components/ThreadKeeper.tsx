@@ -120,8 +120,8 @@ export const THREADKEEPER_CATEGORIES: ThreadKeeperCategory[] = [
 ];
 
 const SEVERITY_COLORS: Record<string, string> = {
-  high: "#ef4444",
-  medium: "#f59e0b",
+  high: "var(--pw-status-danger)",
+  medium: "var(--pw-status-warning)",
   low: "#6b7280",
 };
 
@@ -531,12 +531,12 @@ export function ThreadKeeper({
         <div style={{
           padding: "16px 16px", marginBottom: 16,
           background: "var(--pw-surface-alt, #161616)",
-          borderRadius: 10, border: "1px solid var(--pw-border-light, #2a2a2a)",
+          borderRadius: 10, border: "1px solid var(--pw-border-light)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <span style={{
               width: 18, height: 18, border: "2px solid rgba(var(--pw-accent-rgb, 124,92,252), 0.3)",
-              borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%",
+              borderTopColor: "var(--pw-accent)", borderRadius: "50%",
               animation: "spin 0.7s linear infinite", display: "inline-block", flexShrink: 0,
             }} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>Scanning: {scanningLabel || "Preparing..."}</span>
@@ -551,16 +551,16 @@ export function ThreadKeeper({
                 <span key={cat.id} style={{
                   padding: "3px 8px", fontSize: 10, fontWeight: 500, borderRadius: 4,
                   background: isActive
-                    ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.1)"
+                    ? "rgba(var(--pw-accent-rgb), 0.1)"
                     : isDone
                     ? "rgba(34,197,94,0.08)"
                     : "var(--pw-surface, #1a1a1a)",
                   color: isActive
-                    ? "var(--pw-accent, #b8a4ff)"
+                    ? "var(--pw-accent)"
                     : isDone
                     ? "#22c55e"
                     : "var(--pw-text-dim, #666)",
-                  border: `1px solid ${isActive ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.2)" : isDone ? "rgba(34,197,94,0.15)" : "var(--pw-border-light, #2a2a2a)"}`,
+                  border: `1px solid ${isActive ? "rgba(var(--pw-accent-rgb), 0.2)" : isDone ? "rgba(34,197,94,0.15)" : "var(--pw-border-light)"}`,
                   transition: "all 0.15s",
                 }}>
                   {isDone ? "✓ " : isActive ? "● " : ""}{cat.shortLabel}
@@ -595,13 +595,13 @@ export function ThreadKeeper({
       <div style={{
         padding: "14px 16px", marginBottom: 14,
         background: "var(--pw-surface-alt, #161616)",
-        borderRadius: 10, border: "1px solid var(--pw-border-light, #2a2a2a)",
+        borderRadius: 10, border: "1px solid var(--pw-border-light)",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600 }}>Select what to check</span>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={selectAll} style={{
-              fontSize: 10, color: "var(--pw-accent, #b8a4ff)", background: "none", border: "none",
+              fontSize: 10, color: "var(--pw-accent)", background: "none", border: "none",
               cursor: "pointer", textDecoration: "underline", opacity: 0.7,
             }}>Select all</button>
             <button type="button" onClick={selectNone} style={{
@@ -629,8 +629,8 @@ export function ThreadKeeper({
                   display: "flex", alignItems: "center", gap: 8,
                   padding: "8px 10px", fontSize: 11, fontWeight: 500,
                   color: isSelected ? "var(--pw-text, #f0f0f0)" : "var(--pw-text-dim, #666)",
-                  background: isSelected ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.04)" : "transparent",
-                  border: `1px solid ${isSelected ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.15)" : "var(--pw-border-light, #2a2a2a)"}`,
+                  background: isSelected ? "rgba(var(--pw-accent-rgb), 0.04)" : "transparent",
+                  border: `1px solid ${isSelected ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.15)" : "var(--pw-border-light)"}`,
                   borderRadius: 8, cursor: "pointer",
                   transition: "all 0.12s", textAlign: "left", position: "relative",
                 }}
@@ -638,13 +638,13 @@ export function ThreadKeeper({
                 {/* Checkbox */}
                 <span style={{
                   width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                  border: isSelected ? "1.5px solid var(--pw-accent, #b8a4ff)" : "1.5px solid var(--pw-border, #444)",
+                  border: isSelected ? "1.5px solid var(--pw-accent)" : "1.5px solid var(--pw-border)",
                   background: isSelected ? "rgba(var(--pw-accent-rgb, 124,92,252), 0.15)" : "transparent",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   transition: "all 0.12s",
                 }}>
                   {isSelected && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20 6L9 17l-5-5" />
                     </svg>
                   )}
@@ -674,7 +674,7 @@ export function ThreadKeeper({
                     minWidth: 14, height: 14, padding: "0 3px", borderRadius: 7,
                     fontSize: 9, fontWeight: 700, color: "#fff", display: "inline-flex",
                     alignItems: "center", justifyContent: "center", flexShrink: 0,
-                    background: catIssues.some((i) => i.severity === "high") ? "#ef4444" : catIssues.some((i) => i.severity === "medium") ? "#f59e0b" : "#6b7280",
+                    background: catIssues.some((i) => i.severity === "high") ? "var(--pw-status-danger)" : catIssues.some((i) => i.severity === "medium") ? "var(--pw-status-warning)" : "#6b7280",
                   }}>
                     {catIssues.length}
                   </span>
@@ -751,7 +751,7 @@ export function ThreadKeeper({
             display: "flex", gap: 8, marginBottom: 14, alignItems: "center",
             padding: "8px 12px", borderRadius: 8,
             background: "var(--pw-surface-alt, #161616)",
-            border: "1px solid var(--pw-border-light, #2a2a2a)",
+            border: "1px solid var(--pw-border-light)",
             flexWrap: "wrap",
           }}>
             <button type="button" className="btn" onClick={acceptAll}
@@ -767,7 +767,7 @@ export function ThreadKeeper({
               {acceptedCount} accepted &middot; {pendingCount} pending &middot; {dismissedCount} dismissed
             </div>
             {highCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#ef4444" }}>{highCount} critical</span>}
-            {medCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b" }}>{medCount} warning{medCount !== 1 ? "s" : ""}</span>}
+            {medCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-status-warning)" }}>{medCount} warning{medCount !== 1 ? "s" : ""}</span>}
             {lowCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280" }}>{lowCount} minor</span>}
           </div>
 
@@ -782,13 +782,13 @@ export function ThreadKeeper({
                   style={{
                     borderRadius: 10,
                     border: issue.accepted === true
-                      ? "1px solid rgba(124,92,252,0.35)"
+                      ? "1px solid rgba(var(--accent-rgb), 0.35)"
                       : issue.accepted === false
                       ? "1px solid rgba(239,68,68,0.2)"
                       : "1px solid var(--pw-border, #333)",
                     borderLeft: `3px solid ${SEVERITY_COLORS[issue.severity] || "#6b7280"}`,
                     background: issue.accepted === true
-                      ? "rgba(124,92,252,0.03)"
+                      ? "rgba(var(--accent-rgb), 0.03)"
                       : issue.accepted === false
                       ? "rgba(239,68,68,0.02)"
                       : "var(--pw-surface, #1a1a1a)",
@@ -837,9 +837,9 @@ export function ThreadKeeper({
                         onClick={(e) => { e.stopPropagation(); toggleIssue(realIdx, issue.accepted === true ? null : true); }}
                         style={{
                           padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                          border: issue.accepted === true ? "1px solid rgba(124,92,252,0.5)" : "1px solid var(--pw-border, #444)",
-                          background: issue.accepted === true ? "rgba(124,92,252,0.12)" : "transparent",
-                          color: issue.accepted === true ? "#b8a4ff" : "var(--pw-text-dim, #aaa)",
+                          border: issue.accepted === true ? "1px solid rgba(var(--accent-rgb), 0.5)" : "1px solid var(--pw-border)",
+                          background: issue.accepted === true ? "rgba(var(--accent-rgb), 0.12)" : "transparent",
+                          color: issue.accepted === true ? "var(--pw-accent)" : "var(--pw-text-dim)",
                           transition: "all 0.12s",
                         }}
                       >
@@ -850,9 +850,9 @@ export function ThreadKeeper({
                         onClick={(e) => { e.stopPropagation(); toggleIssue(realIdx, issue.accepted === false ? null : false); }}
                         style={{
                           padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                          border: issue.accepted === false ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--pw-border, #444)",
+                          border: issue.accepted === false ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--pw-border)",
                           background: issue.accepted === false ? "rgba(239,68,68,0.12)" : "transparent",
-                          color: issue.accepted === false ? "#ef4444" : "var(--pw-text-dim, #aaa)",
+                          color: issue.accepted === false ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
                           transition: "all 0.12s",
                         }}
                       >
@@ -863,7 +863,7 @@ export function ThreadKeeper({
 
                   {/* Expanded detail */}
                   {isExpanded && (
-                    <div style={{ borderTop: "1px solid var(--pw-border-light, #2a2a2a)", padding: "12px 14px" }}>
+                    <div style={{ borderTop: "1px solid var(--pw-border-light)", padding: "12px 14px" }}>
                       {issue.quote && (
                         <div style={{
                           padding: "8px 12px", marginBottom: 10, borderRadius: 6,
@@ -877,10 +877,10 @@ export function ThreadKeeper({
                       <p style={{ fontSize: 13, lineHeight: 1.6, margin: "0 0 10px", opacity: 0.85 }}>{issue.issue}</p>
                       <div style={{
                         padding: "10px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
-                        background: "rgba(var(--pw-accent-rgb, 124,92,252), 0.03)",
-                        border: "1px solid rgba(var(--pw-accent-rgb, 124,92,252), 0.08)",
+                        background: "rgba(var(--pw-accent-rgb), 0.03)",
+                        border: "1px solid rgba(var(--pw-accent-rgb), 0.08)",
                       }}>
-                        <strong style={{ color: "var(--pw-accent, #b8a4ff)", fontWeight: 700 }}>Suggested Fix:</strong> {issue.suggestion}
+                        <strong style={{ color: "var(--pw-accent)", fontWeight: 700 }}>Suggested Fix:</strong> {issue.suggestion}
                       </div>
                     </div>
                   )}
@@ -894,7 +894,7 @@ export function ThreadKeeper({
       {/* Clean state */}
       {scannedCategories.size > 0 && issues.length === 0 && !scanning && (
         <div style={{ textAlign: "center", padding: "32px 0", fontSize: 14, opacity: 0.5 }}>
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
             <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           No continuity issues found. Chapter looks clean.

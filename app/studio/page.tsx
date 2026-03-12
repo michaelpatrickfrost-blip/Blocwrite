@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   countChapterWords,
   countNovelWords,
@@ -65,9 +65,7 @@ function StudioHomePage() {
   const router = useRouter();
   const [novels, setNovels] = useState<Novel[]>([]);
   const [serverLoaded, setServerLoaded] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const [createTypeDraft, setCreateTypeDraft] = useState<"fiction" | "nonfiction">("fiction");
-  const [createHint, setCreateHint] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [hoveredNovelId, setHoveredNovelId] = useState<string | null>(null);
@@ -194,20 +192,16 @@ function StudioHomePage() {
 
   const atNovelCap = !isAdmin && novels.length >= MAX_NOVELS_TOTAL;
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!titleDraft.trim() || atNovelCap) return;
-    const novel = createNovel(titleDraft, null, createTypeDraft);
+  async function handleCreateWithType(type: "fiction" | "nonfiction") {
+    if (atNovelCap) return;
+    setShowCreateModal(false);
+    const novel = createNovel("", null, type);
     const next = [novel, ...novels];
     setNovels(next);
     saveNovels(next);
-    setTitleDraft("");
-    setCreateTypeDraft("fiction");
     setHoveredNovelId(novel.id);
     setJustCreatedId(novel.id);
-    // Save to server immediately so it's available when they click in
     await saveNovelsToServer(next);
-    // Clear the highlight after a moment
     setTimeout(() => setJustCreatedId(null), 2000);
   }
 
@@ -334,47 +328,16 @@ function StudioHomePage() {
             <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
           </div>
 
-          <div className="pw-section-title">Create Novel</div>
-          <div style={{ display: "flex", gap: 0, marginBottom: 8, borderRadius: 8, overflow: "hidden", border: "1px solid var(--pw-border)" }}>
-            <button type="button" onClick={() => setCreateTypeDraft("fiction")} style={{
-              flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
-              background: createTypeDraft === "fiction" ? "var(--pw-accent)" : "var(--pw-surface)",
-              color: createTypeDraft === "fiction" ? "var(--pw-btn-primary-text)" : "var(--pw-text-muted)",
-              transition: "all 0.15s",
-            }}>Fiction</button>
-            <button type="button" onClick={() => setCreateTypeDraft("nonfiction")} style={{
-              flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
-              background: createTypeDraft === "nonfiction" ? "var(--pw-accent)" : "var(--pw-surface)",
-              color: createTypeDraft === "nonfiction" ? "var(--pw-btn-primary-text)" : "var(--pw-text-muted)",
-              transition: "all 0.15s",
-            }}>Non-Fiction</button>
-          </div>
-          {createTypeDraft === "nonfiction" && (
-            <p style={{ fontSize: 11, color: "var(--pw-text-muted)", margin: "-4px 0 8px", lineHeight: 1.4 }}>
-              Memoir, biography, or based on true events
-            </p>
-          )}
-          <form className="pw-create-form" onSubmit={(e) => {
-            e.preventDefault();
-            if (!titleDraft.trim()) { setCreateHint("Please enter a title to create your novel."); return; }
-            setCreateHint("");
-            handleCreate(e);
-          }}>
-            <input
-              value={titleDraft}
-              onChange={(event) => { setTitleDraft(event.target.value); if (event.target.value.trim()) setCreateHint(""); }}
-              className="pw-create-input"
-              placeholder={createTypeDraft === "nonfiction" ? "Enter a title for your book" : "Enter a title for your novel"}
-              dir="ltr"
-              disabled={atNovelCap}
-            />
-            <button type="submit" className="btn btn-primary" disabled={atNovelCap}>
-              Create
-            </button>
-          </form>
-          {createHint && (
-            <p style={{ fontSize: 12, color: "#f59e0b", margin: "8px 0 0" }}>{createHint}</p>
-          )}
+          <div className="pw-section-title">Your projects</div>
+          <button
+            type="button"
+            className="pw-studio-new-novel-btn"
+            onClick={() => !atNovelCap && setShowCreateModal(true)}
+            disabled={atNovelCap}
+          >
+            <span className="pw-studio-new-novel-btn-icon">+</span>
+            <span>New novel</span>
+          </button>
           {atNovelCap && (
             <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
               You&apos;ve reached the limit of {MAX_NOVELS_TOTAL} novels. Permanently delete an archived novel to create a new one.
@@ -442,10 +405,19 @@ function StudioHomePage() {
           ) : sortedNovels.length === 0 ? (
             <div className="pw-empty pw-content-ready">
               <p className="pw-empty-title">No novels yet.</p>
-              <p className="pw-empty-subtitle">Create a novel using the left panel.</p>
+              <p className="pw-empty-subtitle">Start a new project to begin writing.</p>
+              <button
+                type="button"
+                className="pw-studio-new-novel-btn pw-studio-empty-cta"
+                onClick={() => setShowCreateModal(true)}
+              >
+                <span className="pw-studio-new-novel-btn-icon">+</span>
+                <span>New novel</span>
+              </button>
             </div>
           ) : (
             <>
+              <div className="pw-home-main-inner">
               {/* Horizontal novel covers */}
               <div className="pw-novel-grid pw-content-ready">
                 {sortedNovels.map((novel) => (
@@ -465,7 +437,15 @@ function StudioHomePage() {
                       style={novel.coverImage ? { backgroundImage: `url(${novel.coverImage})` } : undefined}
                     >
                       {!novel.coverImage && (
-                        <span className="pw-novel-cover-empty">{(novel.title || "N").charAt(0).toUpperCase()}</span>
+                        <div className="pw-cover-placeholder">
+                          <span className="pw-cover-placeholder-brand">Blocwrite</span>
+                          <h3 className="pw-cover-placeholder-title">{novel.title || "Untitled"}</h3>
+                          {novel.authorName?.trim() ? (
+                            <p className="pw-cover-placeholder-author">by {novel.authorName.trim()}</p>
+                          ) : (
+                            <p className="pw-cover-placeholder-author" style={{ opacity: 0.5 }}>Author name</p>
+                          )}
+                        </div>
                       )}
                       {novel.healthScore && (
                         <div
@@ -474,10 +454,10 @@ function StudioHomePage() {
                             position: "absolute", bottom: 6, right: 6,
                             width: 26, height: 26, borderRadius: "50%",
                             background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
-                            border: `2px solid ${novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#b8a4ff" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444"}`,
+                            border: `2px solid ${novel.healthScore.overall >= 8 ? "var(--pw-status-success)" : novel.healthScore.overall >= 6 ? "var(--pw-accent)" : novel.healthScore.overall >= 4 ? "var(--pw-status-warning)" : "var(--pw-status-danger)"}`,
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 10, fontWeight: 800,
-                            color: novel.healthScore.overall >= 8 ? "#22c55e" : novel.healthScore.overall >= 6 ? "#b8a4ff" : novel.healthScore.overall >= 4 ? "#f59e0b" : "#ef4444",
+                            color: novel.healthScore.overall >= 8 ? "var(--pw-status-success)" : novel.healthScore.overall >= 6 ? "var(--pw-accent)" : novel.healthScore.overall >= 4 ? "var(--pw-status-warning)" : "var(--pw-status-danger)",
                           }}
                         >
                           {novel.healthScore.overall}
@@ -584,7 +564,7 @@ function StudioHomePage() {
                         {hoveredNovel.healthScore && (() => {
                           const hs = hoveredNovel.healthScore;
                           const scoreColor = (v: number) =>
-                            v >= 8 ? "#22c55e" : v >= 6 ? "#b8a4ff" : v >= 4 ? "#f59e0b" : "#ef4444";
+                            v >= 8 ? "var(--pw-status-success)" : v >= 6 ? "var(--pw-accent)" : v >= 4 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
                           return (
                             <div className="pw-novel-detail-stat pw-novel-detail-stat-wide" style={{ marginTop: 4 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -627,6 +607,7 @@ function StudioHomePage() {
                   );
                 })()}
               </div>
+              </div>
             </>
           )}
 
@@ -665,17 +646,21 @@ function StudioHomePage() {
                       <div
                         style={{
                           width: "100%", aspectRatio: "2 / 3",
-                          background: novel.coverImage
-                            ? `url(${novel.coverImage}) center/cover`
-                            : "linear-gradient(160deg, var(--pw-surface-alt) 0%, var(--pw-surface) 50%, var(--pw-surface-alt) 100%)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: novel.coverImage ? `url(${novel.coverImage}) center/cover` : undefined,
+                          display: "flex", alignItems: "stretch", justifyContent: "center",
                         }}
                       >
-                        {!novel.coverImage && (
-                          <span style={{ color: "var(--pw-accent)", fontSize: 28, fontWeight: 700, opacity: 0.4 }}>
-                            {(novel.title || "N").charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                        {!novel.coverImage ? (
+                          <div className="pw-cover-placeholder">
+                            <span className="pw-cover-placeholder-brand">Blocwrite</span>
+                            <h3 className="pw-cover-placeholder-title">{novel.title || "Untitled"}</h3>
+                            {novel.authorName?.trim() ? (
+                              <p className="pw-cover-placeholder-author">by {novel.authorName.trim()}</p>
+                            ) : (
+                              <p className="pw-cover-placeholder-author" style={{ opacity: 0.5 }}>Author name</p>
+                            )}
+                          </div>
+                        ) : null}
                         {/* Archived badge */}
                         <div style={{
                           position: "absolute", top: 8, left: 8,
@@ -707,7 +692,7 @@ function StudioHomePage() {
                             onClick={() => setPendingDeleteId(novel.id)}
                             style={{
                               padding: "5px 8px", fontSize: 11, borderRadius: 6,
-                              background: "rgba(220,38,38,0.1)", color: "#ef4444",
+                              background: "rgba(220,38,38,0.1)", color: "var(--pw-status-danger)",
                               border: "1px solid rgba(220,38,38,0.2)", cursor: "pointer",
                             }}
                           >
@@ -732,7 +717,7 @@ function StudioHomePage() {
               width: 48, height: 48, borderRadius: 12, margin: "0 auto 16px",
               background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <div className="pw-delete-modal-title">Are you sure?</div>
             <p className="pw-delete-modal-copy">
@@ -885,6 +870,40 @@ function StudioHomePage() {
                   : exportScope === "all"
                     ? `Export full book as ${exportFormat.toUpperCase()}`
                     : `Export ${selectedChapterCount} chapter(s) as ${exportFormat.toUpperCase()}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateModal && (
+        <div className="pw-modal-overlay pw-studio-create-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="pw-studio-create-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pw-studio-create-modal-head">
+              <h2 className="pw-studio-create-modal-title">New project</h2>
+              <p className="pw-studio-create-modal-subtitle">Choose a type to get the right structure and tools.</p>
+            </div>
+            <div className="pw-studio-create-modal-options">
+              <button
+                type="button"
+                className="pw-studio-create-option"
+                onClick={() => void handleCreateWithType("fiction")}
+              >
+                <span className="pw-studio-create-option-label">Fiction</span>
+                <span className="pw-studio-create-option-desc">Novel, short story, or series. Characters, plot, and worldbuilding.</span>
+              </button>
+              <button
+                type="button"
+                className="pw-studio-create-option"
+                onClick={() => void handleCreateWithType("nonfiction")}
+              >
+                <span className="pw-studio-create-option-label">Non-fiction</span>
+                <span className="pw-studio-create-option-desc">Memoir, biography, or other. Life interview, research notes, and sources.</span>
+              </button>
+            </div>
+            <div className="pw-studio-create-modal-foot">
+              <button type="button" className="pw-studio-create-cancel" onClick={() => setShowCreateModal(false)}>
+                Cancel
               </button>
             </div>
           </div>

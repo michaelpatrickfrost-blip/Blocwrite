@@ -55,7 +55,7 @@ export default function SubscribePage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#fafaf9",
+        background: "linear-gradient(165deg, #fdfcfa 0%, #f8f7f5 50%, #f2f0ee 100%)",
         color: "#1c1917",
       }}
     >
@@ -82,7 +82,7 @@ export default function SubscribePage() {
 
         {/* Header */}
         <div style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif", letterSpacing: "-0.02em", marginBottom: 8 }}>
             Choose your plan
           </h1>
           <p style={{ fontSize: 15, color: "#57534e" }}>
@@ -102,12 +102,13 @@ export default function SubscribePage() {
           {/* Monthly */}
           <div
             style={{
-              borderRadius: 16,
-              border: "1px solid rgba(0,0,0,0.08)",
+              borderRadius: 20,
+              border: "1px solid rgba(0,0,0,0.06)",
               background: "#ffffff",
-              padding: "32px 28px",
+              padding: "36px 32px",
               display: "flex",
               flexDirection: "column",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.04)",
             }}
           >
             <div
@@ -146,8 +147,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(30,58,95,0.08)",
-                color: "#1e3a5f",
+                background: "rgba(10,95,122,0.1)",
+                color: "#0a5f7a",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -179,7 +180,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#1e3a5f",
+                      color: "#0a5f7a",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -216,13 +217,14 @@ export default function SubscribePage() {
           {/* Annual */}
           <div
             style={{
-              borderRadius: 16,
-              border: "1px solid rgba(30,58,95,0.2)",
-              background: "rgba(30,58,95,0.04)",
-              padding: "32px 28px",
+              borderRadius: 20,
+              border: "2px solid #0a5f7a",
+              background: "linear-gradient(180deg, rgba(10,95,122,0.04) 0%, rgba(10,95,122,0.02) 100%)",
+              padding: "36px 32px",
               display: "flex",
               flexDirection: "column",
               position: "relative",
+              boxShadow: "0 8px 32px rgba(10,95,122,0.08)",
             }}
           >
             <div
@@ -232,7 +234,7 @@ export default function SubscribePage() {
                 right: 20,
                 padding: "4px 14px",
                 borderRadius: 8,
-                background: "#1e3a5f",
+                background: "#0a5f7a",
                 color: "#ffffff",
                 fontSize: 11,
                 fontWeight: 700,
@@ -277,8 +279,8 @@ export default function SubscribePage() {
                 display: "inline-block",
                 padding: "4px 12px",
                 borderRadius: 8,
-                background: "rgba(30,58,95,0.08)",
-                color: "#1e3a5f",
+                background: "rgba(10,95,122,0.1)",
+                color: "#0a5f7a",
                 fontSize: 12,
                 fontWeight: 600,
                 marginBottom: 20,
@@ -310,7 +312,7 @@ export default function SubscribePage() {
                 >
                   <span
                     style={{
-                      color: "#1e3a5f",
+                      color: "#0a5f7a",
                       fontSize: 14,
                       fontWeight: 700,
                     }}
@@ -333,7 +335,7 @@ export default function SubscribePage() {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "#1e3a5f",
+                background: "#0a5f7a",
                 color: "#ffffff",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading === "monthly" ? 0.4 : 1,

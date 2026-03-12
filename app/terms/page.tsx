@@ -1,50 +1,45 @@
 import Link from "next/link";
+import { PublicNav } from "../components/PublicNav";
+import { PublicFooter } from "../components/PublicFooter";
 
 export default function TermsPage() {
   const C = {
-    bg: "#fafaf9",
+    bg: "#fdfcfa",
     text: "#1c1917",
-    textSoft: "#44403c",
-    textMuted: "#57534e",
-    border: "#e7e5e4",
+    textSoft: "#404040",
+    textMuted: "#6b6b6b",
+    border: "#e8e6e4",
   };
 
   const sectionStyle: React.CSSProperties = {
-    marginBottom: 32,
+    marginBottom: 36,
   };
 
   const headingStyle: React.CSSProperties = {
     fontSize: 18,
     fontWeight: 700,
+    fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif",
     marginBottom: 12,
     color: C.text,
   };
 
   const paraStyle: React.CSSProperties = {
-    fontSize: 14,
-    lineHeight: 1.75,
+    fontSize: 15,
+    lineHeight: 1.8,
     color: C.textSoft,
     marginBottom: 12,
   };
 
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
-      {/* Nav */}
-      <nav style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "14px 28px" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
-          </Link>
-          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>&larr; Back to Home</Link>
-        </div>
-      </nav>
+      <PublicNav showLinks />
 
       {/* Content */}
       <article style={{ maxWidth: 800, margin: "0 auto", padding: "48px 28px 80px" }}>
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textMuted, marginBottom: 12 }}>
           LEGAL
         </p>
-        <h1 style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, letterSpacing: "-0.025em", marginBottom: 8 }}>
+        <h1 style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif", letterSpacing: "-0.025em", marginBottom: 8 }}>
           Terms &amp; Conditions
         </h1>
         <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 40 }}>
@@ -224,29 +219,7 @@ export default function TermsPage() {
 
       </article>
 
-      {/* Footer */}
-      <footer style={{ padding: "48px 0 40px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              © 2026 Blocwrite. All rights reserved.
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-            {[
-              { label: "Home", href: "/" },
-              { label: "Terms", href: "/terms" },
-              { label: "Refund Policy", href: "/refunds" },
-              { label: "Contact", href: "/contact" },
-            ].map((l) => (
-              <Link key={l.href} href={l.href} style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none" }}>
-                {l.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </main>
   );
 }

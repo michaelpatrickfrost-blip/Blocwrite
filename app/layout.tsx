@@ -75,7 +75,10 @@ export const metadata: Metadata = {
     canonical: SITE_URL,
   },
   icons: {
-    icon: "/blocwrite-icon-dark.png",
+    icon: [
+      { url: "/blocwrite-icon-light.png", media: "(prefers-color-scheme: light)" },
+      { url: "/blocwrite-icon-dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
     shortcut: "/blocwrite-icon-dark.png",
     apple: "/blocwrite-icon-dark.png",
   },
@@ -200,8 +203,8 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-        <style dangerouslySetInnerHTML={{ __html: `:root{--font-sans:'Inter',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace}` }} />
+        <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+        <style dangerouslySetInnerHTML={{ __html: `:root{--font-sans:'Inter',system-ui,sans-serif;--font-display:'Figtree',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace}` }} />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('bw-theme');if(!t)t='light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})()`,

@@ -171,6 +171,8 @@ export async function POST(req: NextRequest) {
       `${query} social history`,
       `${query} culture`,
       `${query} daily life`,
+      era ? `${query} ${era} primary sources` : "",
+      `${query} everyday life`,
     ].filter((v, i, arr) => v && arr.indexOf(v) === i);
 
     const merged = new Map<number, WikiSearchItem>();

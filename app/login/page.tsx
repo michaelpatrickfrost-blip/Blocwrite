@@ -111,6 +111,7 @@ function LoginForm() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim(), password }),
+          credentials: "same-origin",
         });
 
         const data = (await res.json().catch(() => null)) as {
@@ -154,7 +155,7 @@ function LoginForm() {
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#fafaf9",
+        background: "linear-gradient(165deg, #fdfcfa 0%, #f8f7f5 50%, #f2f0ee 100%)",
       }}
     >
       <div
@@ -182,10 +183,11 @@ function LoginForm() {
         <div
           style={{
             width: "100%",
-            borderRadius: 16,
-            border: "1px solid rgba(0,0,0,0.08)",
+            borderRadius: 20,
+            border: "1px solid rgba(0,0,0,0.06)",
             background: "#ffffff",
-            padding: "32px 28px",
+            padding: "36px 32px",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.04)",
           }}
         >
           {/* Session-expired / password-reset banners */}
@@ -202,8 +204,10 @@ function LoginForm() {
 
           <h1
             style={{
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 700,
+              fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif",
+              letterSpacing: "-0.02em",
               textAlign: "center",
               marginBottom: 4,
             }}
@@ -239,7 +243,7 @@ function LoginForm() {
                   onChange={(e) => setForgotEmail(e.target.value)}
                   placeholder="you@email.com"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#1e3a5f")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#0a5f7a")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
                 />
               </div>
@@ -264,7 +268,7 @@ function LoginForm() {
                 disabled={forgotStatus === "sending"}
                 style={{
                   marginTop: 4, width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                  borderRadius: 10, border: "none", background: "#1e3a5f", color: "#ffffff",
+                  borderRadius: 10, border: "none", background: "#0a0a0a", color: "#ffffff",
                   cursor: forgotStatus === "sending" ? "wait" : "pointer",
                   opacity: forgotStatus === "sending" ? 0.6 : 1, transition: "opacity 0.15s", letterSpacing: "0.02em",
                 }}
@@ -311,11 +315,10 @@ function LoginForm() {
                   placeholder="Your name"
                   style={inputStyle}
                   onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#1e3a5f")
+                    (e.currentTarget.style.borderColor = "#0a5f7a")
                   }
                   onBlur={(e) =>
-                    (e.currentTarget.style.borderColor =
-                      "rgba(0,0,0,0.1)")
+                    (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")
                   }
                 />
               </div>
@@ -345,7 +348,7 @@ function LoginForm() {
                 placeholder="you@email.com"
                 style={inputStyle}
                 onFocus={(e) =>
-                  (e.currentTarget.style.borderColor = "#1e3a5f")
+                  (e.currentTarget.style.borderColor = "#0a5f7a")
                 }
                 onBlur={(e) =>
                   (e.currentTarget.style.borderColor =
@@ -382,7 +385,7 @@ function LoginForm() {
                 }
                 style={inputStyle}
                 onFocus={(e) =>
-                  (e.currentTarget.style.borderColor = "#1e3a5f")
+                  (e.currentTarget.style.borderColor = "#0a5f7a")
                 }
                 onBlur={(e) =>
                   (e.currentTarget.style.borderColor =
@@ -419,7 +422,7 @@ function LoginForm() {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "#1e3a5f",
+                background: "#0a0a0a",
                 color: "#ffffff",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading ? 0.6 : 1,
@@ -498,7 +501,7 @@ function LoginForm() {
                     onChange={(e) => setTrialCode(e.target.value.toUpperCase())}
                     placeholder="BW-XXXXXX"
                     style={{ ...inputStyle, fontFamily: "monospace", letterSpacing: "0.08em", fontSize: 16, textAlign: "center" }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#1e3a5f")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#0a5f7a")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
                   />
                 </div>
@@ -512,7 +515,7 @@ function LoginForm() {
                     onChange={(e) => setTrialPassword(e.target.value)}
                     placeholder="Enter trial password"
                     style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#1e3a5f")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#0a5f7a")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
                   />
                 </div>
@@ -528,7 +531,7 @@ function LoginForm() {
                   disabled={trialLoading || !trialCode.trim() || !trialPassword.trim()}
                   style={{
                     width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
-                    borderRadius: 10, border: "none", background: "#1e3a5f", color: "#ffffff",
+                    borderRadius: 10, border: "none", background: "#0a0a0a", color: "#ffffff",
                     cursor: trialLoading ? "wait" : "pointer",
                     opacity: trialLoading ? 0.6 : 1, transition: "opacity 0.15s",
                   }}

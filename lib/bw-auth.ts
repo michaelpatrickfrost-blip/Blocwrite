@@ -3,10 +3,14 @@ import { createHmac, randomUUID } from "crypto";
 const COOKIE_NAME = "bw-session";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year in seconds
 
+/** Dev-only fallback so local login works without .env (never used in production). */
+const DEV_SESSION_SECRET = "blocwrite-local-dev-secret-do-not-use-in-production";
+
 function getSecret(): string {
   const s = process.env.BW_SESSION_SECRET;
-  if (!s) throw new Error("BW_SESSION_SECRET is not set");
-  return s;
+  if (s) return s;
+  if (process.env.NODE_ENV === "production") throw new Error("BW_SESSION_SECRET is not set");
+  return DEV_SESSION_SECRET;
 }
 
 /** Sign a payload string with HMAC-SHA256. */

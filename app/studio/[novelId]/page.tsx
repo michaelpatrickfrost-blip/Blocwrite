@@ -481,7 +481,7 @@ const WRITING_PACKS: WritingPack[] = [
     tagline: "Tight, tense exchanges that keep readers on the edge",
     genre: "Thriller",
     icon: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
-    color: "#f59e0b",
+    color: "var(--pw-status-warning)",
     boltons: [
       { title: "Interrogation Dynamics", category: "dialogue-subtext", description: "Power shifts in conversation — who controls the exchange and when it flips.", prompt: "Write dialogue as a power game. Track who has the upper hand and shift it mid-conversation. Use pauses, subject changes, and refusals to answer as weapons. The most dangerous lines are often the quietest." },
       { title: "Ticking Clock Pacing", category: "pacing-tension", description: "Build urgency through time pressure and escalating stakes.", prompt: "Create urgency: shorter sentences as tension rises, time references that compress, interruptions that cut off safety. The reader should feel time running out. Cut any line that releases pressure too early." },
@@ -509,7 +509,7 @@ const WRITING_PACKS: WritingPack[] = [
     tagline: "Dread, unease, and the feeling that something is deeply wrong",
     genre: "Horror",
     icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
-    color: "#ef4444",
+    color: "var(--pw-status-danger)",
     boltons: [
       { title: "Wrongness Detector", category: "world-atmosphere", description: "Something is off — the reader can feel it before they can name it.", prompt: "Build dread through wrongness: familiar things slightly altered, sounds that shouldn't be there, a smile that lasts too long. Horror isn't jump scares — it's the growing certainty that something is fundamentally wrong." },
       { title: "Isolation & Claustrophobia", category: "pacing-tension", description: "Shrink the world around the character. Cut off escape routes.", prompt: "Systematically remove safety: phones die, doors lock, allies disappear, night falls. Each scene should close one more exit. The character's world should shrink until there's nowhere left to go." },
@@ -621,7 +621,7 @@ const WRITING_PACKS: WritingPack[] = [
     tagline: "Fights, chases, and set pieces that feel kinetic, not choreographed",
     genre: "Action",
     icon: "M13 10V3L4 14h7v7l9-11h-7z",
-    color: "#ef4444",
+    color: "var(--pw-status-danger)",
     boltons: [
       { title: "Clarity Over Spectacle", category: "description-sensory", description: "The reader should always know where everyone is and what's happening.", prompt: "In action scenes, spatial clarity is everything. Establish where characters are relative to each other, what they can see, and where the exits are. Use short, concrete sentences. The reader's mental camera should never lose its subject. Confusion is not the same as excitement." },
       { title: "Emotional Stakes First", category: "emotion-psychology", description: "We don't care about the punch. We care about why it matters.", prompt: "Before any action sequence, establish what's at stake emotionally. The reader needs to care before the first blow lands. A fight between strangers is boring. A fight between former friends is devastating. Anchor every action beat to a feeling." },
@@ -1135,15 +1135,43 @@ function NovelWorkspacePage() {
   const [pendingChapterDelete, setPendingChapterDelete] = useState<PendingChapterDelete>(null);
   // Novel archive/delete is handled from the studio dashboard only
   const [regenConfirm, setRegenConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  // ── Chat (Characters + Co-Author) ──
+  // ── Chat (Characters + Co-Author + Group) ──
+  type ChatThreadMessage = { role: "user" | "character"; text: string; speakerName?: string };
   const [charChatOpen, setCharChatOpen] = useState(false);
   const [charChatTarget, setCharChatTarget] = useState<Character | null>(null);
-  const [charChatMessages, setCharChatMessages] = useState<Array<{ role: "user" | "character"; text: string }>>([]);
+  const [charChatMessages, setCharChatMessages] = useState<ChatThreadMessage[]>([]);
+  const [charChatThreads, setCharChatThreads] = useState<Record<string, ChatThreadMessage[]>>({});
+  const [groupChatMode, setGroupChatMode] = useState(false);
   const [charChatInput, setCharChatInput] = useState("");
   const [charChatLoading, setCharChatLoading] = useState(false);
   const [coAuthorMode, setCoAuthorMode] = useState(false);
   const charChatEndRef = useRef<HTMLDivElement | null>(null);
   const [charChatPickerOpen, setCharChatPickerOpen] = useState(false);
+  const currentThreadId = coAuthorMode ? "coauthor" : groupChatMode ? "group" : (charChatTarget?.id ?? null);
+  function setCurrentThreadMessages(updater: (prev: ChatThreadMessage[]) => ChatThreadMessage[]) {
+    if (!currentThreadId) return;
+    setCharChatMessages(updater);
+    setCharChatThreads((t) => {
+      const next = updater(t[currentThreadId] ?? []);
+      return { ...t, [currentThreadId]: next };
+    });
+  }
+  function switchChatThread(threadId: string) {
+    if (threadId === "coauthor") {
+      setCoAuthorMode(true); setCharChatTarget(null); setGroupChatMode(false);
+      setCharChatMessages(charChatThreads["coauthor"] ?? []);
+    } else if (threadId === "group") {
+      setCoAuthorMode(false); setCharChatTarget(null); setGroupChatMode(true);
+      setCharChatMessages(charChatThreads["group"] ?? []);
+    } else {
+      const char = storyCharacters.find((c) => c.id === threadId);
+      if (char) {
+        setCoAuthorMode(false); setCharChatTarget(char); setGroupChatMode(false);
+        setCharChatMessages(charChatThreads[threadId] ?? []);
+      }
+    }
+    setCharChatInput("");
+  }
   const chatOpenedAt = useRef<number>(0); // timestamp when current chat session started
   const [chatIsStale, setChatIsStale] = useState(false); // true if reopening an old chat (>5 min)
   // Chat review system
@@ -1298,6 +1326,9 @@ function NovelWorkspacePage() {
   const [editorTextAlign, setEditorTextAlign] = useState<"left" | "center" | "right" | "justify">("left");
   const [editorFontSize, setEditorFontSize] = useState<number>(17.5);
   const blockProseRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+  const blockSynopsisRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+  const [streamingProseBlockIndex, setStreamingProseBlockIndex] = useState<number | null>(null);
+  const [streamingProseText, setStreamingProseText] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [chapterNotesOpen, setChapterNotesOpen] = useState(false);
   const [showOutlineView, setShowOutlineView] = useState(false);
@@ -1352,8 +1383,6 @@ function NovelWorkspacePage() {
     fullContent: string;
   } | null>(null);
   const rewriteSelectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [chapterRewriteBusy, setChapterRewriteBusy] = useState(false);
-  const [chapterRewriteMenuOpen, setChapterRewriteMenuOpen] = useState(false);
 
   const EDITOR_FONT_OPTIONS = [
     { id: "serif", label: "Serif", font: "Georgia, 'Times New Roman', serif" },
@@ -1384,14 +1413,8 @@ function NovelWorkspacePage() {
   const [hideBlocks, setHideBlocks] = useState(false);
   const GENERATED_BLOC_COUNT = 4;
   const [chapterBoltonByChapterId, setChapterBoltonByChapterId] = useState<Record<string, string>>({});
-  const [sidebarPinned, setSidebarPinned] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try { return window.localStorage.getItem("pilotwriter.sidebar.pinned") === "true"; } catch { return false; }
-  });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => !sidebarPinned);
   const [currentTheme, setCurrentTheme] = useState<"dark" | "light">("light");
   const [navigatingAway, setNavigatingAway] = useState(false);
-  const sidebarHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize theme from localStorage and apply to document
   useEffect(() => {
@@ -1486,25 +1509,6 @@ function NovelWorkspacePage() {
     setEditorApplyProgress("");
   }, [activeChapterId]);
 
-  function handleSidebarEnter() {
-    if (sidebarPinned) return;
-    if (sidebarHoverTimer.current) clearTimeout(sidebarHoverTimer.current);
-    setSidebarCollapsed(false);
-  }
-
-  function handleSidebarLeave() {
-    if (sidebarPinned) return;
-    sidebarHoverTimer.current = setTimeout(() => setSidebarCollapsed(true), 300);
-  }
-
-  function toggleSidebarPin() {
-    setSidebarPinned((prev) => {
-      const next = !prev;
-      setSidebarCollapsed(!next);
-      try { window.localStorage.setItem("pilotwriter.sidebar.pinned", String(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }
   const [planGenerateCustomCount, setPlanGenerateCustomCount] = useState("8");
   const [planGenerateCountMode, setPlanGenerateCountMode] = useState<"manual" | "auto">("manual");
   const [planGeneratePacingMode, setPlanGeneratePacingMode] = useState<"balanced" | "slow-burn" | "fast">("balanced");
@@ -1583,7 +1587,10 @@ function NovelWorkspacePage() {
     setGrammarError(null);
     setIgnoredMatchKeys([]);
     try {
-      const text = activeChapter.content || "";
+      const blocks = getSceneBlocks(activeChapter);
+      const text = blocks.length > 0 && !hideBlocks
+        ? blocks.map((b) => (b.prose || "").trim()).filter(Boolean).join("\n\n")
+        : (activeChapter.content || "");
       if (!text.trim()) { setGrammarMatches([]); setLastCheckedContent(text); setGrammarChecking(false); return; }
       const res = await fetch("/api/grammar", {
         method: "POST",
@@ -2748,7 +2755,7 @@ function NovelWorkspacePage() {
     if (!charChatTarget || !charChatInput.trim() || charChatLoading || storyAiBusyAction || arcBusy) return;
     const userMsg = charChatInput.trim();
     setCharChatInput("");
-    setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setCurrentThreadMessages((prev) => [...prev, { role: "user", text: userMsg }]);
     setCharChatLoading(true);
     try {
       const systemPrompt = buildCharacterSystemPrompt(charChatTarget);
@@ -2767,13 +2774,13 @@ function NovelWorkspacePage() {
 
       const reply = await requestOpenRouterText(contextPrompt, 800, 120000, systemPrompt, false, 0.85);
       if (reply.trim()) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
       } else {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
     } catch (err) {
       if (!isCancelledError(err)) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: "I seem to have lost my train of thought…" }]);
       }
     } finally {
       setCharChatLoading(false);
@@ -2781,7 +2788,7 @@ function NovelWorkspacePage() {
   }
 
   function closeChat() {
-    if (!coAuthorMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && !charChatReviewing) {
+    if (!coAuthorMode && !groupChatMode && charChatTarget && charChatMessages.length >= 2 && !charChatReviewDone && !charChatReviewing) {
       void endChatAndReview();
       return;
     }
@@ -2792,7 +2799,8 @@ function NovelWorkspacePage() {
   function openCharacterChat(char: Character) {
     setCoAuthorMode(false);
     setCharChatTarget(char);
-    setCharChatMessages([]);
+    setGroupChatMode(false);
+    setCharChatMessages(charChatThreads[char.id] ?? []);
     setCharChatInput("");
     setCharChatLoading(false);
     setCharChatReviewDone(false);
@@ -2805,7 +2813,22 @@ function NovelWorkspacePage() {
   function openCoAuthorChat() {
     setCoAuthorMode(true);
     setCharChatTarget(null);
-    setCharChatMessages([]);
+    setGroupChatMode(false);
+    setCharChatMessages(charChatThreads["coauthor"] ?? []);
+    setCharChatInput("");
+    setCharChatLoading(false);
+    setCharChatReviewDone(false);
+    setCharChatRecommendations([]);
+    setChatIsStale(false);
+    chatOpenedAt.current = Date.now();
+    setCharChatOpen(true);
+  }
+
+  function openGroupChat() {
+    setCoAuthorMode(false);
+    setCharChatTarget(null);
+    setGroupChatMode(true);
+    setCharChatMessages(charChatThreads["group"] ?? []);
     setCharChatInput("");
     setCharChatLoading(false);
     setCharChatReviewDone(false);
@@ -2819,7 +2842,7 @@ function NovelWorkspacePage() {
     if (!novel || !charChatInput.trim() || charChatLoading || storyAiBusyAction || arcBusy) return;
     const userMsg = charChatInput.trim();
     setCharChatInput("");
-    setCharChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setCurrentThreadMessages((prev) => [...prev, { role: "user", text: userMsg }]);
     setCharChatLoading(true);
     try {
       // Full story bible context so the co-author knows everything
@@ -2844,14 +2867,24 @@ function NovelWorkspacePage() {
 
       const nfCoAuthorCtx = isNF ? (() => {
         const nf = novel.storyBible.nonfiction;
-        const parts: string[] = ["\n=== MEMOIR CONTEXT ==="];
+        const isLifeStory = nf?.nfCategory === "biography";
+        const parts: string[] = isLifeStory ? ["\n=== LIFE STORY CONTEXT ==="] : ["\n=== NON-FICTION CONTEXT ==="];
         if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName} (${nf.subjectRelation || "subject"})`);
         if (nf?.era) parts.push(`Era: ${nf.era}`);
         if (nf?.setting) parts.push(`Setting: ${nf.setting}`);
         if (nf?.centralTheme) parts.push(`Theme: ${nf.centralTheme}`);
         if (nf?.lifeEvents?.length) {
-          parts.push(`Life Events (${nf.lifeEvents.length}):`);
+          parts.push(isLifeStory ? `Life Events (${nf.lifeEvents.length}):` : `Key Events (${nf.lifeEvents.length}):`);
           nf.lifeEvents.slice(0, 15).forEach((e, i) => parts.push(`  ${i + 1}. ${e.title}${e.date ? ` (${e.date})` : ""}: ${e.description?.slice(0, 120) || ""}`));
+        }
+        if (!isLifeStory && (nf?.researchNotes?.length || nf?.eraCulturalNotes)) {
+          if ((nf.researchNotes ?? []).filter(n => n.content).length > 0) {
+            parts.push("Research Notes (key facts/sources):");
+            (nf.researchNotes ?? []).filter(n => n.content).slice(0, 10).forEach(n => parts.push(`  - ${n.title}: ${(n.content || "").slice(0, 100)}${n.source ? ` [${n.source}]` : ""}`));
+          }
+          if (nf.eraCulturalNotes || nf.eraHistoricalEvents) {
+            parts.push("Era context: " + [nf.eraCulturalNotes, nf.eraHistoricalEvents].filter(Boolean).map(t => (t || "").slice(0, 150)).join("; "));
+          }
         }
         return parts.join("\n");
       })() : "";
@@ -2901,7 +2934,8 @@ function NovelWorkspacePage() {
         `When the author asks for a title, synopsis, character detail, plot point, or anything about the story, draw on the full context above.`,
         `Don't dump information unprompted — only reference details when relevant to the author's question.`,
         `If asked for creative suggestions, make them specific to this story and consistent with existing canon.`,
-      ].join("\n");
+        groupChatMode ? ` This is a GROUP CHAT: the author is chatting with you and their characters. Keep your reply concise. You may have one character chime in with a single line in the format "CharacterName: dialogue" when it feels natural — otherwise just answer as the Co-Author.` : "",
+      ].filter(Boolean).join("\n");
 
       // Include conversation history
       let contextPrompt = "";
@@ -2913,13 +2947,13 @@ function NovelWorkspacePage() {
 
       const reply = await requestOpenRouterText(contextPrompt, 1000, 120000, systemPrompt, false, 0.75);
       if (reply.trim()) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: reply.trim() }]);
       } else {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: "…" }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: "…" }]);
       }
     } catch (err) {
       if (!isCancelledError(err)) {
-        setCharChatMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
+        setCurrentThreadMessages((prev) => [...prev, { role: "character", text: "Let me think about that differently…" }]);
       }
     } finally {
       setCharChatLoading(false);
@@ -3396,8 +3430,8 @@ function NovelWorkspacePage() {
       if (!raw) return [];
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return [];
-      return parsed
-        .map((item) => {
+      const mapped = parsed
+        .map((item): LibraryBolton | null => {
           if (!item || typeof item !== "object") return null;
           const record = item as Record<string, unknown>;
           const title = typeof record.title === "string" ? record.title.trim().slice(0, 40) : "";
@@ -3413,6 +3447,7 @@ function NovelWorkspacePage() {
           };
         })
         .filter((item): item is LibraryBolton => item !== null);
+      return mapped;
     } catch {
       return [];
     }
@@ -5368,10 +5403,11 @@ function NovelWorkspacePage() {
       "Rewrite it with concrete events and clear continuity.",
       `Return JSON only: { "synopsis": "1-3 sentences with explicit actions" }`,
       "Requirements:",
-      "- explicit actions and conflict, no vague phrasing",
-      "- keep continuity with previous and next chapter context",
-      "- do not force a location change just because this is a new bloc",
-      args.isLast ? "- this is the final bloc: include chapter outcome/setup cue" : "",
+      "- Include at least one named character and one concrete action (who does what). No 'the characters' or 'they' without naming. No vague phrasing like 'tension builds' or 'things escalate' without a specific event.",
+      "- Explicit cause and effect: what happens, then what changes as a result.",
+      "- Keep continuity with previous and next chapter context.",
+      "- Do not force a location change just because this is a new bloc.",
+      args.isLast ? "- This is the final bloc: include chapter outcome/setup cue." : "",
       "",
       `Bloc ${args.blocNumber} of ${args.totalBlocs}`,
       `Chapter synopsis: ${args.chapterSynopsis}`,
@@ -5672,102 +5708,6 @@ function NovelWorkspacePage() {
     setRewritePreview(null);
   }
 
-  async function runChapterRewrite(modeId: string) {
-    if (!novel || !activeChapter || !ensureStoryAiReady()) return;
-    const chapterId = activeChapter.id;
-    const blocks = getSceneBlocks(activeChapter);
-    const hasBlocks = blocks.length > 0 && blocks.some(b => b.prose?.trim());
-    const novelGenre = isNF ? (nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative non-fiction" : nfData?.subtype === "biography" ? "biography" : "memoir") : (novel.storyBible.summary.genre?.join(", ") || "fiction");
-    const mode = REWRITE_MODES.find((m) => m.id === modeId) ?? REWRITE_MODES[0];
-
-    const sv = novel.storyBible.styleVoice;
-    const styleContext = [
-      sv?.comps?.length ? `Style: ${sv.comps.slice(0, 5).join(", ")}.` : "",
-      sv?.voiceRules ? `Voice rules to follow: ${sv.voiceRules.slice(0, 600)}` : "",
-      sv?.pov ? `POV: ${sv.pov}.` : "",
-      sv?.tense ? `Tense: ${sv.tense}.` : "",
-    ].filter(Boolean).join(" ");
-    const systemMsg = [
-      `You are a literary rewrite assistant for a ${novelGenre}${isNF ? " (non-fiction)" : " novel"}.`,
-      `Rewrite the user's prose in a "${mode.label}" style: ${mode.desc}.`,
-      styleContext ? `AUTHOR'S STYLE (follow closely): ${styleContext}` : "",
-      isNF ? `Keep all real events, people, and facts accurate. Only change tone, word choice, and phrasing.` : `Keep the same plot events, characters, setting, and structure.`,
-      `Only change tone, word choice, sentence rhythm, and phrasing.`,
-      `Return ONLY the rewritten prose. No headings, labels, or commentary.`,
-      `The rewritten text must be roughly the same length as the original.`,
-      `NEVER truncate or summarize — rewrite the ENTIRE passage.`,
-    ].filter(Boolean).join(" ");
-
-    setChapterRewriteBusy(true);
-    setChapterRewriteMenuOpen(false);
-    freshAiAbort();
-
-    try {
-      if (hasBlocks) {
-        // Rewrite each block individually so nothing gets lost
-        pushUndoSnapshot(chapterId, activeChapter.content, activeChapter.sceneBlocks, true);
-        const updatedBlocks = [...blocks];
-        for (let i = 0; i < blocks.length; i++) {
-          if (aiAbortRef.current?.signal.aborted) break;
-          const blockProse = blocks[i].prose?.trim();
-          if (!blockProse || blockProse.length < 20) continue;
-          const wordCount = countWords(blockProse);
-          const maxTokens = Math.max(1500, Math.round(wordCount * 2));
-          const userMsg = `Rewrite this scene to be "${mode.label}" (${mode.desc}):\n\n${blockProse}`;
-          const result = await requestOpenRouterText(userMsg, maxTokens, 180000, systemMsg);
-          if (result && result.trim() && result.trim().length > blockProse.length * 0.4) {
-            updatedBlocks[i] = { ...updatedBlocks[i], prose: result.trim() };
-          }
-        }
-        updateSceneBlocks(chapterId, updatedBlocks);
-        syncChapterContentFromBlocks(chapterId, updatedBlocks);
-        const combined = updatedBlocks.map((b) => b.prose?.trim() || "").filter(Boolean).join("\n\n");
-        runLoreConsistencyCheck({
-          actionType: "chapter_rewrite",
-          content: combined,
-        });
-      } else {
-        // Plain editor: rewrite in chunks to handle long chapters
-        const content = activeChapter.content ?? "";
-        const prose = extractProseFromContent(content).trim();
-        if (!prose || prose.length < 20) { setChapterRewriteBusy(false); return; }
-
-        const paragraphs = prose.split(/\n\n+/).filter(Boolean);
-        const CHUNK_SIZE = 8;
-        const rewrittenParts: string[] = [];
-
-        for (let i = 0; i < paragraphs.length; i += CHUNK_SIZE) {
-          if (aiAbortRef.current?.signal.aborted) break;
-          const chunk = paragraphs.slice(i, i + CHUNK_SIZE).join("\n\n");
-          const wordCount = countWords(chunk);
-          const maxTokens = Math.max(1500, Math.round(wordCount * 2));
-          const userMsg = `Rewrite this passage to be "${mode.label}" (${mode.desc}):\n\n${chunk}`;
-          const result = await requestOpenRouterText(userMsg, maxTokens, 180000, systemMsg);
-          if (result && result.trim() && result.trim().length > chunk.length * 0.3) {
-            rewrittenParts.push(result.trim());
-          } else {
-            rewrittenParts.push(chunk);
-          }
-        }
-
-        const finalText = rewrittenParts.join("\n\n");
-        if (finalText.trim()) {
-          updateChapter(chapterId, { content: finalText.trim() }, true);
-          runLoreConsistencyCheck({
-            actionType: "chapter_rewrite",
-            content: finalText.trim(),
-          });
-        }
-      }
-    } catch (err) {
-      if (isCancelledError(err)) { setChapterRewriteBusy(false); return; }
-      console.error("Chapter rewrite failed:", err);
-    } finally {
-      setChapterRewriteBusy(false);
-    }
-    saveNow();
-  }
-
   function evaluateProseResult(
     prose: string,
     args: { targetWords: number; minAcceptable: number; useBestFit: boolean; previousProse: string },
@@ -5923,15 +5863,16 @@ function NovelWorkspacePage() {
         "- Consistency: tone, stakes, and story logic hold across chapters.",
         "",
         "Order issues by severity: critical first, then warning, then tip. Reference chapter numbers and titles. Be specific. A thorough draft often has 5–15 issues.",
+        "For each issue, 'suggestion' must be CONCRETE and actionable: what to add, remove, or change in which chapter(s) (e.g. 'Add a hook at the end of Ch3: [character] discovers X' or 'Ch5 and Ch7 both have document scenes — cut or merge one'). No vague advice like 'improve pacing' without saying how.",
         storyAnchor ? `\nSTORY PREMISE (plan must align):\n${storyAnchor}` : "",
         characterNames ? `\nKEY CHARACTERS (consider presence/agency): ${characterNames}` : "",
         `\nGENRE: ${genre}`,
         `GENRE LENS: ${genreLens}`,
         `\nBEAT ASSIGNMENT (if present):\n${beatCtx}`,
         `\nCHAPTER SYNOPSES:\n${chapterList}`,
-        `\nReturn JSON: { "score": 1-100, "summary": "2-3 sentence overall assessment with one concrete strength and one priority fix", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "beats|momentum|genre|overlap|consistency|pacing|structure|agency|hooks", "message": "what's wrong", "suggestion": "how to fix it" }] }`,
+        `\nReturn JSON: { "score": 1-100, "summary": "2-3 sentence overall assessment with one concrete strength and one priority fix", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "beats|momentum|genre|overlap|consistency|pacing|structure|agency|hooks", "message": "what's wrong", "suggestion": "concrete fix (what to add/remove/change where)" }] }`,
       ].filter(Boolean).join("\n");
-      const raw = await requestOpenRouterText(prompt, 6500, 180000, "You are a senior story editor. Audit the chapter plan rigorously. List every issue. Be specific. Return only valid JSON.", false, 0.2);
+      const raw = await requestOpenRouterText(prompt, 6500, 180000, "You are a senior story editor. Audit the chapter plan. Every suggestion must be concrete and actionable. Return only valid JSON.", false, 0.2);
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       let aiIssues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }> = [];
       let aiScore = 50;
@@ -6007,7 +5948,8 @@ function NovelWorkspacePage() {
     setFeedbackReviewApplying(false);
     setFbPreviewGenerating(false);
     setCharChatLoading(false);
-    setChapterRewriteBusy(false);
+    setStreamingProseBlockIndex(null);
+    setStreamingProseText("");
     setNccBusy(false);
     setEditorApplying(false);
     setEditorApplyProgress("");
@@ -6075,8 +6017,13 @@ function NovelWorkspacePage() {
 
   function deleteSceneBlockAt(blocks: SceneBlock[], atIndex: number) {
     if (!activeChapter) return;
+    cancelAiWork();
     const next = blocks.filter((_, i) => i !== atIndex);
     updateSceneBlocks(activeChapter.id, next);
+    if (next.length < blockProseRefs.current.length) {
+      blockProseRefs.current.length = next.length;
+      blockSynopsisRefs.current.length = next.length;
+    }
   }
 
   function applyRawFormatting(
@@ -6234,7 +6181,7 @@ function NovelWorkspacePage() {
 
     setStoryAiBusyAction(`chapter-blocks-${targetChapterId}`);
     setStoryAiError(null);
-    setChapterBlocksGenProgress({ current: 0, total: GENERATED_BLOC_COUNT, beatLabel: "Extracting beats…" });
+    setChapterBlocksGenProgress({ current: 0, total: BLOC_COUNT, beatLabel: "Extracting beats…" });
 
     try {
       type BlocEntry = { synopsis?: string; focus?: string; wordTarget?: number; openingLine?: string; closingHook?: string; emotionalArc?: string; sensoryPalette?: string; dialogueNotes?: string; tension?: number };
@@ -6297,6 +6244,11 @@ function NovelWorkspacePage() {
         text
           .replace(/\bBloc\s+\d+\s*(?:\([^)]+\))?\s*/gi, "")
           .replace(/A fresh [^.]*complication shifts the objective, forcing a different tactic than earlier scenes\.?/gi, "")
+          .replace(/\bStay in this moment:\s*[^.]*\.?\s*/gi, "")
+          .replace(/\bThis (setup|development|escalation|climax|resolution) movement pushes[^.]*\.?\s*/gi, "")
+          .replace(/(\bImmediately after\s+[^.]*\.)\s*\1\s*/gi, "$1 ")
+          .replace(/\bThe chapter resolves pressure around[^.]*\.?\s*/gi, "")
+          .replace(/\bA practical setback becomes a strategic turning point[^.]*\.?\s*/gi, "")
           .replace(/\s+/g, " ")
           .trim();
       type ChapterBeat = { label: string; description: string };
@@ -6304,10 +6256,10 @@ function NovelWorkspacePage() {
       try {
         setStoryAiError("Extracting chapter beats...");
         const beatPrompt = [
-          `Extract exactly ${BLOC_COUNT} narrative beats from this chapter synopsis. Each beat is one distinct scene/development.`,
-          `Return JSON: { "beats": [{ "label": "short label (e.g. Opening, Complication)", "description": "2-4 sentence summary of what happens in this beat" }] }`,
-          "Labels: Opening, Setup, Complication, Turn, Climax, Resolution — adapt to fit the chapter. Each beat must map to a specific part of the synopsis.",
-          "Descriptions must be concrete: who does what, what changes, what the beat covers.",
+          `Break this chapter synopsis into exactly ${BLOC_COUNT} narrative beats (scene blocs). Each beat = one distinct scene or story moment. The user chose ${BLOC_COUNT} blocs — split the synopsis so the story is as detailed as possible across these ${BLOC_COUNT} beats.`,
+          `Return JSON: { "beats": [{ "label": "short label (e.g. Opening, Complication)", "description": "2-5 sentence summary of what happens in this beat — be specific and detailed" }] }`,
+          "Labels: Opening, Setup, Complication, Turn, Climax, Resolution — adapt to fit the chapter. Each beat must map to a specific part of the synopsis; more blocs = finer-grained, more detailed breakdown.",
+          "Descriptions must be in pure story language: who does what, where, what changes. No craft or structural terms ('tension rises', 'development', 'climax'). Each description = concrete event or decision. Richer detail per beat improves the final prose.",
           "",
           `Chapter: ${activeChapter.title}`,
           `Chapter synopsis:\n${chapterSynopsis}`,
@@ -6374,11 +6326,10 @@ function NovelWorkspacePage() {
       const fallbackSegmentForIndex = (index: number, total: number, previousSynopsis: string) => {
         const fromChapter = (chapterBeats[index]?.description ?? "").trim();
         if (fromChapter) return sanitizeSynopsisText(fromChapter);
-        const prevSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
         if (index === total - 1) {
-          return `The chapter reaches its final movement as consequences from ${prevSeed} force a decisive confrontation and a clear outcome that closes this chapter's central pressure.`;
+          return "Consequences land. A decisive choice is made; the chapter closes on a clear new reality.";
         }
-        return `The scene continues from ${prevSeed}, introducing a new complication that changes the immediate objective and creates a clear handoff into the next scene.`;
+        return "Something new happens that changes the situation and leads into the next scene.";
       };
       const synopsisSimilarity = (a: string, b: string): number => {
         const na = normalizeSynopsis(a);
@@ -6537,50 +6488,61 @@ function NovelWorkspacePage() {
         return { ok: true as const };
       };
       const isGenericTemplateSynopsis = (synopsis: string) =>
-        /\bdistinct\s+(opening|middle|final)\s+movement\b/i.test(synopsis) ||
+        /\bdistinct\s+(opening|middle|final|new)\s*(turn|movement)\b/i.test(synopsis) ||
+        /\b(this\s+(setup|development|escalation|climax|resolution)\s+movement\s+pushes)\b/i.test(synopsis) ||
         /\bcharacters take concrete actions, face a new obstacle\b/i.test(synopsis) ||
         /\bbloc\s+\d+\b/i.test(synopsis) ||
-        /\ba fresh [^.]*complication shifts the objective\b/i.test(synopsis);
+        /\ba fresh [^.]*complication shifts the objective\b/i.test(synopsis) ||
+        /\bStay in this moment:\s*name the exact location\b/i.test(synopsis) ||
+        /\bresolves pressure around\b/i.test(synopsis) ||
+        /\bstrategic turning point that reorders\b/i.test(synopsis) ||
+        /\bImmediately after\s+[^.]*\.\s*Immediately after\b/i.test(synopsis);
       const enforceSynopsisQuality = (synopsis: string, index: number, total: number, previousSynopsis: string) => {
         let nextSynopsis = sanitizeSynopsisText(synopsis);
-        const stage = expectedStageForIndex(index, total);
-        const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
-        const previousSeed = firstSentence(previousSynopsis) || "the previous scene outcome";
+        const beatDesc = (chapterBeats[index]?.description ?? "").trim();
 
-        if (isGenericTemplateSynopsis(nextSynopsis)) {
+        if (isGenericTemplateSynopsis(nextSynopsis) && beatDesc) {
+          nextSynopsis = beatDesc;
+        } else if (isGenericTemplateSynopsis(nextSynopsis)) {
           nextSynopsis = index === total - 1
-            ? `In this final scene, the pressure around ${chapterSeed} reaches a concrete decision point. The characters act on what was set up by ${previousSeed}, and that confrontation produces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points to what comes next.`
-            : `This scene advances ${chapterSeed} by introducing a new obstacle that grows from ${previousSeed}. The characters take specific actions under pressure, triggering immediate consequences that alter the story state. The ending turns tension forward so the next bloc has a clear handoff.`;
+            ? "The scene reaches a decisive outcome. A choice is made; the chapter closes on a clear consequence."
+            : "A new obstacle or event changes the situation. Characters act; the outcome creates a clear handoff to the next scene.";
         }
-        if (index === 0 && openingAnchor && !hasOpeningAnchor(nextSynopsis)) {
+        if (index === 0 && openingAnchor && !hasOpeningAnchor(nextSynopsis) && openingAnchor.length < 200) {
           nextSynopsis = `${openingAnchor} ${nextSynopsis}`;
         }
-        if (!hasChapterAnchorCarryover(nextSynopsis)) {
-          nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
+        if (!hasChapterAnchorCarryover(nextSynopsis) && beatDesc) {
+          nextSynopsis = beatDesc + (nextSynopsis.length > 20 ? " " + nextSynopsis : "");
+        } else if (!hasChapterAnchorCarryover(nextSynopsis)) {
+          nextSynopsis = fallbackSegmentForIndex(index, total, previousSynopsis) + " " + nextSynopsis;
         }
-        if (!hasBeatAnchorCarryover(nextSynopsis, index)) {
-          nextSynopsis = `${fallbackSegmentForIndex(index, total, previousSynopsis)} ${nextSynopsis}`;
+        if (!hasBeatAnchorCarryover(nextSynopsis, index) && beatDesc) {
+          nextSynopsis = beatDesc + (nextSynopsis.length > 20 ? " " + nextSynopsis : "");
+        } else if (!hasBeatAnchorCarryover(nextSynopsis, index)) {
+          nextSynopsis = fallbackSegmentForIndex(index, total, previousSynopsis) + " " + nextSynopsis;
         }
 
         const requireStageCue = index === 0 || index === total - 1;
+        const stage = expectedStageForIndex(index, total);
         if (requireStageCue && !hasExpectedStageCue(nextSynopsis, stage)) {
           if (stage === "setup") {
-            nextSynopsis = `At the start, ${nextSynopsis.charAt(0).toLowerCase()}${nextSynopsis.slice(1)}`;
+            nextSynopsis = nextSynopsis.charAt(0).toLowerCase() + nextSynopsis.slice(1);
+            if (!/^(the|a|an|at|in|on)\s/i.test(nextSynopsis)) nextSynopsis = "The scene opens with " + nextSynopsis;
           } else if (stage === "resolution") {
-            nextSynopsis = `${nextSynopsis} By the end, the consequences settle into a clear new reality for the chapter.`;
+            nextSynopsis = nextSynopsis.replace(/\.\s*$/, "") + ". By the end, a clear new reality is in place.";
           }
         }
         if (index > 0 && !hasProgressionCue(nextSynopsis)) {
-          nextSynopsis = `${nextSynopsis} As a result of what happened in the previous scene, this forces the next conflict into motion.`;
+          nextSynopsis = nextSynopsis.replace(/\.\s*$/, "") + ". That outcome forces the next move.";
         }
         if (index > 0 && hasOpeningResetCue(nextSynopsis)) {
-          nextSynopsis = `${nextSynopsis} This scene continues directly from the previous outcome rather than reintroducing the chapter opening premise.`;
+          nextSynopsis = nextSynopsis.replace(/\b(At the start|At the beginning|Opens with|Introduces)\b[^.]+\.\s*/gi, "").trim() || nextSynopsis;
         }
-        if (sentenceCount(nextSynopsis) < 3) {
-          nextSynopsis = `${nextSynopsis} They make a concrete choice under pressure. That choice immediately changes the situation and raises the stakes.`;
+        if (sentenceCount(nextSynopsis) < 3 && nextSynopsis.length < 200) {
+          nextSynopsis = nextSynopsis.replace(/\.\s*$/, "") + " A concrete choice under pressure changes the situation.";
         }
-        if (wordCount(nextSynopsis) < MIN_SYNOPSIS_WORDS) {
-          nextSynopsis = `${nextSynopsis} The immediate consequence reshapes relationships, priorities, and risk, ensuring the scene has distinct momentum rather than repeating earlier beats.`;
+        if (wordCount(nextSynopsis) < MIN_SYNOPSIS_WORDS && nextSynopsis.length < 300) {
+          nextSynopsis = nextSynopsis.replace(/\.\s*$/, "") + " The consequence reshapes what happens next.";
         }
 
         return sanitizeSynopsisText(nextSynopsis.replace(/\s+/g, " ").trim());
@@ -6600,14 +6562,11 @@ function NovelWorkspacePage() {
             const previous = repaired.slice(0, idx);
             const { maxSimilarity } = findMostSimilarBloc(block.synopsis, previous);
             if (maxSimilarity < SIMILARITY_THRESHOLD) return block;
+            const beatDesc = (chapterBeats[idx]?.description ?? "").trim();
+            const freshSegment = beatDesc || fallbackSegmentForIndex(idx, repaired.length, repaired[idx - 1].synopsis || "");
             return {
               ...block,
-              synopsis: enforceSynopsisQuality(
-                `${fallbackSegmentForIndex(idx, repaired.length, repaired[idx - 1].synopsis || "")} As a result, this pushes the chapter into a distinct new turn.`,
-                idx,
-                repaired.length,
-                repaired[idx - 1].synopsis || "",
-              ),
+              synopsis: enforceSynopsisQuality(freshSegment, idx, repaired.length, repaired[idx - 1].synopsis || ""),
             };
           });
           repaired = applyContinuityScaffold(repaired);
@@ -6685,23 +6644,18 @@ function NovelWorkspacePage() {
         return null;
       };
       const buildDeterministicUniqueSynopsis = (idx: number, total: number, previousSynopsis: string) => {
-        const stage = expectedStageForIndex(idx, total);
-        const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
-        const prevSeed = firstSentence(previousSynopsis) || "the prior scene outcome";
-        const chapterBoundarySeed = firstSentence(previousChapterLastBlocHook || previousChapterLastBlocSynopsis || previousChapterSynopsis) || "";
-        const nextSeed = nextChapterSynopsis ? firstSentence(nextChapterSynopsis) : "the next development";
         const seededSegment = fallbackSegmentForIndex(idx, total, previousSynopsis);
-        const openingSeed = openingAnchor || seededSegment;
+        const beatDesc = (chapterBeats[idx]?.description ?? "").trim();
+        if (beatDesc) return sanitizeSynopsisText(beatDesc);
         if (idx === total - 1) {
-          return sanitizeSynopsisText(`${seededSegment} The chapter resolves pressure around ${chapterSeed} through a concrete confrontation that grows from ${prevSeed}. The characters make an irreversible decision, and the emotional fallout alters alliances and priorities in a specific way. By the end, the chapter closes on a clear consequence that points directly toward ${nextSeed}.`);
+          return sanitizeSynopsisText("The scene reaches a decisive outcome. Choices are made; the chapter closes on a clear consequence that points toward what comes next.");
         }
         if (idx === 0) {
-          if (chapterBoundarySeed) {
-            return sanitizeSynopsisText(`Following ${chapterBoundarySeed}, this opening scene carries the aftermath into a new immediate objective without rewinding the story. The characters respond to fresh pressure, and if time has passed it is signaled explicitly through changed circumstances and consequences. The scene ends on a concrete turn that commits the chapter to new ground.`);
-          }
-          return sanitizeSynopsisText(`${openingSeed} This opening scene establishes the chapter's baseline situation, key dynamics, and immediate pressure before escalation begins.`);
+          const openingDesc = (chapterBeats[0]?.description ?? openingAnchor ?? "").trim();
+          if (openingDesc) return sanitizeSynopsisText(openingDesc);
+          return sanitizeSynopsisText("The scene opens in a specific place. Named characters act; something concrete happens and changes the situation.");
         }
-        return sanitizeSynopsisText(`Immediately after ${prevSeed}, ${seededSegment} This ${stage} movement pushes ${chapterSeed} into a distinct new turn that is not a repeat of earlier scenes. The characters attempt a specific tactic, hit a fresh obstacle, and trigger immediate consequences that force a new decision. As a result, the story state changes in a way that sets up the next scene.`);
+        return sanitizeSynopsisText(seededSegment);
       };
       const duplicateBlocIndex = (candidateBlocks: SceneBlock[], threshold = SIMILARITY_THRESHOLD) => {
         const hasSharedWordWindow = (a: string, b: string, windowSize = 8) => {
@@ -6744,17 +6698,10 @@ function NovelWorkspacePage() {
             const { maxSimilarity } = findMostSimilarBloc(synopsis, previousBlocks);
             if (maxSimilarity < strictThreshold) continue;
             const prevSeed = idx > 0 ? repaired[idx - 1].synopsis : "";
-            const stage = expectedStageForIndex(idx, repaired.length);
             const deterministic = buildDeterministicUniqueSynopsis(idx, repaired.length, prevSeed);
-            const differentiator =
-              stage === "development"
-                ? "This development beat introduces a different tactic and a new resistance point, so it cannot mirror any earlier bloc."
-                : stage === "climax"
-                  ? "This climax beat forces a decisive confrontation with different stakes and a changed power balance from earlier blocs."
-                  : "This scene shifts consequences into a new state that did not exist in any previous bloc.";
             repaired[idx] = {
               ...repaired[idx],
-              synopsis: sanitizeSynopsisText(`${deterministic} ${differentiator}`),
+              synopsis: sanitizeSynopsisText(deterministic),
             };
           }
           repaired = applyContinuityScaffold(repaired);
@@ -6773,24 +6720,14 @@ function NovelWorkspacePage() {
             idx > 0 ? repaired[idx - 1].synopsis : "",
           ),
         }));
-        const distinctMovements = [
-          "The objective shifts from survival to leverage, changing how every decision is weighed.",
-          "The pressure pivots from hidden risk to open confrontation, forcing a new tactic.",
-          "Control of the situation flips, and the characters must improvise under immediate consequence.",
-          "The emotional center moves from doubt to commitment, raising the cost of retreat.",
-          "A practical setback becomes a strategic turning point that reorders priorities.",
-          "The scene converts private tension into public stakes that cannot be ignored.",
-        ];
         for (let pass = 0; pass < 4; pass++) {
           const duplicateIdx = duplicateBlocIndex(fullyDeterministic, strictThreshold);
           if (duplicateIdx < 0) break;
-          const movementCue = distinctMovements[(duplicateIdx + pass) % distinctMovements.length];
           const prevSeed = duplicateIdx > 0 ? fullyDeterministic[duplicateIdx - 1].synopsis : "";
+          const beatDesc = (chapterBeats[duplicateIdx]?.description ?? "").trim();
           fullyDeterministic[duplicateIdx] = {
             ...fullyDeterministic[duplicateIdx],
-            synopsis: sanitizeSynopsisText(
-              `${buildDeterministicUniqueSynopsis(duplicateIdx, fullyDeterministic.length, prevSeed)} ${movementCue}`,
-            ),
+            synopsis: sanitizeSynopsisText(beatDesc || buildDeterministicUniqueSynopsis(duplicateIdx, fullyDeterministic.length, prevSeed)),
           };
         }
         return applyContinuityScaffold(fullyDeterministic);
@@ -6834,10 +6771,10 @@ function NovelWorkspacePage() {
                 `Rewrite ONLY bloc ${idx + 1} of ${repaired.length}.`,
                 `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
                 `Current issue to fix: ${weakness}.`,
-                "- Must be highly specific with named characters, place, actions, conflict, and changed outcome.",
-                "- Must be distinct from every other bloc listed below.",
+                "- Must be highly specific: name who does what (e.g. 'Sarah refuses' not 'the character refuses'). One concrete action per sentence. Name the place. State the changed outcome.",
+                "- Must be distinct from every other bloc listed below. No rephrasing of the same beat.",
                 "- Minimum: 4 sentences and 55 words.",
-                "- Never use generic/template wording.",
+                "- Never use generic/template wording. No 'tension rises', 'things escalate', or 'the characters' without names.",
                 idx > 0 ? "- Include explicit progression cue words (then/after/as a result/therefore/forcing)." : "",
                 idx > 0 ? "- Continue from prior bloc aftermath; do NOT re-open the chapter with intro/setup language." : "",
                 `Required stage: ${expectedStage}.`,
@@ -6912,17 +6849,19 @@ function NovelWorkspacePage() {
           const oneBlocPrompt = [
             `Write scene bloc ${i + 1} of ${BLOC_COUNT}: "${chapterBeats[i]?.label ?? `Beat ${i + 1}`}".`,
             `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
+            "- NOVELIST LENS: The synopsis must read like a novelist's scene outline: only story (who, where, what happens, what changes). Never include instructions, craft terms, or meta phrases like 'Stay in this moment', 'This development movement pushes', 'distinct new turn', 'resolves pressure'. Write as if for a reader's eyes.",
             "- Write ONLY this bloc. Do not draft or summarize the remaining blocs.",
-            "- synopsis must be detailed (4-8 sentences, minimum 45 words) and specific about what happens.",
-            "- Think in story logic for this scene: (1) immediate objective, (2) resistance/obstacle, (3) changed outcome that pushes the next scene.",
+            `- synopsis: 4-8 sentences, minimum 45 words. Name at least one character and one concrete action (e.g. 'Maria confronts James' not 'tension builds'). One location per bloc. With ${BLOC_COUNT} blocs, make this scene as rich and specific as possible.`,
+            "- Think in story logic for this scene: (1) immediate objective, (2) resistance/obstacle, (3) changed outcome that pushes the next scene. Every sentence must state who does what or what changes.",
             shortChapterSynopsis ? "- The chapter synopsis is brief: expand with plausible connective tissue (motives, reactions, subtext, sensory grounding) while staying faithful to the same events." : "",
             "- Use exact character names from the roster. Never use generic labels.",
             allowedCharacterNames ? `- Do NOT introduce new characters. Allowed characters only: ${allowedCharacterNames}.` : "",
             allowedLocationNames ? `- LOCATION: Use only: ${allowedLocationNames}. Stay in the current location until the synopsis shows explicit travel. Do not hop locations mid-chapter.` : "- LOCATION: Stay in the same location as prior blocs unless the chapter synopsis shows explicit travel. No location hopping.",
+            "- SYNOPSIS SCOPE (CRITICAL): One bloc = ONE moment, ONE location. Do NOT chain multiple locations (train station, then taxi, then B&B). Write a synopsis that keeps the scene in one place. Who, where, what happens, immediate consequence. No travelogue.",
             "- CRITICAL: this bloc must be narratively DISTINCT from previous blocs (new action beat, new obstacle or decision, and a changed story state by the end).",
             "- CRITICAL: never restate earlier blocs with different wording.",
             beatAnchorSnippetForBloc(i) ? `- CRITICAL BEAT ANCHOR: this bloc must cover this beat: "${beatAnchorSnippetForBloc(i)}"` : "",
-            `- CRITICAL STAGE: this bloc must function as "${expectedStage}" in the chapter flow.`,
+            `- NOVELIST LENS: Write the synopsis in pure story language only — who does what, where, what changes. Do NOT use structural or craft terms in the synopsis (no "development", "climax", "resolution", "turning point", "this scene pushes", "distinct new turn"). The scene should naturally ${expectedStage === "setup" ? "open the chapter in a specific place with a concrete first beat" : expectedStage === "resolution" ? "close the chapter with a clear consequence" : "advance the story with a new obstacle or decision and a changed state"} without naming that structure.`,
             taggedBeats.length > 0 ? "- THE ARCHITECT TAGS (CRITICAL): this chapter has assigned beats/subplots. This bloc must advance its tagged beat context, not generic summary text." : "",
             "- Include explicit verbs for actions and consequences, not just mood or description.",
             "- Expand depth through motivation, subtext, and emotional reactions — avoid adding brand-new plotlines.",
@@ -7018,7 +6957,7 @@ function NovelWorkspacePage() {
                   : openingReset
                     ? "Do not reopen the chapter premise. Continue directly from the previous bloc's consequence."
                 : stageMismatch
-                  ? `Wrong stage shape. Rewrite this bloc so it clearly functions as "${expectedStage}".`
+                  ? `Rewrite in plain story language so the scene naturally ${expectedStage === "setup" ? "opens the chapter" : expectedStage === "resolution" ? "closes the chapter with a clear consequence" : "advances the conflict"}. Do not use words like "development", "climax", or "resolution" in the synopsis.`
                   : isTooSimilar
                 ? `Too similar to ${closestBloc} (${Math.round(maxSimilarity * 100)}% overlap). Introduce a different scene purpose, different turning point, and different end state.`
                 : "Missing explicit progression cue. Add clear cause-and-effect transition words and a changed story state by scene end.";
@@ -7034,16 +6973,16 @@ function NovelWorkspacePage() {
             const repairPrompt = [
               `REPAIR bloc ${i + 1} of ${BLOC_COUNT}: "${chapterBeats[i]?.label ?? `Beat ${i + 1}`}".`,
               `Return JSON only: { "bloc": { "synopsis": "...", "openingLine": "...", "closingHook": "...", "emotionalArc": "...", "sensoryPalette": "...", "dialogueNotes": "...", "tension": 1-5, "focus": "one of ${focusIds}", "wordTarget": 0|400|600|800|1000|1500 } }`,
-              "- Write a concrete, scene-specific synopsis with named characters, setting, actions, conflict, and outcome.",
+              "- Write a concrete, scene-specific synopsis: name who does what (e.g. 'David confronts Elena' not 'confrontation occurs'). One concrete action per sentence. Named setting. Clear outcome.",
               "- Minimum: 4 sentences and 55 words.",
-              "- Never use generic/template wording.",
+              "- Never use generic/template wording. No 'tension builds', 'the characters', or vague escalation without a specific event.",
               "- Use story logic: objective -> obstacle -> changed outcome.",
               taggedBeats.length > 0 ? "- Keep The Architect alignment: this bloc must explicitly advance the tagged beat target for its slot." : "",
               shortChapterSynopsis ? "- The chapter synopsis is short: enrich with emotional texture and connective detail, but keep the same core events and direction." : "",
               allowedCharacterNames ? `- Do NOT add characters outside this list: ${allowedCharacterNames}.` : "",
               allowedLocationNames ? `- Do NOT change locations outside this list: ${allowedLocationNames}.` : "",
               "- Must advance beyond previous blocs and remain consistent with chapter synopsis.",
-              `Expected stage: ${expectedStage}.`,
+              "- Synopsis must be pure story: who, where, what happens, what changes. No structural jargon (no 'development', 'climax', 'turning point', 'this scene pushes').",
               `Chapter: ${activeChapter.title}`,
               `Chapter synopsis: ${chapterSynopsis}`,
               beatCueForBloc(i) ? `Tagged beat target for this bloc: ${beatCueForBloc(i)}` : "",
@@ -7089,14 +7028,15 @@ function NovelWorkspacePage() {
         }
 
         if (!blockBuilt) {
-          const chapterSeed = firstSentence(chapterSynopsis) || "the chapter conflict";
-          const prevSeed = blocks.length > 0 ? firstSentence(blocks[blocks.length - 1].synopsis) : "the opening situation";
-          const chapterBoundarySeed = firstSentence(previousChapterLastBlocHook || previousChapterLastBlocSynopsis || previousChapterSynopsis) || "";
-          const deterministicSynopsis = isLast
-            ? `In this closing scene, the central conflict around ${chapterSeed} reaches a concrete decision point. The characters act on what was set in motion by ${prevSeed}, and the confrontation forces a specific emotional and practical outcome. By the end, the chapter lands on a clear shift that naturally points into the next chapter.`
-            : i === 0 && chapterBoundarySeed
-              ? `Following ${chapterBoundarySeed}, this opening scene picks up from the previous chapter's consequences rather than resetting the story. The characters face a new immediate objective under changed conditions, and their first decisions create a clear new trajectory for this chapter.`
-            : `This scene advances the chapter conflict around ${chapterSeed} with a new obstacle that grows directly out of ${prevSeed}. The characters take specific actions under pressure, and those choices create immediate consequences that change the story state. The ending turns the tension forward so the next bloc has a clear handoff.`;
+          const beatDesc = (chapterBeats[i]?.description ?? "").trim();
+          const prevSynopsis = blocks.length > 0 ? blocks[blocks.length - 1].synopsis : "";
+          const deterministicSynopsis = beatDesc
+            ? beatDesc
+            : isLast
+              ? "The scene reaches a decisive outcome. A choice is made; the chapter closes on a clear consequence that points toward what comes next."
+              : i === 0
+                ? (openingAnchor || "The scene opens in a specific place. Named characters act; something concrete happens and changes the situation.")
+                : fallbackSegmentForIndex(i, BLOC_COUNT, prevSynopsis);
           blocks.push({ ...DEFAULT_SCENE_BLOCK, synopsis: deterministicSynopsis, notes: chapterLevelBolton, beatLabel: chapterBeats[i]?.label });
           flushSync(() => updateChapter(targetChapterId, { sceneBlocks: [...blocks] }));
         }
@@ -7443,10 +7383,16 @@ function NovelWorkspacePage() {
       if (blockIndex === 0) {
         const chIndex = novel.chapters.findIndex((c) => c.id === targetChapterId);
         const prev = chIndex > 0 ? novel.chapters[chIndex - 1] : null;
-        return prev?.content?.trim().slice(-800) || "";
+        return prev?.content?.trim().slice(-1200) || "";
       }
       return "";
     })();
+    const currentChapterSynopsis = (planChapter?.synopsis || activeChapter.subtitle || "").trim();
+    const authorsProseForVoice = precedingBlocs
+      .map((b) => b.prose?.trim() || "")
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(-2800);
     const priorChapterProse = precedingBlocs
       .map((b) => b.prose?.trim() || "")
       .filter(Boolean)
@@ -7459,6 +7405,8 @@ function NovelWorkspacePage() {
 
     setStoryAiBusyAction(`block-prose-${blockIndex}`);
     setStoryAiError(null);
+    setStreamingProseBlockIndex(blockIndex);
+    setStreamingProseText("");
     try {
       const fullContext = buildChapterBlocksContext(activeChapter.title, planChapter?.synopsis || activeChapter.subtitle || "", planCharIds, planLocIds);
       const summary = novel.storyBible.summary;
@@ -7489,6 +7437,14 @@ function NovelWorkspacePage() {
         if (nf?.subjectName) parts.push(`Subject: ${nf.subjectName}`);
         if (nf?.era) parts.push(`Era: ${nf.era}`);
         if (nf?.centralTheme) parts.push(`Central theme: ${nf.centralTheme}`);
+        const hasEraResearch = nf?.eraCulturalNotes || nf?.eraHistoricalEvents || nf?.eraTechnology || nf?.eraMusicAndMedia;
+        if (hasEraResearch) {
+          parts.push("Period context (weave in where relevant for authenticity):");
+          if (nf.eraCulturalNotes) parts.push(`  Culture: ${clampPromptText(nf.eraCulturalNotes, 220)}`);
+          if (nf.eraHistoricalEvents) parts.push(`  Events: ${clampPromptText(nf.eraHistoricalEvents, 180)}`);
+          if (nf.eraTechnology) parts.push(`  Daily life / tech: ${clampPromptText(nf.eraTechnology, 120)}`);
+          if (nf.eraMusicAndMedia) parts.push(`  Media: ${clampPromptText(nf.eraMusicAndMedia, 120)}`);
+        }
         const synLower = (block.synopsis || "").toLowerCase();
         const chapterSynLower = (planChapter?.synopsis || "").toLowerCase();
         const combinedSearch = `${synLower} ${chapterSynLower}`;
@@ -7515,7 +7471,7 @@ function NovelWorkspacePage() {
           );
           if (relevantScrapbook.length) {
             parts.push("Author's own writing about these moments (match this authentic voice):");
-            relevantScrapbook.forEach(s => parts.push(`  - "${s.title}": ${clampPromptText(s.content, 300)}`));
+            relevantScrapbook.forEach(s => parts.push(`  - "${s.title}": ${clampPromptText(s.content, 400)}`));
           }
         }
 
@@ -7529,7 +7485,7 @@ function NovelWorkspacePage() {
           if (relevantNotes.length) {
             parts.push("Research material (use for factual accuracy):");
             relevantNotes.forEach(n => {
-              parts.push(`  - "${n.title}"${n.source ? ` [Source: ${n.source}]` : ""}${n.strength ? ` (${n.strength})` : ""}: ${clampPromptText(n.content, 200)}`);
+              parts.push(`  - "${n.title}"${n.source ? ` [Source: ${n.source}]` : ""}${n.strength ? ` (${n.strength})` : ""}: ${clampPromptText(n.content, 220)}`);
             });
           }
         }
@@ -7549,7 +7505,7 @@ function NovelWorkspacePage() {
         : "Use AMERICAN English spelling and grammar throughout (e.g. color, realize, honor, favorite, center, program, traveling, defense). NEVER use British spellings.";
 
       const humanWritingRules = [
-        "AUTHOR'S LENS (CRITICAL): Write as if you ARE the author of this book. Their voice, their style, their rhythms. Read the Style/Voice section above and match it exactly. Prose must feel authentic, consistent, and human. Every sentence should sound like it belongs in THIS novel.",
+        "AUTHOR'S LENS (CRITICAL): The Canon's Style & Voice is the author's direction. Voice rules, comps, tone, POV — follow them exactly. Write as if you ARE the author. Every sentence should sound like it belongs in THIS novel. Genre, tone, and prose texture come from the Canon — not from default assumptions.",
         "",
         "WRITE LIKE A HUMAN AUTHOR, NOT AN AI. No generic AI cadence. No 'a testament to', 'the weight of', 'couldn't help but'. Varied rhythm. Concrete over abstract. Trust the reader.",
         "",
@@ -7559,7 +7515,7 @@ function NovelWorkspacePage() {
         "fluorescent, iridescent, luminescent, gossamer, ethereal, palpable, visceral, tangible, cacophony, symphony (when not about music), tapestry (when not about fabric), cascade, labyrinth, mosaic, crucible, kaleidoscope, juxtaposition, dichotomy, paradigm, nuance (as a verb), uncharted, multifaceted, intricate, myriad, delve, embark, testament, resonate, aforementioned, pivotal, commendable, noteworthy, invaluable, comprehensive, facilitate, leverage (as a verb), utilize, underscore, realm, landscape (figurative), navigate (figurative), foster, harness, bolster, spearhead, whilst",
         "",
         "BANNED AI PHRASES \u2014 NEVER use any of these:",
-        "'a chill ran down', 'little did they know', 'the weight of', 'a sense of', 'couldn't help but', 'a mixture of', 'the silence was deafening', 'time seemed to', 'knot in their stomach', 'pierced the silence', 'hung in the air', 'sent a shiver', 'a wave of', 'washed over', 'it was as if', 'in that moment', 'something shifted', 'the air crackled', 'electricity between them', 'swallowed hard', 'let out a breath', 'didn't realize they'd been holding', 'eyes searched', 'dark pools', 'steeled themselves', 'jaw clenched', 'fists clenched at their sides', 'heart hammered', 'blood ran cold', 'the world fell away', 'time stood still', 'pregnant pause', 'deafening silence', 'couldn't quite place'",
+        "'a chill ran down', 'little did they know', 'the weight of', 'a sense of', 'couldn't help but', 'a mixture of', 'the silence was deafening', 'time seemed to', 'knot in their stomach', 'pierced the silence', 'hung in the air', 'sent a shiver', 'a wave of', 'washed over', 'it was as if', 'in that moment', 'something shifted', 'the air crackled', 'electricity between them', 'swallowed hard', 'let out a breath', 'didn't realize they'd been holding', 'eyes searched', 'dark pools', 'steeled themselves', 'jaw clenched', 'fists clenched at their sides', 'heart hammered', 'blood ran cold', 'the world fell away', 'time stood still', 'pregnant pause', 'deafening silence', 'couldn't quite place', 'fear and recognition', 'curiosity and dread', 'tinged with', 'etched with', 'a mixture of fear', 'their expressions a mixture', 'You're the one they've been waiting for', 'I've just heard things'",
         "",
         "SENTENCE VARIETY: Vary length naturally. Short punchy sentences mixed with longer flowing ones. Do NOT make every sentence the same structure or length. Avoid starting consecutive sentences with the same word.",
         "SHOW DON'T TELL: Use concrete sensory details, not abstract emotional labels. Show emotions through action, body language, and dialogue, not by naming them. 'She was angry' = bad. 'She slammed the mug down hard enough to crack the handle' = good.",
@@ -7570,24 +7526,56 @@ function NovelWorkspacePage() {
 
       const systemMsg = isNF ? [
         `You are a professional ${nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical non-fiction" : nfData?.subtype === "investigative" ? "investigative" : "memoir/biography"} author writing in ${profileLangLabel}.`,
-        "AUTHOR'S LENS: You embody the author's voice. Their style, rhythm, and tone define every sentence. Read the Style section and match it exactly. Prose must feel authentic and consistent.",
+        "AUTHOR'S LENS: You embody the author's voice. Their style, rhythm, and tone define every sentence. READ any existing author prose provided — match that voice exactly. Use the chapter flow (prev/current/next synopses) so your prose fits the narrative arc. Prose must feel authentic, consistent, and flow seamlessly.",
         "Your PRIMARY job: match the author's established style, voice, and genre conventions. If voice rules are provided, follow them precisely. No generic AI prose.",
         povNote,
-        nfData?.subtype === "true-crime" ? "Write with tension, procedural detail, and psychological insight." :
-        nfData?.subtype === "historical" ? "Write with authority, narrative drive, and period authenticity." :
-        nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing." :
+        nfData?.subtype === "true-crime" ? "Write with tension and procedural detail; respect victims, avoid sensationalism; anchor in evidence." :
+        nfData?.subtype === "historical" ? "Write with authority and narrative drive. Weave in period detail — sounds, objects, customs — so the era feels lived-in, not textbook." :
+        nfData?.subtype === "investigative" ? "Write with precision and revelatory pacing. Anchor claims in evidence; attribute where the author has sources." :
         "Write with emotional honesty and literary quality.",
         "Use real names, places, and details from Canon and the Source Material. When the author has written their own memories in the Scrapbook, echo their authentic voice and specific details.",
-        "Return ONLY prose — no headers, labels, JSON, or metadata.",
+        "Output format: Begin with the first word of the scene. End with the last word. No titles, word counts, or metadata. Return ONLY the prose.",
       ].join(" ") : [
         `You are a professional novelist writing in ${profileLangLabel}. AUTHOR'S LENS: You write AS the author of this book. Their voice, style, and rhythms — not generic AI prose.`,
-        "Your PRIMARY job: match the author's established style, voice, and genre from the Style section. If voice rules exist, follow them exactly. Consistency is vital.",
+        "Your PRIMARY jobs: (1) WRITE LIKE THE AUTHOR — follow the Canon's Style & Voice, voice rules, comps, tone exactly. The author's direction defines every sentence. (2) STAY IN SCOPE: Write only what the synopsis describes. (3) READ any existing author prose and match that voice. Use chapter flow for continuity.",
         povNote,
-        "Avoid AI tells: no em dashes, no 'a testament to', 'the weight of', 'couldn't help but'. Use ONLY characters/locations from Canon. Return ONLY prose.",
+        "Follow the Canon's genre, tone, and voice rules precisely.",
+        "Output format: Begin with the first word of the scene. End with the last word of the scene. No titles, no 'Scene N', no word counts, no commentary or labels. Return ONLY the prose.",
       ].join(" ");
 
       const isBestFit = block.wordTarget === 0;
       const effectiveTarget = isBestFit ? 600 : block.wordTarget;
+
+      const goldStandardSection = [
+        "══ GOLD STANDARD — SCOPE AND QUALITY ══",
+        "",
+        "1. STAY IN SCOPE (CRITICAL)",
+        "The synopsis defines the ENTIRE scene. Write ONLY what it describes. If the synopsis says 'steps off train, people stare' — write that moment. Do NOT add: taxi rides, cab drivers, B&B arrivals, walks through streets, new locations, or any beat not in the synopsis. Adding logistics or 'and then he went here' is padding. One synopsis beat = one fully rendered moment.",
+        "",
+        "2. NO PADDING OR TRAVELOGUE",
+        "Never chain: 'He stepped off... then walked... then took a taxi... then arrived at...' Stay in the moment. If the synopsis describes an arrival, render the arrival — don't extend it into a journey. Every paragraph must serve the scene as defined. Cut anything that doesn't advance the story beat, deepen tension, or ground the reader in a specific place.",
+        "",
+        "3. NO CLICHÉD DIALOGUE",
+        "BANNED: 'You're the one they've been waiting for', 'I've just heard things', 'About the questions you'll be asking', expositional stranger dialogue that explains the plot. Real people are evasive, fragmentary, or say nothing. Dialogue must feel like real speech — not setup. If someone stares, show the stare; don't have a cab driver explain why.",
+        "",
+        "4. SHOW UNEASE — NEVER LABEL EMOTIONS",
+        "BANNED: 'a mixture of fear and recognition', 'curiosity and dread', 'tinged with apprehension', 'etched with curiosity'. Never name emotions on faces. SHOW: people turn away, go still, grip the rail, step back. Use sensory detail (cold air, empty platform) and specific physical actions. The reader should feel unease without being told.",
+        "",
+        "5. PROSE DISCIPLINE — Every sentence earns its place. No filler. No 'and then' logistics. If it doesn't advance the beat or ground the reader in the moment, cut it.",
+        "",
+        "6. HANDOFF — Your last line is where the next scene starts. End on a concrete image or beat, not a generic cliffhanger. The reader (and the next bloc) must know exactly where we are and what just changed.",
+      ].join("\n");
+
+      const canonVoiceSection = [
+        "══ CANON VOICE — WRITE LIKE THE AUTHOR'S DIRECTION ══",
+        "The Canon (Style & Voice, voice rules, comps, tone, POV) defines how this book reads. You MUST follow the author's direction precisely.",
+        "",
+        "If voice rules exist: they are the author telling you how to write. Match their sentence rhythm, vocabulary level, and prose texture exactly.",
+        "If style comps exist: use them as the tonal north star. This book should sound like those reference points.",
+        "Genre and tone from the Canon: honour them. A literary novel reads differently from a thriller; a cozy mystery from noir. The author has set the direction — your job is to execute it.",
+        "",
+        "Do not default to generic prose. Default to what the Canon specifies. If the Canon is sparse, match that. If it calls for lush sensory detail, deliver that. The author's direction is law.",
+      ].join("\n");
 
       const sceneContext = blocks.map((b, i) => {
         const fp = FOCUS_PRESETS.find((p) => p.id === b.focus);
@@ -7621,13 +7609,32 @@ function NovelWorkspacePage() {
       if (block.closingHook) blueprintParts.push(`\nCLOSING INSTRUCTION: ${block.closingHook}\nThis is how the scene must END. The last line or image should create momentum — the reader's eye should slide right into the next section without stopping.`);
       blueprintParts.push(`══ END BLUEPRINT ══`);
 
+      const chapterFlowSection = [
+        "══ CHAPTER FLOW (from the Book Plan) — READ ALL THREE FOR NARRATIVE FLOW ══",
+        "Your prose must feel like it belongs in a continuous story. These synopses show where the reader has been, where they are, and where they are going.",
+        previousChapterSynopsis ? `\nPREVIOUS CHAPTER: ${clampPromptText(previousChapterSynopsis, 280)}` : "",
+        currentChapterSynopsis ? `\nTHIS CHAPTER: ${clampPromptText(currentChapterSynopsis, 400)}` : "",
+        nextChapterSynopsis ? `\nNEXT CHAPTER: ${clampPromptText(nextChapterSynopsis, 280)}` : "",
+        "",
+        "Your scene must flow naturally: continue the momentum from the previous chapter, serve this chapter's arc, and (if you're near the end of this chapter) set up the next. Prose should read like one smooth book, not isolated scenes.",
+      ].filter(Boolean).join("\n");
+
       const prompt = [
         "══ AUTHOR'S LENS — YOUR TOP PRIORITY ══",
-        "Write AS the author. Their voice, style, rhythm, and tone. The Style section below defines how this book reads. Match it exactly. Consistency with existing prose and voice rules is vital. If voice rules exist, follow them precisely.",
+        "Write AS the author. You are ghostwriting in their voice. The Canon defines how this book reads — voice rules, style comps, tone, POV. Follow the author's direction precisely. Your prose must be indistinguishable from theirs.",
         "",
-        "STYLE & VOICE (from Canon — FOLLOW CLOSELY):",
-        styleSection || "Use professional, consistent prose.",
+        canonVoiceSection,
+        "",
+        authorsProseForVoice
+          ? `══ AUTHOR'S EXISTING PROSE IN THIS CHAPTER — MATCH THIS VOICE EXACTLY ══\nThe author has already written prose in this chapter. Your new prose must sound like the same person wrote it. Study the rhythm, vocabulary, and tone:\n"""\n${authorsProseForVoice}\n"""\n`
+          : "",
+        "",
+        "STYLE & VOICE — AUTHOR'S DIRECTION (from Canon):",
+        styleSection ? `${styleSection}\n\n↑ This is the author's direction. Match it precisely.` : "No Canon style defined — use professional, consistent prose that fits the genre.",
         humanWritingRules,
+        "",
+        goldStandardSection,
+        "",
         boltonDirective ? `\nBOLT-ON DIRECTIVE: ${boltonDirective}` : "",
         focusHint,
         "",
@@ -7641,6 +7648,8 @@ function NovelWorkspacePage() {
         storyPosition.chapterNumber > 0 ? `Story position: Chapter ${storyPosition.chapterNumber} of ${storyPosition.totalChapters}.` : "",
         storyPosition.arcGuidance,
         "",
+        chapterFlowSection,
+        "",
         "ALL SCENE BLOCKS (for context — write ONLY the indicated scene):",
         sceneContext,
         "",
@@ -7653,9 +7662,7 @@ function NovelWorkspacePage() {
             : "",
         immediatePrevBloc?.synopsis ? `\nPrevious scene synopsis: ${immediatePrevBloc.synopsis}` : "",
         immediatePrevBloc?.closingHook ? `Previous scene's closing cue: ${immediatePrevBloc.closingHook}` : "",
-        followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 400)}"""` : "",
-        previousChapterSynopsis && blockIndex === 0 ? `\nPrevious chapter synopsis: ${clampPromptText(previousChapterSynopsis, 220)}` : "",
-        nextChapterSynopsis && blockIndex === blocks.length - 1 ? `\nNext chapter (for foreshadowing — do NOT write it):\n${nextChapterSynopsis}` : "",
+        followingProse ? `\nPROSE AFTER THIS SCENE (your scene must flow naturally INTO this — do not contradict or repeat it):\n"""${followingProse.slice(0, 800)}"""` : "",
         "",
         nfProseCtx ? `\nNon-Fiction Source Material (USE THIS for authentic detail, real names, real events):\n${nfProseCtx}` : "",
         "Canon (style, voice, characters, locations — FOLLOW THESE CLOSELY):",
@@ -7663,15 +7670,18 @@ function NovelWorkspacePage() {
         "",
         "RULES:",
         `- Write ONLY Scene ${blockIndex + 1}. Do not write other scenes.`,
+        "- STAY IN SCOPE: The synopsis is the boundary. Do NOT add locations, characters, or events (taxi, cab driver, B&B, streets) that are not in the synopsis. One beat = one moment, fully rendered, not extended into a chain.",
+        "- NO PADDING: Never add travelogue or 'and then he went here' logistics. Stay in the moment. Every sentence must earn its place.",
         "- THE BLUEPRINT ABOVE IS YOUR PRIMARY INSTRUCTION SET. Follow the opening instruction, emotional arc, sensory palette, dialogue notes, pacing guidance, and closing instruction precisely.",
-        "- NOVEL-QUALITY PROSE: write with specific action, specific sensory detail, and emotional movement in every paragraph. Avoid generic filler lines.",
+        "- NOVEL-QUALITY PROSE: write with specific action, specific sensory detail. Show emotion through physical detail — never label 'fear and recognition', 'curiosity and dread'. Avoid generic filler and clichéd dialogue.",
         boltonDirective ? "- ACTIVE BOLTON IS MANDATORY: make the active bolton influence clearly visible in wording, rhythm, and scene choices." : "",
         "- CONTINUITY IS CRITICAL: Read the previous scenes above. If a character LEFT a location, they are NOT there any more. Track where every character IS at the end of the previous scene and continue from THAT state.",
+        "- CANON CONSISTENCY: Use only character names, locations, and facts already established in the Canon and in the previous scene. Do not invent new character or place names unless they appear in the synopsis or Canon.",
         "- Do NOT repeat actions, dialogue, or situations from previous scenes. Each scene must move the story FORWARD.",
         "- Your opening lines must continue from the latest state of the prior scene/chapter. Do not reset context or replay the same moment.",
         "- This scene must introduce NEW progression: at least one new action, revelation, decision, or consequence beyond previous scenes.",
-        "- Your prose MUST read as a seamless continuation of the text before it. No jarring transitions. A reader removing all bloc markers should read one smooth chapter.",
-        "- If there is prose after your scene, your ending must flow naturally into it.",
+        "- FLOW IS CRITICAL: Your prose must read as a seamless continuation. Use the CHAPTER FLOW synopses (prev/current/next chapter) to understand the narrative arc. This scene is a bridge — it must continue from where the reader has been and lead toward where they are going. No jarring transitions. A reader removing all bloc markers should read one smooth book.",
+        "- If there is prose after your scene, your ending must flow naturally into it. Read it and match its tone and pickup.",
         isNF ? "- Non-fiction: use details from Source Material. Write with authenticity. Match the Style & Voice rules exactly." : "- Maintain character and canon consistency. Follow voice rules and style guidance precisely. The author's voice defines every sentence.",
         "- AUTHOR'S LENS: Prose must feel authentic, consistent, and human. Varied rhythm. No em dashes, no AI crutches. Match the established voice.",
         "- Output the scene prose ONLY. No commentary, no labels, no metadata.",
@@ -7679,8 +7689,22 @@ function NovelWorkspacePage() {
       ].filter(Boolean).join("\n");
 
       const maxTokens = Math.min(6000, Math.round((isBestFit ? 1000 : block.wordTarget) * 2.2));
-      let prose = await requestOpenRouterText(prompt, maxTokens, 180000, systemMsg, false);
+      let prose = await requestOpenRouterTextStream(
+        prompt,
+        maxTokens,
+        systemMsg,
+        undefined,
+        (delta) => setStreamingProseText((prev) => prev + delta),
+      );
       prose = cleanProseOutput(prose);
+      setStreamingProseBlockIndex(null);
+      setStreamingProseText("");
+      if (prose) {
+        const next = [...blocks];
+        next[blockIndex] = { ...block, prose };
+        updateSceneBlocks(targetChapterId, next, true);
+        syncChapterContentFromBlocks(targetChapterId, next);
+      }
 
       if (!prose) {
         throw new Error("No prose returned. Try again or switch to a different model.");
@@ -7868,6 +7892,8 @@ function NovelWorkspacePage() {
         if (el) autoSizeEditorInput(el);
       });
     } catch (error) {
+      setStreamingProseBlockIndex(null);
+      setStreamingProseText("");
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
       let msg = "Prose generation failed for this scene.";
       if (error instanceof Error) {
@@ -7879,6 +7905,54 @@ function NovelWorkspacePage() {
         }
       }
       setStoryAiError(msg);
+    } finally {
+      setStoryAiBusyAction(null);
+      setStreamingProseBlockIndex(null);
+      setStreamingProseText("");
+    }
+  }
+
+  /** Enhance (polish) existing block prose: tighten, vary rhythm, cut filler. Keeps voice and meaning. */
+  async function runEnhanceBlockProse(blockIndex: number) {
+    if (!novel || !activeChapter || !ensureStoryAiReady()) return;
+    const blocks = getSceneBlocks(activeChapter);
+    if (blockIndex < 0 || blockIndex >= blocks.length) return;
+    const block = blocks[blockIndex];
+    const currentProse = (block.prose || "").trim();
+    if (currentProse.length < 50) return;
+    setStoryAiBusyAction(`enhance-prose-${blockIndex}`);
+    setStoryAiError(null);
+    try {
+      const sv = novel.storyBible.styleVoice;
+      const styleHint = [
+        sv?.voiceRules ? `Voice: ${(sv.voiceRules ?? "").slice(0, 300)}` : "",
+        sv?.pov ? `POV: ${sv.pov}` : "",
+        sv?.tense ? `Tense: ${sv.tense}` : "",
+      ].filter(Boolean).join(". ");
+      const systemMsg = [
+        "You are a prose polisher. Your job: improve the text without changing meaning or plot.",
+        "RULES: Tighten sentence rhythm. Vary length. Cut filler words and redundant phrases. Strengthen weak verbs. Keep the author's voice and every story beat identical.",
+        "BANNED: Do not add new events, dialogue, or description. Do not use em dashes, 'a testament to', 'the weight of', 'couldn't help but'. Do not change POV or tense.",
+        "Output: Return ONLY the revised prose. No commentary, no labels.",
+        styleHint ? `Match this style: ${styleHint}` : "",
+      ].filter(Boolean).join(" ");
+      const prompt = `Polish this scene prose. Keep meaning and voice identical. Tighten, vary rhythm, cut filler. Return ONLY the revised prose.\n\n"""\n${currentProse.slice(0, 8000)}\n"""`;
+      const enhanced = await requestOpenRouterText(prompt, Math.min(5000, Math.round(currentProse.split(/\s+/).length * 2)), 120000, systemMsg, false, 0.3);
+      const cleaned = cleanProseOutput(enhanced);
+      if (cleaned && cleaned.length >= currentProse.length * 0.5) {
+        pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
+        const next = [...blocks];
+        next[blockIndex] = { ...block, prose: cleaned };
+        updateSceneBlocks(activeChapter.id, next, true);
+        syncChapterContentFromBlocks(activeChapter.id, next);
+        requestAnimationFrame(() => {
+          const el = blockProseRefs.current[blockIndex];
+          if (el) autoSizeEditorInput(el);
+        });
+      }
+    } catch (err) {
+      if (isCancelledError(err)) { setStoryAiBusyAction(null); return; }
+      setStoryAiError(err instanceof Error ? err.message : "Enhance failed. Try again.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -8053,6 +8127,73 @@ function NovelWorkspacePage() {
       throw new Error("The AI model returned an empty response. This usually means the model is temporarily overloaded — wait a minute and try again, or choose a different model in Settings.");
     }
     throw new Error("Assistant request failed — try again or check your model settings.");
+  }
+
+  /** Stream completion: onChunk(delta) as text arrives, resolves with full text when done. */
+  async function requestOpenRouterTextStream(
+    prompt: string,
+    maxTokens: number,
+    systemMessage: string | undefined,
+    temperature: number | undefined,
+    onChunk: (delta: string) => void,
+  ): Promise<string> {
+    if (!aiAbortRef.current || aiAbortRef.current.signal.aborted) {
+      aiAbortRef.current = new AbortController();
+    }
+    const normalizedApiKey = normalizeClientApiKey(openRouterKey);
+    const body = {
+      provider: assistantProvider,
+      apiKey: normalizedApiKey,
+      baseUrl: assistantBaseUrl.trim(),
+      model: openRouterModel,
+      prompt,
+      system: systemMessage || "",
+      maxTokens,
+      stream: true,
+      ...(temperature != null ? { temperature } : {}),
+    };
+    const response = await fetch("/api/openrouter/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: aiAbortRef.current.signal,
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const err = extractApiErrorMessage(payload) || `Request failed ${response.status}`;
+      throw new Error(err);
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No response body");
+    const decoder = new TextDecoder();
+    let fullText = "";
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const dataMatch = line.startsWith("data: ") ? line.slice(6).trim() : null;
+          if (dataMatch === "[DONE]" || !dataMatch) continue;
+          try {
+            const parsed = JSON.parse(dataMatch) as { choices?: Array<{ delta?: { content?: string } }> };
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (typeof content === "string" && content) {
+              fullText += content;
+              onChunk(content);
+            }
+          } catch {
+            // ignore malformed SSE lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return fullText;
   }
 
   function stripJsonMarkdownFence(text: string) {
@@ -8304,6 +8445,7 @@ function NovelWorkspacePage() {
           stakes: typeof act1Data.coreConflict === "string" && act1Data.coreConflict.trim() ? act1Data.coreConflict.trim() : novel.storyBible.summary.stakes,
         },
       });
+      saveNow();
       if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
 
       // Call 2: Act 2 (Confrontation)
@@ -8331,7 +8473,9 @@ function NovelWorkspacePage() {
       }
 
       const act2 = act2Data.act2.trim();
-      updateStoryBible({ summary: { synopsisAct2: act2 } });
+      // Persist Act 2 without overwriting Act 1 (accumulated local state; novel is stale in async)
+      updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct1: act1, synopsisAct2: act2 } });
+      saveNow();
       if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
 
       // Call 3: Act 3 (Resolution)
@@ -8359,9 +8503,12 @@ function NovelWorkspacePage() {
         throw new Error("Act 3 generation failed. Try again or use a different model.");
       }
 
+      const act3 = act3Data.act3.trim();
+      // Persist Act 3 with all three acts (accumulated local state so nothing is overwritten)
       updateStoryBible({
-        summary: { synopsisAct3: act3Data.act3.trim(), synopsisShort: "" },
+        summary: { ...novel.storyBible.summary, synopsisAct1: act1, synopsisAct2: act2, synopsisAct3: act3, synopsisShort: "" },
       });
+      saveNow();
       setStoryAiError(null);
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
@@ -8393,7 +8540,8 @@ function NovelWorkspacePage() {
       if (!act1Data?.act1?.trim()) act1Data = parseJsonFromAi<Act1R>(await requestOpenRouterText(act1Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
       if (!act1Data?.act1?.trim()) throw new Error("Act 1 generation failed.");
       const act1 = act1Data.act1.trim();
-      updateStoryBible({ summary: { synopsisAct1: act1 } });
+      updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct1: act1 } });
+      saveNow();
       if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
       setStoryAiError("Building Act 2 — Confrontation...");
       const act2Prompt = [
@@ -8408,7 +8556,8 @@ function NovelWorkspacePage() {
       if (!act2Data?.act2?.trim()) act2Data = parseJsonFromAi<Act2R>(await requestOpenRouterText(act2Prompt + "\n\nReturn ONLY valid JSON.", 1500, 60000, sysMsg, false, 0.4));
       if (!act2Data?.act2?.trim()) throw new Error("Act 2 generation failed.");
       const act2 = act2Data.act2.trim();
-      updateStoryBible({ summary: { synopsisAct2: act2 } });
+      updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct1: act1, synopsisAct2: act2 } });
+      saveNow();
       if (aiAbortRef.current?.signal.aborted) { setStoryAiBusyAction(null); return; }
       setStoryAiError("Building Act 3 — Resolution...");
       const act3Prompt = [
@@ -8423,7 +8572,9 @@ function NovelWorkspacePage() {
       let act3Data = parseJsonFromAi<Act3R>(await requestOpenRouterText(act3Prompt, 1200, 90000, sysMsg, false, 0.5));
       if (!act3Data?.act3?.trim()) act3Data = parseJsonFromAi<Act3R>(await requestOpenRouterText(act3Prompt + "\n\nReturn ONLY valid JSON.", 1200, 60000, sysMsg, false, 0.4));
       if (!act3Data?.act3?.trim()) throw new Error("Act 3 generation failed.");
-      updateStoryBible({ summary: { synopsisAct3: act3Data.act3.trim() } });
+      const act3 = act3Data.act3.trim();
+      updateStoryBible({ summary: { ...novel.storyBible.summary, synopsisAct1: act1, synopsisAct2: act2, synopsisAct3: act3 } });
+      saveNow();
       setStoryAiError(null);
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
@@ -9795,6 +9946,8 @@ function NovelWorkspacePage() {
         if (nf?.era) parts.push(`Era: ${nf.era}`);
         if (nf?.setting) parts.push(`Setting: ${nf.setting}`);
         if (nf?.centralTheme) parts.push(`Central theme: ${nf.centralTheme}`);
+        const eraBits = [nf?.eraCulturalNotes, nf?.eraHistoricalEvents, nf?.eraTechnology].filter(Boolean).map(t => (t || "").slice(0, 120)).join("; ");
+        if (eraBits) parts.push(`Era context (for period authenticity): ${eraBits}`);
         if (nf?.lifeEvents?.length) {
           parts.push("Life Events (source material for chapters):");
           nf.lifeEvents.forEach((e, i) => {
@@ -10293,7 +10446,9 @@ function NovelWorkspacePage() {
           storyBoardHint,
           "",
           `- This is a NON-FICTION ${nfSubtypeLabel} book based on real events.`,
-          nfSubtype === "true-crime" ? "- True crime narrative: evidence, investigation, pursuit." : "",
+          nfSubtype === "true-crime" ? "- True crime: evidence, investigation, pursuit; respect victims; no sensationalism." : "",
+          nfSubtype === "historical" ? "- Historical: weave period detail so the era feels lived-in; human stories at the centre." : "",
+          nfSubtype === "investigative" ? "- Investigative: anchor in evidence and sources; revelations build from facts." : "",
           nfSubtype === "biography" ? "- Biography: defining moments and turning points." : "",
           nfSubtype === "memoir" ? "- Memoir: emotional honesty about real experiences." : "",
           "- Write 10-14 sentences: opening (where/who/how), middle (key beats, reactions, turns), closing (handoff).",
@@ -10341,7 +10496,7 @@ function NovelWorkspacePage() {
             : `- Write ${detailedRangeRegular} sentences: opening, middle beats, closing handoff. Each sentence = one concrete action or discovery.`,
           index < 3 ? "- Ch 1-3: each must cause a concrete story-state change. Ch 1 ≠ Ch 2 ≠ Ch 3 — distinct beats, not repeated arrival/walking." : "",
           "- Middle: what triggers each beat, who reacts, what shifts. Closing: handoff to next chapter.",
-          "- Be specific: who does what, where, what they discover/meet/confront. 2-5 characters. Proper names only. Keep moving.",
+          "- Be specific: who does what, where, what they discover/meet/confront. 2-5 characters. Proper names only. Every sentence must name an action or discovery, not vague escalation ('tension rises'). Keep moving.",
           storySettingAnchor ? `- Setting: "${storySettingAnchor}" unless plot requires movement.` : "",
           index > 0 ? `- HANDOFF: Continue from prior end. Do NOT reset.` : "",
           chapterSubplotArcRule,
@@ -11419,6 +11574,12 @@ function NovelWorkspacePage() {
     input.style.height = `${Math.max(input.scrollHeight, min)}px`;
   }
 
+  function autoResizeSynopsis(ta: HTMLTextAreaElement | null) {
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.max(ta.scrollHeight, 44)}px`;
+  }
+
   useEffect(() => {
     autoSizeEditorInput(editorInputRef.current);
   }, [activeChapter?.id, activeChapter?.content, hideBlocks]);
@@ -11431,6 +11592,33 @@ function NovelWorkspacePage() {
       if (el) autoSizeEditorInput(el);
     });
   }, [activeChapter?.id, JSON.stringify(activeChapter ? getSceneBlocks(activeChapter).map((b) => b.prose?.length ?? 0) : [])]);
+
+  useEffect(() => {
+    if (!activeChapter) return;
+    const blocks = getSceneBlocks(activeChapter);
+    blocks.forEach((_, idx) => {
+      const el = blockSynopsisRefs.current[idx];
+      if (el) autoResizeSynopsis(el);
+    });
+    if (blocks.length < blockSynopsisRefs.current.length) {
+      blockSynopsisRefs.current.length = blocks.length;
+      blockProseRefs.current.length = blocks.length;
+    }
+  }, [activeChapter?.id, JSON.stringify(activeChapter ? getSceneBlocks(activeChapter).map((b) => b.synopsis?.length ?? 0) : [])]);
+
+  useEffect(() => {
+    if (streamingProseBlockIndex == null) return;
+    const el = blockProseRefs.current[streamingProseBlockIndex];
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [streamingProseBlockIndex, streamingProseText]);
+
+  // Clear streaming state when switching chapter so we don't show streamed text in the wrong block
+  useEffect(() => {
+    setStreamingProseBlockIndex(null);
+    setStreamingProseText("");
+  }, [activeChapter?.id]);
 
   /** Force an immediate save (local + server flush) — call when any panel/modal closes */
   function saveNow() {
@@ -11514,7 +11702,7 @@ function NovelWorkspacePage() {
     }
   }
 
-  const THEME_COLORS = ["#b8a4ff", "#71717a", "#a1a1aa", "#52525b", "#6b7280", "#9ca3af", "#d4d4d8", "#737373"];
+  const THEME_COLORS = ["#8b6914", "#71717a", "#a1a1aa", "#52525b", "#6b7280", "#9ca3af", "#d4d4d8", "#737373"];
 
   async function runThematicScan() {
     if (!novel || !ensureStoryAiReady()) return;
@@ -11726,9 +11914,16 @@ function NovelWorkspacePage() {
               const rev = String(edit.revised || "").trim();
               if (!orig || !rev || orig === rev) continue;
               if (isPlaceholderJunk(rev, orig)) continue;
-              // Verify the original text actually exists in the chapter
               const chContent = chapter.content ?? "";
-              if (!chContent.includes(orig)) continue;
+              const proseForMatch = extractProseFromContent(chContent);
+              const exactMatch = chContent.includes(orig) || proseForMatch.includes(orig);
+              const flexibleMatch = !exactMatch && (() => {
+                const n = orig.replace(/\s+/g, " ").trim();
+                if (!n) return false;
+                const regexParts = n.split(/\s+/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+                return new RegExp(regexParts.join("\\s+"), "m").test(proseForMatch);
+              })();
+              if (!exactMatch && !flexibleMatch) continue;
               const cat = String(edit.category || "").trim();
               const catLabel = cat === "show-dont-tell" ? "Show don't tell"
                 : cat === "dialogue" ? "Dialogue" : cat === "cliché" ? "Cliché"
@@ -11770,6 +11965,22 @@ function NovelWorkspacePage() {
     }
   }
 
+  /** Allow flexible whitespace when matching AI-returned "original" to actual content (avoids skips from minor formatting differences). */
+  function findAndReplaceOriginal(content: string, original: string, revised: string): { newContent: string; replaced: boolean } {
+    if (content.includes(original)) {
+      return { newContent: content.replace(original, revised), replaced: true };
+    }
+    const normalizedOriginal = original.replace(/\s+/g, " ").trim();
+    if (!normalizedOriginal) return { newContent: content, replaced: false };
+    const regexParts = normalizedOriginal.split(/\s+/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const flexibleRegex = new RegExp(regexParts.join("\\s+"), "m");
+    const match = content.match(flexibleRegex);
+    if (match) {
+      return { newContent: content.replace(match[0], revised), replaced: true };
+    }
+    return { newContent: content, replaced: false };
+  }
+
   function applyOverviewEdits() {
     if (!novel) return;
     const accepted = editorFindings.filter((e) => e.status === "accepted");
@@ -11778,7 +11989,6 @@ function NovelWorkspacePage() {
     setEditorApplying(true);
     let applied = 0;
 
-    // Group by chapter
     const byChapter = new Map<number, OverviewEdit[]>();
     for (const edit of accepted) {
       if (!byChapter.has(edit.chapter)) byChapter.set(edit.chapter, []);
@@ -11791,12 +12001,10 @@ function NovelWorkspacePage() {
       if (!chapter) continue;
       let content = chapter.content ?? "";
       for (const edit of edits) {
-        if (content.includes(edit.original)) {
-          content = content.replace(edit.original, edit.revised);
-          applied++;
-        } else {
-          skipped++;
-        }
+        const { newContent, replaced } = findAndReplaceOriginal(content, edit.original, edit.revised);
+        content = newContent;
+        if (replaced) applied++;
+        else skipped++;
       }
       runLoreConsistencyCheck({
         actionType: "overview_editor_apply",
@@ -11928,11 +12136,14 @@ function NovelWorkspacePage() {
   }
 
   function buildEraContextFromNotes(notes: EraResearchNote[]) {
-    const take = (tag: string, fallback: string) =>
+    const take = (tag: string, fallback: string, maxPerNote = 280) =>
       notes
         .filter((n) => n.tags.includes(tag))
-        .slice(0, 4)
-        .map((n) => `- ${n.title}: ${n.summary || fallback} (${n.sourceName})`)
+        .slice(0, 5)
+        .map((n) => {
+          const summary = (n.summary || fallback).slice(0, maxPerNote);
+          return `- ${n.title}: ${summary}${summary.length >= maxPerNote ? "…" : ""} [${n.sourceName}]`;
+        })
         .join("\n");
     return {
       culturalNotes: take("culture", "Relevant cultural context."),
@@ -11978,7 +12189,7 @@ function NovelWorkspacePage() {
   }
 
   function clearBibleSection(section: typeof bibleSection) {
-    const labels: Record<string, string> = { summary: "summary", styleVoice: "style & voice", characters: "all characters", locations: "all locations", worldbuilding: "worldbuilding", boltons: "all bolt-ons" };
+    const labels: Record<string, string> = { summary: "summary", styleVoice: "style & voice", characters: "all characters", locations: "all locations", worldbuilding: "worldbuilding", boltons: "writing guides" };
     setRegenConfirm({
       message: `This will clear ${labels[section] || "this section"}. This cannot be undone.`,
       onConfirm: () => { setRegenConfirm(null); executeClearBibleSection(section); },
@@ -12348,6 +12559,71 @@ function NovelWorkspacePage() {
     event.target.value = "";
   }
 
+  async function runGenerateTitle() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const synopsis = (novel.synopsis || getCombinedSynopsis() || "").trim();
+    if (!synopsis) {
+      setStoryAiError("Add a synopsis first so the AI can generate a fitting title.");
+      return;
+    }
+    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+    setStoryAiBusyAction("generate-title");
+    setStoryAiError(null);
+    try {
+      const prompt = `Generate a professional, publishable book title based on this novel.
+
+Genre: ${genre}
+
+Synopsis:
+${synopsis.slice(0, 1500)}
+
+Return ONLY the title — no quotes, no subtitle, no explanation. One compelling title that would work for Amazon, bookstores, and readers. Match the genre and tone.`;
+      const title = await requestOpenRouterText(prompt, 80, 60000, `You are a publishing professional. Generate book titles that sell. Return only the title text, nothing else.`, false, 0.7);
+      const trimmed = (title || "").trim().replace(/^["']|["']$/g, "").slice(0, 200);
+      if (trimmed) updateNovel({ title: trimmed });
+    } catch (e) {
+      setStoryAiError(e instanceof Error ? e.message : "Title generation failed.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
+  async function runGenerateBlurb() {
+    if (!novel || !ensureStoryAiReady()) return;
+    const synopsis = (novel.synopsis || getCombinedSynopsis() || "").trim();
+    if (!synopsis) {
+      setStoryAiError("Add a synopsis first so the AI can generate a blurb.");
+      return;
+    }
+    const genre = (novel.storyBible.summary?.genre ?? []).join(", ") || "fiction";
+    const title = novel.title || "Untitled";
+    setStoryAiBusyAction("generate-blurb");
+    setStoryAiError(null);
+    try {
+      const prompt = `Write an Amazon-style back-cover blurb for this book.
+
+Title: ${title}
+Genre: ${genre}
+
+Synopsis (internal — do not copy verbatim; transform into marketing copy):
+${synopsis.slice(0, 2000)}
+
+Requirements:
+- 120–180 words. Hooks the reader. No spoilers.
+- Present tense, active voice. "When X happens, Y must..." style.
+- First paragraph: hook + setup. Second: stakes + tension. Optional third: hint at resolution.
+- Ends with a question or implication, not a summary.
+- Works for Amazon product description and physical back cover.`;
+      const blurb = await requestOpenRouterText(prompt, 350, 90000, `You are a professional copywriter for book blurbs. Write compelling, Amazon-optimized back-cover copy. No spoilers. Match the genre. Return ONLY the blurb text.`, false, 0.7);
+      const trimmed = (blurb || "").trim().slice(0, 1200);
+      if (trimmed) updateNovel({ blurb: trimmed });
+    } catch (e) {
+      setStoryAiError(e instanceof Error ? e.message : "Blurb generation failed.");
+    } finally {
+      setStoryAiBusyAction(null);
+    }
+  }
+
   /* ─── The Editor: chunked-burst approach (8 paragraphs per call) ─── */
 
   const EDITOR_CHUNK = 8; // paragraphs per AI call — increased for better context coherence
@@ -12552,7 +12828,80 @@ function NovelWorkspacePage() {
     const tab = editorTab || "grammar";
 
     try {
-      if (tab === "threadkeeper" || tab === "consistency") {
+      if (tab === "unified") {
+        /* ═══ UNIFIED — consistency + combined grammar+polish in one pass ═══ */
+        const consistencySysMsg = [
+          `You are a professional continuity editor for a ${ctx.genreStr} novel.`,
+          `You have deep knowledge of the story context:`,
+          ctx.brief,
+          "",
+          "Your job is to catch REAL continuity and consistency errors — things a reader would notice.",
+          "",
+          "IMPORTANT — DO NOT flag these as issues:",
+          "- Characters marked [tagged to this chapter] BELONG here. Do NOT question their presence.",
+          "- Stylistic choices, prose quality, or writing preferences are NOT continuity issues.",
+          "- Minor details that don't affect the reader's understanding.",
+          "",
+          "ONLY flag: contradictions, timeline errors, disappearing/strange appearances, name confusion, location breaks, POV slips, adjacent-chapter clashes.",
+          "Be VERY selective. Quality over quantity.",
+        ].join("\n");
+
+        const allIssues: EditorialIssue[] = [];
+        for (let c = 0; c < totalChunks; c++) {
+          const start = c * EDITOR_CHUNK;
+          const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+          const numbered = slice.map((p, i) => `[${start + i}] ${p}`).join("\n\n");
+          setEditorLoadingPhase(`Checking continuity ${c + 1}/${totalChunks}...`);
+          try {
+            const data = await requestOpenRouterJson<{ issues?: EditorialIssue[] }>(
+              [
+                "Analyse these paragraphs for consistency issues. Return ONLY valid JSON:",
+                `{"issues":[{"severity":"high|medium|low","category":"Character Placement|Location|Timeline|Names|POV|Continuity|Behaviour","quote":"exact quote","issue":"clear description","suggestion":"specific fix"}]}`,
+                "Max 5 issues for this section. If no issues: {\"issues\":[]}",
+                "",
+                numbered,
+              ].join("\n"),
+              600,
+              { timeoutMs: 300000, systemMessage: consistencySysMsg },
+            );
+            if (Array.isArray(data?.issues)) allIssues.push(...data.issues);
+          } catch { /* continue */ }
+        }
+
+        const proseSysMsg = [
+          `You are a professional editor for a ${ctx.genreStr} novel.`,
+          ctx.brief,
+          "",
+          "Your job: fix REAL errors (grammar, spelling, punctuation) AND suggest subtle prose improvements (tighten, vary rhythm, strengthen verbs, cut filler). Do BOTH in one pass.",
+          "",
+          "RULES:",
+          "- Fix errors first: spelling, punctuation, tense, subject-verb agreement. Minimal change.",
+          "- Then improve: weak verbs, filler words, repeated openings, clichés. Preserve voice.",
+          "- Never add plot or information. Preserve the author's voice completely.",
+          "OUTPUT: Return JSON with edits. Each edit has the COMPLETE paragraph. Never use placeholders.",
+        ].join("\n");
+        const proseTaskLine = "Fix grammar errors and polish prose. Return the FULL paragraph for each edit. Minimal change for errors, subtle improvement for polish.";
+        const allChanges: EditorChange[] = [];
+        for (let c = 0; c < totalChunks; c++) {
+          const start = c * EDITOR_CHUNK;
+          const slice = ctx.paragraphs.slice(start, start + EDITOR_CHUNK);
+          setEditorLoadingPhase(`Checking prose ${c + 1}/${totalChunks}...`);
+          try {
+            const chunkChanges = await editorChunkCall(slice, start, proseSysMsg, proseTaskLine);
+            allChanges.push(...chunkChanges);
+          } catch { /* continue */ }
+        }
+
+        const totalFound = allIssues.length + allChanges.length;
+        setEditorResult({
+          mode: "unified",
+          issues: allIssues,
+          changes: allChanges,
+          summary: totalFound > 0
+            ? `Found ${allIssues.length} continuity issue${allIssues.length !== 1 ? "s" : ""} and ${allChanges.length} prose edit${allChanges.length !== 1 ? "s" : ""}.`
+            : "No issues found. Chapter looks clean.",
+        });
+      } else if (tab === "threadkeeper" || tab === "consistency") {
         /* ═══ CONSISTENCY — report mode: deep story-aware analysis ═══ */
         const sysMsg = [
           `You are a professional continuity editor for a ${ctx.genreStr} novel.`,
@@ -13373,7 +13722,7 @@ function NovelWorkspacePage() {
     const now = new Date().toISOString();
     setAutosaveStatus({
       status: syncOk ? "ok" : "error",
-      message: syncOk ? "Bolt-on saved to library" : "Saved locally, but cloud sync failed.",
+      message: syncOk ? "Guide saved to your list" : "Saved locally, but cloud sync failed.",
       at: now,
     });
   }
@@ -13472,7 +13821,7 @@ function NovelWorkspacePage() {
   const STATUS_META: Record<KnowledgeEntry["status"], { label: string; color: string }> = {
     hidden: { label: "Hidden", color: "#71717a" },
     foreshadowed: { label: "Foreshadowed", color: "#a1a1aa" },
-    revealed: { label: "Revealed", color: "#b8a4ff" },
+    revealed: { label: "Revealed", color: "var(--pw-accent)" },
   };
 
   function addKnowledgeEntry() {
@@ -13725,7 +14074,7 @@ function NovelWorkspacePage() {
       }
     } catch (error) {
       if (isCancelledError(error)) { setStoryAiBusyAction(null); return; }
-      setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen Bolt-On.");
+      setStoryAiError(error instanceof Error ? error.message : "Unable to sharpen guide.");
     } finally {
       setStoryAiBusyAction(null);
     }
@@ -14460,48 +14809,7 @@ function NovelWorkspacePage() {
 
   return (
     <div className={`pw-wallpaper pw-content-ready${navigatingAway ? " pw-exit" : ""}`}>
-      {!aiOff && storyAiBusyAction && storyAiBusyAction !== "plan-generate" && !storyAiBusyAction.startsWith("chapter-blocks-") && !storyAiBusyAction.startsWith("block-prose-") && !storyAiBusyAction.startsWith("doctor-fix-") && aiBusyLabel && !profileGenProgress && !locationGenProgress && !genProgressBar && !chapterBlocksGenProgress && (
-        <div className="pw-ai-overlay" aria-live="polite" aria-busy="true">
-          <div className="pw-ai-overlay-banner">
-            <div className="pw-ai-overlay-spinner" aria-hidden="true" />
-            <div className="pw-ai-overlay-label">{aiBusyLabel}</div>
-            <div className="pw-ai-overlay-duration">{aiBusyDuration} elapsed</div>
-            <div className="pw-ai-overlay-note">Almost there — your content is being created</div>
-            <div className="pw-ai-overlay-stop-wrap" style={{ pointerEvents: "auto" }}>
-              <button
-                type="button"
-                className="pw-ai-overlay-stop"
-                onClick={() => setShowStopConfirm(true)}
-                aria-label="Stop AI"
-              >
-                Stop
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showStopConfirm && storyAiBusyAction && (
-        <div className="pw-ai-overlay pw-ai-overlay-confirm" onClick={() => setShowStopConfirm(false)} aria-modal="true">
-          <div className="pw-ai-overlay-confirm-card" onClick={(e) => e.stopPropagation()}>
-            <p className="pw-ai-overlay-confirm-title">Stop AI?</p>
-            <p className="pw-ai-overlay-confirm-text">The current task will be cancelled. Any partial progress may be lost.</p>
-            <div className="pw-ai-overlay-confirm-actions">
-              <button type="button" className="pw-ai-overlay-confirm-cancel" onClick={() => setShowStopConfirm(false)}>Cancel</button>
-              <button
-                type="button"
-                className="pw-ai-overlay-confirm-stop"
-                onClick={() => {
-                  cancelAiWork();
-                  setStoryAiError(null);
-                  setShowStopConfirm(false);
-                }}
-              >
-                Stop AI
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI loading overlay removed — use inline loading (chat typing, button "Extracting…", etc.) instead */}
       {spineDoctorResult && (() => {
         const docStoryChars = novel?.storyBible?.characters ?? [];
         return (
@@ -14510,7 +14818,7 @@ function NovelWorkspacePage() {
             <div className="pw-story-doctor-header">
               <span className="pw-story-doctor-title">Story Doctor</span>
               <div className="pw-story-doctor-score">
-                <span className="pw-story-doctor-score-value" style={{ color: spineDoctorResult.score >= 80 ? "#22c55e" : spineDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{spineDoctorResult.score}</span>
+                <span className="pw-story-doctor-score-value" style={{ color: spineDoctorResult.score >= 80 ? "var(--pw-status-success)" : spineDoctorResult.score >= 50 ? "var(--pw-status-warning)" : "var(--pw-status-danger)" }}>{spineDoctorResult.score}</span>
                 <span className="pw-story-doctor-score-label">/100</span>
               </div>
               <button type="button" style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, opacity: 0.7, border: "none", background: "transparent", cursor: "pointer", color: "var(--pw-text-dim)", borderRadius: 6 }} onClick={() => setSpineDoctorResult(null)} aria-label="Close">✕</button>
@@ -14528,7 +14836,7 @@ function NovelWorkspacePage() {
                       spineDoctorResult.issues.filter(i => i.severity === sev).map((issue, i) => (
                         <div key={`${sev}-${i}`} className={`pw-story-doctor-issue pw-story-doctor-issue-${sev}`}>
                           <div className="pw-story-doctor-issue-meta">
-                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "#ef4444" : sev === "warning" ? "#f59e0b" : "#3b82f6" }}>{issue.severity}</span>
+                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "var(--pw-status-danger)" : sev === "warning" ? "var(--pw-status-warning)" : "var(--pw-status-info)" }}>{issue.severity}</span>
                             <span className="pw-story-doctor-issue-area">{issue.area}</span>
                           </div>
                           <div className="pw-story-doctor-issue-message">{issue.message}</div>
@@ -14569,6 +14877,7 @@ function NovelWorkspacePage() {
                             const charNames = docStoryChars.map(c => `${c.name} (${c.role}, id: ${c.id})`).join(", ");
                             const fixAllPrompt = [
                               "Fix ALL of the following issues in The Architect. Apply every fix simultaneously without breaking anything.",
+                              "SUBSTANTIVE FIXES ONLY: Do NOT just rephrase or lightly tweak. Each fix must concretely address the issue: change act/tension, add or remove a beat, reorder for pacing, tie in a character or subplot, fix a structural gap. If the only way to 'fix' an issue would be a cosmetic rewrite, skip that issue and fix the others. The output must be clearly different from the input where issues were identified.",
                               `\nISSUES TO FIX:\n${issueList}`,
                               `\nCanon Characters: ${charNames}`,
                               `\nCurrent beats:\n${beatCtx}`,
@@ -14578,7 +14887,7 @@ function NovelWorkspacePage() {
                               `{ "beats": [{ "title": "...", "description": "...", "act": 1|2|3, "tension": 1-5, "locationHint": "...", "characterNames": ["First Last"] }] }`,
                               "IMPORTANT: Return ALL beats. Modify beats to fix each issue. Use character names from the Canon list.",
                             ].filter(Boolean).join("\n");
-                            const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix all structural issues in The Architect simultaneously. Return only valid JSON.", false, 0.4);
+                            const raw = await requestOpenRouterText(fixAllPrompt, 4000, 180000, "You are a story editor. Fix structural issues with concrete changes only. No cosmetic rephrasing. Return only valid JSON.", false, 0.25);
                             const jsonMatch = raw.match(/\{[\s\S]*\}/);
                             if (jsonMatch) {
                               const parsed = JSON.parse(jsonMatch[0]) as { beats?: Array<{ title: string; description: string; act: number; tension: number; locationHint?: string; characterNames?: string[] }> };
@@ -14635,7 +14944,7 @@ function NovelWorkspacePage() {
             <div className="pw-story-doctor-header">
               <span className="pw-story-doctor-title">Chapter Doctor</span>
               <div className="pw-story-doctor-score">
-                <span className="pw-story-doctor-score-value" style={{ color: chapterDoctorResult.score >= 80 ? "#22c55e" : chapterDoctorResult.score >= 50 ? "#f59e0b" : "#ef4444" }}>{chapterDoctorResult.score}</span>
+                <span className="pw-story-doctor-score-value" style={{ color: chapterDoctorResult.score >= 80 ? "var(--pw-status-success)" : chapterDoctorResult.score >= 50 ? "var(--pw-status-warning)" : "var(--pw-status-danger)" }}>{chapterDoctorResult.score}</span>
                 <span className="pw-story-doctor-score-label">/100</span>
               </div>
               <button type="button" style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, opacity: 0.7, border: "none", background: "transparent", cursor: "pointer", color: "var(--pw-text-dim)", borderRadius: 6 }} onClick={closeDoctor} aria-label="Close">✕</button>
@@ -14659,7 +14968,7 @@ function NovelWorkspacePage() {
                       chapterDoctorResult.issues.filter((i) => i.severity === sev).map((issue, i) => (
                         <div key={`${sev}-${i}`} className={`pw-story-doctor-issue pw-story-doctor-issue-${sev}`}>
                           <div className="pw-story-doctor-issue-meta">
-                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "#ef4444" : sev === "warning" ? "#f59e0b" : "#3b82f6" }}>{issue.severity}</span>
+                            <span className="pw-story-doctor-issue-severity" style={{ color: sev === "critical" ? "var(--pw-status-danger)" : sev === "warning" ? "var(--pw-status-warning)" : "var(--pw-status-info)" }}>{issue.severity}</span>
                             <span className="pw-story-doctor-issue-area">{issue.area}</span>
                           </div>
                           <div className="pw-story-doctor-issue-message">{issue.message}</div>
@@ -14707,12 +15016,13 @@ function NovelWorkspacePage() {
                               const titlesOnly = chapters.map((c, i) => `Ch${i + 1}: ${c.title || `Chapter ${i + 1}`}`).join("\n");
                               const fixList = fixable.map((f, i) => `#${i + 1} [${f.area}] ${f.message}\n   Suggestion: ${f.suggestion}`).join("\n\n");
                               flushSync(() => setChapterDoctorFixProgress({ current: 1, total: 1, done: 0, label: "Breaking fixes into steps…" }));
-                              const expandPrompt = `Break each fix into 1–3 minimal sub-steps. Each sub-step: at most 2 chapters, one clear instruction (one sentence).
+                              const expandPrompt = `Break each fix into 1–3 minimal sub-steps. Each sub-step: at most 2 chapters, one CONCRETE instruction.
+CONCRETE means: specify what to add, remove, or change (e.g. "Add a scene in Ch4 where [character] confronts [X]" or "Remove the redundant 'discovers documents' beat from Ch7" or "In Ch3, add a hook: [character] learns [Y]"). Do NOT output vague instructions like "improve pacing" or "strengthen the chapter".
 Fixes:\n${fixList}
 Chapter titles:\n${titlesOnly}
-Return JSON: { "steps": [{"fixIndex": 0, "chapters": [4], "instruction": "Add librarian confrontation to Ch4"}, {"fixIndex": 0, "chapters": [7], "instruction": "Add clinic break-in to Ch7"}, ...] }
-Use 1-based chapter numbers. Each step = one narrow change. If a fix is already minimal, use 1 step.`;
-                              const expandRaw = await requestOpenRouterText(expandPrompt, 1200, 45000, "Return only valid JSON. Be concise.", false, 0.2);
+Return JSON: { "steps": [{"fixIndex": 0, "chapters": [4], "instruction": "Add librarian confrontation to Ch4 where [X happens]"}, ...] }
+Use 1-based chapter numbers. Each step = one narrow, concrete change.`;
+                              const expandRaw = await requestOpenRouterText(expandPrompt, 1200, 45000, "Return only valid JSON. Each instruction must be concrete (what to add/remove/change).", false, 0.2);
                               const expandMatch = expandRaw.match(/\{[\s\S]*\}/);
                               type Step = { fixIndex?: number; chapters: number[]; instruction: string };
                               const steps: Step[] = expandMatch ? (JSON.parse(expandMatch[0]) as { steps?: Step[] })?.steps ?? [] : [];
@@ -14741,9 +15051,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   `\nChapters to revise (1-based: ${step.chapters.join(", ")}):\n${chContent}`,
                                   `\nReturn JSON: { "revisions": [{ "chapterIndex": 4, "title": "...", "synopsis": "..." }, ...] }`,
                                   "Return only the revised chapter(s). Use 1-based chapterIndex. Keep titles unless the change requires it.",
-                                  "CRITICAL: Stay true to the story. Enrich the outline — preserve cause-and-effect, character agency, and continuity with the rest of the plan. No generic or tone-deaf revisions. Keep synopses concrete (who does what, where).",
+                                  "CRITICAL: Your revision must CONCRETELY implement the requested change — add the scene/beat, remove the redundancy, or change what you were asked to change. Do NOT just rephrase the existing synopsis; the output must be clearly different where the fix applies. Stay true to the story: preserve cause-and-effect, character agency, and continuity. Keep synopses concrete (who does what, where).",
                                 ].filter(Boolean).join("\n");
-                                const applyRaw = await requestOpenRouterText(applyPrompt, 3200, 70000, "You are a story editor. Apply the fix precisely. Preserve story logic and character consistency. Return only valid JSON.", false, 0.32);
+                                const applyRaw = await requestOpenRouterText(applyPrompt, 3200, 70000, "You are a story editor. Apply the fix with concrete changes; do not just rephrase. Return only valid JSON.", false, 0.25);
                                 const applyMatch = applyRaw.match(/\{[\s\S]*\}/);
                                 if (applyMatch) {
                                   const parsed = JSON.parse(applyMatch[0]) as { revisions?: Array<{ chapterIndex: number; title?: string; synopsis?: string }> };
@@ -14791,18 +15101,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
         </div>
         );
       })()}
-      <div className={`pw-window ${sidebarCollapsed ? "pw-sidebar-collapsed" : ""}${focusMode ? " pw-focus-mode" : ""}`}>
-        <aside className="pw-sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
+      <div className={`pw-window${focusMode ? " pw-focus-mode" : ""}`}>
+        <aside className="pw-sidebar">
           <div className="pw-logo">
             <div className="pw-logo-swap">
               <img src="/blocwrite-logo-white.png" alt="Blocwrite" className="pw-logo-full" />
               <img src={currentTheme === "dark" ? "/blocwrite-icon-dark.png" : "/blocwrite-icon-light.png"} alt="Bw" className="pw-logo-icon-img" />
             </div>
-            <button type="button" className={`pw-collapse-btn ${sidebarPinned ? "pw-pin-active" : ""}`} onClick={toggleSidebarPin} title={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"} aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
           </div>
           <Link href="/studio" prefetch={true} className="pw-back-link" onClick={(e) => {
             e.preventDefault();
@@ -14873,13 +15178,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
         <div className="pw-topbar">
           <div className="pw-toolbar">
-            <span className="pw-project-title">{novel.title || "Untitled Novel"}</span>
-            <span className="pw-dot" />
+            <span className="pw-project-title" title={novel.title || "Untitled Novel"}>{novel.title || "Untitled Novel"}</span>
+            <span className="pw-dot" aria-hidden />
             <button type="button" className="pw-mode-btn" onClick={() => setActiveChapterId(null)}>
               Overview
             </button>
           </div>
-          <div className="flex items-center gap-3">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <button type="button" className="pw-theme-toggle" onClick={toggleTheme} title={`Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`}>
               <span className="pw-theme-icon">{currentTheme === "dark" ? "☀" : "☽"}</span>
               <span style={{ fontSize: 12 }}>{currentTheme === "dark" ? "Light" : "Dark"}</span>
@@ -14913,7 +15218,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               The Editor
             </button>
             )}
-            {aiOff && (
+            {aiOff && activeChapter && (
             <button type="button" className="btn"
               style={{ display: "flex", alignItems: "center", gap: 5, position: "relative" }}
               title="Grammar & spelling check (LanguageTool — no AI)"
@@ -14930,7 +15235,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(true)}>
               The Plan
             </button>
-            <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }} onClick={() => {
+            <span style={{ width: 1, height: 20, background: "var(--pw-border-light)", margin: "0 4px", flexShrink: 0 }} aria-hidden />
+            <button type="button" className="btn" style={{ position: "relative", padding: "6px 10px", minWidth: 0 }} onClick={() => {
               if (!novel) return;
               if (pendingFeedbackCount > 0) {
                 // Open feedback review mode
@@ -14963,14 +15269,14 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 <span style={{
                   position: "absolute", top: -4, right: -4,
                   width: 18, height: 18, borderRadius: "50%",
-                  background: "#ef4444", color: "#fff",
+                  background: "var(--pw-status-danger)", color: "#fff",
                   fontSize: 10, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   lineHeight: 1, animation: "pulse 2s infinite",
                 }}>{pendingFeedbackCount > 9 ? "9+" : pendingFeedbackCount}</span>
               )}
             </button>
-            <button type="button" className="btn" style={{ position: "relative", padding: "6px 8px", minWidth: 0 }}
+            <button type="button" className="btn" style={{ position: "relative", padding: "6px 10px", minWidth: 0 }}
               onClick={() => openExportModal()}
               title="Export to EPUB or DOCX"
             >
@@ -14985,7 +15291,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div
               style={{
                 fontSize: 12,
-                color: autosaveStatus.status === "error" ? "var(--pw-danger, #ef4444)" : "var(--pw-text-dim)",
+                color: autosaveStatus.status === "error" ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
               }}
             >
               {autosaveLabel}
@@ -15257,75 +15563,6 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     );
                   })()}
                   <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                    {/* Chapter-level rewrite */}
-                    {!aiOff && activeChapter && (activeChapter.content ?? "").trim().length > 20 && (
-                      <div style={{ position: "relative" }}>
-                        <button type="button"
-                          data-pw-rewrite-trigger
-                          disabled={chapterRewriteBusy}
-                          onClick={() => { if (!chapterRewriteBusy) setChapterRewriteMenuOpen(!chapterRewriteMenuOpen); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 4,
-                            padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                            background: chapterRewriteBusy ? "rgba(var(--accent-rgb, 124,92,252), 0.08)" : "var(--pw-overlay-bg)",
-                            border: "1px solid var(--pw-border)", cursor: chapterRewriteBusy ? "default" : "pointer",
-                            color: chapterRewriteBusy ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-dim)",
-                            transition: "all 0.12s",
-                          }}
-                          title="Rewrite entire chapter tone"
-                        >
-                          {chapterRewriteBusy ? (
-                            <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Rewriting...</>
-                          ) : (
-                            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Tone</>
-                          )}
-                        </button>
-                        {chapterRewriteMenuOpen && (
-                          <>
-                            <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setChapterRewriteMenuOpen(false)} />
-                            <div ref={(el) => {
-                              if (!el) return;
-                              const trigger = document.querySelector("[data-pw-rewrite-trigger]") as HTMLElement | null;
-                              if (trigger) positionDropdown(trigger, el);
-                            }} style={{
-                              position: "fixed", zIndex: 9999,
-                              background: "var(--pw-surface)", border: "1px solid var(--pw-border)",
-                              borderRadius: 10, padding: "8px 6px", minWidth: 220,
-                              boxShadow: "var(--pw-shadow-elevated)",
-                            }}>
-                              <div style={{ padding: "2px 10px 8px", fontSize: 11, fontWeight: 700, color: "var(--pw-text-dim)", opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                                Rewrite Chapter Tone
-                              </div>
-                              {REWRITE_MODES.map((mode) => (
-                                <button key={mode.id} type="button"
-                                  onClick={() => {
-                                    if (!confirm(`Rewrite this chapter as "${mode.label}"?\n\n${mode.desc}\n\nYou can undo this afterwards.`)) return;
-                                    void runChapterRewrite(mode.id);
-                                  }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 10, width: "100%",
-                                    padding: "8px 10px", background: "none", border: "none", borderRadius: 7,
-                                    cursor: "pointer", color: "var(--pw-text-dim)", fontSize: 12, fontWeight: 600,
-                                    textAlign: "left", transition: "all 0.1s",
-                                  }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.06)"; e.currentTarget.style.color = "var(--pw-accent)"; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={mode.icon}/></svg>
-                                  <div>
-                                    <div style={{ fontSize: 12, fontWeight: 600 }}>{mode.label}</div>
-                                    <div style={{ fontSize: 10, opacity: 0.45, fontWeight: 400, marginTop: 1 }}>{mode.desc}</div>
-                                  </div>
-                                </button>
-                              ))}
-                              <div style={{ padding: "6px 10px 2px", fontSize: 10, color: "var(--pw-text-dim)", opacity: 0.35, borderTop: "1px solid var(--pw-border)", marginTop: 4 }}>
-                                Rewrites all prose — undoable
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
                     <div className={`pw-chapter-bolton-wrap pw-block-bolton-wrap ${openBoltonDropdownId === "chapter" ? "pw-bolton-open" : ""}`}>
                       <button
                         type="button"
@@ -15344,15 +15581,15 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             }
                           }
                         }}
-                        title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Bolt-On: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Bolt-On"; })() : "Apply Bolt-On to chapter"}
+                        title={chapterBoltonId ? (() => { const bo = (novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId); return bo ? `Guide: ${bo.title}\n${bo.prompt || bo.description || "No description"}` : "Writing guide"; })() : "Choose a writing guide for this chapter"}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill={chapterBoltonId ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        {chapterBoltonId ? <span className="pw-chapter-bolton-name">{(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}</span> : <span style={{ fontSize: 11, fontWeight: 600 }}>Bolt-Ons</span>}
+                        {chapterBoltonId ? <span className="pw-chapter-bolton-name">{(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Guide"}</span> : <span style={{ fontSize: 11, fontWeight: 600 }}>Guides</span>}
                       </button>
                       <div className="pw-block-bolton-dropdown">
                         <div className="pw-bolton-dropdown-head">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                          Chapter Bolt-On
+                          Chapter guide
                         </div>
                         <div className="pw-bolton-dropdown-body">
                           <button type="button" className={`pw-block-bolton-option pw-bolton-dropdown-none ${!chapterBoltonId ? "active" : ""}`} onClick={() => { setChapterBoltonForActiveChapter(""); closeBoltonDropdowns(); }}>
@@ -15361,7 +15598,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             </span>
                             <span className="pw-block-bolton-option-text">
                               <span className="pw-block-bolton-option-title">None</span>
-                              <span className="pw-block-bolton-option-cat">No bolt-on applied</span>
+                              <span className="pw-block-bolton-option-cat">No guide</span>
                             </span>
                           </button>
                           {(novel.storyBible.boltons ?? []).map((b, i) => (
@@ -15370,19 +15607,19 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                               </span>
                               <span className="pw-block-bolton-option-text">
-                                <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                <span className="pw-block-bolton-option-title">{b.title || `Guide ${i + 1}`}</span>
                                 <span className="pw-block-bolton-option-cat">{getBoltonCategoryMeta(b.category).label}</span>
                               </span>
                             </button>
                           ))}
                           <div className="pw-bolton-dropdown-sep" />
                           <button type="button" className="pw-block-bolton-option" onClick={() => { closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
-                            <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-accent)" }}>
+                            <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb), 0.08)", color: "var(--pw-accent)" }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                             </span>
                             <span className="pw-block-bolton-option-text">
-                              <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
-                              <span className="pw-block-bolton-option-cat">Install from writing packs</span>
+<span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Add more guides</span>
+                                              <span className="pw-block-bolton-option-cat">Add from collections</span>
                             </span>
                           </button>
                         </div>
@@ -15424,7 +15661,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   </div>
                 </div>
 
-                {/* ── LanguageTool proofread results panel (AI-off only) ── */}
+                {/* ── LanguageTool proofread results panel (when AI off) ── */}
                 {aiOff && proofreadOpen && (grammarError || visibleMatches.length > 0) && (
                   <div style={{
                     background: "var(--pw-surface-alt, rgba(0,0,0,0.03))", border: "1px solid var(--pw-border-light)",
@@ -15463,14 +15700,34 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           if (!activeChapter) return;
                                           const offset = typeof match.offset === "number" ? match.offset : 0;
                                           const len = typeof match.length === "number" ? match.length : 0;
-                                          const before = activeChapter.content.slice(0, offset);
-                                          const after = activeChapter.content.slice(offset + len);
-                                          updateChapter(activeChapter.id, { content: before + rep.value + after });
+                                          const blks = getSceneBlocks(activeChapter);
+                                          const inBlockMode = !hideBlocks && blks.length > 0;
+                                          if (inBlockMode) {
+                                            let cum = 0;
+                                            for (let i = 0; i < blks.length; i++) {
+                                              const p = (blks[i].prose || "").trim();
+                                              if (i > 0) cum += 2;
+                                              const start = cum;
+                                              cum += p.length;
+                                              if (offset >= start && offset < start + p.length) {
+                                                const localOffset = offset - start;
+                                                const newProse = p.slice(0, localOffset) + rep.value + p.slice(localOffset + len);
+                                                const next = blks.map((b, j) => j === i ? { ...b, prose: newProse } : b);
+                                                setSceneBlocks(activeChapter.id, next);
+                                                syncChapterContentFromBlocks(activeChapter.id, next);
+                                                break;
+                                              }
+                                            }
+                                          } else {
+                                            const before = activeChapter.content.slice(0, offset);
+                                            const after = activeChapter.content.slice(offset + len);
+                                            updateChapter(activeChapter.id, { content: before + rep.value + after });
+                                          }
                                           setIgnoredMatchKeys((prev) => [...prev, key]);
                                         }} style={{
                                           fontSize: 11, padding: "1px 8px", borderRadius: 4,
-                                          background: "rgba(var(--accent-rgb, 124,92,252), 0.12)",
-                                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.3)",
+                                          background: "rgba(var(--accent-rgb), 0.12)",
+                                          border: "1px solid rgba(var(--accent-rgb), 0.3)",
                                           color: "var(--pw-accent)", cursor: "pointer", fontWeight: 600,
                                         }}>{rep.value}</button>
                                       ))}
@@ -15534,40 +15791,91 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             <div className="pw-block-card">
                               <div className="pw-block-header">
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span className="pw-block-beat-badge" title={`Beat ${idx + 1} of ${blocks.length}`}>
+                                  <span className="pw-block-beat-badge" title={`Scene ${idx + 1} of ${blocks.length}`}>
                                     {idx + 1}
                                   </span>
                                   <span className="pw-block-title">
                                     {block.beatLabel || `Scene ${idx + 1}`}
                                   </span>
                                 </div>
-                                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-                                  {!!block.prose?.trim() && (
-                                    <button
-                                      type="button"
-                                      className="pw-block-header-btn"
-                                      title="Clear prose"
-                                      onClick={() => {
-                                        if (!confirm("Clear all prose for this scene?")) return;
-                                        pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
-                                        const next = [...blocks];
-                                        next[idx] = { ...block, prose: "" };
-                                        updateSceneBlocks(activeChapter.id, next);
-                                        syncChapterContentFromBlocks(activeChapter.id, next);
-                                      }}
-                                      aria-label="Clear prose"
-                                    >
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-                                    </button>
-                                  )}
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  {(() => {
+                                    const proseForCount = (isBlockBusy && streamingProseBlockIndex === idx ? streamingProseText : block.prose)?.trim() ?? "";
+                                    const wc = proseForCount ? proseForCount.split(/\s+/).filter(Boolean).length : 0;
+                                    if (wc === 0) return null;
+                                    return (
+                                      <span className="pw-block-header-wordcount" aria-hidden>
+                                        {wc} word{wc !== 1 ? "s" : ""}
+                                      </span>
+                                    );
+                                  })()}
                                   <button type="button" className="pw-block-header-btn pw-block-delete" title="Delete bloc" onClick={() => deleteSceneBlockAt(blocks, idx)} aria-label="Delete bloc">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                   </button>
                                 </div>
                               </div>
-                              <textarea className="pw-block-synopsis" placeholder="Scene synopsis..." value={block.synopsis} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, synopsis: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} rows={2} />
+                              <textarea
+                                ref={(el) => { blockSynopsisRefs.current[idx] = el; if (el) autoResizeSynopsis(el); }}
+                                className="pw-block-synopsis"
+                                placeholder="What happens in this scene? Be specific — the AI uses this to generate prose."
+                                value={block.synopsis ?? ""}
+                                onChange={(e) => {
+                                  const next = [...blocks];
+                                  next[idx] = { ...block, synopsis: e.target.value };
+                                  updateSceneBlocks(activeChapter.id, next);
+                                }}
+                                onInput={(e) => autoResizeSynopsis(e.currentTarget)}
+                              />
+                              {(block.synopsis?.trim() || block.prose?.trim()) && (
+                              <div className="pw-block-actions">
+                                {block.synopsis?.trim() && (
+                                  <button
+                                    type="button"
+                                    className="pw-block-btn pw-block-btn-generate"
+                                    disabled={isBlockBusy || !!storyAiBusyAction}
+                                    title={block.prose?.trim() ? "Regenerate prose: run AI again from this scene’s synopsis (same word target)." : "Generate prose: AI writes this scene from the synopsis above, using the word target you set."}
+                                    onClick={() => void runGenerateBlockProse(idx)}
+                                  >
+                                    {isBlockBusy ? (
+                                      <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block", marginRight: 6, verticalAlign: "middle" }} /> {block.prose?.trim() ? "Regenerating…" : "Generating…"}</>
+                                    ) : block.prose?.trim() ? "Regenerate prose" : "Generate prose"}
+                                  </button>
+                                )}
+                                {!!block.prose?.trim() && (
+                                  <button
+                                    type="button"
+                                    className="pw-block-btn"
+                                    disabled={!!storyAiBusyAction}
+                                    onClick={() => void runEnhanceBlockProse(idx)}
+                                    title="Polish this scene: tighten rhythm, cut filler, keep voice"
+                                    style={{ border: "1px solid var(--pw-border)", background: "var(--pw-surface-alt)", color: "var(--pw-text-muted)", fontSize: 12 }}
+                                  >
+                                    {storyAiBusyAction === `enhance-prose-${idx}` ? (
+                                      <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block", marginRight: 6, verticalAlign: "middle" }} /> Enhancing…</>
+                                    ) : "Enhance prose"}
+                                  </button>
+                                )}
+                                {!!block.prose?.trim() && (
+                                  <button
+                                    type="button"
+                                    className="pw-block-btn pw-block-btn-clear"
+                                    disabled={isBlockBusy || !!storyAiBusyAction}
+                                    onClick={() => {
+                                      if (!confirm("Clear all prose for this scene? You can undo.")) return;
+                                      pushUndoSnapshot(activeChapter.id, activeChapter.content, activeChapter.sceneBlocks, true);
+                                      const next = [...blocks];
+                                      next[idx] = { ...block, prose: "" };
+                                      updateSceneBlocks(activeChapter.id, next);
+                                      syncChapterContentFromBlocks(activeChapter.id, next);
+                                    }}
+                                  >
+                                    Clear prose
+                                  </button>
+                                )}
+                              </div>
+                            )}
                               {(block.openingLine || block.closingHook || block.emotionalArc || block.sensoryPalette || block.dialogueNotes || block.tension) && (
-                                <div style={{ padding: "6px 10px 8px", margin: "2px 0 4px", background: "rgba(var(--accent-rgb, 124,92,252), 0.03)", borderRadius: 6, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.08)" }}>
+                                <div style={{ padding: "6px 10px 8px", margin: "2px 0 4px", background: "rgba(var(--accent-rgb), 0.03)", borderRadius: 6, border: "1px solid rgba(var(--accent-rgb), 0.08)" }}>
                                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--pw-accent)", marginBottom: 4, opacity: 0.8 }}>Blueprint</div>
                                   <div style={{ display: "grid", gap: 3, fontSize: 11, lineHeight: 1.45, color: "var(--pw-text-dim)" }}>
                                     {block.openingLine && <div><span style={{ fontWeight: 600, color: "var(--pw-text)", fontSize: 10, textTransform: "uppercase", marginRight: 4 }}>Opening:</span>{block.openingLine}</div>}
@@ -15585,11 +15893,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     <button key={opt.value} type="button" className={`pw-word-pill ${block.wordTarget === opt.value ? "active" : ""}`} onClick={() => { const next = [...blocks]; next[idx] = { ...block, wordTarget: opt.value }; updateSceneBlocks(activeChapter.id, next); }} title={opt.title}>{opt.label}</button>
                                   ))}
                                 </div>
-                                <select value={block.focus} onChange={(e) => { const next = [...blocks]; next[idx] = { ...block, focus: e.target.value }; updateSceneBlocks(activeChapter.id, next); }} title="Focus mode" style={{ fontSize: 11, padding: "4px 8px" }}>
-                                  {FOCUS_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                                </select>
                                     {chapterBoltonId ? (
-                                      <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Bolt-On"}`}>
+                                      <div className="pw-block-bolton-wrap pw-block-bolton-hover" title={`Chapter guide: ${(novel.storyBible.boltons ?? []).find((b) => b.id === chapterBoltonId)?.title || "Guide"}`}>
                                         <span className="pw-block-bolton-trigger pw-bolton-active pw-bolton-locked">
                                           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                         </span>
@@ -15614,14 +15919,14 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                               }
                                             }
                                           }}
-                                          title={block.notes ? `Bolt-On: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Attach a Bolt-On"}
+                                          title={block.notes ? `Guide: ${(novel.storyBible.boltons ?? []).find((b) => b.id === block.notes)?.title || ""}` : "Choose a guide for this scene"}
                                         >
                                           <svg width="13" height="13" viewBox="0 0 24 24" fill={block.notes ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                         </button>
                                         <div className="pw-block-bolton-dropdown">
                                           <div className="pw-bolton-dropdown-head">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                            Bloc Bolt-On
+                                            Scene guide
                                           </div>
                                           <div className="pw-bolton-dropdown-body">
                                             <button
@@ -15640,7 +15945,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                               </span>
                                               <span className="pw-block-bolton-option-text">
                                                 <span className="pw-block-bolton-option-title">None</span>
-                                                <span className="pw-block-bolton-option-cat">No bolt-on applied</span>
+                                                <span className="pw-block-bolton-option-cat">No guide</span>
                                               </span>
                                             </button>
                                             {(novel.storyBible.boltons ?? []).map((b, i) => (
@@ -15660,19 +15965,19 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                                 </span>
                                                 <span className="pw-block-bolton-option-text">
-                                                  <span className="pw-block-bolton-option-title">{b.title || `Bolt-On ${i + 1}`}</span>
+                                                  <span className="pw-block-bolton-option-title">{b.title || `Guide ${i + 1}`}</span>
                                                   <span className="pw-block-bolton-option-cat">{getBoltonCategoryMeta(b.category).label}</span>
                                                 </span>
                                               </button>
                                             ))}
                                             <div className="pw-bolton-dropdown-sep" />
                                             <button type="button" className="pw-block-bolton-option" onClick={(e) => { e.stopPropagation(); closeBoltonDropdowns(); setWritingPacksOpen(true); }}>
-                                              <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-accent)" }}>
+                                              <span className="pw-block-bolton-option-icon" style={{ background: "rgba(var(--accent-rgb), 0.08)", color: "var(--pw-accent)" }}>
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                                               </span>
                                               <span className="pw-block-bolton-option-text">
-                                                <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Browse Packs</span>
-                                                <span className="pw-block-bolton-option-cat">Install from writing packs</span>
+                                                <span className="pw-block-bolton-option-title" style={{ color: "var(--pw-accent)" }}>Add more guides</span>
+                                                <span className="pw-block-bolton-option-cat">Add from collections</span>
                                               </span>
                                             </button>
                                           </div>
@@ -15682,36 +15987,6 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 <button type="button" className="pw-block-btn" title="Insert bloc after" onClick={() => insertSceneBlockAt(blocks, idx)}>/</button>
                               </div>
                             </div>
-                            {/* ── Seamless prose area (styled like main editor) ── */}
-                            {block.synopsis?.trim() && (
-                              <button
-                                type="button"
-                                disabled={isBlockBusy || !!storyAiBusyAction}
-                                onClick={() => void runGenerateBlockProse(idx)}
-                                style={{
-                                  display: "inline-flex", alignItems: "center", gap: 5,
-                                  padding: "4px 12px", margin: "8px 0 4px",
-                                  borderRadius: 6, fontSize: 12, fontWeight: 600,
-                                  background: "none", border: "none",
-                                  color: "var(--pw-accent)", cursor: isBlockBusy || storyAiBusyAction ? "not-allowed" : "pointer",
-                                  opacity: isBlockBusy || storyAiBusyAction ? 0.5 : 0.8,
-                                  transition: "opacity 0.15s",
-                                  fontFamily: "inherit",
-                                }}
-                                onMouseEnter={(e) => { if (!isBlockBusy && !storyAiBusyAction) e.currentTarget.style.opacity = "1"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.opacity = isBlockBusy || storyAiBusyAction ? "0.5" : "0.8"; }}
-                              >
-                                {isBlockBusy ? (
-                                  <><span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,124,92,252),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> {block.prose?.trim() ? "Regenerating..." : "Generating..."}</>
-                                ) : block.prose?.trim() ? "✦ Regenerate prose" : "✦ Generate prose for this scene"}
-                              </button>
-                            )}
-                            {isBlockBusy && block.prose?.trim() && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", fontSize: 12, color: "var(--pw-accent)", fontWeight: 600 }}>
-                                <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--pw-accent-rgb,124,92,252),0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                                Regenerating...
-                              </div>
-                            )}
                             <textarea
                               ref={(el) => { blockProseRefs.current[idx] = el; }}
                               className="pw-editor-input pw-block-prose-seamless"
@@ -15719,7 +15994,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 fontFamily: editorFont,
                                 textAlign: editorTextAlign,
                                 fontSize: editorFontSize,
-                                minHeight: block.prose?.trim() ? 80 : 36,
+                                minHeight: (isBlockBusy && streamingProseBlockIndex === idx ? streamingProseText : block.prose)?.trim() ? 80 : 36,
                                 border: "none",
                                 background: "transparent",
                                 padding: "8px 0 16px",
@@ -15731,7 +16006,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               dir="ltr"
                               spellCheck
                               placeholder={block.prose?.trim() ? undefined : "Start writing this scene..."}
-                              value={block.prose || ""}
+                              value={isBlockBusy && streamingProseBlockIndex === idx ? streamingProseText : (block.prose || "")}
+                              readOnly={isBlockBusy && streamingProseBlockIndex === idx}
                               onChange={(e) => {
                                 const next = [...blocks];
                                 next[idx] = { ...block, prose: e.target.value };
@@ -15816,7 +16092,16 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     style={novel.coverImage ? { backgroundImage: `url(${novel.coverImage})` } : undefined}
                   >
                     {!novel.coverImage && (
-                      <span style={{ color: "var(--pw-text-dim)", fontSize: 13 }}>Click to upload</span>
+                      <div className="pw-cover-placeholder">
+                        <span className="pw-cover-placeholder-brand">Blocwrite</span>
+                        <h3 className="pw-cover-placeholder-title">{novel.title || "Untitled"}</h3>
+                        {novel.authorName?.trim() ? (
+                          <p className="pw-cover-placeholder-author">by {novel.authorName.trim()}</p>
+                        ) : (
+                          <p className="pw-cover-placeholder-author" style={{ opacity: 0.5 }}>Author name</p>
+                        )}
+                        <span style={{ marginTop: 8, fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.8 }}>Click to add cover image</span>
+                      </div>
                     )}
                   </div>
                   {novel.coverImage && (
@@ -15832,25 +16117,51 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 </div>
 
                 <div className="pw-overview-headline">
-                  <input
-                    className="pw-overview-title"
-                    value={novel.title}
-                    onChange={(event) => updateNovel({ title: event.target.value })}
-                    placeholder="Novel title"
-                  />
+                  <div className="pw-overview-title-row">
+                    <input
+                      className="pw-overview-title"
+                      value={novel.title}
+                      onChange={(event) => updateNovel({ title: event.target.value })}
+                      placeholder="Novel title"
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn pw-overview-gen-btn"
+                      onClick={() => void runGenerateTitle()}
+                      disabled={!!storyAiBusyAction}
+                      title="Generate a title from genre and synopsis"
+                    >
+                      {storyAiBusyAction === "generate-title" ? "…" : "Generate"}
+                    </button>
+                  </div>
                   <input
                     className="pw-overview-author"
                     value={novel.authorName}
                     onChange={(event) => updateNovel({ authorName: event.target.value })}
                     placeholder="Author name"
                   />
-                  <textarea
-                    className="pw-overview-synopsis"
-                    value={novel.synopsis || getCombinedSynopsis() || ""}
-                    onChange={(event) => updateNovel({ synopsis: event.target.value })}
-                    placeholder="Write your full synopsis here — this is the foundation the AI uses for every generation..."
-                    rows={8}
-                  />
+                  <div className="pw-overview-blurb-block">
+                    <div className="pw-overview-blurb-head">
+                      <label className="pw-overview-label">Back cover blurb</label>
+                      <button
+                        type="button"
+                        className="btn pw-overview-gen-btn"
+                        onClick={() => void runGenerateBlurb()}
+                        disabled={!!storyAiBusyAction}
+                        title="Generate back cover copy from synopsis (does not change synopsis)"
+                      >
+                        {storyAiBusyAction === "generate-blurb" ? "…" : "Generate"}
+                      </button>
+                    </div>
+                    <textarea
+                      className="pw-overview-blurb"
+                      value={novel.blurb ?? ""}
+                      onChange={(e) => updateNovel({ blurb: e.target.value })}
+                      placeholder="Marketing copy for back cover and listings — use Generate to create from your synopsis"
+                      rows={4}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -16091,7 +16402,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   {novel.healthScore ? (() => {
                     const hs = novel.healthScore;
                     const scoreColor = (v: number) =>
-                      v >= 8 ? "#22c55e" : v >= 6 ? "#b8a4ff" : v >= 4 ? "#f59e0b" : "#ef4444";
+                      v >= 8 ? "var(--pw-status-success)" : v >= 6 ? "var(--pw-accent)" : v >= 4 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
                     const scoreLabel = (v: number) =>
                       v >= 9 ? "Excellent" : v >= 7 ? "Good" : v >= 5 ? "Fair" : v >= 3 ? "Needs work" : "Weak";
                     const categories = [
@@ -16164,8 +16475,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         {hs.tips.length > 0 && (
                           <div style={{
                             padding: "12px 14px", borderRadius: 8, marginTop: 2,
-                            background: "rgba(var(--accent-rgb, 124,92,252), 0.03)",
-                            border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                            background: "rgba(var(--accent-rgb), 0.03)",
+                            border: "1px solid rgba(var(--accent-rgb), 0.08)",
                           }}>
                             <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: "var(--pw-accent)" }}>
                               Overall Tips
@@ -16419,17 +16730,17 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{
                         width: 32, height: 32, borderRadius: 8,
-                        background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                        background: "rgba(var(--accent-rgb), 0.08)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                       </div>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{hasPlotSpine() ? "Plan Enhancer" : "Plan Analysis"}</span>
                         {novel?.storyBible.bookPlan?.arcAnalysis?.selectedChoiceIndex != null && (
                           <span style={{
                             marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                            background: "rgba(124,92,252,0.12)", color: "#b8a4ff",
+                            background: "rgba(var(--accent-rgb), 0.12)", color: "var(--pw-accent)",
                           }}>
                             Applied
                           </span>
@@ -16449,9 +16760,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       title={aiOff ? "Enable AI to use plan analysis" : "Regenerate arc choices"}
                       style={{
                         padding: "6px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--accent-rgb, 124,92,252), 0.08)",
-                        color: arcBusy ? "var(--pw-text-dim)" : "var(--pw-accent, #b8a4ff)",
-                        border: arcBusy ? "1px solid var(--pw-border)" : "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", cursor: arcBusy ? "default" : "pointer",
+                        background: arcBusy ? "var(--pw-overlay-bg)" : "rgba(var(--accent-rgb), 0.08)",
+                        color: arcBusy ? "var(--pw-text-dim)" : "var(--pw-accent)",
+                        border: arcBusy ? "1px solid var(--pw-border)" : "1px solid rgba(var(--accent-rgb), 0.2)", cursor: arcBusy ? "default" : "pointer",
                         display: "flex", alignItems: "center", gap: 6,
                       }}
                     >
@@ -16465,7 +16776,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
                   {/* Error */}
                   {arcError && (
-                    <div style={{ padding: "10px 18px", fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.06)" }}>
+                    <div style={{ padding: "10px 18px", fontSize: 12, color: "var(--pw-status-danger)", background: "rgba(239,68,68,0.06)" }}>
                       {arcError}
                     </div>
                   )}
@@ -16474,7 +16785,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   {arcBusy && (
                     <div style={{ padding: "24px 18px", textAlign: "center" }}>
                       <div style={{
-                        width: 24, height: 24, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)",
+                        width: 24, height: 24, border: "2px solid rgba(var(--accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)",
                         borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
                       }} />
                       <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0 }}>
@@ -16500,8 +16811,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",
                             display: "flex", alignItems: "center", gap: 10,
                           }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <span style={{ fontSize: 12, color: "var(--pw-status-warning)", fontWeight: 600 }}>
                               {hasPlotSpine()
                                 ? "Note: Enhancing will add depth to chapter synopses while keeping all plot events intact. Your existing prose won\u2019t be changed."
                                 : "Note: Applying an arc will update chapter synopses. Your existing prose won\u2019t be changed but you may want to review chapters afterwards."}
@@ -16512,11 +16823,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         {selectedIdx != null && (
                           <div style={{
                             padding: "10px 14px", borderRadius: 10, marginBottom: 14,
-                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.15)",
+                            background: "rgba(var(--accent-rgb), 0.06)", border: "1px solid rgba(var(--accent-rgb), 0.15)",
                             display: "flex", alignItems: "center", gap: 10,
                           }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                            <span style={{ fontSize: 12, color: "#b8a4ff", fontWeight: 600 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                            <span style={{ fontSize: 12, color: "var(--pw-accent)", fontWeight: 600 }}>
                               &ldquo;{choices[selectedIdx]?.name}&rdquo; applied — chapter synopses {hasPlotSpine() ? "enhanced" : "updated"}
                             </span>
                           </div>
@@ -16532,13 +16843,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           {choices.map((choice, ci) => {
                             const isSelected = selectedIdx === ci;
                             const isApplying = arcApplyingChoice === ci;
-                            const scoreColor = choice.score >= 8 ? "#b8a4ff" : choice.score >= 6 ? "#f59e0b" : "#ef4444";
+                            const scoreColor = choice.score >= 8 ? "var(--pw-accent)" : choice.score >= 6 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
                             const isExpanded = arcExpandedDimension === (`choice-${ci}`);
                             return (
                               <div key={ci} style={{
                                 borderRadius: 12, overflow: "hidden",
-                                border: isSelected ? "1px solid rgba(124,92,252,0.3)" : "1px solid var(--pw-border-light)",
-                                background: isSelected ? "rgba(124,92,252,0.04)" : "var(--pw-overlay-bg)",
+                                border: isSelected ? "1px solid rgba(var(--accent-rgb), 0.3)" : "1px solid var(--pw-border-light)",
+                                background: isSelected ? "rgba(var(--accent-rgb), 0.04)" : "var(--pw-overlay-bg)",
                                 transition: "all 0.2s",
                               }}>
                                 <div
@@ -16552,12 +16863,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           <span style={{
                                             fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em",
                                             padding: "2px 7px", borderRadius: 5,
-                                            background: "rgba(124,92,252,0.12)", color: "#b8a4ff",
+                                            background: "rgba(var(--accent-rgb), 0.12)", color: "var(--pw-accent)",
                                           }}>Best</span>
                                         )}
                                         <span style={{ fontWeight: 700, fontSize: 14, color: "var(--pw-text)" }}>{choice.name}</span>
                                         {isSelected && (
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#b8a4ff" stroke="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--pw-accent)" stroke="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                                         )}
                                       </div>
                                       <div style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5 }}>{choice.description}</div>
@@ -16601,9 +16912,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                         onClick={(e) => { e.stopPropagation(); applyArcChoice(ci); }}
                                         style={{
                                           padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                                          background: isApplying ? "var(--pw-accent, #b8a4ff)" : "rgba(var(--accent-rgb, 124,92,252), 0.1)",
-                                          color: isApplying ? "#111" : "var(--pw-accent, #b8a4ff)",
-                                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                                          background: isApplying ? "var(--pw-accent)" : "rgba(var(--accent-rgb), 0.1)",
+                                          color: isApplying ? "#111" : "var(--pw-accent)",
+                                          border: "1px solid rgba(var(--accent-rgb), 0.2)",
                                           cursor: "pointer",
                                           transition: "all 0.15s",
                                         }}
@@ -16612,8 +16923,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       </button>
                                     )}
                                     {isSelected && (
-                                      <span style={{ fontSize: 11, fontWeight: 700, color: "#b8a4ff", display: "flex", alignItems: "center", gap: 4 }}>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b8a4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pw-accent)", display: "flex", alignItems: "center", gap: 4 }}>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                                         Applied
                                       </span>
                                     )}
@@ -16661,8 +16972,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     onClick={() => void runArcAnalysis()}
                     style={{
                       padding: "8px 18px", fontSize: 12, fontWeight: 700, borderRadius: 10,
-                      background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
-                      color: "var(--pw-accent, #b8a4ff)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
+                      background: "rgba(var(--accent-rgb), 0.08)",
+                      color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb), 0.15)",
                       cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8,
                     }}
                   >
@@ -17156,269 +17467,226 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
         </div>
       )}
 
-      {/* ── Share Modal ── */}
+      {/* ── Share Modal (Premium) ── */}
       {showShareModal && novel && (
         <div className="pw-modal-overlay" onClick={() => setShowShareModal(false)}>
-          <div className="pw-modal pw-export-modal" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
-            {/* Close X */}
+          <div className="pw-share-modal" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
             <button
               type="button"
               onClick={() => setShowShareModal(false)}
+              aria-label="Close"
               style={{
-                position: "absolute", top: 14, right: 14, zIndex: 2,
-                background: "none", border: "none", cursor: "pointer",
-                width: 28, height: 28, borderRadius: 8,
+                position: "absolute", top: 20, right: 20, zIndex: 2,
+                width: 32, height: 32, borderRadius: 10,
+                background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: "var(--pw-text-dim)", transition: "all 0.12s",
+                color: "var(--pw-text-dim)", cursor: "pointer", transition: "all 0.15s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--pw-text)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-hover-bg)"; e.currentTarget.style.color = "var(--pw-text)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--pw-surface-alt)"; e.currentTarget.style.color = "var(--pw-text-dim)"; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
-            <div className="pw-export-header">
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
-                  border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                </div>
-                <div className="pw-delete-modal-title" style={{ margin: 0 }}>Share for Feedback</div>
-              </div>
-              <p className="pw-delete-modal-copy" style={{ paddingRight: 24 }}>
-                Send a read-only link to a reader. They can highlight text, leave notes, and send feedback back to you.
+
+            <div className="pw-share-header">
+              <p className="pw-share-kicker">Feedback</p>
+              <h2 className="pw-share-title">Share for feedback</h2>
+              <p className="pw-share-sub">
+                Send a read-only link to beta readers. They can highlight text, add notes, and send feedback straight back to you.
               </p>
             </div>
 
-            <div className="pw-export-section">
-              <p className="pw-export-label">Chapters to share</p>
-              <div className="pw-export-chapter-tools">
-                <span>Chapters {selectedShareChapterIds.length}/{novel.chapters.length}</span>
-                <div className="pw-export-tool-actions">
-                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds(novel.chapters.map((c) => c.id))}>Select All</button>
-                  <button type="button" className="pw-export-tool-btn" onClick={() => setSelectedShareChapterIds([])}>Clear All</button>
+            <div className="pw-share-body">
+              <div className="pw-share-card">
+                <p className="pw-share-card-label">Chapters to share</p>
+                <div className="pw-share-chapter-tools">
+                  <span>Chapters {selectedShareChapterIds.length}/{novel.chapters.length}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button type="button" className="pw-share-tool-btn" onClick={() => setSelectedShareChapterIds(novel.chapters.map((c) => c.id))}>Select all</button>
+                    <button type="button" className="pw-share-tool-btn" onClick={() => setSelectedShareChapterIds([])}>Clear</button>
+                  </div>
+                </div>
+                <div className="pw-share-chapter-list">
+                  {novel.chapters.length === 0 ? (
+                    <p className="pw-share-empty">No chapters yet.</p>
+                  ) : (
+                    novel.chapters.map((ch, idx) => {
+                      const checked = selectedShareChapterIds.includes(ch.id);
+                      return (
+                        <label key={ch.id} className="pw-share-chapter-item">
+                          <input
+                            type="checkbox"
+                            className="pw-checkbox"
+                            checked={checked}
+                            onChange={() => setSelectedShareChapterIds((cur) => cur.includes(ch.id) ? cur.filter((x) => x !== ch.id) : [...cur, ch.id])}
+                          />
+                          <span className="pw-share-chapter-meta">
+                            <strong>{ch.title || `Chapter ${idx + 1}`}</strong>
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
                 </div>
               </div>
-              <div className="pw-export-chapter-list">
-                {novel.chapters.length === 0 ? (
-                  <p className="pw-export-help">No chapters available yet.</p>
-                ) : (
-                  novel.chapters.map((ch, idx) => {
-                    const checked = selectedShareChapterIds.includes(ch.id);
-                    return (
-                      <label key={ch.id} className="pw-export-chapter-item">
-                        <input
-                          type="checkbox"
-                          className="pw-checkbox"
-                          checked={checked}
-                          onChange={() => setSelectedShareChapterIds((cur) => cur.includes(ch.id) ? cur.filter((x) => x !== ch.id) : [...cur, ch.id])}
-                        />
-                        <span className="pw-export-chapter-meta">
-                          <strong>{ch.title || `Chapter ${idx + 1}`}</strong>
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
 
-            {/* Options section */}
-            <div className="pw-export-section" style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 4, paddingTop: 14 }}>
-              <p className="pw-export-label">Options</p>
-              <div style={{ display: "grid", gap: 12 }}>
-                {/* Expiry */}
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Link expires after</label>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className="pw-share-card">
+                <p className="pw-share-card-label">Link settings</p>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)", marginBottom: 8, display: "block" }}>Expires after</label>
+                  <div className="pw-share-expiry-pills">
                     {[1, 3, 7, 14, 30].map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setShareExpiryDays(d)}
-                        style={{
-                          padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                          border: shareExpiryDays === d ? "1.5px solid var(--pw-accent)" : "1px solid var(--pw-border)",
-                          background: shareExpiryDays === d ? "rgba(var(--accent-rgb, 124,92,252), 0.08)" : "transparent",
-                          color: shareExpiryDays === d ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-muted)",
-                          cursor: "pointer",
-                        }}
-                      >
+                      <button key={d} type="button" className={`pw-share-expiry-pill ${shareExpiryDays === d ? "active" : ""}`} onClick={() => setShareExpiryDays(d)}>
                         {d === 1 ? "1 day" : `${d} days`}
                       </button>
                     ))}
                   </div>
                 </div>
-                {/* Password */}
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block", color: "var(--pw-text)" }}>Password protection <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}>(optional)</span></label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text)", marginBottom: 6, display: "block" }}>Password <span style={{ fontWeight: 400, color: "var(--pw-text-dim)" }}>(optional)</span></label>
                   <input
                     className="pw-settings-input"
                     type="text"
-                    placeholder="Leave empty for no password"
+                    placeholder="No password"
                     value={sharePassword}
                     onChange={(e) => setSharePassword(e.target.value)}
-                    style={{ width: "100%", fontSize: 13 }}
+                    style={{ width: "100%", fontSize: 13, padding: "10px 12px", borderRadius: 10 }}
                     autoComplete="off"
                   />
                 </div>
-                {/* Email hint — shown after link is created */}
               </div>
-            </div>
 
-            {shareResult && (
-              <div className="pw-export-section">
-                {/* Link created success */}
-                <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--pw-success-bg, rgba(16,185,129,0.08))", border: "1px solid var(--pw-success-border, rgba(16,185,129,0.18))" }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--pw-success, #10b981)" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ verticalAlign: "-2px", marginRight: 6 }}><polyline points="20 6 9 17 4 12"/></svg>
-                    Share link created!
-                    {shareResult.hasPassword && <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>Password protected</span>}
-                  </p>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      className="pw-settings-input"
-                      type="text"
-                      readOnly
-                      value={shareResult.url}
-                      onClick={(e) => (e.target as HTMLInputElement).select()}
-                      style={{ flex: 1, fontSize: 12, fontFamily: "monospace" }}
-                    />
-                    <button type="button" className="btn btn-primary" style={{ padding: "7px 16px", fontSize: 12 }} onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>Copy</button>
-                  </div>
-                  <p style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 6, marginBottom: 0 }}>
-                    Link expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  </p>
-                </div>
-
-                {/* Invite by email — opens email app */}
-                <div style={{
-                  marginTop: 10, padding: "12px 14px", borderRadius: 10,
-                  background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)",
-                }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-text)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    Invite by email
-                  </p>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      className="pw-settings-input"
-                      type="email"
-                      placeholder="reader@example.com"
-                      value={shareRecipientEmail}
-                      onChange={(e) => setShareRecipientEmail(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && shareRecipientEmail.trim()) {
-                          e.preventDefault();
-                          openShareEmailInClient();
-                        }
-                      }}
-                      style={{ flex: 1, fontSize: 13 }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={!shareRecipientEmail.trim()}
-                      style={{ padding: "8px 16px", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: shareRecipientEmail.trim() ? 1 : 0.4 }}
-                      onClick={openShareEmailInClient}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      Email
-                    </button>
-                  </div>
-                  {shareResult.hasPassword && sharePassword.trim() && (
-                    <p style={{ fontSize: 11, marginTop: 6, marginBottom: 0, lineHeight: 1.4, color: "var(--pw-accent, #b8a4ff)", display: "flex", alignItems: "center", gap: 5 }}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                      Password will be included in the email
+              {shareResult && (
+                <>
+                  <div className="pw-share-success-card">
+                    <p className="pw-share-success-title">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Link ready
+                      {shareResult.hasPassword && <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.9 }}> · Password protected</span>}
                     </p>
-                  )}
-                </div>
+                    <div className="pw-share-link-row">
+                      <input
+                        type="text"
+                        readOnly
+                        value={shareResult.url}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                        className="pw-share-link-input"
+                      />
+                      <button type="button" className="pw-share-copy-btn" onClick={() => { navigator.clipboard.writeText(shareResult.url); }}>
+                        Copy link
+                      </button>
+                    </div>
+                    <p className="pw-share-expiry-note">
+                      Expires {new Date(shareResult.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </p>
+                  </div>
 
-                {/* Warning about editing */}
-                <div style={{
-                  marginTop: 10, padding: "10px 12px", borderRadius: 8,
-                  background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",
-                  display: "flex", gap: 8, alignItems: "flex-start",
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                  <p style={{ fontSize: 11, color: "#f59e0b", lineHeight: 1.5, margin: 0 }}>
-                    <strong>Don&apos;t edit these chapters</strong> while waiting for feedback. If you change the text, reader annotations won&apos;t line up and &ldquo;Apply with AI&rdquo; may not work correctly.
-                  </p>
-                </div>
-              </div>
-            )}
+                  <div className="pw-share-email-card">
+                    <p className="pw-share-email-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      Invite by email
+                    </p>
+                    <div className="pw-share-email-row">
+                      <input
+                        className="pw-settings-input"
+                        type="email"
+                        placeholder="reader@example.com"
+                        value={shareRecipientEmail}
+                        onChange={(e) => setShareRecipientEmail(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && shareRecipientEmail.trim()) { e.preventDefault(); openShareEmailInClient(); }
+                        }}
+                        style={{ flex: 1, padding: "10px 12px", borderRadius: 10, fontSize: 13 }}
+                      />
+                      <button
+                        type="button"
+                        className="pw-share-copy-btn"
+                        disabled={!shareRecipientEmail.trim()}
+                        style={{ opacity: shareRecipientEmail.trim() ? 1 : 0.5 }}
+                        onClick={openShareEmailInClient}
+                      >
+                        Send
+                      </button>
+                    </div>
+                    {shareResult.hasPassword && sharePassword.trim() && (
+                      <p style={{ fontSize: 11, marginTop: 8, marginBottom: 0, color: "var(--pw-accent)", display: "flex", alignItems: "center", gap: 5 }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        Password included in email
+                      </p>
+                    )}
+                  </div>
 
-            {shareError && <p className="pw-export-error">{shareError}</p>}
+                  <div className="pw-share-warning">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span><strong>Don&apos;t edit these chapters</strong> while the link is active. Changing the text will misalign reader annotations and &ldquo;Apply with AI&rdquo; may fail.</span>
+                  </div>
+                </>
+              )}
 
-            <div className="pw-delete-modal-actions">
-              <button type="button" className="btn pw-cancel-btn" onClick={() => setShowShareModal(false)}>Cancel</button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={sharingLink || selectedShareChapterIds.length === 0}
-                onClick={async () => {
-                  setSharingLink(true);
-                  setShareError(null);
-                  setShareResult(null);
-                  try {
-                    const payload: Record<string, unknown> = {
-                      novelId: novel.id,
-                      chapterIds: selectedShareChapterIds,
-                      expiryDays: shareExpiryDays,
-                      novelTitle: novel.title || "Untitled Novel",
-                    };
-                    if (sharePassword.trim()) payload.password = sharePassword.trim();
-                    const res = await fetch("/api/share", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(payload),
-                    });
-                    const data = await res.json();
-                    if (res.ok && data.token) {
-                      setShareResult(data);
-                      fetch("/api/share").then((r) => r.ok ? r.json() : []).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
-                    } else {
-                      setShareError(data.error || "Failed to create share link.");
+              {shareError && <p className="pw-share-error">{shareError}</p>}
+
+              <div className="pw-share-actions">
+                <button type="button" className="btn pw-cancel-btn" onClick={() => setShowShareModal(false)}>Cancel</button>
+                <button
+                  type="button"
+                  className="pw-share-primary-btn"
+                  disabled={sharingLink || selectedShareChapterIds.length === 0}
+                  onClick={async () => {
+                    setSharingLink(true);
+                    setShareError(null);
+                    setShareResult(null);
+                    try {
+                      const payload: Record<string, unknown> = {
+                        novelId: novel.id,
+                        chapterIds: selectedShareChapterIds,
+                        expiryDays: shareExpiryDays,
+                        novelTitle: novel.title || "Untitled Novel",
+                      };
+                      if (sharePassword.trim()) payload.password = sharePassword.trim();
+                      const res = await fetch("/api/share", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.token) {
+                        setShareResult(data);
+                        fetch("/api/share").then((r) => r.ok ? r.json() : []).then((d) => { if (Array.isArray(d)) setShareLinks(d); }).catch(() => {});
+                      } else {
+                        setShareError(data.error || "Failed to create share link.");
+                      }
+                    } catch {
+                      setShareError("Network error. Please try again.");
+                    } finally {
+                      setSharingLink(false);
                     }
-                  } catch {
-                    setShareError("Network error. Please try again.");
-                  } finally {
-                    setSharingLink(false);
-                  }
-                }}
-              >
-                {sharingLink ? "Creating link..." : selectedShareChapterIds.length === 0 ? "Select chapters to share" : `Share ${selectedShareChapterIds.length} chapter${selectedShareChapterIds.length !== 1 ? "s" : ""}`}
-              </button>
-            </div>
+                  }}
+                >
+                  {sharingLink ? "Creating link…" : selectedShareChapterIds.length === 0 ? "Select chapters" : `Create link · ${selectedShareChapterIds.length} chapter${selectedShareChapterIds.length !== 1 ? "s" : ""}`}
+                </button>
+              </div>
 
-            {/* Existing share links */}
-            {shareLinks.filter((l) => l.status !== "revoked" && l.status !== "reviewed").length > 0 && (
-              <div className="pw-export-section" style={{ borderTop: "1px solid var(--pw-border-light)", marginTop: 8, paddingTop: 16 }}>
-                <p className="pw-export-label">Active share links</p>
-                <div className="pw-export-chapter-list" style={{ maxHeight: 160 }}>
+              {shareLinks.filter((l) => l.status !== "revoked" && l.status !== "reviewed").length > 0 && (
+                <div className="pw-share-active-list">
+                  <p className="pw-share-active-label">Active links</p>
                   {shareLinks.filter((l) => l.status !== "revoked" && l.status !== "reviewed").map((link) => (
-                    <div key={link.id} className="pw-export-chapter-item" style={{ justifyContent: "space-between" }}>
+                    <div key={link.id} className="pw-share-active-item">
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--pw-text)" }}>
                           {link.chapters.length} chapter{link.chapters.length !== 1 ? "s" : ""}
                           {link.readerName && <span style={{ fontWeight: 400, color: "var(--pw-text-muted)" }}> — {link.readerName}</span>}
-                          {link.passwordHash && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>🔒</span>}
+                          {link.passwordHash && <span style={{ marginLeft: 6, fontSize: 11 }} aria-label="Password protected">🔒</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2 }}>
                           {new Date(link.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                           {" · "}Expires {new Date(link.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                           {link.recipientEmail && <span style={{ marginLeft: 6 }}>→ {link.recipientEmail}</span>}
-                          {link.status === "submitted" && <span style={{ marginLeft: 6, color: "var(--pw-success, #10b981)", fontWeight: 600 }}>Feedback received</span>}
+                          {link.status === "submitted" && <span style={{ marginLeft: 6, color: "var(--pw-status-success)", fontWeight: 600 }}>Feedback received</span>}
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                         {link.status === "submitted" && (
-                          <button type="button" className="pw-export-tool-btn" onClick={() => {
+                          <button type="button" className="pw-share-active-btn review" onClick={() => {
                             setShowShareModal(false);
                             setShowFeedbackPanel(true);
                             setFeedbackReviewMode(false);
@@ -17430,18 +17698,18 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             setFbManualEditOpen(false);
                             setFbManualEditText("");
                             void refreshFeedbackReviewData();
-                          }} style={{ color: "var(--pw-success, #10b981)" }}>Review</button>
+                          }}>Review</button>
                         )}
-                        <button type="button" className="pw-export-tool-btn" onClick={async () => {
+                        <button type="button" className="pw-share-active-btn revoke" onClick={async () => {
                           await fetch(`/api/share/${link.token}`, { method: "DELETE" });
                           setShareLinks((cur) => cur.filter((l) => l.id !== link.id));
-                        }} style={{ color: "var(--pw-danger, #ef4444)" }}>Revoke</button>
+                        }}>Revoke</button>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -17564,10 +17832,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         }}>
                           <div style={{
                             width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
-                            background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
-                            border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
+                            background: "rgba(var(--accent-rgb), 0.1)",
+                            border: "1px solid rgba(var(--accent-rgb), 0.15)",
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            color: "var(--pw-accent, #b8a4ff)", fontSize: 14, fontWeight: 700,
+                            color: "var(--pw-accent)", fontSize: 14, fontWeight: 700,
                           }}>
                             {(fb.readerName || "A")[0].toUpperCase()}
                           </div>
@@ -17591,7 +17859,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         return (
                           <span key={name} style={{
                             fontSize: 12, padding: "4px 12px", borderRadius: 8,
-                            background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
+                            background: "rgba(var(--accent-rgb), 0.06)", border: "1px solid rgba(var(--accent-rgb), 0.12)",
                             color: "var(--pw-text-muted)", fontWeight: 500,
                           }}>
                             {name} <span style={{ opacity: 0.7 }}>({count})</span>
@@ -17639,8 +17907,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             {!feedbackLoading && feedbackReviewMode && !feedbackReviewDone && (() => {
               const item = feedbackReviewQueue[feedbackReviewIdx];
               if (!item) return null;
-              const typeColor = item.ann.type === "issue" ? "#ef4444" : item.ann.type === "suggestion" ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-muted)";
-              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "rgba(255,255,255,0.03)";
+              const typeColor = item.ann.type === "issue" ? "var(--pw-status-danger)" : item.ann.type === "suggestion" ? "var(--pw-accent)" : "var(--pw-text-muted)";
+              const typeBg = item.ann.type === "issue" ? "rgba(239,68,68,0.08)" : item.ann.type === "suggestion" ? "rgba(var(--accent-rgb), 0.06)" : "rgba(255,255,255,0.03)";
               const reviewedSoFar = feedbackReviewAccepted + feedbackReviewRejected;
               const totalInSession = reviewedSoFar + feedbackReviewQueue.length;
               const progress = totalInSession > 0 ? (reviewedSoFar / totalInSession) * 100 : 0;
@@ -17658,7 +17926,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       </span>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "var(--pw-border)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent, #b8a4ff)", borderRadius: 4, transition: "width 0.3s ease" }} />
+                      <div style={{ height: "100%", width: `${progress}%`, background: "var(--pw-accent)", borderRadius: 4, transition: "width 0.3s ease" }} />
                     </div>
                   </div>
 
@@ -17710,18 +17978,18 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <div style={{ padding: "0 20px 6px" }}>
                       <div style={{
                         borderRadius: 12, padding: "14px 16px",
-                        border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
-                        background: "rgba(var(--accent-rgb, 124,92,252), 0.03)",
+                        border: "1px solid rgba(var(--accent-rgb), 0.15)",
+                        background: "rgba(var(--accent-rgb), 0.03)",
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                           </svg>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", letterSpacing: "0.02em" }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent)", letterSpacing: "0.02em" }}>
                             AI Recommendation
                           </span>
                           {fbAiRecommendationLoading && (
-                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            <span style={{ width: 12, height: 12, border: "2px solid rgba(var(--accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
                           )}
                         </div>
                         {fbAiRecommendationLoading && !fbAiRecommendation && (
@@ -17739,13 +18007,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             <div style={{ display: "grid", gap: 10 }}>
                               {issue && (
                                 <div>
-                                  <p style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Issue</p>
+                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-status-danger)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Issue</p>
                                   <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{issue}</p>
                                 </div>
                               )}
                               {rec && (
                                 <div>
-                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Suggestion</p>
+                                  <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-accent)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Suggestion</p>
                                   <p style={{ fontSize: 13, color: "var(--pw-text)", lineHeight: 1.6, margin: 0 }}>{rec}</p>
                                 </div>
                               )}
@@ -17761,8 +18029,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <div style={{ padding: "0 20px 6px" }}>
                       <div style={{
                         borderRadius: 12,
-                        border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.12)",
-                        background: "rgba(var(--accent-rgb, 124,92,252), 0.02)",
+                        border: "1px solid rgba(var(--accent-rgb), 0.12)",
+                        background: "rgba(var(--accent-rgb), 0.02)",
                         overflow: "hidden",
                       }}>
                         {/* Header */}
@@ -17771,10 +18039,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
                           display: "flex", alignItems: "center", gap: 8,
                         }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                           </svg>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--pw-accent)", letterSpacing: "0.02em" }}>AI Suggested Revision</span>
                         </div>
                         {/* Side-by-side diff */}
                         <div style={{ display: "flex", gap: 0, fontSize: 13, lineHeight: 1.65 }}>
@@ -17797,7 +18065,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           {/* After */}
                           <div style={{
                             flex: 1, padding: "12px 14px",
-                            background: "rgba(124,92,252,0.02)",
+                            background: "rgba(var(--accent-rgb), 0.02)",
                           }}>
                             <div style={{
                               fontSize: 9, textTransform: "uppercase", opacity: 0.35,
@@ -17918,8 +18186,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         className="btn"
                         style={{
                           flex: 1, fontSize: 13, fontWeight: 600, padding: "12px 0", borderRadius: 10,
-                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
-                          background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", color: "var(--pw-accent, #b8a4ff)",
+                          border: "1px solid rgba(var(--accent-rgb), 0.2)",
+                          background: "rgba(var(--accent-rgb), 0.06)", color: "var(--pw-accent)",
                         }}
                         disabled={fbPreviewGenerating}
                         onClick={async () => {
@@ -18200,15 +18468,6 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 setEditorOriginalParagraphs(revisedText.split(/\n\n+/).filter(Boolean));
                 saveNow();
               }}
-              chapterProse={chProse}
-              storyBible={novel.storyBible}
-              allChapters={novel.chapters}
-              currentChapterIndex={chIdx >= 0 ? chIdx : 0}
-              planCharacterIds={tkCharIds}
-              planLocationIds={tkLocIds}
-              chapterSynopsis={tkSynopsis}
-              blocSynopses={tkBlocSynopses}
-              onThreadKeeperAiCheck={runThreadKeeperAiCheck}
             />
           );
         }
@@ -18226,8 +18485,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>The Editor</h2>
                     <span style={{
                       fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
-                      background: "var(--pw-accent-muted, rgba(124,92,252,0.1))",
-                      color: "var(--pw-accent, #b8a4ff)",
+                      background: "var(--pw-accent-muted)",
+                      color: "var(--pw-accent)",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                     }}>
                       Full Manuscript
@@ -18267,15 +18526,15 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     }}
                     style={{
                       padding: "5px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                      background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
-                      color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                      background: "rgba(var(--accent-rgb), 0.1)",
+                      color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb), 0.2)",
                       cursor: nccBusy ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5,
                       transition: "all 0.15s",
                       opacity: nccBusy ? 0.5 : 1,
                     }}
                   >
                     {nccBusy ? (
-                      <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
+                      <><span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Scanning...</>
                     ) : editorFindings.length > 0 ? "Re-scan" : "Scan Manuscript"}
                   </button>
                 </div>
@@ -18295,13 +18554,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     </p>
                     {novel.healthScore ? (
                       <div style={{ marginTop: 16, padding: "10px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>Health data found — edits will target your weakest areas</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span style={{ fontSize: 11, color: "var(--pw-status-success)", fontWeight: 600 }}>Health data found — edits will target your weakest areas</span>
                       </div>
                     ) : (
                       <div style={{ marginTop: 16, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                        <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600 }}>Run Manuscript Health first for smarter, targeted edits</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span style={{ fontSize: 11, color: "var(--pw-status-warning)", fontWeight: 600 }}>Run Manuscript Health first for smarter, targeted edits</span>
                       </div>
                     )}
                   </div>
@@ -18310,7 +18569,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 {/* Scanning */}
                 {nccBusy && (
                   <div style={{ textAlign: "center", padding: "48px 20px" }}>
-                    <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+                    <div style={{ width: 28, height: 28, border: "2.5px solid rgba(var(--accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
                     <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Reading your manuscript...</p>
                     {editorApplyProgress && <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0 }}>{editorApplyProgress}</p>}
                   </div>
@@ -18318,7 +18577,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
                 {/* Summary */}
                 {editorSummary && !nccBusy && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "rgba(var(--accent-rgb, 124,92,252), 0.04)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.1)", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "rgba(var(--accent-rgb), 0.04)", border: "1px solid rgba(var(--accent-rgb), 0.1)", marginBottom: 12 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.4, flex: 1 }}>{editorSummary}</p>
                   </div>
@@ -18348,7 +18607,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     {editorFindings.some((f) => f.status === "pending") && (
                       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                         <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "accepted" } : f))}
-                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb,124,92,252),0.08)", border: "1px solid rgba(var(--pw-accent-rgb,124,92,252),0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
+                          style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(var(--pw-accent-rgb), 0.08)", border: "1px solid rgba(var(--pw-accent-rgb), 0.15)", color: "var(--pw-accent)", cursor: "pointer" }}>
                           Accept all
                         </button>
                         <button type="button" onClick={() => setEditorFindings((prev) => prev.map((f) => f.status === "pending" ? { ...f, status: "dismissed" } : f))}
@@ -18405,7 +18664,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         </button>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-                          <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                          <div style={{ width: 18, height: 18, border: "2px solid rgba(var(--accent-rgb), 0.2)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
                           <span style={{ fontSize: 12, fontWeight: 600 }}>Applying...</span>
                         </div>
                       )}
@@ -18415,7 +18674,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
                 {/* Done */}
                 {editorApplyDone && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, background: "rgba(var(--accent-rgb, 124,92,252), 0.05)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)", marginTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, background: "rgba(var(--accent-rgb), 0.05)", border: "1px solid rgba(var(--accent-rgb), 0.15)", marginTop: 8 }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-accent)" }}>{editorApplyCount} edit{editorApplyCount !== 1 ? "s" : ""} applied</div>
@@ -18434,21 +18693,21 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
           <div style={{ background: "var(--pw-surface)", borderRadius: 16, padding: "48px 40px", maxWidth: 640, width: "90vw", margin: "auto", position: "relative" }} onClick={(e) => e.stopPropagation()}>
             <button type="button" className="pw-bible-close" onClick={() => setShowStoryBibleModal(false)} aria-label="Close" style={{ position: "absolute", top: 16, right: 16 }}>×</button>
             <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>What are you writing?</h2>
-            <p style={{ color: "var(--pw-text-dim)", margin: "0 0 32px", fontSize: 14 }}>Choose a path — this shapes your Canon sections and how the AI helps you.</p>
+            <p style={{ color: "var(--pw-text-dim)", margin: "0 0 32px", fontSize: 14 }}>Choose a path — this shapes your Canon and how the AI helps you.</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <button type="button" onClick={() => { updateNfData({ nfCategory: "biography", subtype: "memoir" }); setBibleSection("nf-about"); }} style={{
                 background: "var(--pw-bg)", border: "2px solid var(--pw-border)", borderRadius: 14, padding: "28px 24px", cursor: "pointer", textAlign: "left", transition: "border-color 0.2s",
               }} onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--pw-accent)")} onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--pw-border)")}>
                 <div style={{ fontSize: 28, marginBottom: 12 }}>📖</div>
-                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--pw-text)" }}>Biography / Memoir</div>
-                <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.5 }}>Tell a life story. Use the Life Interview to capture memories, build a Scrapbook of stories, and arrange them on the Story Board.</p>
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--pw-text)" }}>Biography & Memoir</div>
+                <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.5 }}>A life story — yours or someone else&apos;s. The Life Interview captures memories and emotional truth; the Scrapbook holds the moments that matter. You arrange them into chapters on the Story Board.</p>
               </button>
               <button type="button" onClick={() => { updateNfData({ nfCategory: "other", subtype: "historical" }); setBibleSection("nf-about"); }} style={{
                 background: "var(--pw-bg)", border: "2px solid var(--pw-border)", borderRadius: 14, padding: "28px 24px", cursor: "pointer", textAlign: "left", transition: "border-color 0.2s",
               }} onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--pw-accent)")} onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--pw-border)")}>
                 <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--pw-text)" }}>Other Non-Fiction</div>
-                <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.5 }}>Research-based writing. Use the Researcher to process your material, organize Research Notes, and plot your book on the Story Board.</p>
+                <p style={{ fontSize: 13, color: "var(--pw-text-dim)", margin: 0, lineHeight: 1.5 }}>History, true crime, investigative — research-led. The Researcher helps you organise sources and facts; Era Research grounds the period. You build the narrative from evidence and plot it on the Story Board.</p>
               </button>
             </div>
           </div>
@@ -18502,7 +18761,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               ];
               const done = checks.filter(c => c.done).length;
               const pct = Math.round((done / checks.length) * 100);
-              const barColor = pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444";
+              const barColor = pct >= 80 ? "var(--pw-status-success)" : pct >= 50 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
               return (
                 <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--pw-border-light)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -18516,7 +18775,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <summary style={{ fontSize: 10, color: "var(--pw-text-dim)", cursor: "pointer" }}>View checklist</summary>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginTop: 4, paddingBottom: 4 }}>
                       {checks.map((c, i) => (
-                        <span key={i} style={{ fontSize: 10, color: c.done ? "#22c55e" : "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 3 }}>
+                        <span key={i} style={{ fontSize: 10, color: c.done ? "var(--pw-status-success)" : "var(--pw-text-dim)", display: "flex", alignItems: "center", gap: 3 }}>
                           {c.done ? "\u2713" : "\u25CB"} {c.label}
                         </span>
                       ))}
@@ -18558,7 +18817,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     { id: "worldbuilding" as const, label: "Worldbuilding" },
                     { id: "plotSpine" as const, label: "The Architect" },
                     ...(hasPlotSpine() ? [{ id: "visualMap" as const, label: "Map" }] : []),
-                    { id: "boltons" as const, label: "Bolt-Ons" },
+                    { id: "boltons" as const, label: "Writing guides" },
                     { id: "styleVoice" as const, label: "Style & Voice" },
                   ]
                 ).map((item) => (
@@ -18893,8 +19152,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       <span style={{
                                         fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
                                         padding: "3px 8px", borderRadius: 6,
-                                        background: character.role === "Protagonist" ? "rgba(var(--pw-accent-rgb,124,92,252),0.12)" : character.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(30,58,95,0.08)",
-                                        color: character.role === "Protagonist" ? "var(--pw-accent)" : character.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                                        background: character.role === "Protagonist" ? "rgba(var(--pw-accent-rgb), 0.12)" : character.role === "Antagonist" ? "rgba(220,38,38,0.12)" : "var(--pw-overlay-bg-hover)",
+                                        color: character.role === "Protagonist" ? "var(--pw-accent)" : character.role === "Antagonist" ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
                                       }}>
                                         {character.role || "Supporting"}
                                       </span>
@@ -18912,7 +19171,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       marginLeft: "auto", flexShrink: 0,
                                       padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
                                       background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.12)",
-                                      color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                                      color: "var(--pw-status-danger)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
                                       transition: "all 0.15s",
                                     }}
                                     onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.12)"; }}
@@ -19463,11 +19722,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       arcCtx ? `\nCharacter Arcs: ${arcCtx}` : "\nNo character arcs defined.",
                                       `\nCharacters: ${storyCharacters.slice(0, 8).map(c => `${c.name} (${c.role})`).join(", ")}`,
                                       `\nGenre: ${(novel.storyBible.summary?.genre ?? []).join(", ") || "fiction"}`,
-                                      `\nReturn JSON: { "score": 1-100, "summary": "1-2 sentence overall assessment", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "pacing|structure|characters|subplots|arcs|tension", "message": "what's wrong", "suggestion": "how to fix it" }] }`,
+                                      `\nReturn JSON: { "score": 1-100, "summary": "1-2 sentence overall assessment", "issues": [{ "severity": "critical"|"warning"|"tip", "area": "pacing|structure|characters|subplots|arcs|tension", "message": "what's wrong", "suggestion": "concrete fix (e.g. 'Add a beat in Act 2 where X does Y' or 'Raise tension on beat 5 to 4')" }] }`,
                                       "Check for: act balance (25/50/25 ideal), tension curve shape, missing character arcs for main characters, dangling subplots, consecutive low-tension beats, missing climax, weak opening, unresolved threads, characters who appear once then vanish, plot holes.",
-                                      "Be specific. Reference beat titles and character names. 4-8 issues typical.",
+                                      "Be specific. Each suggestion must be actionable (what to add, change, or remove) — not vague advice like 'improve pacing'. Reference beat titles and character names. 4-8 issues typical.",
                                     ].join("\n");
-                                    const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are an expert story editor and structural analyst. Analyze story spines for weaknesses. Return only valid JSON.", false, 0.3);
+                                    const raw = await requestOpenRouterText(prompt, 2000, 90000, "You are an expert story editor and structural analyst. Analyze story spines for weaknesses. Return only valid JSON.", false, 0.25);
                                     const jsonMatch = raw.match(/\{[\s\S]*\}/);
                                     let aiIssues: Array<{ severity: "critical" | "warning" | "tip"; area: string; message: string; suggestion: string }> = [];
                                     let aiScore = 50;
@@ -19536,13 +19795,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               : prog.includes("arc") || prog.includes("character") ? 4
                               : prog.includes("final") ? 5 : 0;
                             return (
-                              <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)" }}>
+                              <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(var(--accent-rgb), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb), 0.15)" }}>
                                 <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
                                   {phases.map((p, i) => (
                                     <div key={p.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
                                       <div style={{
                                         width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
-                                        background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--accent-rgb, 124,92,252), 0.2)" : "var(--pw-surface)",
+                                        background: i < activeIdx ? "var(--pw-accent)" : i === activeIdx ? "rgba(var(--accent-rgb), 0.2)" : "var(--pw-surface)",
                                         border: i === activeIdx ? "2px solid var(--pw-accent)" : "1px solid var(--pw-border-light)",
                                         color: i < activeIdx ? "#000" : i === activeIdx ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                         fontWeight: 700,
@@ -19571,9 +19830,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           {/* Spine error message */}
                           {spineError && !spineBusy && (
                             <div style={{ marginBottom: 14, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.25)", display: "flex", alignItems: "flex-start", gap: 10 }}>
-                              <span style={{ color: "#ef4444", fontSize: 16, lineHeight: 1, flexShrink: 0 }}>⚠</span>
+                              <span style={{ color: "var(--pw-status-danger)", fontSize: 16, lineHeight: 1, flexShrink: 0 }}>⚠</span>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: "#ef4444", marginBottom: 2 }}>Spine generation failed</div>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-status-danger)", marginBottom: 2 }}>Spine generation failed</div>
                                 <div style={{ fontSize: 11, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>{spineError}</div>
                               </div>
                               <button type="button" onClick={() => setSpineError("")} style={{ background: "none", border: "none", color: "var(--pw-text-dim)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
@@ -19642,12 +19901,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   }}
                                   style={{
                                     display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 18px", borderRadius: 12,
-                                    background: "linear-gradient(135deg, rgba(var(--accent-rgb, 124,92,252), 0.12) 0%, rgba(var(--accent-rgb, 124,92,252), 0.04) 100%)",
-                                    border: "1.5px solid rgba(var(--accent-rgb, 124,92,252), 0.35)", cursor: "pointer", transition: "all 0.2s",
+                                    background: "linear-gradient(135deg, rgba(var(--accent-rgb), 0.12) 0%, rgba(var(--accent-rgb), 0.04) 100%)",
+                                    border: "1.5px solid rgba(var(--accent-rgb), 0.35)", cursor: "pointer", transition: "all 0.2s",
                                     textAlign: "left", color: "var(--pw-text)",
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.15)"; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(var(--accent-rgb, 124,92,252), 0.35)"; e.currentTarget.style.boxShadow = "none"; }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(var(--accent-rgb), 0.15)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(var(--accent-rgb), 0.35)"; e.currentTarget.style.boxShadow = "none"; }}
                                 >
                                   <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, flexShrink: 0 }}>AI</span>
                                   <div>
@@ -19669,7 +19928,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     background: "var(--pw-surface)", border: "1.5px solid var(--pw-border-light)", cursor: "pointer", transition: "all 0.2s",
                                     textAlign: "left", color: "var(--pw-text)",
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.04)"; }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb), 0.04)"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--pw-border-light)"; e.currentTarget.style.background = "var(--pw-surface)"; }}
                                 >
                                   <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0, color: "var(--pw-text-dim)" }}>✎</span>
@@ -19693,7 +19952,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     background: "var(--pw-surface)", border: "1.5px solid var(--pw-border-light)", cursor: "pointer", transition: "all 0.2s",
                                     textAlign: "left", color: "var(--pw-text)",
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.04)"; }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--pw-accent)"; e.currentTarget.style.background = "rgba(var(--accent-rgb), 0.04)"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--pw-border-light)"; e.currentTarget.style.background = "var(--pw-surface)"; }}
                                 >
                                   <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--pw-surface-alt)", border: "1px solid var(--pw-border-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0, color: "var(--pw-text-dim)" }}>→</span>
@@ -19723,12 +19982,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     <button key={opt.id} type="button" onClick={() => setSpineArcChoice(`ai:${opt.id}`)}
                                       style={{
                                         textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                                        background: spineArcChoice === `ai:${opt.id}` ? "rgba(var(--accent-rgb, 124,92,252), 0.12)" : "rgba(var(--accent-rgb, 124,92,252), 0.04)",
-                                        border: `1px solid ${spineArcChoice === `ai:${opt.id}` ? "var(--pw-accent)" : "rgba(var(--accent-rgb, 124,92,252), 0.25)"}`,
+                                        background: spineArcChoice === `ai:${opt.id}` ? "rgba(var(--accent-rgb), 0.12)" : "rgba(var(--accent-rgb), 0.04)",
+                                        border: `1px solid ${spineArcChoice === `ai:${opt.id}` ? "var(--pw-accent)" : "rgba(var(--accent-rgb), 0.25)"}`,
                                       }}>
                                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                         <span style={{ fontWeight: 600, fontSize: 13, color: spineArcChoice === `ai:${opt.id}` ? "var(--pw-accent)" : "var(--pw-text)" }}>{opt.name}</span>
-                                        <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb, 124,92,252), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>AI</span>
+                                        <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(var(--accent-rgb), 0.15)", color: "var(--pw-accent)", textTransform: "uppercase" }}>AI</span>
                                       </div>
                                       <div style={{ fontSize: 11, color: "var(--pw-text-dim)", marginTop: 2, lineHeight: 1.4 }}>{opt.description}</div>
                                       {opt.rationale && <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 4 }}>Why: {opt.rationale}</div>}
@@ -19830,7 +20089,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           {spineShowAdvancedOptions && (
                             <div style={{ marginBottom: 16, padding: 20, background: "linear-gradient(180deg, var(--pw-surface-alt) 0%, var(--pw-surface) 100%)", borderRadius: 14, border: "1px solid var(--pw-border-light)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                                <span style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚙</span>
+                                <span style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(var(--accent-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚙</span>
                                 <div>
                                   <div style={{ fontSize: 15, fontWeight: 700, color: "var(--pw-text)", letterSpacing: "-0.02em" }}>Advanced Options</div>
                                   <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 2 }}>Refine how your story structure is built</div>
@@ -19848,7 +20107,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     return (
                                       <button key={n} type="button" onClick={() => updatePlotSpine({ flashbackSlots: n })} style={{
                                         padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface-alt)",
                                         border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                         color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                       }}>{label}</button>
@@ -19868,7 +20127,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     return (
                                       <button key={level} type="button" onClick={() => updatePlotSpine({ subplotEmphasis: level })} style={{
                                         padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface-alt)",
                                         border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                         color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                       }}>{labels[level]}</button>
@@ -19888,7 +20147,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     return (
                                       <button key={level} type="button" onClick={() => updatePlotSpine({ beatDensity: level })} style={{
                                         padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface-alt)",
                                         border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                         color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                       }}>{labels[level]}</button>
@@ -19908,7 +20167,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     return (
                                       <button key={level} type="button" onClick={() => updatePlotSpine({ arcDepth: level })} style={{
                                         padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface-alt)",
                                         border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                         color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                       }}>{labels[level]}</button>
@@ -19928,7 +20187,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     return (
                                       <button key={level} type="button" onClick={() => updatePlotSpine({ midpointEmphasis: level })} style={{
                                         padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-                                        background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface-alt)",
+                                        background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface-alt)",
                                         border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                         color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                       }}>{labels[level]}</button>
@@ -20330,7 +20589,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             <div style={{ padding: "16px 18px", background: "var(--pw-surface-alt)", borderRadius: 12, border: "1px solid var(--pw-border-light)" }}>
                               <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--pw-text-dim)", letterSpacing: "0.06em" }}>Arcs</div>
                               <div style={{ fontSize: 24, fontWeight: 800, color: "var(--pw-text)", marginTop: 4 }}>{arcs.length}</div>
-                              <div style={{ fontSize: 11, color: missingArcs.length > 0 ? "#f59e0b" : "var(--pw-text-dim)", marginTop: 2 }}>{missingArcs.length > 0 ? `${missingArcs.map(c => c.name).join(", ")} missing` : "All main chars covered"}</div>
+                              <div style={{ fontSize: 11, color: missingArcs.length > 0 ? "var(--pw-status-warning)" : "var(--pw-text-dim)", marginTop: 2 }}>{missingArcs.length > 0 ? `${missingArcs.map(c => c.name).join(", ")} missing` : "All main chars covered"}</div>
                             </div>
                           </div>
 
@@ -20343,7 +20602,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   const h = (b.tension / 5) * 100;
                                   const isAct1Last = b.act === 1 && (beats[i + 1]?.act ?? 1) !== 1;
                                   const isAct2Last = b.act === 2 && (beats[i + 1]?.act ?? 2) !== 2;
-                                  const actColor = b.act === 1 ? "#3b82f6" : b.act === 2 ? "#f59e0b" : "#ef4444";
+                                  const actColor = b.act === 1 ? "var(--pw-status-info)" : b.act === 2 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
                                   return (
                                     <div key={b.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", borderRight: (isAct1Last || isAct2Last) ? "2px dashed rgba(255,255,255,0.15)" : undefined, paddingRight: (isAct1Last || isAct2Last) ? 2 : 0 }}>
                                       <div
@@ -20356,9 +20615,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 })}
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                                <span style={{ fontSize: 9, color: "#3b82f6", fontWeight: 600 }}>Act 1 ({act1.length})</span>
-                                <span style={{ fontSize: 9, color: "#f59e0b", fontWeight: 600 }}>Act 2 ({act2.length})</span>
-                                <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 600 }}>Act 3 ({act3.length})</span>
+                                <span style={{ fontSize: 9, color: "var(--pw-status-info)", fontWeight: 600 }}>Act 1 ({act1.length})</span>
+                                <span style={{ fontSize: 9, color: "var(--pw-status-warning)", fontWeight: 600 }}>Act 2 ({act2.length})</span>
+                                <span style={{ fontSize: 9, color: "var(--pw-status-danger)", fontWeight: 600 }}>Act 3 ({act3.length})</span>
                               </div>
                             </div>
                           )}
@@ -20390,7 +20649,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                         const present = isCharInBeat(c.name, c.id, b);
                                         const hasArcTurn = arcs.some(a => a.characterId === c.id && a.turningPointBeatIds.includes(b.id));
                                         return <div key={`${c.id}-${b.id}`} style={{
-                                          background: hasArcTurn ? "var(--pw-accent)" : present ? `${b.act === 1 ? "#3b82f6" : b.act === 2 ? "#f59e0b" : "#ef4444"}55` : "transparent",
+                                          background: hasArcTurn ? "var(--pw-accent)" : present ? `color-mix(in srgb, ${b.act === 1 ? "var(--pw-status-info)" : b.act === 2 ? "var(--pw-status-warning)" : "var(--pw-status-danger)"} 33%, transparent)` : "transparent",
                                           borderRadius: 2, minHeight: 14, border: "1px solid var(--pw-border-light)",
                                         }} title={present ? `${c.name} in "${b.title}"${hasArcTurn ? " ★ turning point" : ""}` : ""} />;
                                       }),
@@ -20399,11 +20658,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   })}
                                 </div>
                                 <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 9, color: "var(--pw-text-dim)" }}>
-                                  <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#3b82f655", verticalAlign: "middle", marginRight: 3 }} />Present</span>
+                                  <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "rgba(var(--pw-accent-rgb), 0.33)", verticalAlign: "middle", marginRight: 3 }} />Present</span>
                                   <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--pw-accent)", verticalAlign: "middle", marginRight: 3 }} />Arc Turning Point</span>
                                 </div>
                                 {orphanChars.length > 0 && (
-                                  <div style={{ marginTop: 6, fontSize: 10, color: "#f59e0b" }}>
+                                  <div style={{ marginTop: 6, fontSize: 10, color: "var(--pw-status-warning)" }}>
                                     Missing from all beats: {orphanChars.map(c => c.name).join(", ")}
                                   </div>
                                 )}
@@ -20577,7 +20836,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
                           {/* Variation picker */}
                           {spineVariations && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose a variation:</div>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 {spineVariations.map((v, vi) => (
@@ -20609,7 +20868,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   <div key={beat.id} style={{
                                     border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: isExpanded ? "10px 12px" : "8px 12px",
                                     background: isExpanded ? "var(--pw-surface-alt)" : "transparent",
-                                    borderLeft: `3px solid ${beat.act === 1 ? "#3b82f6" : beat.act === 2 ? "#f59e0b" : "#ef4444"}`,
+                                    borderLeft: `3px solid ${beat.act === 1 ? "var(--pw-status-info)" : beat.act === 2 ? "var(--pw-status-warning)" : "var(--pw-status-danger)"}`,
                                   }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                       <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
@@ -20622,7 +20881,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           updatePlotSpine({ beats: b.map((x, i) => ({ ...x, sortOrder: i })) });
                                         }} style={{ background: "none", border: "none", fontSize: 10, opacity: idx === beats.length - 1 ? 0.2 : 0.5, cursor: idx === beats.length - 1 ? "default" : "pointer", padding: 0, color: "var(--pw-text-dim)" }}>▼</button>
                                       </div>
-                                      <span style={{ fontSize: 10, fontWeight: 700, color: beat.act === 1 ? "#3b82f6" : beat.act === 2 ? "#f59e0b" : "#ef4444", flexShrink: 0 }}>Act {beat.act}</span>
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: beat.act === 1 ? "var(--pw-status-info)" : beat.act === 2 ? "var(--pw-status-warning)" : "var(--pw-status-danger)", flexShrink: 0 }}>Act {beat.act}</span>
                                       <button type="button" onClick={() => setSpineExpandedId(isExpanded ? null : beat.id)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--pw-text)", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>
                                         {beat.title || "Untitled beat"}
                                       </button>
@@ -20669,7 +20928,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                                   updatePlotSpine({ beats: beats.map(b => b.id === beat.id ? { ...b, characterIds: ids } : b) });
                                                 }} style={{
                                                   fontSize: 11, padding: "2px 8px", borderRadius: 12,
-                                                  background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)",
+                                                  background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface)",
                                                   border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`,
                                                   color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400,
                                                 }}>{c.name}</button>
@@ -20777,7 +21036,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           </div>
 
                           {spineSubplotSuggestions && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Suggested subplots:</div>
                               {spineSubplotSuggestions.map((s) => (
                                 <div key={s.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--pw-border-light)" }}>
@@ -20805,7 +21064,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                               {subplots.map((sp) => {
                                 const isExpanded = spineExpandedId === sp.id;
-                                const statusColors = { setup: "#3b82f6", developing: "#f59e0b", climax: "#ef4444", resolved: "#22c55e" };
+                                const statusColors = { setup: "var(--pw-status-info)", developing: "var(--pw-status-warning)", climax: "var(--pw-status-danger)", resolved: "var(--pw-status-success)" };
                                 return (
                                   <div key={sp.id} style={{ border: "1px solid var(--pw-border-light)", borderRadius: 8, padding: isExpanded ? "10px 12px" : "8px 12px", background: isExpanded ? "var(--pw-surface-alt)" : "transparent" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -20832,7 +21091,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {storyCharacters.map(c => {
                                               const active = sp.characterIds.includes(c.id);
-                                              return <button key={c.id} type="button" onClick={() => { const ids = active ? sp.characterIds.filter(x => x !== c.id) : [...sp.characterIds, c.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, characterIds: ids } : s) }); }} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{c.name}</button>;
+                                              return <button key={c.id} type="button" onClick={() => { const ids = active ? sp.characterIds.filter(x => x !== c.id) : [...sp.characterIds, c.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, characterIds: ids } : s) }); }} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{c.name}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -20841,7 +21100,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {beats.map(b => {
                                               const active = sp.linkedBeatIds.includes(b.id);
-                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? sp.linkedBeatIds.filter(x => x !== b.id) : [...sp.linkedBeatIds, b.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, linkedBeatIds: ids } : s) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{b.title || "Untitled"}</button>;
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? sp.linkedBeatIds.filter(x => x !== b.id) : [...sp.linkedBeatIds, b.id]; updatePlotSpine({ subplots: subplots.map(s => s.id === sp.id ? { ...s, linkedBeatIds: ids } : s) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{b.title || "Untitled"}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -20928,7 +21187,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           </div>
 
                           {spineArcSuggestions && (
-                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" }}>
+                            <div style={{ marginBottom: 16, padding: 12, background: "rgba(var(--accent-rgb), 0.06)", borderRadius: 10, border: "1px solid rgba(var(--accent-rgb), 0.2)" }}>
                               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--pw-text)" }}>Choose an arc for each character:</div>
                               {spineArcSuggestions.map((group) => (
                                 <div key={group.characterId} style={{ marginBottom: 12 }}>
@@ -20996,7 +21255,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                             {beats.map(b => {
                                               const active = arc.turningPointBeatIds.includes(b.id);
-                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? arc.turningPointBeatIds.filter(x => x !== b.id) : [...arc.turningPointBeatIds, b.id]; updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, turningPointBeatIds: ids } : a) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{active ? "★ " : ""}{b.title || "Untitled"}</button>;
+                                              return <button key={b.id} type="button" onClick={() => { const ids = active ? arc.turningPointBeatIds.filter(x => x !== b.id) : [...arc.turningPointBeatIds, b.id]; updatePlotSpine({ characterArcs: arcs.map(a => a.id === arc.id ? { ...a, turningPointBeatIds: ids } : a) }); }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: active ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-surface)", border: `1px solid ${active ? "var(--pw-accent)" : "var(--pw-border-light)"}`, color: active ? "var(--pw-accent)" : "var(--pw-text-dim)", cursor: "pointer", fontWeight: active ? 600 : 400 }}>{active ? "★ " : ""}{b.title || "Untitled"}</button>;
                                             })}
                                           </div>
                                         </div>
@@ -21018,9 +21277,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     {/* ── Top bar: title + actions ── */}
                     <div className="pw-bible-flex-head pw-bolton-head">
                       <div>
-                        <h3>Bolt-Ons</h3>
+                        <h3>Writing guides</h3>
                         <p className="pw-bible-section-note">
-                          Craft directives for the AI. Build, use packs, or load from library.
+                          Short directives that shape how the AI writes a scene. Create your own, add from collections, or use saved guides.
                         </p>
                       </div>
                       <div className="pw-bolton-actions-row">
@@ -21029,7 +21288,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           className="pw-bolton-add-btn pw-bolton-add-primary"
                           disabled={allBoltons.length >= 10}
                           onClick={() => addBolton()}
-                          title="Add new bolt-on"
+                          title="Create a new writing guide"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                           Create
@@ -21038,19 +21297,19 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           type="button"
                           className="pw-bolton-add-btn"
                           onClick={() => setWritingPacksOpen(true)}
-                          title="Browse packs"
+                          title="Add from collections"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                          Packs
+                          Collections
                         </button>
                         <button
                           type="button"
                           className="pw-bolton-add-btn"
                           onClick={() => setBoltonLibraryOpen(true)}
-                          title={`Library (${boltonLibraryCount} saved)`}
+                          title={`Saved guides (${boltonLibraryCount})`}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-                          Library {boltonLibraryCount > 0 && <span className="pw-bolton-badge">{boltonLibraryCount}</span>}
+                          Saved {boltonLibraryCount > 0 && <span className="pw-bolton-badge">{boltonLibraryCount}</span>}
                         </button>
                       </div>
                     </div>
@@ -21079,7 +21338,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Bolt-On Library</h3>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Saved guides</h3>
                               </div>
                               <button type="button" onClick={() => setBoltonLibraryOpen(false)} style={{
                                 background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
@@ -21088,7 +21347,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               }}>&times;</button>
                             </div>
                             <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-                              Your saved bolt-ons — available across all novels.
+                              Guides you've saved — use them in any novel.
                             </p>
                           </div>
 
@@ -21100,8 +21359,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             if (library.length === 0) return (
                               <div style={{ textAlign: "center", padding: "40px 0", opacity: 0.4 }}>
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                <p style={{ fontWeight: 600, marginBottom: 4 }}>Library is empty</p>
-                                <p style={{ fontSize: 12 }}>Build a bolt-on and it auto-saves here. Star to favourite.</p>
+                                <p style={{ fontWeight: 600, marginBottom: 4 }}>No saved guides yet</p>
+                                <p style={{ fontSize: 12 }}>Create a guide in Writing guides and it'll appear here. Star your favourites.</p>
                               </div>
                             );
                             return (
@@ -21113,12 +21372,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                     <div key={origIdx} style={{
                                       display: "flex", alignItems: "center", gap: 12,
                                       padding: "10px 12px", borderRadius: 10,
-                                      background: item.favourite ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "var(--pw-overlay-bg)",
-                                      border: item.favourite ? "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)" : "1px solid var(--pw-border-light)",
+                                      background: item.favourite ? "rgba(var(--accent-rgb), 0.06)" : "var(--pw-overlay-bg)",
+                                      border: item.favourite ? "1px solid rgba(var(--accent-rgb), 0.2)" : "1px solid var(--pw-border-light)",
                                       transition: "background 0.15s, border-color 0.15s",
                                     }}
                                       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--pw-overlay-bg-hover)"; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.background = item.favourite ? "rgba(var(--accent-rgb, 124,92,252), 0.06)" : "var(--pw-overlay-bg)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = item.favourite ? "rgba(var(--accent-rgb), 0.06)" : "var(--pw-overlay-bg)"; }}
                                     >
                                       {/* Favourite star */}
                                       <button
@@ -21137,7 +21396,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       {/* Icon */}
                                       <div style={{
                                         width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                                        background: item.prompt ? "rgba(124,92,252,0.1)" : "var(--pw-overlay-bg)",
+                                        background: item.prompt ? "rgba(var(--accent-rgb), 0.1)" : "var(--pw-overlay-bg)",
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                       }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill={item.prompt ? "var(--pw-accent)" : "none"} stroke={item.prompt ? "var(--pw-accent)" : "var(--pw-text-dim)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -21227,12 +21486,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         <div className="pw-bolton-empty-icon">
                           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                         </div>
-                        <p style={{ fontWeight: 500, marginBottom: 4 }}>No bolt-ons yet</p>
+                        <p style={{ fontWeight: 500, marginBottom: 4 }}>No writing guides yet</p>
                         <p style={{ fontSize: 12, opacity: 0.6 }}>Click Create to add one, or use Packs and Library. Describe what you want and hit Build.</p>
                       </div>
                     ) : visibleBoltons.length === 0 ? (
                       <div className="pw-bolton-empty">
-                        <p>No bolt-ons in this category.</p>
+                        <p>No guides in this category.</p>
                       </div>
                     ) : (
                       <div className="pw-bolton-grid">
@@ -21251,7 +21510,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               </button>
                               <input
                                 className="pw-bolton-card-title"
-                                placeholder={bolton.prompt ? "Untitled bolt-on" : "Title (auto-generated on build)"}
+                                placeholder={bolton.prompt ? "Untitled guide" : "Title (auto-generated on build)"}
                                 maxLength={40}
                                 value={bolton.title}
                                 onChange={(e) => updateBolton(bolton.id, { title: e.target.value })}
@@ -21269,7 +21528,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   </option>
                                 ))}
                               </select>
-                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Delete bolt-on">
+                              <button type="button" className="pw-bolton-remove" onClick={() => removeBolton(bolton.id)} title="Remove guide">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                               </button>
                             </div>
@@ -21357,7 +21616,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--pw-text)" }}>
                             {sourcedNotes.map((n, i) => {
-                              const strengthColor: Record<string, string> = { primary: "#22c55e", secondary: "#60a5fa", anecdotal: "#f59e0b", unverified: "#ef4444" };
+                              const strengthColor: Record<string, string> = { primary: "var(--pw-status-success)", secondary: "var(--pw-accent)", anecdotal: "var(--pw-status-warning)", unverified: "var(--pw-status-danger)" };
                               return (
                                 <div key={n.id} style={{ display: "flex", alignItems: "baseline", gap: 6, padding: "3px 0" }}>
                                   <span style={{ color: "var(--pw-text-dim)", fontSize: 11, minWidth: 20 }}>{i + 1}.</span>
@@ -21522,7 +21781,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     </div>
                     <div className="pw-style-meta-card">
                       <div className="pw-style-card-head">
-                        <span>{isNF ? "Category & Tone" : "Genre & Tone"}</span>
+                        <span>{isNF ? "Category" : "Genre"}</span>
                         <p>These tags define the target reading experience for your canon voice.</p>
                       </div>
                     <div className="pw-bible-genre-picker">
@@ -21585,24 +21844,6 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         ))
                       )}
                     </div>
-                    <label className="pw-style-meta-label">Tone tags</label>
-                    <input
-                      className="pw-bible-input"
-                      maxLength={SUMMARY_LIST_INPUT_MAX}
-                      placeholder={isNF ? (nfData?.nfCategory === "biography" ? "e.g. intimate, candid, nostalgic, unflinching, warm, bittersweet" : "e.g. authoritative, urgent, measured, revelatory, empathetic, gripping") : "e.g. dark, witty, suspenseful, atmospheric..."}
-                      value={novel.storyBible.summary.tone.join(", ")}
-                      onChange={(event) =>
-                        updateStoryBible({
-                          summary: {
-                            ...novel.storyBible.summary,
-                            tone: event.target.value
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          },
-                        })
-                      }
-                    />
                     </div>
                     <div className="pw-style-writing-card">
                       <div className="pw-style-card-head">
@@ -21800,7 +22041,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   const act3 = spineBeats.filter(b => b.act === 3).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
                   const spineDone = spineBeats.length >= 6 && act1.length > 0 && act2.length > 0 && act3.length > 0;
                   const actColors = ["#4a7ba7", "#c76b1a", "#2d8a6e"] as const;
-                  const subplotColors = ["#8b5cf6", "#ec4899", "#06b6d4", "#f59e0b", "#22c55e"] as const;
+                  const subplotColors = ["#8b6914", "#a67c18", "#c9a227", "var(--pw-status-warning)", "var(--pw-status-success)"] as const;
                   const getCharName = (id: string) => chars.find(c => c.id === id)?.name ?? "?";
                   const beatIdToSubplotIds = new Map<string, string[]>();
                   subplots.forEach((sp, i) => {
@@ -21847,7 +22088,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 ) : null;
                               })}
                               {arcChars.map(cid => (
-                                <span key={cid} style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(124,92,252,0.15)", color: "var(--pw-accent)", border: "1px solid rgba(124,92,252,0.4)" }}>
+                                <span key={cid} style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.15)", color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb), 0.4)" }}>
                                   arc: {getCharName(cid)}
                                 </span>
                               ))}
@@ -21863,7 +22104,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           )}
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                             {[...new Set(beat.characterIds)].map(id => (
-                              <span key={id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "var(--pw-accent-light, rgba(124,92,252,0.12))", color: "var(--pw-accent)", fontWeight: 600 }}>
+                              <span key={id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "var(--pw-accent-light)", color: "var(--pw-accent)", fontWeight: 600 }}>
                                 {getCharName(id)}
                               </span>
                             ))}
@@ -21873,7 +22114,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               </span>
                             )}
                             {beat.tension >= 4 && (
-                              <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontWeight: 600 }}>
+                              <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "var(--pw-status-danger)", fontWeight: 600 }}>
                                 tension {beat.tension}
                               </span>
                             )}
@@ -21961,7 +22202,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                       <>
                                         <span style={{ color: "var(--pw-text-dim)", fontSize: 11 }}>@</span>
                                         {turnBeats.map(b => (
-                                          <span key={b.id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "rgba(124,92,252,0.1)", border: "1px solid rgba(124,92,252,0.3)", color: "var(--pw-accent)" }}>
+                                          <span key={b.id} style={{ fontSize: 10, padding: "4px 8px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.1)", border: "1px solid rgba(var(--accent-rgb), 0.3)", color: "var(--pw-accent)" }}>
                                             {b.title || "Beat"}
                                           </span>
                                         ))}
@@ -21983,7 +22224,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 {bibleSection === "nf-about" && isNF && (
                   <div className="pw-bible-section">
                     <h3>{nfData?.nfCategory === "biography" ? "About This Life Story" : "About This Book"}</h3>
-                    <p className="pw-field-help" style={{ marginBottom: 12 }}>{nfData?.nfCategory === "biography" ? "Tell us about the life you\u2019re writing. This shapes how AI helps you capture memories and build your narrative." : "Tell us about your book. This shapes how AI helps you organise research and structure your narrative."}</p>
+                    <p className="pw-field-help" style={{ marginBottom: 12 }}>
+                      {nfData?.nfCategory === "biography"
+                        ? "Who is this about, and what's the heart of the story? This shapes the Life Interview and how your memories become chapters."
+                        : "What's the subject, era, and angle? This shapes the Researcher, Era Research, and how your material becomes a narrative."}
+                    </p>
 
                     <label>Type of Non-Fiction</label>
                     <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid var(--pw-border)", marginBottom: 12 }}>
@@ -22012,6 +22257,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         >{st.label}</button>
                       ))}
                     </div>
+                    {nfData?.nfCategory === "other" && (
+                      <p className="pw-field-help" style={{ marginTop: -4, marginBottom: 12, fontSize: 11 }}>
+                        {nfData?.subtype === "historical" ? "Tip: Use Era Research (below) to ground the period with sources." :
+                         nfData?.subtype === "true-crime" ? "Tip: Focus on evidence and timeline; the Co-Author helps with sensitivity and structure." :
+                         nfData?.subtype === "investigative" ? "Tip: Keep sources clear in the Researcher; they feed into your notes and narrative." : null}
+                      </p>
+                    )}
 
                     <label>{nfData?.nfCategory === "biography" ? "Subject Name" : nfData?.subtype === "true-crime" ? "Case / Subject Name" : nfData?.subtype === "historical" ? "Event / Subject Name" : "Subject Name"}</label>
                     <input className="pw-bible-input" maxLength={120}
@@ -22206,7 +22458,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           </button>
                         </div>
                         <p className="pw-field-help" style={{ marginTop: 0 }}>
-                          Pulls source-backed notes (with links), organises context by theme, and makes notes attachable to life events.
+                          Searches Wikipedia, Open Library, and Internet Archive for your era and setting. Fills cultural context, historical events, technology, and media — with source links you can cite. Edit the fields below or attach notes to life events.
                         </p>
                       </div>
                     )}
@@ -22227,7 +22479,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   <strong style={{ fontSize: 12 }}>{note.title}</strong>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                                     {typeof note.confidence === "number" && (
-                                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: "rgba(var(--accent-rgb, 124,92,252), 0.12)", color: "var(--pw-accent)" }}>
+                                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: "rgba(var(--accent-rgb), 0.12)", color: "var(--pw-accent)" }}>
                                         match {note.confidence}%
                                       </span>
                                     )}
@@ -22337,8 +22589,14 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
                                   existing ? `Already recorded: ${existing}` : "",
                                 ].filter(Boolean).join("\n");
-                                const prompt = `Based on this memoir/biography context, suggest 5 life events that would make compelling chapters. Return JSON array of objects with fields: title, date (approximate), description (2-3 sentences), emotion (one word), impact (one sentence).\n\nContext:\n${ctx}`;
-                                const result = await requestOpenRouterJson<Array<{ title: string; date?: string; description?: string; emotion?: string; impact?: string }>>(prompt, 1200, { systemMessage: "You are a memoir writing assistant. Return only valid JSON. Suggest meaningful life events based on the context provided. Focus on universal human experiences — milestones, turning points, losses, discoveries." });
+                                const isLifeStory = nfData?.nfCategory === "biography";
+                                const suggestPrompt = isLifeStory
+                                  ? `Based on this memoir/biography context, suggest 5 life events that would make compelling chapters. Return JSON array of objects with fields: title, date (approximate), description (2-3 sentences), emotion (one word), impact (one sentence).\n\nContext:\n${ctx}`
+                                  : `Based on this ${nfData?.subtype === "true-crime" ? "true crime" : nfData?.subtype === "historical" ? "historical" : "investigative"} non-fiction context, suggest 5 key events that would form strong chapters (milestones, turning points, revelations). Return JSON array of objects with fields: title, date (approximate when relevant), description (2-3 sentences), emotion (one word, e.g. tension, revelation), impact (one sentence).\n\nContext:\n${ctx}`;
+                                const suggestSystem = isLifeStory
+                                  ? "You are a memoir writing assistant. Return only valid JSON. Suggest meaningful life events — milestones, turning points, losses, discoveries."
+                                  : "You are a non-fiction structure assistant. Return only valid JSON. Suggest key narrative events based on the context — evidence, revelations, historical turning points, or investigation milestones.";
+                                const result = await requestOpenRouterJson<Array<{ title: string; date?: string; description?: string; emotion?: string; impact?: string }>>(suggestPrompt, 1200, { systemMessage: suggestSystem });
                                 if (Array.isArray(result) && result.length > 0) {
                                   const newEvents: LifeEvent[] = result.map((r, i) => ({
                                     id: createEntityId("le"),
@@ -22545,7 +22803,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             {linkedEraNotes.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 {linkedEraNotes.map((note) => (
-                                  <span key={note.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(var(--accent-rgb, 124,92,252), 0.1)", color: "var(--pw-accent)" }}>
+                                  <span key={note.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(var(--accent-rgb), 0.1)", color: "var(--pw-accent)" }}>
                                     {note.title}
                                     <button
                                       type="button"
@@ -22650,7 +22908,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           {(() => {
                             const phase = nfData?.interviewPhase || "big-picture";
                             const phaseLabels: Record<string, string> = { "big-picture": "Big Picture", "deep-dive": "Deep Dive", "connections": "Connections", "reflection": "Reflection" };
-                            const phaseColors: Record<string, string> = { "big-picture": "#60a5fa", "deep-dive": "#a78bfa", "connections": "#34d399", "reflection": "#f59e0b" };
+                            const phaseColors: Record<string, string> = { "big-picture": "var(--pw-accent)", "deep-dive": "var(--pw-accent)", "connections": "var(--pw-status-success)", "reflection": "var(--pw-status-warning)" };
                             return <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: `${phaseColors[phase] || "#60a5fa"}20`, color: phaseColors[phase] || "#60a5fa", textTransform: "uppercase", letterSpacing: "0.04em" }}>Phase: {phaseLabels[phase] || phase}</span>;
                           })()}
                         </div>
@@ -22671,14 +22929,14 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               try {
                                 const transcript = (nfData?.interviewTranscript ?? []).map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
                                 const prompt = [
-                                  "Extract structured memoir data from this interview transcript. Return JSON with:",
-                                  '{ "lifeEvents": [{ "title": "...", "date": "...", "description": "...", "emotion": "...", "impact": "...", "people": ["..."], "places": ["..."] }],',
+                                  "Extract structured data from this interview transcript. Return JSON with:",
+                                  '{ "lifeEvents": [{ "title": "short concrete title", "date": "when given", "description": "what happened in their words", "emotion": "one word", "impact": "why it mattered", "people": ["names only when stated"], "places": ["when stated"] }],',
                                   '  "characters": [{ "name": "...", "role": "...", "description": "..." }],',
                                   '  "locations": [{ "name": "...", "description": "..." }],',
-                                  '  "scrapbookSuggestions": [{ "title": "...", "content": "A short vivid story or memory based on what was shared (2-4 sentences)", "linkedEventTitle": "..." }],',
-                                  '  "synopsis": "A 2-3 sentence synopsis of the overall story",',
+                                  '  "scrapbookSuggestions": [{ "title": "...", "content": "2-4 sentences in narrative form, preserving their phrasing where vivid", "linkedEventTitle": "..." }],',
+                                  '  "synopsis": "2-3 sentence overall story",',
                                   '  "themes": ["theme1", "theme2"] }',
-                                  "For scrapbookSuggestions: only create entries for events with rich, vivid detail — transform the interviewee's words into a short narrative memory.",
+                                  "Rules: Extract only what was explicitly said or clearly implied. Use concrete dates and names when the interviewee gave them. For scrapbookSuggestions, only create entries where they shared enough detail to write a short scene; preserve their exact words when memorable.",
                                   "",
                                   `Transcript:\n${transcript.slice(0, 8000)}`,
                                 ].join("\n");
@@ -22689,7 +22947,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   scrapbookSuggestions?: Array<{ title: string; content?: string; linkedEventTitle?: string }>;
                                   synopsis?: string;
                                   themes?: string[];
-                                }>(prompt, 3000, { systemMessage: "You are a memoir data extraction assistant. Extract all named people, places, events, themes, and create vivid scrapbook memories from the transcript. Return valid JSON only." });
+                                }>(prompt, 3000, { systemMessage: "You are a memoir/biography extraction assistant. Extract only what appears in the transcript. Preserve specific names, dates, and the interviewee's vivid phrases. Return valid JSON only. Do not invent events or details." });
                                 mutateNovel((n) => {
                                   const nf = { ...n.storyBible.nonfiction! };
                                   const newEventIds: Record<string, string> = {};
@@ -22781,8 +23039,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "8px 0", minHeight: 200, maxHeight: 400 }}>
                       {(nfData?.interviewTranscript ?? []).length === 0 && (
                         <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--pw-text-dim)" }}>
-                          <p style={{ fontSize: 14, marginBottom: 8 }}>Ready for your life interview</p>
-                          <p style={{ fontSize: 12 }}>Type a message or click &quot;Start Interview&quot; to let AI guide you through your story.</p>
+                          <p style={{ fontSize: 14, marginBottom: 8 }}>Ready when you are</p>
+                          <p style={{ fontSize: 12 }}>Click &quot;Start Interview&quot; for a first question, or type anything to begin. The AI will follow your lead and dig into the details that matter.</p>
                         </div>
                       )}
                       {(nfData?.interviewTranscript ?? []).map((msg, i) => (
@@ -22808,11 +23066,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       return (
                         <div style={{
                           padding: "10px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 10,
-                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
-                          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                          background: "rgba(var(--accent-rgb), 0.08)",
+                          border: "1px solid rgba(var(--accent-rgb), 0.2)",
                         }}>
                           <span style={{ flex: 1, fontSize: 12, fontWeight: 550, color: "var(--pw-text)" }}>
-                            You&apos;ve shared a lot — save to Canon so nothing gets lost?
+                            You&apos;ve shared a lot — extract to Canon so events, people, and scrapbook ideas are saved?
                           </span>
                           <button type="button" className="pw-ai-mini-btn" disabled={storyAiBusyAction !== null}
                             onClick={async () => {
@@ -22824,13 +23082,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 const newMsgs = (nfData?.interviewTranscript ?? []).slice(ck);
                                 const transcript = newMsgs.map(m => `${m.role === "ai" ? "Interviewer" : "Subject"}: ${m.text}`).join("\n");
                                 const prompt = [
-                                  "Extract structured memoir data from this interview transcript. Return JSON with:",
-                                  '{ "lifeEvents": [{ "title": "...", "date": "...", "description": "...", "emotion": "...", "impact": "...", "people": ["..."], "places": ["..."] }],',
+                                  "Extract structured data from this interview transcript. Return JSON with:",
+                                  '{ "lifeEvents": [{ "title": "short concrete title", "date": "when given", "description": "what happened", "emotion": "one word", "impact": "why it mattered", "people": ["names when stated"], "places": ["when stated"] }],',
                                   '  "characters": [{ "name": "...", "role": "...", "description": "..." }],',
                                   '  "locations": [{ "name": "...", "description": "..." }],',
-                                  '  "scrapbookSuggestions": [{ "title": "...", "content": "A short vivid story or memory based on what was shared (2-4 sentences)", "linkedEventTitle": "..." }],',
+                                  '  "scrapbookSuggestions": [{ "title": "...", "content": "2-4 sentences narrative, preserve their phrasing when vivid", "linkedEventTitle": "..." }],',
                                   '  "themes": ["theme1", "theme2"] }',
-                                  "For scrapbookSuggestions: only create entries for events that have rich, vivid detail in the interview — transform the interviewee's words into a short narrative memory.",
+                                  "Extract only what was stated or clearly implied. Use concrete dates/names when given. ScrapbookSuggestions only for moments with enough detail; preserve memorable wording.",
                                   "",
                                   `Transcript:\n${transcript.slice(0, 8000)}`,
                                 ].join("\n");
@@ -22840,7 +23098,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   locations?: Array<{ name: string; description?: string }>;
                                   scrapbookSuggestions?: Array<{ title: string; content?: string; linkedEventTitle?: string }>;
                                   themes?: string[];
-                                }>(prompt, 3000, { systemMessage: "You are a memoir data extraction assistant. Extract all named people, places, events, themes, and create vivid scrapbook memories from the transcript. Return valid JSON only." });
+                                }>(prompt, 3000, { systemMessage: "Memoir/biography extraction. Extract only what appears in the transcript. Preserve names, dates, and vivid phrases. Valid JSON only. Do not invent details." });
                                 mutateNovel((n) => {
                                   const nf = { ...n.storyBible.nonfiction! };
                                   const newEventIds: Record<string, string> = {};
@@ -22924,8 +23182,18 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 nfData?.era ? `Era: ${nfData.era}` : "",
                                 nfData?.centralTheme ? `Theme: ${nfData.centralTheme}` : "",
                               ].filter(Boolean).join(". ");
-                              const subtypeHint = nfData?.subtype === "true-crime" ? "a true crime case" : nfData?.subtype === "historical" ? "a historical event" : nfData?.subtype === "investigative" ? "an investigation" : nfData?.subtype === "biography" ? "someone's life story" : "their life";
-                              const prompt = `You are starting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` about: ${ctx}` : ""}. Ask an engaging opening question to get the author talking about ${subtypeHint}. Be warm, conversational, and curious. Just the question, 2-3 sentences max.`;
+                              const openingGuidance = nfData?.subtype === "memoir"
+                                ? "Ask one opening question that invites them into a specific memory — e.g. the first moment that comes to mind when they think about their childhood, or one person who shaped them, or the place that still feels like home. Warm and inviting; no generic 'tell me about your life'."
+                                : nfData?.subtype === "biography"
+                                ? "Ask one opening question that uncovers why this story matters — the moment they knew they had to tell it, or the first thing they learned about the subject that surprised them. Curious and respectful."
+                                : nfData?.subtype === "true-crime"
+                                ? "Ask one opening question that draws them into the case — how they first encountered it, or the detail that still haunts them. Direct but not sensational."
+                                : nfData?.subtype === "historical"
+                                ? "Ask one opening question that finds the human story — who was at the centre of the events, or what it felt like to live through that time. Ground the history in people."
+                                : nfData?.subtype === "investigative"
+                                ? "Ask one opening question that gets to the heart of the investigation — what first sparked it, or the breakthrough that changed everything. Focused and precise."
+                                : "Ask one engaging opening question that gets them talking about their story. Warm, conversational, specific.";
+                              const prompt = `You are starting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` (${ctx})` : ""}. ${openingGuidance} Output only the interviewer's question — 2-3 sentences, no preamble.`;
                               const res = await requestOpenRouterText(prompt, 200);
                               const aiText = typeof res === "string" ? res.trim() : "";
                               if (aiText) {
@@ -22973,12 +23241,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             ];
                             const randomPrompt = memoryPrompts[Math.floor(Math.random() * memoryPrompts.length)];
                             const phaseGuidance = newPhase === "big-picture"
-                              ? "PHASE: BIG PICTURE. Ask broad, open questions about their life story. Where did they grow up? What shaped them? What are the major chapters of their life? Help them sketch the full landscape before drilling into details."
+                              ? "PHASE: BIG PICTURE. Ask one clear question that maps the landscape: origins, turning points, or the major chapters of their story. Reference something they just said so the question feels connected. No generic lists — one question per turn."
                               : newPhase === "deep-dive"
-                              ? `PHASE: DEEP DIVE. The subject has shared the broad strokes. Now drill into specific moments they mentioned. Ask them to take you back to a particular moment — what they saw, heard, felt, smelled. Push for vivid sensory detail and specific dialogue.${existingEvents.length > 0 ? ` Events mentioned so far: ${existingEvents.slice(0, 8).join(", ")}.` : ""} Pick one they haven't fully explored and ask them to relive it.`
+                              ? `PHASE: DEEP DIVE. They've sketched the outline. Choose one moment they mentioned and ask them to take you there — what they saw, heard, said, felt. Push for one specific sensory detail or line of dialogue.${existingEvents.length > 0 ? ` Moments mentioned: ${existingEvents.slice(0, 8).join(", ")}. Pick one that hasn't been fully brought to life yet.` : ""}`
                               : newPhase === "connections"
-                              ? `PHASE: CONNECTIONS. The subject has shared many individual stories. Now help them find the threads between events. Ask how one event led to another. Look for patterns — recurring people, repeated decisions, consequences that echoed years later.${existingEvents.length > 1 ? ` Events so far: ${existingEvents.slice(0, 10).join(", ")}.` : ""} Ask: "Do you see a connection between [event A] and [event B]?"`
-                              : "PHASE: REFLECTION. The subject has shared extensively. Now guide them toward meaning and theme. Ask: What would you want a reader to take away? What did you learn about yourself? If you could tell your younger self one thing, what would it be? Help them find the heart of the story.";
+                              ? `PHASE: CONNECTIONS. Help them see the threads. Ask how one moment led to another, or what pattern they see now. Reference two specific things they shared.${existingEvents.length > 1 ? ` e.g. link: ${existingEvents.slice(0, 6).join(", ")}.` : ""} One question only — make it specific, not vague.`
+                              : "PHASE: REFLECTION. Move toward meaning. Ask what they want a reader to take away, or what they'd tell their younger self, or when they finally understood something. One question; keep it personal and direct.";
                             const prompt = [
                               `You're conducting an interview for a ${nfData?.subtype || "memoir"} book${ctx ? ` (${ctx})` : ""}.`,
                               phaseGuidance,
@@ -22988,7 +23256,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 : nfData?.subtype === "investigative" ? "Based on what the author said, dig deeper into the evidence, the sources, and the revelations. Ask what they discovered next."
                                 : "Based on what the subject just said, respond with empathy (1 sentence), then ask a follow-up question that digs deeper.",
                               newPhase === "deep-dive" ? `Weave in a sensory memory prompt like: "${randomPrompt}"` : "",
-                              "Keep it natural — like a skilled biographer who's genuinely curious. 2-4 sentences max.",
+                              "Respond as a single interviewer question. Natural, curious, no filler. 2-4 sentences max. Do not repeat what they said; ask the next thing.",
                               `\nRecent conversation:\n${recent}`,
                             ].filter(Boolean).join("\n");
                             const res = await requestOpenRouterText(prompt, 300);
@@ -23034,8 +23302,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   <div className="pw-bible-section">
                     <div className="pw-bible-flex-head">
                       <div>
-                        <h3>Emotional Timeline</h3>
-                        <p className="pw-field-help" style={{ marginBottom: 0 }}>Visualise the emotional arc. Click any event to expand. Toggle between narrative and chronological order.</p>
+                        <h3>{nfData?.nfCategory === "biography" ? "Emotional Timeline" : "Timeline"}</h3>
+                        <p className="pw-field-help" style={{ marginBottom: 0 }}>
+                          {nfData?.nfCategory === "biography"
+                            ? "Visualise the emotional arc of the life story. Click any event to expand. Toggle narrative or chronological order."
+                            : "Visualise the sequence of events. Click any event to expand. Toggle narrative or chronological order."}
+                        </p>
                       </div>
                       <button type="button" className="pw-ai-mini-btn" onClick={() => {
                         updateNfData({ timelineSortChron: !(nfData?.timelineSortChron ?? false) });
@@ -23044,7 +23316,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
                     {rawEvents.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
-                        <p style={{ fontSize: 14 }}>Add Life Events first to see the emotional timeline.</p>
+                        <p style={{ fontSize: 14 }}>{nfData?.nfCategory === "biography" ? "Add Life Events first to see the emotional timeline." : "Add Key Events first to see the timeline."}</p>
                       </div>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 12 }}>
@@ -23055,7 +23327,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             const emotionKey = evt.emotion.toLowerCase().trim();
                             const val = emotionValues[emotionKey] ?? 0;
                             const pct = ((val + 5) / 10) * 100;
-                            const color = val > 2 ? "#22c55e" : val > 0 ? "#b8a4ff" : val === 0 ? "#94a3b8" : val > -3 ? "#f59e0b" : "#ef4444";
+                            const color = val > 2 ? "var(--pw-status-success)" : val > 0 ? "var(--pw-accent)" : val === 0 ? "#94a3b8" : val > -3 ? "var(--pw-status-warning)" : "var(--pw-status-danger)";
                             const isExpanded = nfData?.timelineExpandedId === evt.id;
                             items.push(
                               <div key={evt.id}>
@@ -23090,9 +23362,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   <div key={`gap-${idx}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
                                     <span style={{ minWidth: 80 }}></span>
                                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-                                      <div style={{ flex: 1, height: 1, background: "#f59e0b40" }}></div>
-                                      <span style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>~{gap.years} year gap</span>
-                                      <div style={{ flex: 1, height: 1, background: "#f59e0b40" }}></div>
+                                      <div style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--pw-status-warning) 25%, transparent)" }}></div>
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-status-warning)", whiteSpace: "nowrap" }}>~{gap.years} year gap</span>
+                                      <div style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--pw-status-warning) 25%, transparent)" }}></div>
                                     </div>
                                     <span style={{ minWidth: 60 }}></span>
                                   </div>
@@ -23205,7 +23477,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       <div className="pw-bible-flex-head">
                         <div>
                           <h3>Scrapbook</h3>
-                          <p className="pw-field-help">Write short memories or stories linked to life events. These feed into your plan generation.</p>
+                          <p className="pw-field-help">Turn life events into written moments — the scenes only you can tell. Link each to an event; your voice here shapes how the AI writes your chapters.</p>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
                           {!aiOff && lifeEvents.length >= 3 && (
@@ -23257,7 +23529,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       {scrapbook.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--pw-text-dim)" }}>
                           <p style={{ fontSize: 14, marginBottom: 8 }}>No memories yet.</p>
-                          <p style={{ fontSize: 12 }}>Write short stories or memories from your life. Link them to Life Events to build your narrative.</p>
+                          <p style={{ fontSize: 12 }}>Add a memory or scene in your own words. Link it to a Life Event so it feeds into your chapter plan and keeps your voice in the book.</p>
                         </div>
                       ) : (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginTop: 8 }}>
@@ -23307,7 +23579,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       <div className="pw-bible-flex-head">
                         <div>
                           <h3>Researcher</h3>
-                          <p className="pw-field-help">Share your research material — facts, quotes, sources, observations. The AI organises and asks follow-ups. Every 10 messages, key data is extracted to your Canon.</p>
+                          <p className="pw-field-help">Paste facts, quotes, and sources here. The AI will ask for citations when you add a quote, spot connections, and help structure your notes. Use &quot;Extract to Canon&quot; every 10+ messages to pull events, people, and research notes into your story.</p>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
                           {!aiOff && chat.length > 0 && (
@@ -23318,9 +23590,13 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                 setStoryAiError(null);
                                 try {
                                   const transcript = chat.map(m => `${m.role === "user" ? "USER" : "AI"}: ${m.text}`).join("\n");
-                                  const prompt = `Extract structured data from this research conversation.\nReturn JSON: { "events": [{ "title":"", "date":"", "description":"", "people":[], "places":[], "emotion":"neutral", "impact":"" }], "people": [{ "name":"", "role":"", "notes":"" }], "places": [{ "name":"", "significance":"" }], "researchNotes": [{ "title":"", "content":"", "source":"", "tags":[] }] }\nOnly use information explicitly stated. Do NOT invent anything.\n\nTranscript:\n${transcript.slice(-6000)}`;
+                                  const prompt = `Extract structured data from this research conversation. Return JSON:
+{ "events": [{ "title":"", "date":"", "description":"", "people":[], "places":[], "emotion":"neutral", "impact":"" }], "people": [{ "name":"", "role":"", "notes":"" }], "places": [{ "name":"", "significance":"" }], "researchNotes": [{ "title":"", "content":"", "source":"(where the user said this came from — book, article, interview)", "tags":[] }] }
+Rules: Use only information explicitly stated. For researchNotes, preserve exact quotes when the user pasted them and always fill "source" if the user mentioned one. Do NOT invent facts or sources.
+
+Transcript:\n${transcript.slice(-6000)}`;
                                   const data = await requestOpenRouterJson<{ events?: Array<Record<string, unknown>>; people?: Array<Record<string, unknown>>; places?: Array<Record<string, unknown>>; researchNotes?: Array<Record<string, unknown>> }>(prompt, 2000, {
-                                    systemMessage: "Non-fiction research extractor. Return valid JSON only. Never invent facts.",
+                                    systemMessage: "Non-fiction research extractor. Extract only what appears in the transcript. Preserve quotes and cite the source when the user gave one. Return valid JSON only. Never invent facts or sources.",
                                   });
                                   if (data) {
                                     mutateNovel((n) => {
@@ -23376,7 +23652,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             </button>
                           )}
                           {chat.length > 0 && (
-                            <button type="button" className="pw-ai-mini-btn" style={{ background: "rgba(239,68,68,0.08)", color: "#ef4444" }}
+                            <button type="button" className="pw-ai-mini-btn" style={{ background: "rgba(220,38,38,0.08)", color: "var(--pw-status-danger)" }}
                               onClick={() => { if (confirm("Clear the entire research chat? This cannot be undone.")) updateNfData({ researchChat: [], researchCheckpointIdx: 0 }); }}>
                               Clear
                             </button>
@@ -23385,7 +23661,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       </div>
 
                       {needsCheckpoint && !aiOff && (
-                        <div style={{ background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.15)", borderRadius: 8, padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--pw-text-dim)" }}>
+                        <div style={{ background: "rgba(var(--accent-rgb), 0.06)", border: "1px solid rgba(var(--accent-rgb), 0.15)", borderRadius: 8, padding: "8px 14px", marginBottom: 8, fontSize: 12, color: "var(--pw-text-dim)" }}>
                           Checkpoint reached ({userMsgCount} messages). Click &quot;Extract to Canon&quot; to pull key data into your story.
                         </div>
                       )}
@@ -23401,8 +23677,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           <div key={i} style={{
                             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
                             maxWidth: "80%", padding: "10px 14px", borderRadius: 12, fontSize: 13, lineHeight: 1.6,
-                            background: msg.role === "user" ? "var(--pw-accent-light, rgba(124,92,252,0.08))" : "var(--pw-surface)",
-                            border: `1px solid ${msg.role === "user" ? "rgba(124,92,252,0.15)" : "var(--pw-border-light)"}`,
+                            background: msg.role === "user" ? "var(--pw-accent-light, rgba(var(--accent-rgb), 0.08))" : "var(--pw-surface)",
+                            border: `1px solid ${msg.role === "user" ? "rgba(var(--accent-rgb), 0.15)" : "var(--pw-border-light)"}`,
                             whiteSpace: "pre-wrap",
                           }}>
                             {msg.text}
@@ -23437,7 +23713,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                             if (aiOff) return;
                             setStoryAiBusyAction("nf-research-reply");
                             try {
-                              const sysMsg = "You are a research assistant helping organize non-fiction material. The user will share facts, quotes, sources, and observations. Ask clarifying questions, identify connections, spot gaps in their research, and help them structure their material. NEVER make up facts or do your own research — only work with what the user provides.";
+                              const sysMsg = "You are a research assistant for non-fiction. The user shares facts, quotes, sources, and observations. Your job: reflect back what they shared, ask for the source (book, article, interview) when they paste a quote or fact so it can be cited, spot connections and gaps, and suggest how to structure notes (e.g. by theme or chronology). NEVER invent facts or do your own research — only work with what they provide. Keep replies 2-4 sentences.";
                               const recentHistory = updated.slice(-20).map(m => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.text}`).join("\n\n");
                               const prompt = `${sysMsg}\n\nConversation so far:\n${recentHistory}\n\nRespond to the user's latest message. Be helpful, identify connections, and ask follow-up questions. 2-4 sentences.`;
                               const res = await requestOpenRouterText(prompt, 500);
@@ -23458,7 +23734,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 {/* ═══════════════════ NON-FICTION: RESEARCH NOTES (other) ═══════════════════ */}
                 {bibleSection === "nf-research-notes" && isNF && (() => {
                   const notes = nfData?.researchNotes ?? [];
-                  const strengthColors: Record<string, string> = { primary: "#22c55e", secondary: "#60a5fa", anecdotal: "#f59e0b", unverified: "#ef4444" };
+                  const strengthColors: Record<string, string> = { primary: "var(--pw-status-success)", secondary: "var(--pw-accent)", anecdotal: "var(--pw-status-warning)", unverified: "var(--pw-status-danger)" };
                   return (
                     <div className="pw-bible-section">
                       <div className="pw-bible-flex-head">
@@ -23580,7 +23856,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                               {note.tags.length > 0 && (
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                   {note.tags.map((tag, i) => (
-                                    <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(124,92,252,0.08)", color: "var(--pw-accent)" }}>{tag}</span>
+                                    <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.08)", color: "var(--pw-accent)" }}>{tag}</span>
                                   ))}
                                 </div>
                               )}
@@ -23645,7 +23921,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       <div className="pw-bible-flex-head">
                         <div>
                           <h3>Story Board</h3>
-                          <p className="pw-field-help">Arrange your content into chapters. Cards from events, memories, and research feed directly into plan generation.</p>
+                          <p className="pw-field-help">
+                            {nfData?.nfCategory === "biography"
+                              ? "Arrange your memories and scenes into chapters. Cards from Life Events and the Scrapbook feed into your chapter plan."
+                              : "Arrange your research and narrative beats into chapters. Cards from Key Events and Research Notes feed into your chapter plan."}
+                          </p>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <button type="button" className="pw-ai-mini-btn" onClick={() => {
@@ -23837,10 +24117,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{ textAlign: "center", marginBottom: 16 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
-                background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                background: "rgba(var(--accent-rgb), 0.08)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               </div>
               <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
                 Step 1: Confirm Characters
@@ -23874,8 +24154,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 >
                   <div style={{
                     width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                    border: entry.selected ? "2px solid var(--pw-accent, #b8a4ff)" : "2px solid var(--pw-border, #444)",
-                    background: entry.selected ? "var(--pw-accent, #b8a4ff)" : "transparent",
+                    border: entry.selected ? "2px solid var(--pw-accent)" : "2px solid var(--pw-border, #444)",
+                    background: entry.selected ? "var(--pw-accent)" : "transparent",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     transition: "all 0.15s",
                   }}>
@@ -23891,8 +24171,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   </div>
                   <span style={{
                     fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, flexShrink: 0,
-                    background: entry.role === "Protagonist" ? "rgba(124,92,252,0.12)" : entry.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
-                    color: entry.role === "Protagonist" ? "var(--pw-accent)" : entry.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                    background: entry.role === "Protagonist" ? "rgba(var(--accent-rgb), 0.12)" : entry.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                    color: entry.role === "Protagonist" ? "var(--pw-accent)" : entry.role === "Antagonist" ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
                     textTransform: "uppercase", letterSpacing: "0.03em",
                   }}>{entry.role || "Supporting"}</span>
                 </button>
@@ -23928,10 +24208,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{ textAlign: "center", marginBottom: 16 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12, margin: "0 auto 12px",
-                background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                background: "rgba(var(--accent-rgb), 0.08)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
               <div className="pw-delete-modal-title" style={{ fontSize: 18, fontWeight: 800 }}>
                 Step 2: Generate Profiles?
@@ -23955,8 +24235,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{ch.name}</span>
                     <span style={{
                       fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
-                      background: ch.role === "Protagonist" ? "rgba(124,92,252,0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
-                      color: ch.role === "Protagonist" ? "var(--pw-accent)" : ch.role === "Antagonist" ? "#ef4444" : "var(--pw-text-dim)",
+                      background: ch.role === "Protagonist" ? "rgba(var(--accent-rgb), 0.12)" : ch.role === "Antagonist" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.06)",
+                      color: ch.role === "Protagonist" ? "var(--pw-accent)" : ch.role === "Antagonist" ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
                     }}>{ch.role || "Supporting"}</span>
                   </div>
                 );
@@ -23990,10 +24270,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <div style={{
                 width: 48, height: 48, borderRadius: 14, margin: "0 auto 12px",
-                background: "rgba(var(--pw-accent-rgb,124,92,252),0.10)",
+                background: "rgba(var(--pw-accent-rgb), 0.10)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#b8a4ff)" strokeWidth="2" strokeLinecap="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round">
                   <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
                 </svg>
               </div>
@@ -24009,11 +24289,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               <div style={{ textAlign: "center", padding: "20px 0" }}>
                 <div style={{
                   width: 40, height: 40, borderRadius: 12, margin: "0 auto 12px",
-                  background: "rgba(var(--pw-accent-rgb,124,92,252),0.10)",
+                  background: "rgba(var(--pw-accent-rgb), 0.10)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   animation: "pulse 1.8s ease-in-out infinite",
                 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent,#b8a4ff)" strokeWidth="2" strokeLinecap="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round">
                     <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4m-3.93 7.07l-2.83-2.83M7.76 7.76L4.93 4.93"/>
                   </svg>
                 </div>
@@ -24057,7 +24337,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     onClick={() => void addV2CharacterWithAi(newCharPopup.charId, newCharPopup.description)}
                     style={{
                       padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8,
-                      background: newCharPopup.description.trim() ? "var(--pw-accent, #b8a4ff)" : "rgba(var(--pw-accent-rgb,124,92,252),0.2)",
+                      background: newCharPopup.description.trim() ? "var(--pw-accent)" : "rgba(var(--pw-accent-rgb), 0.2)",
                       border: "none", color: newCharPopup.description.trim() ? "#000" : "var(--pw-text-dim)",
                       cursor: newCharPopup.description.trim() ? "pointer" : "not-allowed",
                       transition: "all 0.15s",
@@ -24108,7 +24388,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: planGenerateTotal > 0
                 ? `${Math.max(4, Math.round(((planGenerateProgressIdx ?? 0) + 1) / planGenerateTotal * 100))}%`
                 : "40%",
@@ -24143,6 +24423,31 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
           {planGenerateTotal === 0 && (
             <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
           )}
+        </div>
+      )}
+
+      {/* ── Summary / Act 1–3 building progress (same “nice” AI loading as plan/doctor) ── */}
+      {(storyAiBusyAction === "summary-autofill" || storyAiBusyAction === "summary-backbuild") && aiBusyLabel && (
+        <div style={{
+          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 99998,
+          minWidth: 320, maxWidth: 480, padding: "14px 18px", background: "var(--pw-surface)",
+          borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", border: "1px solid var(--pw-border-light, rgba(255,255,255,0.08))",
+          display: "flex", flexDirection: "column", gap: 10, animation: "pw-fade-in 0.2s ease-out",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--pw-text)" }}>{aiBusyLabel}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: "var(--pw-surface-alt)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 3, background: "var(--pw-accent)", width: "40%", animation: "pw-gen-indeterminate 1.5s ease-in-out infinite" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{aiBusyDuration} elapsed</span>
+            <button type="button" onClick={() => cancelAiWork()} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "1px solid var(--pw-border)", background: "transparent", color: "var(--pw-text-dim)", cursor: "pointer" }}>Stop</button>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--pw-text-dim)", opacity: 0.7 }}>
+            Building your story structure — don&apos;t close this window.
+          </span>
+          <style>{`@keyframes pw-gen-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
         </div>
       )}
 
@@ -24220,7 +24525,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: "40%",
               animation: "pw-gen-indeterminate 1.5s ease-in-out infinite",
             }} />
@@ -24288,7 +24593,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: chapterBlocksGenProgress.current === 0
                 ? "40%"
                 : `${Math.max(4, Math.round((chapterBlocksGenProgress.current / chapterBlocksGenProgress.total) * 100))}%`,
@@ -24361,7 +24666,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: `${Math.max(4, Math.round((profileGenProgress.done / profileGenProgress.total) * 100))}%`,
               transition: "width 0.4s ease-out",
             }} />
@@ -24426,7 +24731,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: locationGenProgress.phase === "names"
                 ? "40%"
                 : `${Math.max(4, Math.round((locationGenProgress.done / locationGenProgress.total) * 100))}%`,
@@ -24495,7 +24800,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             <div style={{
               height: "100%",
               borderRadius: 3,
-              background: "var(--pw-accent, #b8a4ff)",
+              background: "var(--pw-accent)",
               width: "40%",
               animation: "pw-gen-indeterminate 1.5s ease-in-out infinite",
             }} />
@@ -24549,10 +24854,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
           >
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+              background: "rgba(var(--accent-rgb), 0.08)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
               </svg>
             </div>
@@ -24568,7 +24873,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               {["3 Arc Paths", "Scored & Ranked", "One-Click Apply"].map((pill) => (
                 <span key={pill} style={{
                   fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 8,
-                  background: "rgba(var(--accent-rgb, 124,92,252), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.1)",
+                  background: "rgba(var(--accent-rgb), 0.06)", color: "var(--pw-text-muted)", border: "1px solid rgba(var(--accent-rgb), 0.1)",
                 }}>
                   {pill}
                 </span>
@@ -24595,8 +24900,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "var(--pw-accent, #b8a4ff)", color: "#fff", border: "none",
-                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                  background: "var(--pw-accent)", color: "#fff", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb), 0.2)",
                 }}
               >
                 Generate Plan Paths
@@ -24630,10 +24935,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
           >
             <div style={{
               width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+              background: "rgba(var(--accent-rgb), 0.08)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
                 <circle cx="9" cy="7" r="4"/>
                 <line x1="19" y1="8" x2="19" y2="14"/>
@@ -24656,9 +24961,9 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   <div key={cid} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                      background: "rgba(var(--accent-rgb, 124,92,252), 0.1)",
+                      background: "rgba(var(--accent-rgb), 0.1)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 11, fontWeight: 700, color: "var(--pw-accent, #b8a4ff)",
+                      fontSize: 11, fontWeight: 700, color: "var(--pw-accent)",
                     }}>
                       {(ch.name || "?")[0]}
                     </div>
@@ -24696,8 +25001,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "var(--pw-accent, #b8a4ff)", color: "#fff", border: "none",
-                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb, 124,92,252), 0.2)",
+                  background: "var(--pw-accent)", color: "#fff", border: "none",
+                  cursor: "pointer", boxShadow: "0 4px 16px rgba(var(--accent-rgb), 0.2)",
                 }}
               >
                 Generate All Profiles
@@ -24734,7 +25039,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               background: "rgba(245,158,11,0.1)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 9v2m0 4h.01M10.29 3.86l-8.6 14.86A2 2 0 003.43 21h17.14a2 2 0 001.74-2.98l-8.6-14.86a2 2 0 00-3.42 0z"/>
               </svg>
             </div>
@@ -24764,7 +25069,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 }}
                 style={{
                   padding: "10px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10,
-                  background: "#f59e0b", color: "#111", border: "none",
+                  background: "var(--pw-accent)", color: "var(--pw-btn-primary-text)", border: "none",
                   cursor: "pointer",
                 }}
               >
@@ -25184,7 +25489,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   transition: "all 0.1s", whiteSpace: "nowrap",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(var(--accent-rgb, 124,92,252), 0.08)";
+                  e.currentTarget.style.background = "rgba(var(--accent-rgb), 0.08)";
                   e.currentTarget.style.color = "var(--pw-accent)";
                 }}
                 onMouseLeave={(e) => {
@@ -25207,11 +25512,11 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
           display: "flex", alignItems: "center", gap: 10,
           padding: "12px 20px", borderRadius: 12,
           background: "var(--pw-surface)",
-          border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
+          border: "1px solid rgba(var(--accent-rgb), 0.15)",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
           <span style={{
-            width: 14, height: 14, border: "2px solid rgba(var(--accent-rgb, 124,92,252), 0.3)",
+            width: 14, height: 14, border: "2px solid rgba(var(--accent-rgb), 0.3)",
             borderTopColor: "var(--pw-accent)", borderRadius: "50%",
             animation: "spin 0.7s linear infinite", display: "inline-block",
           }} />
@@ -25255,8 +25560,8 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 </div>
                 <div style={{
                   padding: "12px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.7,
-                  background: "rgba(var(--accent-rgb, 124,92,252), 0.04)",
-                  border: "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)",
+                  background: "rgba(var(--accent-rgb), 0.04)",
+                  border: "1px solid rgba(var(--accent-rgb), 0.15)",
                   color: "var(--pw-text, #e4e4e7)",
                 }}>
                   {rewritePreview.revised}
@@ -25351,7 +25656,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                 >
                   <div style={{
                     width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                    background: "rgba(124,92,252,0.08)",
+                    background: "rgba(var(--accent-rgb), 0.08)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={opt.iconPath}/></svg>
@@ -25368,47 +25673,81 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
       )}
 
       {/* ── Chat Modal (Co-Author + Character) ── */}
-      {charChatOpen && (coAuthorMode || charChatTarget) && (
+      {charChatOpen && (coAuthorMode || charChatTarget || groupChatMode) && (
         <div className="pw-modal-overlay" onClick={() => closeChat()}>
-          <div className="pw-chat-modal" style={{
-            maxWidth: charChatReviewDone && !coAuthorMode ? 820 : 520,
-            flexDirection: charChatReviewDone && !coAuthorMode ? "row" : "column",
+          <div className="pw-chat-modal pw-chat-msn" style={{
+            maxWidth: charChatReviewDone && charChatTarget && currentThreadId === charChatTarget.id ? 920 : 640,
+            flexDirection: charChatReviewDone && !coAuthorMode && !groupChatMode ? "row" : "row",
           }} onClick={(e) => e.stopPropagation()}>
-            {/* Chat panel */}
+            {/* MSN-style sidebar: contacts (scrollable so you can reach all characters) */}
+            <aside className="pw-chat-sidebar">
+              <div className="pw-chat-sidebar-title">Chat</div>
+              <div className="pw-chat-sidebar-list">
+                <button type="button" className={`pw-chat-contact ${currentThreadId === "coauthor" ? "active" : ""}`} onClick={() => switchChatThread("coauthor")}>
+                  <div className="pw-chat-contact-avatar pw-chat-contact-coauthor">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </div>
+                  <div className="pw-chat-contact-info">
+                    <span className="pw-chat-contact-name">Co-Author</span>
+                    <span className="pw-chat-contact-preview">{((charChatThreads["coauthor"] ?? []).length > 0) ? "AI writing partner" : "Start a conversation"}</span>
+                  </div>
+                  {(charChatThreads["coauthor"] ?? []).length > 0 && <span className="pw-chat-contact-badge">{(charChatThreads["coauthor"] ?? []).length}</span>}
+                </button>
+                {!isNF && storyCharacters.length > 0 && (
+                  <>
+                    <button type="button" className={`pw-chat-contact ${currentThreadId === "group" ? "active" : ""}`} onClick={() => switchChatThread("group")}>
+                      <div className="pw-chat-contact-avatar pw-chat-contact-group">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                      </div>
+                      <div className="pw-chat-contact-info">
+                        <span className="pw-chat-contact-name">Group</span>
+                        <span className="pw-chat-contact-preview">Cast & Co-Author</span>
+                      </div>
+                      {(charChatThreads["group"] ?? []).length > 0 && <span className="pw-chat-contact-badge">{(charChatThreads["group"] ?? []).length}</span>}
+                    </button>
+                    <div className="pw-chat-sidebar-label">Characters</div>
+                    {storyCharacters.map((char) => (
+                      <button key={char.id} type="button" className={`pw-chat-contact ${currentThreadId === char.id ? "active" : ""}`} onClick={() => switchChatThread(char.id)}>
+                        <div className="pw-chat-contact-avatar">{char.name.charAt(0).toUpperCase()}</div>
+                        <div className="pw-chat-contact-info">
+                          <span className="pw-chat-contact-name">{char.name}</span>
+                          <span className="pw-chat-contact-preview">{char.role || "Character"}</span>
+                        </div>
+                        {(charChatThreads[char.id] ?? []).length > 0 && <span className="pw-chat-contact-badge">{(charChatThreads[char.id] ?? []).length}</span>}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            </aside>
+            {/* Main chat area */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
               {/* Header */}
-              <div style={{
-                padding: "14px 16px", borderBottom: "1px solid var(--pw-border-light)",
-                display: "flex", alignItems: "center", gap: 10,
-              }}>
-                {/* Avatar / icon */}
-                <div style={{
-                  width: 36, height: 36, borderRadius: coAuthorMode ? 10 : 10, flexShrink: 0,
-                  background: coAuthorMode ? "rgba(var(--pw-accent-rgb,124,92,252),0.15)" : "rgba(124,92,252,0.12)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 15, fontWeight: 800, color: "var(--pw-accent)",
-                }}>
+              <div className="pw-chat-main-header">
+                <div className="pw-chat-main-avatar">
                   {coAuthorMode ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  ) : groupChatMode ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
                   ) : charChatTarget!.name.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}>
-                    {coAuthorMode ? "The Co-Author" : charChatTarget!.name}
+                  <h3 className="pw-chat-main-title">
+                    {coAuthorMode ? "The Co-Author" : groupChatMode ? "Group — Cast & Co-Author" : charChatTarget!.name}
                   </h3>
-                  <p style={{ margin: 0, fontSize: 11, color: "var(--pw-text-dim)" }}>
-                    {coAuthorMode ? (activeChapter ? `Chapter ${novel!.chapters.findIndex(c => c.id === activeChapter.id) + 1}` : "Novel overview") : `${charChatTarget!.role}${charChatTarget!.logline ? ` — ${charChatTarget!.logline}` : ""}`}
+                  <p className="pw-chat-main-sub">
+                    {coAuthorMode ? (activeChapter ? `Chapter ${novel!.chapters.findIndex(c => c.id === activeChapter.id) + 1}` : "Novel overview") : groupChatMode ? "Chat with your characters and co-author" : `${charChatTarget!.role}${charChatTarget!.logline ? ` — ${charChatTarget!.logline}` : ""}`}
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                   {charChatReviewing && (
                     <span style={{
                       padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                      background: "rgba(124,92,252,0.05)", color: "var(--pw-accent)",
-                      border: "1px solid rgba(124,92,252,0.2)",
+                      background: "rgba(var(--accent-rgb), 0.05)", color: "var(--pw-accent)",
+                      border: "1px solid rgba(var(--accent-rgb), 0.2)",
                       display: "flex", alignItems: "center", gap: 5,
                     }}>
-                      <span style={{ width: 10, height: 10, border: "1.5px solid rgba(124,92,252,0.3)", borderTopColor: "#b8a4ff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...
+                      <span style={{ width: 10, height: 10, border: "1.5px solid rgba(var(--accent-rgb), 0.3)", borderTopColor: "var(--pw-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} /> Reviewing...
                     </span>
                   )}
                   <button type="button" onClick={() => closeChat()} style={{
@@ -25421,12 +25760,18 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
 
               {/* Messages */}
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 20px" }}>
-                {charChatMessages.length === 0 && coAuthorMode && (
-                  <div style={{ textAlign: "center", padding: "40px 16px" }}>
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.4 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>The Co-Author</p>
-                    <p style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.5, maxWidth: 340, margin: "0 auto 16px" }}>
-                      Your AI writing partner. Ask about plot, characters, structure — or brainstorm ideas together.
+                {charChatMessages.length === 0 && (coAuthorMode || groupChatMode) && (
+                  <div className="pw-chat-empty-state">
+                    <div className="pw-chat-empty-icon">
+                      {groupChatMode ? (
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                      ) : (
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      )}
+                    </div>
+                    <p className="pw-chat-empty-title">{groupChatMode ? "Group chat" : "The Co-Author"}</p>
+                    <p className="pw-chat-empty-sub">
+                      {groupChatMode ? "Chat with your cast and co-author. Ask a question and the Co-Author may have a character chime in." : "Your AI writing partner. Ask about plot, characters, structure — or brainstorm ideas together."}
                     </p>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
                       {[
@@ -25438,7 +25783,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         <button key={q} type="button" onClick={() => setCharChatInput(q)}
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
-                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.12)",
+                            background: "rgba(var(--accent-rgb), 0.06)", border: "1px solid rgba(var(--accent-rgb), 0.12)",
                             color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
                           }}
                         >{q}</button>
@@ -25446,7 +25791,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     </div>
                   </div>
                 )}
-                {charChatMessages.length === 0 && !coAuthorMode && charChatTarget && (
+                {charChatMessages.length === 0 && !coAuthorMode && !groupChatMode && charChatTarget && (
                   <div style={{ textAlign: "center", padding: "40px 16px" }}>
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 14px", display: "block", opacity: 0.3 }}><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                     <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Talk to {charChatTarget.name}</p>
@@ -25463,7 +25808,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         <button key={q} type="button" onClick={() => setCharChatInput(q)}
                           style={{
                             padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 8,
-                            background: "rgba(124,92,252,0.06)", border: "1px solid rgba(124,92,252,0.12)",
+                            background: "rgba(var(--accent-rgb), 0.06)", border: "1px solid rgba(var(--accent-rgb), 0.12)",
                             color: "var(--pw-accent)", cursor: "pointer", transition: "all 0.15s",
                           }}
                         >{q}</button>
@@ -25472,42 +25817,28 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   </div>
                 )}
                 {charChatMessages.map((msg, idx) => (
-                  <div key={idx} style={{
-                    display: "flex", gap: 8, marginBottom: 12,
-                    flexDirection: msg.role === "user" ? "row-reverse" : "row",
-                  }}>
+                  <div key={idx} className={`pw-chat-bubble-row ${msg.role === "user" ? "user" : "them"}`}>
                     {msg.role === "character" && (
-                      <div style={{
-                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                        background: coAuthorMode ? "rgba(var(--pw-accent-rgb,124,92,252),0.15)" : "rgba(124,92,252,0.1)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 11, fontWeight: 800, color: "var(--pw-accent)",
-                      }}>
-                        {coAuthorMode ? (
+                      <div className="pw-chat-bubble-avatar">
+                        {(coAuthorMode || groupChatMode) ? (
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                        ) : charChatTarget!.name.charAt(0).toUpperCase()}
+                        ) : charChatTarget ? charChatTarget.name.charAt(0).toUpperCase() : "?"}
                       </div>
                     )}
-                    <div style={{
-                      maxWidth: "75%", padding: "10px 14px", borderRadius: 14,
-                      background: msg.role === "user" ? "var(--pw-accent-light)" : "var(--pw-overlay-bg)",
-                      border: msg.role === "user" ? "1px solid var(--pw-accent-glow)" : "1px solid var(--pw-overlay-border-light)",
-                    }}>
-                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>{msg.text}</p>
+                    <div className={`pw-chat-bubble ${msg.role === "user" ? "user" : "them"}`}>
+                      <p className="pw-chat-bubble-text">{msg.text}</p>
                     </div>
                   </div>
                 ))}
                 {charChatLoading && (
-                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "rgba(124,92,252,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "var(--pw-accent)" }}>
-                      {coAuthorMode ? (
+                  <div className="pw-chat-bubble-row them">
+                    <div className="pw-chat-bubble-avatar">
+                      {(coAuthorMode || groupChatMode) ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                       ) : charChatTarget ? charChatTarget.name.charAt(0).toUpperCase() : "?"}
                     </div>
-                    <div style={{ padding: "12px 16px", borderRadius: 14, background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-overlay-border-light)", display: "flex", gap: 4, alignItems: "center" }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0s" }} />
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.2s" }} />
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--pw-text-dim)", animation: "pw-pulse 1.2s infinite", animationDelay: "0.4s" }} />
+                    <div className="pw-chat-typing-dots">
+                      <span /><span /><span />
                     </div>
                   </div>
                 )}
@@ -25515,41 +25846,27 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               </div>
 
               {/* Input */}
-              <form onSubmit={(e) => { e.preventDefault(); coAuthorMode ? void sendCoAuthorChat() : void sendCharacterChat(); }} style={{
-                padding: "12px 16px", borderTop: "1px solid var(--pw-border-light)",
-                display: "flex", gap: 8,
-              }}>
+              <form className="pw-chat-form" onSubmit={(e) => { e.preventDefault(); (coAuthorMode || groupChatMode) ? void sendCoAuthorChat() : void sendCharacterChat(); }}>
                 <input
                   type="text"
-                  placeholder={charChatReviewDone ? "Chat ended — review recommendations" : coAuthorMode ? "Ask your co-author anything…" : `Say something to ${charChatTarget!.name}...`}
+                  className="pw-chat-input"
+                  placeholder={charChatReviewDone ? "Chat ended — review recommendations" : (coAuthorMode || groupChatMode) ? "Ask anything…" : `Say something to ${charChatTarget!.name}...`}
                   value={charChatInput}
                   onChange={(e) => setCharChatInput(e.target.value)}
                   disabled={charChatLoading || charChatReviewDone || !!storyAiBusyAction || arcBusy}
                   autoFocus
-                  style={{
-                    flex: 1, padding: "10px 14px", borderRadius: 10,
-                    background: "var(--pw-overlay-bg)", border: "1px solid var(--pw-border)",
-                    color: "inherit", fontSize: 13, outline: "none",
-                  }}
                 />
                 {(!!storyAiBusyAction || arcBusy) && (
-                  <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 600, whiteSpace: "nowrap", alignSelf: "center" }}>AI busy…</span>
+                  <span className="pw-chat-busy-label">AI busy…</span>
                 )}
-                <button type="submit" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone || !!storyAiBusyAction || arcBusy}
-                  style={{
-                    width: 38, height: 38, borderRadius: 10, border: "none", flexShrink: 0,
-                    background: charChatInput.trim() ? "var(--pw-accent)" : "var(--pw-overlay-bg-hover)",
-                    color: charChatInput.trim() ? "var(--pw-btn-primary-text)" : "var(--pw-text-dim)",
-                    cursor: charChatInput.trim() ? "pointer" : "default",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
+                <button type="submit" className="pw-chat-send-btn" disabled={!charChatInput.trim() || charChatLoading || charChatReviewDone || !!storyAiBusyAction || arcBusy}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </form>
             </div>
 
-            {/* Recommendations panel — appears after End & Review */}
-            {charChatReviewDone && (
+            {/* Recommendations panel — appears after End & Review (only when viewing that character) */}
+            {charChatReviewDone && charChatTarget && currentThreadId === charChatTarget.id && (
               <div style={{
                 width: 300, borderLeft: "1px solid var(--pw-border-light)",
                 display: "flex", flexDirection: "column", flexShrink: 0,
@@ -25584,7 +25901,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                         <span style={{
                           fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                          background: "rgba(var(--accent-rgb), 0.08)",
                           color: "var(--pw-text-muted)",
                           letterSpacing: "0.04em",
                         }}>{rec.type === "chapter_synopsis" ? "Chapter" : rec.type === "prose_edit" ? "Prose" : "Profile"}</span>
@@ -25597,10 +25914,10 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       {/* Current vs new */}
                       {rec.type === "prose_edit" && rec.currentValue ? (
                         <div style={{ marginBottom: 6 }}>
-                          <div style={{ fontSize: 10, color: "#ef4444", marginBottom: 3, padding: "4px 8px", borderRadius: 6, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.1)", lineHeight: 1.4, textDecoration: "line-through" }}>
+                          <div style={{ fontSize: 10, color: "var(--pw-status-danger)", marginBottom: 3, padding: "4px 8px", borderRadius: 6, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.1)", lineHeight: 1.4, textDecoration: "line-through" }}>
                             {rec.currentValue.slice(0, 200)}{rec.currentValue.length > 200 ? "…" : ""}
                           </div>
-                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(124,92,252,0.04)", border: "1px solid rgba(124,92,252,0.15)", lineHeight: 1.4, color: "var(--pw-text)" }}>
+                          <div style={{ fontSize: 11, padding: "6px 8px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.04)", border: "1px solid rgba(var(--accent-rgb), 0.15)", lineHeight: 1.4, color: "var(--pw-text)" }}>
                             {rec.newValue.slice(0, 200)}{rec.newValue.length > 200 ? "…" : ""}
                           </div>
                         </div>
@@ -25622,7 +25939,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           <button type="button" onClick={() => applyCharChatRecommendation(rec.id)}
                             style={{
                               flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, borderRadius: 6,
-                              background: "rgba(124,92,252,0.1)", border: "1px solid rgba(124,92,252,0.2)",
+                              background: "rgba(var(--accent-rgb), 0.1)", border: "1px solid rgba(var(--accent-rgb), 0.2)",
                               color: "var(--pw-accent)", cursor: "pointer",
                             }}
                           >Accept</button>
@@ -25688,22 +26005,31 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Writing Packs</h3>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, fontFamily: "var(--font-display), Figtree, system-ui, sans-serif" }}>Add writing guides</h3>
                 </div>
                 <button type="button" onClick={() => { setWritingPacksOpen(false); setExpandedPack(null); }} style={{
-                  background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 8,
-                  width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "var(--pw-text-dim)", fontSize: 16, cursor: "pointer",
-                }}>&times;</button>
+                  background: "var(--pw-overlay-bg-hover)", border: "none", borderRadius: 10,
+                  width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--pw-text-dim)", fontSize: 18, cursor: "pointer", transition: "color 0.15s, background 0.15s",
+                }} aria-label="Close">&times;</button>
               </div>
-              <p style={{ fontSize: 12, color: "var(--pw-text-dim)", margin: "8px 0 0" }}>
-                Pre-made craft kits by genre. Add bolt-ons to this novel — they stay in packs, you pick what to use.
+              <p style={{ fontSize: 13, color: "var(--pw-text-muted)", margin: "10px 0 0", lineHeight: 1.5 }}>
+                Genre-based collections of writing guides. Add any guide to this novel, then attach it to scenes when you write.
               </p>
             </div>
 
             {/* Pack list */}
-            <div style={{ overflow: "auto", flex: 1, padding: "12px 16px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ overflow: "auto", flex: 1, padding: "16px 20px" }}>
+              {(() => {
+                const totalGuides = (novel.storyBible.boltons ?? []).length;
+                const atLimit = totalGuides >= 10;
+                return atLimit ? (
+                  <p style={{ fontSize: 12, color: "var(--pw-text-muted)", margin: "0 0 12px", padding: "10px 12px", background: "var(--pw-surface-alt)", borderRadius: 10, border: "1px solid var(--pw-border-light)" }}>
+                    You have {totalGuides} guides. Remove one in Writing guides to add more.
+                  </p>
+                ) : null;
+              })()}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {WRITING_PACKS.map((pack) => {
                   const installed = getPackInstalledCount(pack);
                   const allInstalled = installed === pack.boltons.length;
@@ -25712,11 +26038,12 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                   const slotsLeft = 10 - (novel.storyBible.boltons ?? []).length;
                   return (
                     <div key={pack.id} style={{
-                      borderRadius: 14,
-                      background: "var(--pw-overlay-bg)",
-                      border: `1px solid ${justInstalled ? "rgba(124,92,252,0.3)" : "var(--pw-overlay-bg-hover)"}`,
+                      borderRadius: "var(--pw-radius-xl)",
+                      background: "var(--pw-surface-alt)",
+                      border: `1px solid ${justInstalled ? "rgba(var(--accent-rgb), 0.35)" : "var(--pw-border-light)"}`,
                       transition: "all 0.2s",
                       overflow: "hidden",
+                      boxShadow: justInstalled ? "0 0 0 2px rgba(var(--accent-rgb), 0.1)" : "none",
                     }}>
                       {/* Pack header */}
                       <div
@@ -25731,17 +26058,17 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                       >
                         <div style={{
                           width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                          background: "rgba(var(--accent-rgb, 124,92,252), 0.08)",
+                          background: "rgba(var(--accent-rgb), 0.08)",
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={pack.icon}/></svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</span>
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--accent-rgb, 124,92,252), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.08)", color: "var(--pw-text-muted)" }}>{pack.genre}</span>
                             {allInstalled && (
-                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(124,92,252,0.12)", color: "var(--pw-accent)" }}>In use</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 6, background: "rgba(var(--accent-rgb), 0.12)", color: "var(--pw-accent)" }}>Added</span>
                             )}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--pw-text-dim)", marginTop: 3, lineHeight: 1.4 }}>{pack.tagline}</div>
@@ -25760,7 +26087,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                         <div style={{ borderTop: "1px solid var(--pw-border-light)", padding: "12px 16px 16px" }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                             <p style={{ fontSize: 11, color: "var(--pw-text-dim)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              {pack.boltons.length} bolt-ons — select which to add
+                              {pack.boltons.length} guides — choose the ones you want
                             </p>
                             <button type="button" onClick={() => {
                               const uninstalled = pack.boltons.map((pb, i) => {
@@ -25791,14 +26118,14 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   style={{
                                     display: "flex", alignItems: "center", gap: 10,
                                     padding: "8px 10px", borderRadius: 8, cursor: alreadyHas ? "default" : "pointer",
-                                    background: isChecked ? "rgba(var(--accent-rgb, 124,92,252), 0.05)" : alreadyHas ? "rgba(124,92,252,0.03)" : "var(--pw-overlay-bg)",
-                                    border: isChecked ? "1px solid rgba(var(--accent-rgb, 124,92,252), 0.15)" : alreadyHas ? "1px solid rgba(124,92,252,0.1)" : "1px solid var(--pw-border-light)",
+                                    background: isChecked ? "rgba(var(--accent-rgb), 0.05)" : alreadyHas ? "rgba(124,92,252,0.03)" : "var(--pw-overlay-bg)",
+                                    border: isChecked ? "1px solid rgba(var(--accent-rgb), 0.15)" : alreadyHas ? "1px solid rgba(var(--accent-rgb), 0.1)" : "1px solid var(--pw-border-light)",
                                     transition: "all 0.12s",
                                   }}>
                                   <div style={{
                                     width: 16, height: 16, borderRadius: 4, flexShrink: 0,
                                     border: alreadyHas ? "1.5px solid var(--pw-accent)" : isChecked ? "1.5px solid var(--pw-accent)" : "1.5px solid var(--pw-border)",
-                                    background: alreadyHas ? "rgba(124,92,252,0.15)" : isChecked ? "rgba(var(--accent-rgb, 124,92,252), 0.15)" : "transparent",
+                                    background: alreadyHas ? "rgba(var(--accent-rgb), 0.15)" : isChecked ? "rgba(var(--accent-rgb), 0.15)" : "transparent",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                   }}>
                                     {(alreadyHas || isChecked) && (
@@ -25808,7 +26135,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, fontWeight: 600, opacity: alreadyHas ? 0.5 : 1 }}>
                                       {pb.title}
-                                      {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>in use</span>}
+                                      {alreadyHas && <span style={{ fontSize: 9, color: "var(--pw-accent)", marginLeft: 6 }}>added</span>}
                                     </div>
                                     <div style={{ fontSize: 10, color: "var(--pw-text-dim)", marginTop: 1, lineHeight: 1.4 }}>{pb.description}</div>
                                   </div>
@@ -25818,24 +26145,24 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                           </div>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
                             <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>
-                              {allInstalled ? "All in use" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
+                              {allInstalled ? "All added" : hasSelection ? `${packSelected.length} selected` : `${pack.boltons.length - installed} available`}
                             </span>
                             <div style={{ display: "flex", gap: 6 }}>
                               {hasSelection && (
                                 <button type="button" disabled={slotsLeft <= 0} onClick={() => installWritingPack(pack, packSelectedBoltons)}
-                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent, #b8a4ff)", color: "#fff", transition: "all 0.15s" }}>
-                                  Add Selected ({packSelected.length})
+                                  style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none", cursor: slotsLeft <= 0 ? "default" : "pointer", background: "var(--pw-accent)", color: "#fff", transition: "all 0.15s" }}>
+                                  Add {packSelected.length} to novel
                                 </button>
                               )}
                               <button type="button" disabled={allInstalled || slotsLeft <= 0} onClick={() => installWritingPack(pack)}
                                 style={{
                                   padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "none",
                                   cursor: allInstalled || slotsLeft <= 0 ? "default" : "pointer",
-                                  background: allInstalled ? "rgba(124,92,252,0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : "var(--pw-accent, #b8a4ff)",
+                                  background: allInstalled ? "rgba(var(--accent-rgb), 0.1)" : hasSelection ? "var(--pw-overlay-bg-hover)" : "var(--pw-accent)",
                                   color: allInstalled ? "var(--pw-accent)" : hasSelection ? "var(--pw-text-dim)" : "#111",
                                   opacity: allInstalled || slotsLeft <= 0 ? 0.5 : 1, transition: "all 0.15s",
                                 }}>
-                                {justInstalled ? "Added!" : allInstalled ? "All added" : slotsLeft <= 0 ? "Slots full" : "Add all"}
+                                {justInstalled ? "Added!" : allInstalled ? "All added" : slotsLeft <= 0 ? "Limit reached (10 max)" : "Add all to novel"}
                               </button>
                             </div>
                           </div>
@@ -25872,7 +26199,21 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
                     <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>AI writing partner</div>
                   </div>
                 </button>
-                {/* Separator + Characters (fiction only) */}
+                {/* Group chat (fiction only, when there are characters) */}
+                {!isNF && storyCharacters.length > 0 && (
+                  <button type="button"
+                    onClick={() => { setCharChatPickerOpen(false); openGroupChat(); }}
+                    className="pw-chat-fab-picker-item"
+                  >
+                    <div className="pw-chat-fab-picker-avatar pw-chat-fab-group">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>Group</div>
+                      <div style={{ fontSize: 10, color: "var(--pw-text-dim)", whiteSpace: "nowrap" }}>Cast & Co-Author</div>
+                    </div>
+                  </button>
+                )}
                 {!isNF && storyCharacters.length > 0 && (
                   <div style={{ height: 1, background: "var(--pw-border-light)", margin: "4px 8px" }} />
                 )}
@@ -25935,7 +26276,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
         <div className="pw-modal-overlay" style={{ zIndex: 200 }} onClick={() => setRegenConfirm(null)}>
           <div className="pw-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, textAlign: "center" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, margin: "0 auto 14px", background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-status-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Are you sure?</div>
             <p style={{ fontSize: 13, color: "var(--pw-text-dim)", lineHeight: 1.5, margin: "0 0 20px" }}>{regenConfirm.message}</p>
@@ -26007,7 +26348,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             }
           `}</style>
           <div style={{ padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--pw-text, #e4e4e7)", lineHeight: 1.5, flex: 1 }}>
               {adminAlert.message}
             </p>
@@ -26024,7 +26365,7 @@ Use 1-based chapter numbers. Each step = one narrow change. If a fix is already 
             </button>
           </div>
           <div style={{
-            height: 2, background: "var(--pw-accent, #b8a4ff)", opacity: 0.6,
+            height: 2, background: "var(--pw-accent)", opacity: 0.6,
             width: `${adminAlertProgress}%`,
             transition: "width 0.1s linear",
             borderRadius: "0 0 0 12px",

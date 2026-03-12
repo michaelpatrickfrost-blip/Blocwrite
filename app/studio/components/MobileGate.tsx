@@ -155,7 +155,7 @@ function MobileAccountPanel() {
         <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 36, marginBottom: 20 }} />
 
         {/* Monitor icon */}
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(124,92,252,0.6)"
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)"
           strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
           style={{ display: "block", margin: "0 auto 16px" }}>
           <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -188,7 +188,7 @@ function MobileAccountPanel() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: "50%",
-                  background: subInfo.cancelAtPeriodEnd ? "#f59e0b" : subInfo.status === "trialing" ? "#8b5cf6" : "#10b981",
+                  background: subInfo.cancelAtPeriodEnd ? "var(--pw-status-warning)" : subInfo.status === "trialing" ? "var(--pw-accent)" : "var(--pw-status-success)",
                 }} />
                 <span style={{ fontSize: 15, fontWeight: 700 }}>
                   {subInfo.status === "trialing" ? "Free Trial"
@@ -251,7 +251,7 @@ function MobileAccountPanel() {
                       </p>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button type="button" disabled={cancelLoading} onClick={handleCancel}
-                          style={{ ...btn, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 13 }}>
+                          style={{ ...btn, background: "rgba(220,38,38,0.15)", color: "var(--pw-status-danger)", fontSize: 13 }}>
                           {cancelLoading ? "Cancelling..." : "Yes, cancel"}
                         </button>
                         <button type="button" onClick={() => { setCancelConfirm(false); setCancelError(null); }}
@@ -259,13 +259,13 @@ function MobileAccountPanel() {
                           Keep
                         </button>
                       </div>
-                      {cancelError && <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8, marginBottom: 0 }}>{cancelError}</p>}
+                      {cancelError && <p style={{ fontSize: 12, color: "var(--pw-status-danger)", marginTop: 8, marginBottom: 0 }}>{cancelError}</p>}
                     </div>
                   )}
                 </>
               )}
               {subInfo.cancelAtPeriodEnd && !cancelSuccess && (
-                <p style={{ fontSize: 13, color: "#f59e0b", marginTop: 4, marginBottom: 0 }}>
+                <p style={{ fontSize: 13, color: "var(--pw-status-warning)", marginTop: 4, marginBottom: 0 }}>
                   Set to cancel. Full access until the end of your billing period.
                 </p>
               )}
@@ -278,7 +278,7 @@ function MobileAccountPanel() {
           ) : (
             <div>
               <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>No active subscription.</p>
-              <a href="/subscribe" style={{ ...btn, display: "inline-block", textDecoration: "none", background: "rgba(124,92,252,0.12)", color: "#b8a4ff", border: "1px solid rgba(124,92,252,0.2)" }}>
+              <a href="/subscribe" style={{ ...btn, display: "inline-block", textDecoration: "none", background: "rgba(var(--accent-rgb), 0.12)", color: "var(--pw-accent)", border: "1px solid rgba(var(--accent-rgb), 0.2)" }}>
                 Subscribe
               </a>
             </div>
@@ -331,7 +331,7 @@ function MobileAccountPanel() {
                   onChange={(e) => setPwConfirm(e.target.value)} disabled={pwLoading} style={input} />
               </div>
 
-              {pwError && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{pwError}</p>}
+              {pwError && <p style={{ fontSize: 12, color: "var(--pw-status-danger)", margin: 0 }}>{pwError}</p>}
               {pwSuccess && <p style={{ fontSize: 12, color: "#10b981", margin: 0 }}>Password changed successfully.</p>}
 
               <div style={{ display: "flex", gap: 8 }}>
@@ -352,7 +352,7 @@ function MobileAccountPanel() {
         <button type="button" onClick={handleLogout}
           style={{
             ...btn, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.12)", color: "#ef4444",
+            background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.12)", color: "var(--pw-status-danger)",
             marginTop: 8,
           }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

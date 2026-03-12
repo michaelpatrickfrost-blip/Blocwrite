@@ -15,14 +15,13 @@ type Post = {
 
 const C = {
   bg: "#fafaf9",
-  bgSoft: "#f5f5f4",
-  bgDark: "#1e3a5f",
-  text: "#1c1917",
-  textSoft: "#44403c",
-  textMuted: "#57534e",
-  border: "#e7e5e4",
-  accent: "#1e3a5f",
-  accentText: "#1e3a5f",
+  bgSoft: "#f5f4f2",
+  text: "#0a0a0a",
+  textSoft: "#404040",
+  textMuted: "#525252",
+  border: "rgba(0,0,0,0.08)",
+  accent: "#8b6914",
+  accentText: "#8b6914",
 };
 
 function formatDate(iso: string) {
@@ -114,9 +113,9 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
               <Link href="/login" className="post-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>Log in</Link>
               <Link href="/subscribe" style={{
                 display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
-                fontSize: 13, fontWeight: 600, borderRadius: 10,
-                background: "linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%)", color: "#fff", textDecoration: "none",
-                boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
+                fontSize: 13, fontWeight: 600, borderRadius: 12,
+                background: "#0a0a0a", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
                 transition: "transform 0.15s, box-shadow 0.15s",
               }}>
                 Start Free Trial
@@ -217,11 +216,11 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
       )}
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "52px 0 44px", background: C.bgDark, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <footer style={{ padding: "52px 0 44px", background: "#0a0a0a" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.7 }} />
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
               © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
@@ -235,9 +234,9 @@ export default function NewsPostPage({ params }: { params: Promise<{ slug: strin
               <Link
                 key={l.href}
                 href={l.href}
-                style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none", transition: "color 0.15s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.9)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
               >
                 {l.label}
               </Link>

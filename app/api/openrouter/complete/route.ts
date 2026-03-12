@@ -16,6 +16,7 @@ type CompletionRequest = {
   maxTokens?: number;
   jsonMode?: boolean;
   temperature?: number;
+  stream?: boolean;
 };
 
 type OpenRouterErrorPayload = {
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
       typeof body.temperature === "number" && Number.isFinite(body.temperature)
         ? Math.max(0, Math.min(2, body.temperature))
         : undefined;
+    const stream = body.stream === true;
     const requiresKey = provider === "openrouter";
 
     if (requiresKey && !apiKey) {
@@ -131,10 +133,9 @@ export async function POST(request: Request) {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      Accept: "application/json",
+      Accept: stream ? "text/event-stream" : "application/json",
     };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    // OpenRouter-specific: skip moderation for speed, request no streaming
     if (provider === "openrouter") {
       headers["X-Title"] = "PilotWriter";
     }
@@ -142,47 +143,44 @@ export async function POST(request: Request) {
       model,
       max_tokens: maxTokens,
       messages,
-      stream: false, // Explicit: never stream — faster TTFT for non-streaming endpoints
+      stream,
     };
     if (temperature != null) requestBody.temperature = temperature;
-    if (jsonMode) requestBody.response_format = { type: "json_object" };
+    if (!stream && jsonMode) requestBody.response_format = { type: "json_object" };
     const timeoutMs = PROVIDER_TIMEOUT_MS[provider];
-    const maxAttempts = 1;
-    let response: Response | null = null;
-    let payload: OpenRouterErrorPayload = {};
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        response = await fetch(endpoint, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return NextResponse.json(
-            { error: `Provider timeout after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.` },
-            { status: 504 },
-          );
-        }
-        throw error;
-      } finally {
-        clearTimeout(timeoutId);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: `Provider timeout after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.` },
+          { status: 504 },
+        );
       }
+      throw error;
+    }
+    clearTimeout(timeoutId);
 
-      payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
-      if (response.ok) break;
-      break;
+    if (stream && response.ok) {
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
     }
 
-    if (!response) {
-      return NextResponse.json({ error: "Provider request failed." }, { status: 500 });
-    }
-
+    const payload = (await response.json().catch(() => ({}))) as OpenRouterErrorPayload;
     if (!response.ok) {
       const upstream = extractUpstreamError(payload);
       const errorMsg = normalizeProviderError(upstream, response.status, model, provider);
@@ -192,7 +190,6 @@ export async function POST(request: Request) {
     const text = payload.choices?.[0]?.message?.content ?? "";
     const finishReason = payload.choices?.[0]?.finish_reason ?? "";
 
-    // Debug logging for empty responses
     if (!text) {
       console.error("[AI EMPTY RESPONSE]", JSON.stringify({
         model,

@@ -483,7 +483,7 @@ export default function ShareReaderPage() {
           <mark key={i} data-ann-id={p.ann.id} title={`${p.ann.type}: ${p.ann.note}`} style={{
             background: typeMeta(p.ann.type).highlight,
             borderBottom: `2px solid ${typeMeta(p.ann.type).color}`,
-            borderRadius: 2, padding: "2px 0", cursor: "pointer", color: C.text,
+            borderRadius: 2, padding: "2px 0", cursor: "pointer", color: "var(--pw-text)",
             transition: "background 0.2s",
           }}
           onClick={() => {
@@ -527,11 +527,12 @@ export default function ShareReaderPage() {
 
   const themeToggleBtn = (
     <button
+      type="button"
       onClick={toggleTheme}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       style={{
-        width: 34, height: 34, borderRadius: 10, border: `1px solid ${C.border}`,
-        background: C.surfaceAlt, color: C.textMuted, cursor: "pointer",
+        width: 34, height: 34, borderRadius: 10, border: "1px solid var(--pw-border)",
+        background: "var(--pw-surface-alt)", color: "var(--pw-text-muted)", cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center",
         transition: "all 0.2s", flexShrink: 0,
       }}
@@ -672,11 +673,15 @@ export default function ShareReaderPage() {
 
   /* ── Main reader UI ── */
   return (
-    <div style={{
-      minHeight: "100vh", background: C.bg, color: C.text,
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
-      transition: "background 0.3s, color 0.3s",
-    }}>
+    <div
+      data-theme={theme}
+      className="share-reader-page"
+      style={{
+        minHeight: "100vh", background: "var(--pw-bg)", color: "var(--pw-text)",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+        transition: "background 0.3s, color 0.3s",
+      }}
+    >
       <style>{`
         @keyframes shareSpin { to { transform: rotate(360deg); } }
         @keyframes shareSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -698,11 +703,11 @@ export default function ShareReaderPage() {
       {/* ── Reading progress bar ── */}
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 3, zIndex: 200,
-        background: C.borderLight,
+        background: "var(--pw-border-light)",
       }}>
         <div style={{
           height: "100%", width: `${readProgress}%`,
-          background: `linear-gradient(90deg, ${C.accent}, ${theme === "dark" ? "#d4c8ff" : "#5538d4"})`,
+          background: "var(--pw-accent)",
           transition: "width 0.15s ease-out",
           borderRadius: "0 2px 2px 0",
         }} />
@@ -711,28 +716,28 @@ export default function ShareReaderPage() {
       {/* ── Top bar ── */}
       <header style={{
         position: "sticky", top: 3, zIndex: 100,
-        background: C.headerBg, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-        borderBottom: `1px solid ${C.borderLight}`, transition: "background 0.3s",
+        background: "var(--pw-surface-glass)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        borderBottom: "1px solid var(--pw-border-light)", transition: "background 0.3s",
       }}>
         <div style={{
           maxWidth: 1400, margin: "0 auto", padding: "0 24px",
           height: 56, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <img src={C.logo} alt="Blocwrite" style={{ height: 18, opacity: 0.75, flexShrink: 0 }} />
-            <div style={{ width: 1, height: 16, background: C.border, flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: C.textDim, fontWeight: 500, flexShrink: 0 }}>Manuscript review</span>
+            <img src={theme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" style={{ height: 18, opacity: 0.75, flexShrink: 0 }} />
+            <div style={{ width: 1, height: 16, background: "var(--pw-border)", flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "var(--pw-text-dim)", fontWeight: 500, flexShrink: 0 }}>Manuscript review</span>
             {daysRemaining !== null && (
               <span style={{
                 fontSize: 11, flexShrink: 0, padding: "2px 8px", borderRadius: 6,
-                background: daysRemaining <= 3 ? "rgba(248,113,113,0.1)" : (theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
-                color: daysRemaining <= 3 ? "#f87171" : C.textDim,
-                fontWeight: 600, border: `1px solid ${daysRemaining <= 3 ? "rgba(248,113,113,0.2)" : C.borderLight}`,
+                background: daysRemaining <= 3 ? "rgba(248,113,113,0.1)" : "var(--pw-overlay-bg)",
+                color: daysRemaining <= 3 ? "#f87171" : "var(--pw-text-dim)",
+                fontWeight: 600, border: `1px solid ${daysRemaining <= 3 ? "rgba(248,113,113,0.2)" : "var(--pw-border-light)"}`,
               }}>
                 {daysRemaining}d left
               </span>
             )}
-            <span style={{ fontSize: 11, color: C.textDim, fontWeight: 500, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, color: "var(--pw-text-dim)", fontWeight: 500, flexShrink: 0 }}>
               {readProgress}% read
             </span>
           </div>
@@ -740,9 +745,9 @@ export default function ShareReaderPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             {totalFeedbackCount > 0 && (
               <span style={{
-                fontSize: 11, color: C.accent, fontWeight: 600,
-                padding: "3px 10px", borderRadius: 8, background: C.accentMuted,
-                border: `1px solid ${theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.1)"}`,
+                fontSize: 11, color: "var(--pw-accent)", fontWeight: 600,
+                padding: "3px 10px", borderRadius: 8, background: "var(--pw-accent-muted)",
+                border: "1px solid var(--pw-tint-violet-border)",
               }}>
                 {totalFeedbackCount} note{totalFeedbackCount !== 1 ? "s" : ""}
               </span>
@@ -752,15 +757,14 @@ export default function ShareReaderPage() {
               onChange={(e) => setReaderName(e.target.value)}
               style={{
                 fontSize: 13, padding: "7px 12px", borderRadius: 8,
-                border: `1px solid ${C.border}`, background: C.surface,
-                color: C.text, width: 150, outline: "none", fontFamily: "inherit",
+                border: "1px solid var(--pw-border)", background: "var(--pw-surface)",
+                color: "var(--pw-text)", width: 150, outline: "none", fontFamily: "inherit",
               }}
             />
-            {/* Toggle notes panel */}
             <button onClick={() => setShowNotesSidebar((v) => !v)} title="Toggle notes panel" style={{
-              width: 34, height: 34, borderRadius: 10, border: `1px solid ${C.border}`,
-              background: showNotesSidebar ? C.accentMuted : C.surfaceAlt,
-              color: showNotesSidebar ? C.accent : C.textMuted, cursor: "pointer",
+              width: 34, height: 34, borderRadius: 10, border: "1px solid var(--pw-border)",
+              background: showNotesSidebar ? "var(--pw-accent-muted)" : "var(--pw-surface-alt)",
+              color: showNotesSidebar ? "var(--pw-accent)" : "var(--pw-text-muted)", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "all 0.2s", flexShrink: 0,
             }}>
@@ -772,8 +776,8 @@ export default function ShareReaderPage() {
             <button onClick={submitFeedback} disabled={submitting || totalFeedbackCount === 0} style={{
               fontSize: 13, fontWeight: 600, padding: "7px 18px", borderRadius: 8,
               border: "none",
-              background: totalFeedbackCount === 0 ? C.border : C.accent,
-              color: totalFeedbackCount === 0 ? C.textDim : (theme === "dark" ? "#111" : "#fff"),
+              background: totalFeedbackCount === 0 ? "var(--pw-border)" : "var(--pw-accent)",
+              color: totalFeedbackCount === 0 ? "var(--pw-text-dim)" : "var(--pw-btn-primary-text)",
               cursor: totalFeedbackCount === 0 ? "default" : "pointer",
               opacity: submitting ? 0.6 : 1, transition: "all 0.2s",
               whiteSpace: "nowrap", fontFamily: "inherit",
@@ -1040,29 +1044,22 @@ export default function ShareReaderPage() {
 
         {/* ── Chapter sidebar (always visible) ── */}
         <aside style={{
-          width: 240, padding: "28px 14px 20px", borderRight: `1px solid ${C.borderLight}`,
-          flexShrink: 0, overflowY: "auto", background: C.surfaceAlt, transition: "background 0.3s",
+          width: 240, padding: "28px 14px 20px", borderRight: "1px solid var(--pw-border-light)",
+          flexShrink: 0, overflowY: "auto", background: "var(--pw-surface-alt)", transition: "background 0.3s",
           display: "flex", flexDirection: "column",
         }}>
-          {/* Manuscript info */}
           <div style={{ padding: "0 10px", marginBottom: 20 }}>
-            <p style={{
-              fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 4,
-            }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
               Manuscript
             </p>
-            <p style={{ fontSize: 13, color: C.text, fontWeight: 600, margin: 0, lineHeight: 1.4 }}>
+            <p style={{ fontSize: 13, color: "var(--pw-text)", fontWeight: 600, margin: 0, lineHeight: 1.4 }}>
               {data.chapters.length} chapter{data.chapters.length !== 1 ? "s" : ""}
             </p>
           </div>
 
-          <div style={{ height: 1, background: C.borderLight, margin: "0 10px 14px" }} />
+          <div style={{ height: 1, background: "var(--pw-border-light)", margin: "0 10px 14px" }} />
 
-          <p style={{
-            fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase",
-            letterSpacing: "0.08em", marginBottom: 8, padding: "0 10px",
-          }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, padding: "0 10px" }}>
             Contents
           </p>
           <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1072,35 +1069,32 @@ export default function ShareReaderPage() {
               const active = idx === activeChapterIdx;
               const totalBadge = count + (hasNote ? 1 : 0);
               return (
-                <button key={ch.id} onClick={() => { setActiveChapterIdx(idx); window.scrollTo(0, 0); }} style={{
+                <button key={ch.id} type="button" onClick={() => { setActiveChapterIdx(idx); window.scrollTo(0, 0); }} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 10,
-                  border: active ? `1px solid ${theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.08)"}` : "1px solid transparent",
+                  border: active ? "1px solid var(--pw-tint-violet-border)" : "1px solid transparent",
                   cursor: "pointer", marginBottom: 3,
-                  background: active ? C.accentMuted : "transparent",
-                  color: active ? C.text : C.textMuted,
+                  background: active ? "var(--pw-accent-muted)" : "transparent",
+                  color: active ? "var(--pw-text)" : "var(--pw-text-muted)",
                   fontWeight: active ? 600 : 400, fontSize: 13, transition: "all 0.15s",
                   fontFamily: "inherit",
                 }}
-                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = C.hoverBgSubtle; e.currentTarget.style.color = C.text; } }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.textMuted; } }}
+                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--pw-overlay-bg)"; e.currentTarget.style.color = "var(--pw-text)"; } }}
+                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--pw-text-muted)"; } }}
                 >
                   <span style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden", flex: 1 }}>
                     <span style={{
                       fontSize: 10, fontWeight: 700, width: 22, height: 22, borderRadius: 6, flexShrink: 0,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: active ? (theme === "dark" ? "rgba(124,92,252,0.15)" : "rgba(98,70,234,0.1)") : (theme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"),
-                      color: active ? C.accent : C.textDim,
+                      background: active ? "var(--pw-accent-light)" : "var(--pw-overlay-bg)",
+                      color: active ? "var(--pw-accent)" : "var(--pw-text-dim)",
                     }}>{idx + 1}</span>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {ch.title || `Chapter ${idx + 1}`}
                     </span>
                   </span>
                   {totalBadge > 0 && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 8,
-                      background: C.accentMuted, color: C.accent, flexShrink: 0, marginLeft: 8,
-                    }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 8, background: "var(--pw-accent-muted)", color: "var(--pw-accent)", flexShrink: 0, marginLeft: 8 }}>
                       {totalBadge}
                     </span>
                   )}
@@ -1109,23 +1103,22 @@ export default function ShareReaderPage() {
             })}
           </div>
 
-          {/* Reading stats */}
-          <div style={{ padding: "16px 12px 0", borderTop: `1px solid ${C.borderLight}`, marginTop: 12 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+          <div style={{ padding: "16px 12px 0", borderTop: "1px solid var(--pw-border-light)", marginTop: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "var(--pw-text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
               Reading Info
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: C.textMuted }}>Total words</span>
-                <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{totalWords.toLocaleString()}</span>
+                <span style={{ fontSize: 12, color: "var(--pw-text-muted)" }}>Total words</span>
+                <span style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 600 }}>{totalWords.toLocaleString()}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: C.textMuted }}>Est. time</span>
-                <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{readTime(totalWords)}</span>
+                <span style={{ fontSize: 12, color: "var(--pw-text-muted)" }}>Est. time</span>
+                <span style={{ fontSize: 12, color: "var(--pw-text)", fontWeight: 600 }}>{readTime(totalWords)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: C.textMuted }}>Progress</span>
-                <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>{readProgress}%</span>
+                <span style={{ fontSize: 12, color: "var(--pw-text-muted)" }}>Progress</span>
+                <span style={{ fontSize: 12, color: "var(--pw-accent)", fontWeight: 600 }}>{readProgress}%</span>
               </div>
             </div>
           </div>
@@ -1135,75 +1128,52 @@ export default function ShareReaderPage() {
         <main style={{
           flex: 1, minWidth: 0, padding: "48px 56px 48px 72px",
           minHeight: "100%",
-          background: C.surface, transition: "background 0.3s",
+          background: "var(--pw-surface)", transition: "background 0.3s",
         }}>
           {activeChapter ? (
             <>
               <div style={{ marginBottom: 28 }}>
-                <p style={{
-                  fontSize: 11, color: C.textDim, fontWeight: 600, textTransform: "uppercase",
-                  letterSpacing: "0.05em", marginBottom: 6,
-                }}>
+                <p style={{ fontSize: 11, color: "var(--pw-text-dim)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
                   Chapter {activeChapterIdx + 1}{multipleChapters ? ` of ${data.chapters.length}` : ""}
                 </p>
-                <h2 style={{
-                  fontSize: 30, fontWeight: 700, color: C.text,
-                  letterSpacing: "-0.02em", margin: 0, lineHeight: 1.3,
-                }}>
+                <h2 style={{ fontSize: 30, fontWeight: 700, color: "var(--pw-text)", letterSpacing: "-0.02em", margin: 0, lineHeight: 1.3 }}>
                   {activeChapter.title || `Chapter ${activeChapterIdx + 1}`}
                 </h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, color: C.textDim, fontWeight: 500 }}>
+                  <span style={{ fontSize: 12, color: "var(--pw-text-dim)", fontWeight: 500 }}>
                     {activeWords.toLocaleString()} words
                   </span>
-                  <span style={{ fontSize: 12, color: C.textDim }}>
+                  <span style={{ fontSize: 12, color: "var(--pw-text-dim)" }}>
                     {readTime(activeWords)}
                   </span>
                   {chapterAnnotations.length > 0 && (
-                    <span style={{
-                      fontSize: 11, padding: "2px 8px", borderRadius: 6,
-                      background: C.accentMuted, color: C.accent, fontWeight: 600,
-                    }}>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "var(--pw-accent-muted)", color: "var(--pw-accent)", fontWeight: 600 }}>
                       {chapterAnnotations.length} note{chapterAnnotations.length !== 1 ? "s" : ""}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div style={{ height: 1, background: C.borderLight, marginBottom: 32 }} />
+              <div style={{ height: 1, background: "var(--pw-border-light)", marginBottom: 32 }} />
 
               {/* Inline hint for first-time users */}
               {!submitted && annotations.length === 0 && (
-                <div style={{
-                  marginBottom: 28, padding: "14px 18px", borderRadius: 12,
-                  background: C.accentMuted,
-                  border: `1px solid ${theme === "dark" ? "rgba(124,92,252,0.1)" : "rgba(98,70,234,0.08)"}`,
-                  display: "flex", alignItems: "center", gap: 12,
-                  animation: "shareSlideIn 0.3s ease",
-                }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                    background: theme === "dark" ? "rgba(124,92,252,0.12)" : "rgba(98,70,234,0.08)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round">
+                <div className="pw-review-hint-card" style={{ animation: "shareSlideIn 0.3s ease" }}>
+                  <div className="pw-review-hint-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                     </svg>
                   </div>
                   <div>
-                    <p style={{ fontSize: 13, color: C.text, margin: 0, fontWeight: 600 }}>
-                      Select any text to leave a note
-                    </p>
-                    <p style={{ fontSize: 12, color: C.textMuted, margin: "2px 0 0", lineHeight: 1.4 }}>
-                      Highlight a passage to comment, suggest changes, or flag issues for the author.
-                    </p>
+                    <p className="pw-review-hint-title">Select any text to leave a note</p>
+                    <p className="pw-review-hint-desc">Highlight a passage to comment, suggest changes, or flag issues for the author.</p>
                   </div>
                 </div>
               )}
 
               {activeChapter.content ? (
                 <div ref={contentRef} onMouseUp={handleMouseUp} style={{
-                  fontSize: 17, color: C.prose, userSelect: "text", cursor: "text",
+                  fontSize: 17, color: "var(--pw-text-muted)", userSelect: "text", cursor: "text",
                   fontFamily: "Georgia, 'Times New Roman', serif",
                   letterSpacing: "0.01em",
                   maxWidth: 640,
@@ -1218,43 +1188,26 @@ export default function ShareReaderPage() {
 
               {/* ── General chapter feedback ── */}
               {!submitted && (
-                <div style={{
-                  marginTop: 48, paddingTop: 24, borderTop: `1px solid ${C.borderLight}`,
-                  maxWidth: 680,
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                      background: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
-                      border: `1px solid ${C.borderLight}`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2" strokeLinecap="round">
+                <div className="pw-review-overall-wrap">
+                  <div className="pw-review-overall-head">
+                    <div className="pw-review-overall-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/>
                       </svg>
                     </div>
                     <div>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0 }}>Overall thoughts</p>
-                      <p style={{ fontSize: 12, color: C.textDim, margin: "2px 0 0" }}>Share your general impression of this chapter</p>
+                      <p className="pw-review-overall-title">Overall thoughts</p>
+                      <p className="pw-review-overall-sub">Share your general impression of this chapter</p>
                     </div>
                   </div>
                   <textarea
+                    className="pw-review-overall-input"
                     placeholder="What did you think of this chapter? What worked well? What could be improved? Any overall impressions..."
                     value={chapterGeneralNote?.text ?? ""}
                     onChange={(e) => updateGeneralNote(e.target.value)}
-                    style={{
-                      width: "100%", minHeight: 100, fontSize: 14, padding: "14px 16px", borderRadius: 12,
-                      border: `1.5px solid ${C.border}`, background: C.inputBg,
-                      color: C.text, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6, outline: "none",
-                      boxSizing: "border-box", transition: "border-color 0.15s",
-                    }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = C.accent; }}
-                    onBlur={(e) => { e.currentTarget.style.borderColor = C.border; }}
                   />
                   {chapterGeneralNote?.text && (
-                    <p style={{ fontSize: 11, color: C.textDim, marginTop: 6, textAlign: "right" }}>
-                      Auto-saved locally
-                    </p>
+                    <p className="pw-review-overall-saved">Auto-saved locally</p>
                   )}
                 </div>
               )}
@@ -1263,21 +1216,21 @@ export default function ShareReaderPage() {
               {multipleChapters && (
                 <div style={{
                   display: "flex", justifyContent: "space-between", marginTop: 40, paddingTop: 20,
-                  borderTop: `1px solid ${C.borderLight}`, maxWidth: 680,
+                  borderTop: "1px solid var(--pw-border-light)", maxWidth: 680,
                 }}>
-                  <button onClick={() => { setActiveChapterIdx((i) => Math.max(0, i - 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === 0} style={{
+                  <button type="button" onClick={() => { setActiveChapterIdx((i) => Math.max(0, i - 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === 0} style={{
                     fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 8,
-                    border: `1px solid ${C.border}`, background: C.surfaceAlt,
-                    color: activeChapterIdx === 0 ? C.textDim : C.text,
+                    border: "1px solid var(--pw-border)", background: "var(--pw-surface-alt)",
+                    color: activeChapterIdx === 0 ? "var(--pw-text-dim)" : "var(--pw-text)",
                     cursor: activeChapterIdx === 0 ? "default" : "pointer",
                     fontFamily: "inherit", transition: "all 0.15s",
                   }}>
                     &#8592; Previous
                   </button>
-                  <button onClick={() => { setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === data.chapters.length - 1} style={{
+                  <button type="button" onClick={() => { setActiveChapterIdx((i) => Math.min(data.chapters.length - 1, i + 1)); window.scrollTo(0, 0); }} disabled={activeChapterIdx === data.chapters.length - 1} style={{
                     fontSize: 13, fontWeight: 500, padding: "9px 18px", borderRadius: 8,
-                    border: `1px solid ${C.border}`, background: C.surfaceAlt,
-                    color: activeChapterIdx === data.chapters.length - 1 ? C.textDim : C.text,
+                    border: "1px solid var(--pw-border)", background: "var(--pw-surface-alt)",
+                    color: activeChapterIdx === data.chapters.length - 1 ? "var(--pw-text-dim)" : "var(--pw-text)",
                     cursor: activeChapterIdx === data.chapters.length - 1 ? "default" : "pointer",
                     fontFamily: "inherit", transition: "all 0.15s",
                   }}>
@@ -1288,8 +1241,8 @@ export default function ShareReaderPage() {
 
               {/* Footer */}
               <div style={{ textAlign: "center", padding: "56px 0 24px" }}>
-                <img src={C.logo} alt="Blocwrite" style={{ height: 14, opacity: 0.15 }} />
-                <p style={{ fontSize: 10, color: C.borderLight, marginTop: 8 }}>© 2026 Blocwrite. All rights reserved.</p>
+                <img src={theme === "dark" ? "/blocwrite-logo-white.png" : "/blocwrite-logo-black.png"} alt="Blocwrite" style={{ height: 14, opacity: 0.15 }} />
+                <p style={{ fontSize: 10, color: "var(--pw-border-light)", marginTop: 8 }}>© 2026 Blocwrite. All rights reserved.</p>
               </div>
             </>
           ) : (
@@ -1301,134 +1254,102 @@ export default function ShareReaderPage() {
 
         {/* ── Notes sidebar ── */}
         {showNotesSidebar && (
-          <aside style={{
-            width: 320, flexShrink: 0, borderLeft: `1px solid ${C.notesBorder}`,
-            background: C.noteSidebar, overflowY: "auto", padding: "20px 16px",
-            transition: "background 0.3s",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>
-                Your Notes
-              </p>
-              <span style={{ fontSize: 11, color: C.textDim, fontWeight: 500 }}>
-                {chapterAnnotations.length} on this chapter
-              </span>
+          <aside className="pw-review-sidebar">
+            <div className="pw-review-sidebar-header">
+              <p className="pw-review-sidebar-title">Your Notes</p>
+              <span className="pw-review-sidebar-count">{chapterAnnotations.length} on this chapter</span>
             </div>
 
             {chapterAnnotations.length === 0 && !chapterGeneralNote?.text && (
-              <div style={{
-                padding: "32px 16px", textAlign: "center",
-                borderRadius: 12, background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
-                border: `1px dashed ${C.borderLight}`,
-              }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round" style={{ margin: "0 auto 10px", display: "block", opacity: 0.4 }}>
+              <div className="pw-review-notes-empty">
+                <svg className="pw-review-notes-empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                 </svg>
-                <p style={{ fontSize: 13, color: C.textDim, margin: 0, lineHeight: 1.5 }}>
-                  No notes yet.<br/>Highlight text to annotate.
-                </p>
+                <p className="pw-review-notes-empty-text">No notes yet.<br/>Highlight text to annotate.</p>
               </div>
             )}
 
-            {/* Annotation cards */}
             {chapterAnnotations.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="pw-review-note-list">
                 {chapterAnnotations.map((ann, i) => {
                   const globalIdx = annotations.indexOf(ann);
                   const meta = typeMeta(ann.type);
                   const isActive = ann.id === activeAnnotationId;
                   return (
-                    <div key={i} style={{
-                      padding: "12px 14px", borderRadius: 12,
-                      background: isActive ? meta.bg : (theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"),
-                      border: `1px solid ${isActive ? meta.color : C.borderLight}`,
-                      animation: isActive ? "shareGlow 0.6s ease" : "shareSlideIn 0.2s ease",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                    onClick={() => {
-                      // Scroll to the highlighted text in the content
-                      if (ann.id && contentRef.current) {
-                        const mark = contentRef.current.querySelector(`[data-ann-id="${ann.id}"]`);
-                        if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
-                      }
-                      setActiveAnnotationId(ann.id || null);
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = meta.border; }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = C.borderLight; }}
+                    <div
+                      key={i}
+                      className="pw-review-note-card"
+                      style={{
+                        background: isActive ? meta.bg : undefined,
+                        borderColor: isActive ? meta.color : undefined,
+                        animation: isActive ? "shareGlow 0.6s ease" : "shareSlideIn 0.2s ease",
+                      }}
+                      onClick={() => {
+                        if (ann.id && contentRef.current) {
+                          const mark = contentRef.current.querySelector(`[data-ann-id="${ann.id}"]`);
+                          if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }
+                        setActiveAnnotationId(ann.id || null);
+                      }}
+                      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = meta.border; }}
+                      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = ""; }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-                          background: meta.bg, color: meta.color, textTransform: "uppercase",
-                          letterSpacing: "0.04em", border: `1px solid ${meta.border}`,
-                        }}>
+                      <div className="pw-review-note-card-head">
+                        <span className="pw-review-note-badge" style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.border}` }}>
                           {TYPE_META[ann.type].label}
                         </span>
                         {!submitted && (
                           <button
+                            type="button"
                             onClick={(e) => { e.stopPropagation(); removeAnnotation(globalIdx); }}
                             title="Remove note"
                             style={{
                               background: "none", border: "none", cursor: "pointer",
                               width: 22, height: 22, borderRadius: 6, padding: 0,
                               display: "flex", alignItems: "center", justifyContent: "center",
-                              color: C.textDim, transition: "all 0.15s",
+                              color: "var(--pw-text-dim)", transition: "color 0.15s",
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = "#f87171"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = C.textDim; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--pw-status-danger)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--pw-text-dim)"; }}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                           </button>
                         )}
                       </div>
-                      <p style={{ fontSize: 11, color: C.textDim, fontStyle: "italic", margin: "0 0 4px", lineHeight: 1.4 }}>
-                        &ldquo;{ann.selectedText.slice(0, 80)}{ann.selectedText.length > 80 ? "..." : ""}&rdquo;
-                      </p>
-                      <p style={{ fontSize: 12, color: C.text, lineHeight: 1.5, margin: 0 }}>{ann.note}</p>
+                      <p className="pw-review-note-quote">&ldquo;{ann.selectedText.slice(0, 80)}{ann.selectedText.length > 80 ? "..." : ""}&rdquo;</p>
+                      <p className="pw-review-note-body">{ann.note}</p>
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {/* General note preview */}
             {chapterGeneralNote?.text && (
-              <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 10, background: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)", border: `1px solid ${C.borderLight}` }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
-                  Overall thoughts
-                </p>
-                <p style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5, margin: 0 }}>
-                  {chapterGeneralNote.text.slice(0, 120)}{chapterGeneralNote.text.length > 120 ? "..." : ""}
-                </p>
+              <div className="pw-review-general-preview">
+                <p className="pw-review-general-preview-label">Overall thoughts</p>
+                <p className="pw-review-general-preview-text">{chapterGeneralNote.text.slice(0, 120)}{chapterGeneralNote.text.length > 120 ? "..." : ""}</p>
               </div>
             )}
 
-            {/* All chapters note count */}
             {multipleChapters && (
-              <div style={{ marginTop: 20, paddingTop: 14, borderTop: `1px solid ${C.borderLight}` }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
-                  All chapters
-                </p>
+              <div className="pw-review-all-chapters">
+                <p className="pw-review-all-chapters-title">All chapters</p>
                 {data.chapters.map((ch, idx) => {
                   const count = annotations.filter((a) => a.sharedChapterId === ch.id).length;
                   const hasNote = generalNotes.some((n) => n.chapterId === ch.id && n.text.trim());
                   const total = count + (hasNote ? 1 : 0);
                   if (total === 0) return null;
                   return (
-                    <div key={ch.id} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "4px 0", fontSize: 12,
-                    }}>
-                      <button onClick={() => setActiveChapterIdx(idx)} style={{
+                    <div key={ch.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", fontSize: 12 }}>
+                      <button type="button" onClick={() => setActiveChapterIdx(idx)} style={{
                         background: "none", border: "none", cursor: "pointer", padding: 0,
-                        color: idx === activeChapterIdx ? C.accent : C.textMuted,
+                        color: idx === activeChapterIdx ? "var(--pw-accent)" : "var(--pw-text-muted)",
                         fontWeight: idx === activeChapterIdx ? 600 : 400, fontSize: 12,
                         fontFamily: "inherit", textAlign: "left",
                       }}>
                         {ch.title || `Chapter ${idx + 1}`}
                       </button>
-                      <span style={{ fontSize: 11, color: C.textDim }}>{total}</span>
+                      <span style={{ fontSize: 11, color: "var(--pw-text-dim)" }}>{total}</span>
                     </div>
                   );
                 })}
@@ -1440,54 +1361,42 @@ export default function ShareReaderPage() {
 
       {/* ── Annotation popup ── */}
       {selPopup && (
-        <div ref={popupRef} style={{
-          position: "fixed",
-          left: Math.min(Math.max(selPopup.x - 190, 16), (typeof window !== "undefined" ? window.innerWidth : 900) - 400),
-          top: Math.max(8, selPopup.y - 340),
-          width: 380, background: C.popupBg, borderRadius: 16,
-          boxShadow: C.popupShadow,
-          padding: 0, zIndex: 1000,
-          animation: "shareSlideDown 0.15s ease",
-          border: `1px solid ${C.borderLight}`,
-          overflow: "hidden",
-        }}>
-          {/* Accent bar */}
-          <div style={{
-            height: 3,
-            background: `linear-gradient(90deg, ${typeMeta(noteType).color}, transparent)`,
-          }} />
-
-          <div style={{ padding: "16px 18px 18px" }}>
-            {/* Selected text preview */}
-            <p style={{
-              fontSize: 12, color: C.textMuted, fontStyle: "italic", lineHeight: 1.5, margin: "0 0 12px",
-              borderLeft: `3px solid ${typeMeta(noteType).color}`,
-              paddingLeft: 10,
-            }}>
+        <div
+          ref={popupRef}
+          className="pw-review-popup"
+          style={{
+            left: Math.min(Math.max(selPopup.x - 190, 16), (typeof window !== "undefined" ? window.innerWidth : 900) - 400),
+            top: Math.max(8, selPopup.y - 340),
+            animation: "shareSlideDown 0.15s ease",
+          }}
+        >
+          <div className="pw-review-popup-bar" style={{ background: typeMeta(noteType).color }} />
+          <div className="pw-review-popup-inner">
+            <p className="pw-review-popup-quote" style={{ borderLeftColor: typeMeta(noteType).color }}>
               &ldquo;{selPopup.text.slice(0, 100)}{selPopup.text.length > 100 ? "..." : ""}&rdquo;
             </p>
 
-            {/* Type selector */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            <div className="pw-review-popup-types">
               {(["comment", "suggestion", "issue"] as AnnotationType[]).map((t) => {
                 const active = noteType === t;
                 const meta = typeMeta(t);
                 return (
-                  <button key={t} onClick={() => setNoteType(t)} style={{
-                    flex: 1, fontSize: 11, fontWeight: 600, padding: "6px 0", borderRadius: 8,
-                    border: active ? `1.5px solid ${meta.color}` : `1.5px solid ${C.border}`,
-                    background: active ? meta.bg : "transparent",
-                    color: active ? meta.color : C.textDim,
-                    cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s",
-                    fontFamily: "inherit",
-                  }}>{TYPE_META[t].label}</button>
+                  <button
+                    key={t}
+                    type="button"
+                    className={`pw-review-popup-type-btn${active ? " active" : ""}`}
+                    onClick={() => setNoteType(t)}
+                    style={active ? { borderColor: meta.color, background: meta.bg, color: meta.color } : undefined}
+                  >
+                    {TYPE_META[t].label}
+                  </button>
                 );
               })}
             </div>
 
-            {/* Note input */}
             <textarea
               ref={noteInputRef}
+              className="pw-review-popup-input"
               placeholder={
                 noteType === "comment" ? "What do you think about this passage?"
                 : noteType === "suggestion" ? "How would you improve this?"
@@ -1495,42 +1404,29 @@ export default function ShareReaderPage() {
               }
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              style={{
-                width: "100%", minHeight: 72, fontSize: 13, padding: "10px 12px", borderRadius: 10,
-                border: `1.5px solid ${C.border}`, background: C.inputBg,
-                color: C.text, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6, outline: "none",
-                boxSizing: "border-box",
-              }}
               onFocus={(e) => { e.currentTarget.style.borderColor = typeMeta(noteType).color; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = C.border; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = ""; }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addAnnotation();
                 if (e.key === "Escape") setSelPopup(null);
               }}
             />
 
-            {/* Actions */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-              <p style={{ fontSize: 10, color: C.textDim, margin: 0 }}>
+            <div className="pw-review-popup-actions">
+              <p className="pw-review-popup-shortcut">
                 {typeof navigator !== "undefined" && navigator.platform?.includes("Mac") ? "\u2318" : "Ctrl"}+Enter
               </p>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setSelPopup(null)} style={{
-                  fontSize: 12, padding: "7px 14px", borderRadius: 8,
-                  border: `1px solid ${C.border}`, background: "transparent",
-                  color: C.textMuted, cursor: "pointer", fontFamily: "inherit",
-                  fontWeight: 500, transition: "all 0.15s",
-                }}>Cancel</button>
-                <button onClick={addAnnotation} disabled={!noteText.trim()} style={{
-                  fontSize: 12, fontWeight: 600, padding: "7px 16px", borderRadius: 8,
-                  border: "none",
-                  background: noteText.trim() ? typeMeta(noteType).color : C.border,
-                  color: noteText.trim()
-                    ? (noteType === "issue" ? "#fff" : (theme === "dark" ? "#111" : "#fff"))
-                    : C.textDim,
-                  cursor: noteText.trim() ? "pointer" : "default",
-                  fontFamily: "inherit", transition: "all 0.2s",
-                }}>Add Note</button>
+                <button type="button" className="pw-review-popup-cancel" onClick={() => setSelPopup(null)}>Cancel</button>
+                <button
+                  type="button"
+                  className="pw-review-popup-submit"
+                  onClick={addAnnotation}
+                  disabled={!noteText.trim()}
+                  style={noteText.trim() ? { background: typeMeta(noteType).color, color: noteType === "issue" ? "#fff" : (theme === "dark" ? "#111" : "#fff") } : undefined}
+                >
+                  Add Note
+                </button>
               </div>
             </div>
           </div>

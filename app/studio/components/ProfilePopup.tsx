@@ -691,7 +691,7 @@ export function ProfilePopup({
                             height: 8,
                             borderRadius: "50%",
                             background: subInfo.cancelAtPeriodEnd
-                              ? "#f59e0b"
+                              ? "var(--pw-status-warning)"
                               : subInfo.status === "trialing"
                                 ? "#8b5cf6"
                                 : "#10b981",
@@ -808,7 +808,7 @@ export function ProfilePopup({
                                 }}
                                 style={{
                                   background: "rgba(239,68,68,0.15)",
-                                  color: "#ef4444",
+                                  color: "var(--pw-status-danger)",
                                   fontWeight: 600,
                                   fontSize: 13,
                                 }}
@@ -825,7 +825,7 @@ export function ProfilePopup({
                               </button>
                             </div>
                             {cancelError && (
-                              <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8, marginBottom: 0 }}>{cancelError}</p>
+                              <p style={{ fontSize: 12, color: "var(--pw-status-danger)", marginTop: 8, marginBottom: 0 }}>{cancelError}</p>
                             )}
                           </div>
                         )}
@@ -834,7 +834,7 @@ export function ProfilePopup({
 
                     {/* Already cancelling message */}
                     {subInfo.cancelAtPeriodEnd && !cancelSuccess && (
-                      <p className="pw-settings-hint" style={{ marginTop: 12, color: "#f59e0b" }}>
+                      <p className="pw-settings-hint" style={{ marginTop: 12, color: "var(--pw-status-warning)" }}>
                         Your subscription is set to cancel. You have full access until the end of your billing period.
                       </p>
                     )}
@@ -935,7 +935,7 @@ export function ProfilePopup({
                     </div>
 
                     {pwError && (
-                      <p style={{ fontSize: 12, color: "#ef4444", marginTop: 10, marginBottom: 0 }}>{pwError}</p>
+                      <p style={{ fontSize: 12, color: "var(--pw-status-danger)", marginTop: 10, marginBottom: 0 }}>{pwError}</p>
                     )}
                     {pwSuccess && (
                       <p style={{ fontSize: 12, color: "#10b981", marginTop: 10, marginBottom: 0 }}>Password changed successfully.</p>

@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ThreadKeeper, type ThreadKeeperCategoryId, type ThreadKeeperIssue } from "./ThreadKeeper";
 import type { StoryBible, Chapter } from "../studio-store";
 
 /* ─── Types ─── */
 
-export type EditorMode = "quick-fix" | "targeted" | "report";
+export type EditorMode = "quick-fix" | "targeted" | "report" | "unified";
 
 export type TargetedFocus =
   | "pacing"
@@ -34,9 +33,9 @@ export type EditorChange = {
 
 export type EditorResult = {
   mode: EditorMode;
-  /** For quick-fix and targeted: list of per-paragraph changes */
+  /** For quick-fix, targeted, and unified: list of per-paragraph changes */
   changes?: EditorChange[];
-  /** For report mode: list of issues */
+  /** For report and unified: list of issues */
   issues?: EditorialIssue[];
   /** Summary of what was changed/found */
   summary: string;
@@ -54,45 +53,11 @@ export const TARGETED_OPTIONS: Array<{ id: TargetedFocus; label: string; desc: s
   { id: "action", label: "Clarify Action", desc: "Make physical movement and choreography clearer" },
 ];
 
-/* Editor pass tabs */
-type EditorTab = "threadkeeper" | "grammar" | "polish";
-
-const EDITOR_TABS: Array<{
-  id: EditorTab;
-  label: string;
-  desc: string;
-  icon: string;
-  mode: EditorMode;
-  targetedFocus?: TargetedFocus;
-  isThreadKeeper?: boolean;
-}> = [
-  {
-    id: "threadkeeper",
-    label: "Continuity",
-    desc: "Canon violations, state drift, timeline errors, relationship breaks, knowledge violations, and more",
-    icon: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    mode: "report",
-    isThreadKeeper: true,
-  },
-  {
-    id: "grammar",
-    label: "Grammar & Style",
-    desc: "Spelling, punctuation, sentence structure, tense agreement, and professional prose quality",
-    icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-    mode: "quick-fix",
-  },
-  {
-    id: "polish",
-    label: "Final Polish",
-    desc: "Tighten prose, vary sentence rhythm, cut filler, strengthen verbs, and elevate to publication standard",
-    icon: "M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z",
-    mode: "quick-fix",
-  },
-];
+/* Unified editor — one check, one list, one fix flow */
 
 const SEVERITY_COLORS: Record<string, string> = {
-  high: "#ef4444",
-  medium: "#f59e0b",
+  high: "var(--pw-status-danger)",
+  medium: "var(--pw-status-warning)",
   low: "#6b7280",
 };
 
@@ -180,24 +145,6 @@ type TheEditorProps = {
   onResultUpdate: (result: EditorResult) => void;
   /** Word count of this chapter */
   wordCount: number;
-  /** ThreadKeeper props */
-  chapterProse: string;
-  storyBible: StoryBible;
-  allChapters: Chapter[];
-  currentChapterIndex: number;
-  planCharacterIds: string[];
-  planLocationIds: string[];
-  chapterSynopsis?: string;
-  blocSynopses?: string[];
-  onThreadKeeperAiCheck: (
-    categoryId: ThreadKeeperCategoryId,
-    context: {
-      chapterProse: string;
-      prevChapterProse: string;
-      nextChapterProse: string;
-      canonSummary: string;
-    },
-  ) => Promise<ThreadKeeperIssue[]>;
 };
 
 /* ─── Component ─── */
@@ -219,18 +166,8 @@ export function TheEditor({
   originalParagraphs,
   onResultUpdate,
   wordCount,
-  chapterProse,
-  storyBible,
-  allChapters,
-  currentChapterIndex,
-  planCharacterIds,
-  planLocationIds,
-  chapterSynopsis,
-  blocSynopses,
-  onThreadKeeperAiCheck,
 }: TheEditorProps) {
   const loading = !!loadingPhase;
-  const [activeTab, setActiveTab] = useState<EditorTab>("threadkeeper");
   const [expandedChange, setExpandedChange] = useState<number | null>(null);
 
   /* Compute the assembled text and word delta from accepted changes */
@@ -262,10 +199,8 @@ export function TheEditor({
 
   if (!open) return null;
 
-  const currentTabConfig = EDITOR_TABS.find((t) => t.id === activeTab)!;
-
   const handleRun = () => {
-    void onRun(currentTabConfig.mode, currentTabConfig.targetedFocus, activeTab);
+    void onRun("unified", undefined, "unified");
   };
 
   const handleApply = () => {
@@ -292,13 +227,9 @@ export function TheEditor({
     onResultUpdate({ ...result, changes: updated });
   };
 
-  const handleTabSwitch = (tab: EditorTab) => {
-    setActiveTab(tab);
-    // Clear results when switching tabs so stale results don't confuse
-    if (result) {
-      onResultUpdate({ ...result, changes: undefined, issues: undefined, summary: "" });
-    }
-  };
+  const hasIssues = (result?.issues?.length ?? 0) > 0;
+  const hasChanges = (result?.changes?.length ?? 0) > 0;
+  const isUnified = result?.mode === "unified";
 
   return (
     <div className="pw-modal-overlay" onClick={onClose}>
@@ -320,8 +251,8 @@ export function TheEditor({
               <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>The Editor</h2>
               <span style={{
                 fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
-                background: "var(--pw-accent-muted, rgba(124,92,252,0.1))",
-                color: "var(--pw-accent, #b8a4ff)",
+                background: "var(--pw-accent-muted)",
+                color: "var(--pw-accent)",
                 textTransform: "uppercase", letterSpacing: "0.06em",
               }}>
                 Chapter {chapterNumber}/{totalChapters}
@@ -357,81 +288,22 @@ export function TheEditor({
               <span>{locationsInChapter.slice(0, 3).join(", ")}{locationsInChapter.length > 3 ? ` +${locationsInChapter.length - 3}` : ""}</span>
             </div>
           )}
-          <div style={{ marginLeft: "auto", opacity: 0.5 }}>
-            AI reads adjacent chapters for continuity
-          </div>
-        </div>
-
-        {/* ═══ TABS ═══ */}
-        <div style={{
-          display: "flex", gap: 0, padding: "0 24px",
-          borderBottom: "1px solid var(--pw-border-light, #2a2a2a)",
-          flexShrink: 0,
-        }}>
-          {EDITOR_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => handleTabSwitch(tab.id)}
-              disabled={loading}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "12px 16px",
-                fontSize: 13, fontWeight: activeTab === tab.id ? 650 : 500,
-                color: activeTab === tab.id ? "var(--pw-accent, #b8a4ff)" : "var(--pw-text-dim, #888)",
-                background: "none", border: "none", cursor: loading ? "default" : "pointer",
-                borderBottom: activeTab === tab.id ? "2px solid var(--pw-accent, #b8a4ff)" : "2px solid transparent",
-                transition: "all 0.15s",
-                opacity: loading && activeTab !== tab.id ? 0.4 : 1,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d={tab.icon} />
-              </svg>
-              {tab.label}
-            </button>
-          ))}
         </div>
 
         {/* ═══ BODY ═══ */}
         <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px 24px" }}>
-          {/* ═══ ThreadKeeper tab — dedicated component ═══ */}
-          {activeTab === "threadkeeper" && (
-            <ThreadKeeper
-              chapterProse={chapterProse}
-              chapterTitle={chapterTitle}
-              chapterNumber={chapterNumber}
-              totalChapters={totalChapters}
-              storyBible={storyBible}
-              allChapters={allChapters}
-              currentChapterIndex={currentChapterIndex}
-              planCharacterIds={planCharacterIds}
-              planLocationIds={planLocationIds}
-              chapterSynopsis={chapterSynopsis}
-              blocSynopses={blocSynopses}
-              onRunAiCheck={onThreadKeeperAiCheck}
-              wordCount={wordCount}
-            />
-          )}
-
-          {/* ═══ Grammar & Polish tabs — original editor flow ═══ */}
-          {activeTab !== "threadkeeper" && (
-          <>
-          {/* Tab description + Run button */}
+          {/* Check button */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 16,
-            marginBottom: 16,
-            padding: "12px 16px",
-            background: "var(--pw-surface-alt, #161616)",
+            display: "flex", alignItems: "center", gap: 16, marginBottom: 16,
+            padding: "14px 18px",
+            background: "var(--pw-surface-alt)",
             borderRadius: 10,
-            border: "1px solid var(--pw-border-light, #2a2a2a)",
+            border: "1px solid var(--pw-overlay-border-light)",
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>
-                {currentTabConfig.label}
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.5, lineHeight: 1.4 }}>
-                {currentTabConfig.desc}
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>Check chapter</div>
+              <div style={{ fontSize: 12, color: "var(--pw-text-dim)", lineHeight: 1.4 }}>
+                Continuity, grammar, and prose quality — one pass
               </div>
             </div>
             <button
@@ -441,7 +313,7 @@ export function TheEditor({
               disabled={loading}
               style={{ flexShrink: 0, padding: "10px 20px", fontSize: 13, fontWeight: 600 }}
             >
-              {loading ? loadingPhase : `Run ${currentTabConfig.label}`}
+              {loading ? loadingPhase : "Check"}
             </button>
           </div>
 
@@ -461,7 +333,7 @@ export function TheEditor({
             <div style={{ textAlign: "center", padding: "32px 0" }}>
               <div style={{
                 width: 32, height: 32, border: "2px solid var(--pw-border, #333)",
-                borderTopColor: "var(--pw-accent, #b8a4ff)", borderRadius: "50%",
+                borderTopColor: "var(--pw-accent)", borderRadius: "50%",
                 animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
               }} />
               <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>{loadingPhase}</p>
@@ -503,7 +375,7 @@ export function TheEditor({
                       <div style={{ textAlign: "right", flexShrink: 0, fontSize: 12, opacity: 0.6 }}>
                         <div style={{ fontWeight: 600 }}>{totalChanges} edit{totalChanges !== 1 ? "s" : ""}</div>
                         {wordDelta !== 0 && (
-                          <div style={{ color: wordDelta < 0 ? "#f87171" : "#b8a4ff", fontSize: 11 }}>
+                          <div style={{ color: wordDelta < 0 ? "var(--pw-status-danger)" : "var(--pw-accent)", fontSize: 11 }}>
                             {wordDelta > 0 ? "+" : ""}{wordDelta} words
                           </div>
                         )}
@@ -513,9 +385,10 @@ export function TheEditor({
                 </div>
               )}
 
-              {/* ─── REPORT: Issue cards (Consistency tab) ─── */}
-              {result.mode === "report" && result.issues && result.issues.length > 0 && (
+              {/* ─── Issues (continuity/consistency) ─── */}
+              {((result.mode === "report" || result.mode === "unified") && result.issues && result.issues.length > 0) && (
                 <>
+                  {isUnified && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text-dim)", marginBottom: 8 }}>Issues</div>}
                   {/* Fix Issues bridge */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
                     <button
@@ -582,20 +455,21 @@ export function TheEditor({
                 </>
               )}
 
-              {result.mode === "report" && (!result.issues || result.issues.length === 0) && (
+              {((result.mode === "report" || result.mode === "unified") && (!result.issues || result.issues.length === 0) && (!result.changes || result.changes.length === 0)) && (
                 <div style={{
-                  textAlign: "center", padding: "32px 0", fontSize: 14, opacity: 0.5,
+                  textAlign: "center", padding: "32px 0", fontSize: 14, color: "var(--pw-text-dim)",
                 }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
                     <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  No consistency issues found. Chapter looks clean.
+                  No issues found. Chapter looks clean.
                 </div>
               )}
 
-              {/* ─── QUICK FIX / TARGETED: Per-change review ─── */}
-              {(result.mode === "quick-fix" || result.mode === "targeted") && result.changes && result.changes.length > 0 && (
+              {/* ─── Prose edits (grammar, polish) ─── */}
+              {(result.mode === "quick-fix" || result.mode === "targeted" || result.mode === "unified") && result.changes && result.changes.length > 0 && (
                 <>
+                  {isUnified && <div style={{ fontSize: 12, fontWeight: 600, color: "var(--pw-text-dim)", marginTop: hasIssues ? 20 : 0, marginBottom: 8 }}>Prose edits</div>}
                   {/* Batch actions bar */}
                   <div style={{
                     display: "flex", gap: 8, marginBottom: 14, alignItems: "center",
@@ -637,12 +511,12 @@ export function TheEditor({
                           style={{
                             borderRadius: 10,
                             border: change.accepted === true
-                              ? "1px solid rgba(124,92,252,0.35)"
+                              ? "1px solid rgba(var(--accent-rgb), 0.35)"
                               : change.accepted === false
                               ? "1px solid rgba(239,68,68,0.2)"
                               : "1px solid var(--pw-border, #333)",
                             background: change.accepted === true
-                              ? "rgba(124,92,252,0.03)"
+                              ? "rgba(var(--accent-rgb), 0.03)"
                               : change.accepted === false
                               ? "rgba(239,68,68,0.02)"
                               : "var(--pw-surface, #1a1a1a)",
@@ -680,9 +554,9 @@ export function TheEditor({
                                 style={{
                                   padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
                                   cursor: "pointer",
-                                  border: change.accepted === true ? "1px solid rgba(124,92,252,0.5)" : "1px solid var(--pw-border, #444)",
-                                  background: change.accepted === true ? "rgba(124,92,252,0.12)" : "transparent",
-                                  color: change.accepted === true ? "#b8a4ff" : "var(--pw-text-dim, #aaa)",
+                                  border: change.accepted === true ? "1px solid rgba(var(--accent-rgb), 0.5)" : "1px solid var(--pw-border)",
+                                  background: change.accepted === true ? "rgba(var(--accent-rgb), 0.12)" : "transparent",
+                                  color: change.accepted === true ? "var(--pw-accent)" : "var(--pw-text-dim)",
                                   transition: "all 0.12s",
                                 }}
                               >
@@ -696,7 +570,7 @@ export function TheEditor({
                                   cursor: "pointer",
                                   border: change.accepted === false ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--pw-border, #444)",
                                   background: change.accepted === false ? "rgba(239,68,68,0.12)" : "transparent",
-                                  color: change.accepted === false ? "#ef4444" : "var(--pw-text-dim, #aaa)",
+                                  color: change.accepted === false ? "var(--pw-status-danger)" : "var(--pw-text-dim)",
                                   transition: "all 0.12s",
                                 }}
                               >
@@ -714,11 +588,11 @@ export function TheEditor({
                                     key={si}
                                     style={{
                                       background: seg.type === "removed" ? "rgba(239,68,68,0.15)"
-                                        : seg.type === "added" ? "rgba(124,92,252,0.18)"
+                                        : seg.type === "added" ? "rgba(var(--accent-rgb), 0.18)"
                                         : "transparent",
                                       textDecoration: seg.type === "removed" ? "line-through" : "none",
                                       color: seg.type === "removed" ? "#f87171"
-                                        : seg.type === "added" ? "#b8a4ff"
+                                        : seg.type === "added" ? "var(--pw-accent)"
                                         : "inherit",
                                       borderRadius: seg.type !== "same" ? 2 : undefined,
                                       padding: seg.type !== "same" ? "1px 0" : undefined,
@@ -737,33 +611,21 @@ export function TheEditor({
                 </>
               )}
 
-              {(result.mode === "quick-fix" || result.mode === "targeted") && (!result.changes || result.changes.length === 0) && (
-                <div style={{
-                  textAlign: "center", padding: "32px 0", fontSize: 14, opacity: 0.5,
-                }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent, #b8a4ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 12px", display: "block", opacity: 0.6 }}>
-                    <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  No changes needed. Chapter looks clean.
-                </div>
-              )}
             </div>
           )}
 
           {/* No results yet — initial state */}
           {!loading && !result && !error && (
-            <div style={{ textAlign: "center", padding: "40px 0", opacity: 0.4 }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block" }}>
-                <path d={currentTabConfig.icon} />
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--pw-text-dim)" }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block", opacity: 0.5 }}>
+                <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-              <p style={{ fontSize: 14, margin: "0 0 4px" }}>Ready to run {currentTabConfig.label}</p>
-              <p style={{ fontSize: 12 }}>{currentTabConfig.desc}</p>
-              <p style={{ fontSize: 11, opacity: 0.6, marginTop: 12, maxWidth: 340, margin: "12px auto 0", lineHeight: 1.5 }}>
-                Slower AI models may take longer. The editor will keep working — don&apos;t close this window.
+              <p style={{ fontSize: 14, fontWeight: 500, margin: "0 0 4px" }}>Click Check to analyse this chapter</p>
+              <p style={{ fontSize: 12, opacity: 0.7 }}>Continuity, grammar, and prose quality in one pass</p>
+              <p style={{ fontSize: 11, opacity: 0.5, marginTop: 12, maxWidth: 300, margin: "12px auto 0", lineHeight: 1.5 }}>
+                Slower models may take a few minutes. Don&apos;t close this window.
               </p>
             </div>
-          )}
-          </>
           )}
         </div>
       </div>

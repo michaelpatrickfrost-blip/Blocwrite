@@ -1,37 +1,29 @@
 import Link from "next/link";
+import { PublicNav } from "../components/PublicNav";
+import { PublicFooter } from "../components/PublicFooter";
 
 const C = {
-  bg: "#fafaf9",
-  bgSoft: "#f5f5f4",
+  bg: "#fdfcfa",
+  bgSoft: "#f8f7f5",
   text: "#1c1917",
-  textSoft: "#44403c",
-  textMuted: "#57534e",
-  border: "#e7e5e4",
+  textSoft: "#404040",
+  textMuted: "#6b6b6b",
+  border: "#e8e6e4",
 };
 
 export default function RefundPolicyPage() {
-  const h2: React.CSSProperties = { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 48, marginBottom: 12 };
-  const p: React.CSSProperties = { fontSize: 15, lineHeight: 1.7, color: C.textSoft, marginBottom: 16 };
+  const h2: React.CSSProperties = { fontSize: 22, fontWeight: 700, fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif", letterSpacing: "-0.02em", marginTop: 48, marginBottom: 12 };
+  const p: React.CSSProperties = { fontSize: 15, lineHeight: 1.8, color: C.textSoft, marginBottom: 16 };
 
   return (
     <main style={{ background: C.bg, color: C.text, fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
-      {/* Nav */}
-      <nav style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "14px 28px" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
-            <img src="/blocwrite-logo-black.png" alt="Blocwrite" style={{ height: 36, width: "auto", display: "block" }} />
-          </Link>
-          <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>
-            &larr; Back to Home
-          </Link>
-        </div>
-      </nav>
+      <PublicNav showLinks />
 
       <article style={{ maxWidth: 680, margin: "0 auto", padding: "64px 28px 100px" }}>
         <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 12 }}>
           LEGAL
         </p>
-        <h1 style={{ fontSize: 36, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 8 }}>
+        <h1 style={{ fontSize: 36, fontWeight: 700, fontFamily: "var(--font-display, 'DM Sans'), system-ui, sans-serif", letterSpacing: "-0.03em", marginBottom: 8 }}>
           Refund Policy
         </h1>
         <p style={{ fontSize: 14, color: C.textMuted, marginBottom: 40 }}>
@@ -87,36 +79,14 @@ export default function RefundPolicyPage() {
           . We aim to respond within 48 hours.
         </p>
 
-        <div style={{ marginTop: 48, padding: 24, borderRadius: 14, background: C.bgSoft, border: `1px solid ${C.border}` }}>
+        <div style={{ marginTop: 48, padding: 28, borderRadius: 18, background: C.bgSoft, border: `1px solid ${C.border}`, boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>
           <p style={{ fontSize: 14, lineHeight: 1.6, color: C.textSoft, margin: 0 }}>
             <strong style={{ color: C.text }}>Summary:</strong> Try Blocwrite free for 7 days. Cancel during the trial and pay nothing. After the trial, all charges are final. Cancel anytime to stop future billing.
           </p>
         </div>
       </article>
 
-      {/* Footer */}
-      <footer style={{ padding: "48px 0 40px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
-              © 2026 Blocwrite. All rights reserved.
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-            {[
-              { label: "Home", href: "/" },
-              { label: "Terms", href: "/terms" },
-              { label: "Refund Policy", href: "/refunds" },
-              { label: "Contact", href: "/contact" },
-            ].map((l) => (
-              <Link key={l.href} href={l.href} style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none" }}>
-                {l.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </main>
   );
 }

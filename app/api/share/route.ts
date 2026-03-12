@@ -279,11 +279,17 @@ export async function POST(request: Request) {
     // Read the user's novels data
     const dir = getUserDataDir(email);
     const raw = await readFile(join(dir, "novels.json"), "utf-8").catch(() => "[]");
-    const novels = JSON.parse(raw) as Array<{
+    let novels: Array<{
       id: string;
       title?: string;
       chapters?: Array<{ id: string; title: string; content?: string }>;
     }>;
+    try {
+      const parsed = JSON.parse(raw);
+      novels = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      novels = [];
+    }
 
     const novel = novels.find((n) => n.id === novelId);
     if (!novel) {

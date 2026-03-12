@@ -539,6 +539,8 @@ export type Novel = {
   title: string;
   authorName: string;
   synopsis: string;
+  /** Back-cover blurb for Amazon etc. — separate from synopsis, for marketing. */
+  blurb?: string;
   goalWords: number;
   coverImage: string | null;
   chapters: Chapter[];
@@ -1303,6 +1305,7 @@ function normalizeNovel(raw: unknown): Novel | null {
   }
 
   const authorName = typeof record.authorName === "string" ? record.authorName : "";
+  const blurb = typeof record.blurb === "string" ? record.blurb : undefined;
   const novelType = record.novelType === "nonfiction" ? "nonfiction" as const : "fiction" as const;
   const archived = record.archived === true;
   const healthScore = record.healthScore && typeof record.healthScore === "object" ? record.healthScore as Novel["healthScore"] : undefined;
@@ -1322,6 +1325,7 @@ function normalizeNovel(raw: unknown): Novel | null {
     createdAt,
     updatedAt,
     ...(archived ? { archived } : {}),
+    ...(blurb != null ? { blurb } : {}),
     ...(healthScore ? { healthScore } : {}),
     ...(thematicAnalysis ? { thematicAnalysis } : {}),
     ...(narrativeControl ? { narrativeControl } : {}),

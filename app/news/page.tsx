@@ -34,7 +34,7 @@ export default function NewsPage() {
   }, []);
 
   return (
-    <main style={{ background: "#ffffff", color: "#111114", fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
+    <main style={{ background: "#fdfcfa", color: "#111114", fontFamily: "var(--font-sans, Inter, system-ui, sans-serif)", minHeight: "100vh" }}>
       <style>{`
         /* ── Responsive ── */
         @media (max-width: 768px) {
@@ -59,16 +59,16 @@ export default function NewsPage() {
         .news-post-body li { font-size: 16.5px; line-height: 1.85; margin-bottom: 4px; color: #3a3a42; }
         .news-post-body blockquote {
           margin: 20px 0; padding: 16px 22px;
-          border-left: 4px solid #1e3a5f;
-          background: #f8f8fa; border-radius: 0 12px 12px 0;
-          font-style: italic; color: #4a4d56;
+          border-left: 4px solid #8b6914;
+          background: rgba(139,105,20,0.06); border-radius: 0 12px 12px 0;
+          font-style: italic; color: #404040;
         }
         .news-post-body blockquote p { margin: 0; }
         .news-post-body img {
           max-width: 100%; height: auto; border-radius: 12px;
           margin: 20px 0; border: 1px solid #e8e9ed;
         }
-        .news-post-body a { color: #1e3a5f; text-decoration: underline; text-underline-offset: 3px; }
+        .news-post-body a { color: #8b6914; text-decoration: underline; text-underline-offset: 3px; }
         .news-post-body a:hover { color: #111; }
         .news-post-body strong { font-weight: 700; color: #111114; }
 
@@ -85,8 +85,8 @@ export default function NewsPage() {
       {/* ── Nav (matches main site exactly) ── */}
       <nav style={{
         position: "sticky", top: 0, zIndex: 50,
-        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-        borderBottom: "1px solid rgba(0,0,0,0.08)",
+        background: "rgba(253,252,250,0.78)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        borderBottom: "1px solid rgba(0,0,0,0.05)",
       }}>
         <div style={{ maxWidth: 1140, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
@@ -116,9 +116,9 @@ export default function NewsPage() {
               <Link href="/login" className="news-nav-links" style={{ fontSize: 14, fontWeight: 500, color: "#44403c", textDecoration: "none" }}>Log in</Link>
               <Link href="/subscribe" style={{
                 display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 24px",
-                fontSize: 13, fontWeight: 600, borderRadius: 10,
-                background: "linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%)", color: "#fff", textDecoration: "none",
-                boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
+                fontSize: 13, fontWeight: 600, borderRadius: 12,
+                background: "#0a0a0a", color: "#fff", textDecoration: "none",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
                 transition: "transform 0.15s, box-shadow 0.15s",
               }}>
                 Start Free Trial
@@ -137,8 +137,8 @@ export default function NewsPage() {
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 99,
-            background: "rgba(30,58,95,0.08)", border: "1px solid rgba(30,58,95,0.15)",
-            fontSize: 13, fontWeight: 600, color: "#1e3a5f", marginBottom: 20,
+            background: "rgba(139,105,20,0.08)", border: "1px solid rgba(139,105,20,0.2)",
+            fontSize: 13, fontWeight: 600, color: "#8b6914", marginBottom: 20,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Blocwrite Blog
@@ -204,8 +204,8 @@ export default function NewsPage() {
                 <div style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "5px 12px", borderRadius: 99,
-                  background: "rgba(124,92,252,0.08)",
-                  fontSize: 12, fontWeight: 600, color: "#b8a4ff",
+                  background: "rgba(139,105,20,0.08)",
+                  fontSize: 12, fontWeight: 600, color: "#8b6914",
                   textTransform: "uppercase", letterSpacing: "0.05em",
                   marginBottom: 16,
                 }}>
@@ -253,11 +253,11 @@ export default function NewsPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "52px 0 44px", background: "#1e3a5f", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+      <footer style={{ padding: "52px 0 44px", background: "#0a0a0a" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.6 }} />
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.2)" }}>
+            <img src="/blocwrite-logo-white.png" alt="Blocwrite" style={{ height: 32, width: "auto", opacity: 0.7 }} />
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
               © 2026 Blocwrite. All rights reserved.
             </span>
           </div>
@@ -272,9 +272,9 @@ export default function NewsPage() {
               <Link
                 key={l.href}
                 href={l.href}
-                style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", textDecoration: "none", transition: "color 0.15s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", textDecoration: "none", transition: "color 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.9)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
               >
                 {l.label}
               </Link>

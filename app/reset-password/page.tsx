@@ -80,7 +80,7 @@ function ResetPasswordForm() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          background: "#fafaf9",
+          background: "linear-gradient(165deg, #fdfcfa 0%, #f8f7f5 100%)",
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 400 }}>
@@ -96,7 +96,7 @@ function ResetPasswordForm() {
               display: "inline-block",
               marginTop: 16,
               padding: "10px 24px",
-              background: "#1e3a5f",
+              background: "#0a0a0a",
               color: "#ffffff",
               borderRadius: 8,
               fontWeight: 600,
@@ -249,7 +249,7 @@ function ResetPasswordForm() {
                   fontWeight: 700,
                   borderRadius: 10,
                   border: "none",
-                  background: "#1e3a5f",
+                  background: "#0a0a0a",
                   color: "#ffffff",
                   cursor: loading ? "wait" : "pointer",
                   opacity: loading ? 0.6 : 1,
